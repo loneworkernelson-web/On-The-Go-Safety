@@ -1,0 +1,1463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>%%ORG_NAME%% Monitor</title>
+    <link rel="icon" href="%%LOGO_URL%%">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+    
+    <style>
+        :root {
+            --brand-primary: %%PRIMARY_COLOR%%;
+            --brand-accent: %%ACCENT_COLOR%%;
+            --text-on-primary: %%TEXT_ON_PRIMARY%%;
+            --text-on-accent:  %%TEXT_ON_ACCENT%%;
+        }
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+        .main-layout { display: flex; flex: 1; overflow: hidden; }
+        .grid-area { flex: 1; overflow-y: auto; padding: 1.5rem; position: relative; }
+        .log-area { flex: 0 0 320px; background-color: #1e293b; border-left: 1px solid #334155; overflow-y: auto; display: flex; flex-direction: column; }
+        
+        .card { background-color: #1e293b; border-radius: 0.75rem; border: 1px solid #334155; transition: all 0.2s; position: relative; overflow: hidden; }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5); }
+        
+        .status-dot { height: 12px; width: 12px; border-radius: 50%; display: inline-block; }
+        .blink { animation: blinker 1.5s linear infinite; }
+        @keyframes blinker { 50% { opacity: 0; } }
+
+        /* Urgency Indicator Styles */
+        .st-ok     { background-color: #10b981; box-shadow: 0 0 10px #10b981; }
+        .st-amber  { background-color: #f59e0b; box-shadow: 0 0 10px #f59e0b; animation: blinker 2s linear infinite; }
+        .st-red    { background-color: #ef4444; box-shadow: 0 0 15px #ef4444; animation: blinker 0.5s linear infinite; }
+        .st-purple { background-color: #d946ef; box-shadow: 0 0 15px #d946ef; animation: blinker 0.3s linear infinite; }
+        .st-grey   { background-color: #64748b; }
+
+        .bd-green  { border-color: #059669; border-width: 2px; }
+        .bd-amber  { border-color: #d97706; border-width: 2px; }
+        .bd-red    { border-color: #dc2626; border-width: 4px; }
+        .bd-purple { border-color: #c026d3; border-width: 5px; }
+        .bd-grey   { border-color: #475569; opacity: 0.7; }
+
+        .btn-brand  { background-color: var(--brand-primary); }
+        .text-brand { color: var(--brand-accent); }
+        .text-on-primary { color: var(--text-on-primary) !important; }
+
+        #fullScreenAlert { z-index: 500; }
+        .alert-red    { animation: pulseRed    1s infinite; }
+        .alert-purple { animation: pulsePurple 1s infinite; }
+        @keyframes pulseRed    { 0%,100% { background: rgba(220,38,38,0.9); } 50% { background: rgba(153,27,27,0.95); } }
+        @keyframes pulsePurple { 0%,100% { background: rgba(147,51,234,0.9); } 50% { background: rgba(107,33,168,0.95); } }
+
+        #mapView { background: #020617; z-index: 1; width: 100%; height: 100%; }
+        .custom-div-icon { background: transparent; border: none; }
+        .map-icon { width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.5); display: block; }
+        .map-icon.red    { background: #ef4444; animation: blinker 0.8s linear infinite; box-shadow: 0 0 20px #ef4444; }
+        .map-icon.purple { background: #d946ef; animation: blinker 0.3s linear infinite; box-shadow: 0 0 25px #d946ef; }
+        .map-icon.amber  { background: #f59e0b; animation: blinker 1.2s linear infinite; }
+        .map-icon.green  { background: #10b981; }
+        .map-icon.blue   { background: #3b82f6; }
+
+        /* Audio gate overlay */
+        .audio-gate-layout {
+            position: fixed; inset: 0; background: #0f172a; z-index: 9999;
+            display: flex; align-items: center; justify-content: center; padding: 1rem;
+        }
+
+        /* Toast */
+        #toast { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+                 background: #1e293b; color: #f8fafc; border: 1px solid #334155;
+                 padding: 0.6rem 1.4rem; border-radius: 9999px; font-size: 0.75rem;
+                 font-weight: 700; z-index: 9000; transition: opacity 0.4s;
+                 pointer-events: none; white-space: nowrap; }
+        #toast.hidden { opacity: 0; }
+    </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     MODALS
+═══════════════════════════════════════════════════════════════════════ -->
+
+<!-- Audio Gate / Login -->
+<div id="audioGate" class="audio-gate-layout bg-black/90 backdrop-blur-md">
+    <div class="bg-gray-800 border-2 border-blue-500 rounded-[2.5rem] shadow-2xl max-w-md w-full p-10 text-center">
+        <div class="text-7xl mb-6">🛡️</div>
+        <h1 class="text-3xl font-black text-white mb-2 uppercase tracking-tight">Monitor Dashboard</h1>
+        <form onsubmit="unlockMonitor(event)" class="space-y-6">
+            <input type="text" name="username" value="MonitorAdmin" autocomplete="username" class="hidden" aria-hidden="true">
+            <label class="block text-left">
+                <span class="text-sm font-black text-gray-300 uppercase tracking-widest ml-1">Master Security Key</span>
+                <input type="password" id="masterKeyInput"
+                       autocomplete="current-password"
+                       class="w-full bg-gray-900 border-2 border-gray-700 rounded-2xl p-4 mt-2 text-center text-xl font-mono tracking-[0.4em] text-blue-400 focus:border-blue-500 outline-none transition-all"
+                       placeholder="••••••••" required>
+            </label>
+            <button type="submit"
+                    class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-5 rounded-2xl shadow-2xl text-xl transition transform active:scale-95 uppercase tracking-widest cursor-pointer">
+                Unlock Dashboard
+            </button>
+        </form>
+        <p id="loginError" class="text-red-500 text-xs font-bold mt-4 uppercase hidden">Access Denied: Invalid Key</p>
+    </div>
+</div>
+
+<!-- Connection Lost overlay -->
+<div id="connectionOverlay" class="hidden fixed inset-0 z-[95] bg-gray-900/90 flex items-center justify-center backdrop-blur-md">
+    <div class="bg-gray-800 border-2 border-red-600 p-8 rounded-xl shadow-2xl text-center max-w-sm">
+        <div class="text-5xl mb-6 animate-pulse">📡</div>
+        <h2 class="text-3xl font-bold text-white mb-2">Connection Lost</h2>
+        <p class="text-red-400 font-mono text-sm uppercase">System Offline</p>
+    </div>
+</div>
+
+<!-- Full-screen emergency alert -->
+<div id="fullScreenAlert" class="hidden fixed inset-0 flex flex-col items-center justify-center text-center p-8 backdrop-blur-sm z-[500]">
+    <div class="text-9xl mb-4" id="alertIcon">🚨</div>
+    <h1 class="text-6xl font-black text-white mb-4 drop-shadow-md" id="alertTitle">EMERGENCY ALERT</h1>
+    <h2 id="alertNames" class="text-4xl font-bold text-white bg-black/30 px-6 py-2 rounded mb-8">Worker</h2>
+    <button onclick="acknowledgeAlert()" class="bg-white text-gray-900 font-black text-2xl py-6 px-12 rounded-full shadow-2xl border-4 border-gray-900">
+        ACKNOWLEDGE ALARM
+    </button>
+</div>
+
+<!-- Resolve Emergency modal -->
+<div id="resolveModal" class="hidden fixed inset-0 z-40 bg-black/90 flex items-center justify-center p-4">
+    <div class="bg-gray-800 border-2 border-green-600 rounded-xl shadow-2xl max-w-md w-full p-6">
+        <h2 class="text-2xl font-bold text-white mb-2">Resolve Emergency</h2>
+        <p class="text-gray-400 text-sm mb-4">Manual clear for: <span id="resWorkerNameDisplay" class="font-bold text-white"></span></p>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm uppercase font-bold text-gray-300 mb-1">1. Type worker name to confirm</label>
+                <input type="text" id="resNameInput" placeholder="Type name exactly…"
+                       class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white">
+            </div>
+            <div>
+                <label class="block text-sm uppercase font-bold text-gray-300 mb-1">2. Resolution Log</label>
+                <textarea id="resNoteInput" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white h-24"
+                          placeholder="Describe resolution (required)…"></textarea>
+            </div>
+        </div>
+        <div class="flex gap-3 mt-6">
+            <button onclick="closeResolve()" class="flex-1 bg-gray-700 text-white font-bold py-3 rounded">Cancel</button>
+            <button onclick="submitResolution()" class="flex-1 bg-green-600 text-white font-bold py-3 rounded shadow-lg">✅ MARK SAFE</button>
+        </div>
+    </div>
+</div>
+
+<!-- Sign-out confirmation modal -->
+<div id="signOutModal" class="hidden fixed inset-0 z-[500] flex items-center justify-center bg-black/90 backdrop-blur-sm">
+    <div class="bg-gray-900 rounded-2xl border-2 border-red-600 p-8 max-w-sm w-[90%] text-center shadow-2xl">
+        <div class="text-5xl mb-4">⚠️</div>
+        <h2 class="text-xl font-black text-white mb-3">Sign Out of Monitor?</h2>
+        <p class="text-gray-300 text-sm font-bold mb-2">You will need the <span class="text-yellow-400">Master Key</span> to log back in.</p>
+        <p class="text-red-400 text-xs font-black uppercase tracking-wider mb-8">Do not proceed unless you have access to this key.</p>
+        <div class="flex gap-3">
+            <button onclick="document.getElementById('signOutModal').classList.add('hidden')"
+                    class="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white font-black rounded-xl transition">
+                Cancel
+            </button>
+            <button onclick="resetKey()"
+                    class="flex-1 py-3 bg-red-600 hover:bg-red-500 text-white font-black rounded-xl transition">
+                Sign Out
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast notification -->
+<div id="toast" class="hidden"></div>
+
+<!-- Broadcast modal -->
+<div id="broadcastModal" class="hidden fixed inset-0 z-40 bg-black/90 flex items-center justify-center p-4">
+    <div class="bg-gray-800 border-2 border-yellow-500 rounded-xl shadow-2xl max-w-lg w-full p-6">
+        <h2 class="text-2xl font-bold text-white mb-1">📢 Broadcast to All Workers</h2>
+        <p class="text-gray-400 text-xs mb-5">Message will appear on all active Worker App devices at next sync (≤30s).</p>
+
+        <!-- Priority selector -->
+        <div class="mb-4">
+            <label class="block text-sm uppercase font-bold text-gray-300 mb-2">Priority Level</label>
+            <div class="flex gap-2">
+                <button onclick="setBroadcastPriority('NORMAL')" id="bpNormal"
+                        class="broadcast-priority-btn flex-1 py-2 rounded text-xs font-bold border-2 border-blue-500 text-blue-400 bg-blue-900/20">
+                    📋 Normal
+                </button>
+                <button onclick="setBroadcastPriority('URGENT')" id="bpUrgent"
+                        class="broadcast-priority-btn flex-1 py-2 rounded text-xs font-bold border-2 border-gray-600 text-gray-400">
+                    ⚠️ Urgent
+                </button>
+                <button onclick="setBroadcastPriority('EMERGENCY')" id="bpEmergency"
+                        class="broadcast-priority-btn flex-1 py-2 rounded text-xs font-bold border-2 border-gray-600 text-gray-400">
+                    🚨 Emergency
+                </button>
+            </div>
+        </div>
+
+        <!-- Message -->
+        <div class="mb-5">
+            <label class="block text-sm uppercase font-bold text-gray-300 mb-1">Message</label>
+            <textarea id="broadcastMessage" maxlength="500" rows="4"
+                      class="w-full bg-gray-900 border border-gray-600 rounded p-3 text-white text-sm resize-none focus:border-yellow-500 outline-none transition"
+                      placeholder="e.g. Severe weather warning — all field staff return to base immediately."
+                      oninput="updateBroadcastCount()"></textarea>
+            <div class="flex justify-between mt-1">
+                <span class="text-sm text-gray-400">Workers will see this in their Safety Hub notices.</span>
+                <span class="text-xs text-gray-400"><span id="broadcastCount">0</span>/500</span>
+            </div>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="flex gap-3">
+            <button onclick="closeBroadcast()"
+                    class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded transition">
+                Cancel
+            </button>
+            <button onclick="submitBroadcast()"
+                    class="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-3 rounded shadow-lg transition">
+                📢 Send to All Workers
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     HEADER BAR
+═══════════════════════════════════════════════════════════════════════ -->
+<header class="border-b border-black/20 px-4 py-2 flex items-center justify-between flex-shrink-0 gap-3 flex-wrap" style="background-color: var(--brand-primary)">
+
+    <!-- Left: identity + live counters -->
+    <div class="flex items-center gap-4 min-w-0">
+        <!-- Organisation logo -->
+        <img src="%%LOGO_URL%%"
+             alt="%%ORG_NAME%%"
+             onerror="this.style.display='none'"
+             class="h-8 w-8 rounded object-contain flex-shrink-0"
+             style="background:transparent">
+        <span class="font-black text-sm uppercase tracking-widest whitespace-nowrap text-brand">%%ORG_NAME%%</span>
+        <span id="serverStatus" class="text-xs font-bold whitespace-nowrap text-brand" style="opacity:0.6">● CONNECTING</span>
+        <div class="flex items-center gap-1.5 text-xs whitespace-nowrap">
+            <span class="text-sm" style="color:var(--text-on-primary);opacity:0.85">Active:</span>
+            <span id="activeCount" class="font-black text-green-400">0</span>
+            <span class="mx-1" style="color:var(--text-on-primary);opacity:0.4">|</span>
+            <span class="text-sm" style="color:var(--text-on-primary);opacity:0.85">Alerts:</span>
+            <span id="alertCount" class="font-black text-red-400">0</span>
+            <span class="mx-1" style="color:var(--text-on-primary);opacity:0.4">|</span>
+            <span class="text-sm" style="color:var(--text-on-primary);opacity:0.85">Stale:</span>
+            <span id="staleCount" class="font-black text-amber-400">0</span>
+        </div>
+        <span id="connectionStatus" class="text-xs font-black hidden"></span>
+        <span id="lastUpdate" class="text-xs whitespace-nowrap" style="color:var(--text-on-primary);opacity:0.6"></span>
+    </div>
+
+    <!-- Right: controls -->
+    <div class="flex items-center gap-2 flex-wrap">
+
+        <!-- Audio arm button -->
+        <button id="btnAudioToggle" onclick="toggleAudioInit()"
+                class="flex items-center gap-1.5 bg-gray-800 px-3 py-1.5 rounded border border-gray-600 text-xs font-black uppercase tracking-widest text-gray-300 hover:bg-gray-700 transition shadow">
+            <span id="audioIcon">🔈</span> Audio: <span id="audioStatus" class="text-red-500">Locked</span>
+        </button>
+
+        <!-- Mute/unmute toggle (active once armed) -->
+        <button id="btnAudio" onclick="toggleAudio()"
+                class="hidden items-center gap-1.5 bg-gray-800 px-3 py-1.5 rounded border border-gray-600 text-xs font-black uppercase tracking-widest text-gray-300 hover:bg-gray-700 transition shadow">
+            🔊 Sound On
+        </button>
+
+        <!-- Filter buttons -->
+        <div class="flex bg-gray-800 rounded-lg p-1 border border-gray-600">
+            <button onclick="setFilter('ACTIVE')" id="btnFilterActive"
+                    class="filter-btn px-3 py-1 rounded text-xs font-bold btn-brand text-white shadow">🟢 Active</button>
+            <button onclick="setFilter('ALL')" id="btnFilterAll"
+                    class="filter-btn px-3 py-1.5 rounded text-sm font-bold text-gray-400">📋 All</button>
+        </div>
+
+        <!-- View toggle -->
+        <div class="flex bg-gray-800 rounded-lg p-1 border border-gray-600">
+            <button onclick="toggleView('GRID')" id="btnGrid"
+                    class="px-3 py-1 rounded text-xs font-bold bg-gray-600 text-white shadow">⊞ Grid</button>
+            <button onclick="toggleView('MAP')" id="btnMap"
+                    class="px-3 py-1.5 rounded text-sm font-bold text-gray-400">🗺️ Map</button>
+        </div>
+
+        <!-- Search -->
+        <input type="text" id="searchBox" placeholder="Filter…"
+               class="bg-gray-800 text-white text-sm border border-gray-600 rounded-lg pl-3 pr-2 py-1.5 w-28"
+               onkeyup="renderGrid()">
+
+        <!-- Export -->
+        <button onclick="exportSystemLog()"
+                class="text-xs text-blue-400 bg-gray-800 border border-gray-700 px-3 py-1.5 rounded hover:bg-gray-700 transition font-bold">
+            📊 Export
+        </button>
+
+        <!-- Broadcast -->
+        <button onclick="openBroadcast()"
+                class="text-xs text-yellow-400 bg-gray-800 border border-yellow-700 px-3 py-1.5 rounded hover:bg-yellow-900/40 transition font-bold">
+            📢 Broadcast
+        </button>
+
+        <!-- Sign out -->
+        <button onclick="confirmSignOut()"
+                class="text-xs text-gray-300 bg-gray-800 border border-gray-700 px-3 py-1.5 rounded hover:bg-gray-700 transition font-bold">
+            🔑 Sign Out
+        </button>
+    </div>
+</header>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     MAIN LAYOUT
+═══════════════════════════════════════════════════════════════════════ -->
+<div class="main-layout">
+    <div class="grid-area">
+        <div id="workerGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+        <div id="mapView" class="hidden h-full w-full rounded-xl overflow-hidden shadow-inner border border-gray-700 bg-gray-900"></div>
+    </div>
+    <div class="log-area">
+        <div class="p-2 bg-gray-800 border-b border-gray-700 font-bold text-sm text-gray-400 uppercase tracking-wider sticky top-0">
+            Activity Log
+        </div>
+        <div id="eventLogList" class="flex-1 overflow-y-auto px-2 py-2 space-y-1"></div>
+        <!-- Broadcast history (session only) -->
+        <div class="border-t border-gray-700 flex-shrink-0">
+            <button onclick="toggleBroadcastHistory()"
+                    class="w-full p-2 bg-gray-800 text-xs font-bold text-gray-300 uppercase tracking-wider text-left flex justify-between items-center hover:bg-gray-750 transition">
+                <span>📢 Sent Broadcasts</span>
+                <span id="broadcastHistoryToggle">▸</span>
+            </button>
+            <div id="broadcastHistoryList" class="hidden px-2 py-1 space-y-1 max-h-40 overflow-y-auto bg-gray-900/50"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Build version footer -->
+<div style="position:fixed;bottom:0;left:0;right:0;z-index:5;background:#0f172a;border-top:1px solid #1e293b;padding:3px 12px;text-align:right;">
+    <span style="font-size:10px;color:#334155;font-family:monospace;letter-spacing:0.05em;">%%ORG_NAME%% Safety Monitor &nbsp;·&nbsp; %%BUILD_VERSION%%</span>
+</div>
+
+<script data-cfasync="false">
+// ============================================================================
+// 1. CONFIGURATION
+// ============================================================================
+const SCRIPT_URL   = "%%SHEET_URL%%";
+const VEHICLE_TERM = "%%VEHICLE_TERM%%";
+const MAP_LAT      = parseFloat("%%MAP_LAT%%") || -40.9;  // Factory-injected map centre latitude
+const MAP_LNG      = parseFloat("%%MAP_LNG%%") || 174.9; // Factory-injected map centre longitude
+
+// ============================================================================
+// 2. SESSION STATE
+// ============================================================================
+let API_KEY          = localStorage.getItem('monitor_master_key') || null;
+let isPollingActive  = false;
+let activeIntervals  = [];
+let failureCount     = 0;
+const MAX_FAILURES   = 3;
+
+// ============================================================================
+// 3. DASHBOARD DATA & MAP STATE
+// ============================================================================
+let workerData   = [];
+let allRows      = [];
+let mapInstance  = null;
+let markersLayer = null;
+let currentView  = 'GRID';
+let currentFilter = 'ACTIVE';
+let lastHeartbeat = Date.now();
+
+// ============================================================================
+// 4. AUDIO STATE
+// ============================================================================
+let synth            = null;     // Tone.js synth (unlocked by user gesture at login)
+let audioEnabled     = true;     // Mute toggle
+let alertLoopInterval = null;    // Tone.js beep loop for active alert screen
+let alarmAudio       = null;     // HTML Audio siren — primary (CDN)
+let useSynthFallback = false;    // True when CDN audio unavailable; uses Web Audio API synth instead
+let synthSirenCtx    = null;     // Web Audio context for synthesized siren
+let synthSirenActive = false;    // Whether synth siren loop is currently running
+let acknowledgedAlerts = new Set();
+
+// ============================================================================
+// 5. WATCHDOG & BROADCAST STATE
+// ============================================================================
+const STALE_THRESHOLD_MS = 10 * 60 * 1000;   // 10 minutes — "Last Pulse" watchdog threshold
+let broadcastPriority    = 'NORMAL';           // Currently selected broadcast priority
+let broadcastHistory     = [];                 // Session-local log of sent broadcasts
+
+// ============================================================================
+// 6. TOAST
+// ============================================================================
+function showToast(msg, duration = 3000) {
+    const el = document.getElementById('toast');
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.remove('hidden');
+    clearTimeout(el._timeout);
+    el._timeout = setTimeout(() => el.classList.add('hidden'), duration);
+}
+
+// ============================================================================
+// 7. AUDIO ENGINE
+// ============================================================================
+
+/**
+ * Arms the audio system on first user interaction (browser policy requirement).
+ * PRIMARY: tries to load the CDN OGG siren.
+ * FALLBACK: if CDN is unreachable (offline, rate-limited, etc.), silently switches
+ *           to a Web Audio API synthesized siren — zero bytes, 100% offline-capable.
+ */
+function toggleAudioInit() {
+    // Always initialise the Web Audio context on this user gesture —
+    // it needs a gesture to unlock regardless of which path we take.
+    if (!synthSirenCtx) {
+        try { synthSirenCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+    }
+
+    if (!alarmAudio) {
+        alarmAudio = new Audio('https://actions.google.com/sounds/v1/alarms/emergency_siren.ogg');
+        alarmAudio.loop = true;
+    }
+
+    alarmAudio.play()
+        .then(() => {
+            // CDN audio loaded and played — we're good
+            alarmAudio.pause();
+            alarmAudio.currentTime = 0;
+            _armAudioUI("Armed (CDN)");
+        })
+        .catch(() => {
+            // CDN unavailable — switch permanently to synthesized siren
+            useSynthFallback = true;
+            alarmAudio = null;
+            // Play a brief confirm tone so operator knows audio IS working
+            _playSynthConfirmTone();
+            _armAudioUI("Armed (Synth)");
+        });
+}
+
+function _armAudioUI(label) {
+    document.getElementById('audioStatus').textContent = label;
+    document.getElementById('audioStatus').className   = "text-green-400";
+    document.getElementById('audioIcon').textContent   = "🔊";
+    const muteBtn = document.getElementById('btnAudio');
+    if (muteBtn) muteBtn.classList.replace('hidden', 'flex');
+    showToast("✅ Audio Monitoring Armed");
+}
+
+function _playSynthConfirmTone() {
+    if (!synthSirenCtx) return;
+    try {
+        const osc  = synthSirenCtx.createOscillator();
+        const gain = synthSirenCtx.createGain();
+        osc.connect(gain);
+        gain.connect(synthSirenCtx.destination);
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.15, synthSirenCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, synthSirenCtx.currentTime + 0.12);
+        osc.start(synthSirenCtx.currentTime);
+        osc.stop(synthSirenCtx.currentTime + 0.12);
+    } catch(e) {}
+}
+
+/**
+ * Synthesized siren — wails between 660 Hz and 1100 Hz.
+ * Each cycle is ~1.9 seconds, chains itself via onended.
+ * Uses only the Web Audio API — no network required.
+ */
+function _synthSirenCycle() {
+    if (!synthSirenActive || !audioEnabled || !synthSirenCtx) return;
+    try {
+        const ctx  = synthSirenCtx;
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        const t = ctx.currentTime;
+        osc.frequency.setValueAtTime(660,  t);
+        osc.frequency.linearRampToValueAtTime(1100, t + 0.9);
+        osc.frequency.linearRampToValueAtTime(660,  t + 1.8);
+
+        gain.gain.setValueAtTime(0,    t);
+        gain.gain.linearRampToValueAtTime(0.35, t + 0.08);
+        gain.gain.setValueAtTime(0.35, t + 1.72);
+        gain.gain.linearRampToValueAtTime(0,    t + 1.85);
+
+        osc.start(t);
+        osc.stop(t + 1.9);
+        osc.onended = _synthSirenCycle;   // self-chain
+    } catch(e) { synthSirenActive = false; }
+}
+
+function _startSynthSiren() {
+    if (synthSirenActive) return;
+    if (!synthSirenCtx) {
+        try { synthSirenCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) { return; }
+    }
+    synthSirenActive = true;
+    _synthSirenCycle();
+}
+
+function _stopSynthSiren() {
+    synthSirenActive = false;
+    // Close and discard context so the next start gets a clean state
+    if (synthSirenCtx) {
+        synthSirenCtx.close().catch(() => {});
+        synthSirenCtx = null;
+    }
+}
+
+/**
+ * Mutes / unmutes all audio output (siren + Tone.js beeps).
+ */
+function toggleAudio() {
+    audioEnabled = !audioEnabled;
+    const btn = document.getElementById('btnAudio');
+    if (btn) btn.textContent = audioEnabled ? "🔊 Sound On" : "🔇 Sound Off";
+    if (!audioEnabled) {
+        if (alarmAudio) { alarmAudio.pause(); alarmAudio.currentTime = 0; }
+        _stopSynthSiren();
+    }
+}
+
+/**
+ * Central siren controller — called by renderGrid() every second.
+ * Starts or stops whichever audio system is active, respecting the mute toggle.
+ */
+function updateAlarmAudio(hasActiveAlarm) {
+    if (!audioEnabled || !hasActiveAlarm) {
+        // Silence everything
+        if (alarmAudio) { alarmAudio.pause(); alarmAudio.currentTime = 0; }
+        _stopSynthSiren();
+        return;
+    }
+    // hasActiveAlarm && audioEnabled
+    if (useSynthFallback) {
+        _startSynthSiren();
+    } else if (alarmAudio) {
+        alarmAudio.play().catch(() => {
+            // CDN playback failed at runtime (e.g. offline) — switch to synth
+            useSynthFallback = true;
+            alarmAudio = null;
+            _startSynthSiren();
+        });
+    }
+}
+
+function playSound(type) {
+    if (!audioEnabled) return;
+    if (synth && Tone.context.state === 'running') {
+        try {
+            synth.triggerAttackRelease(type === 'offline' ? "A2" : "C5", "4n", Tone.now());
+        } catch(e) {}
+    } else if (synthSirenCtx) {
+        // Tone.js unavailable — use raw Web Audio API for notification beep
+        try {
+            const osc  = synthSirenCtx.createOscillator();
+            const gain = synthSirenCtx.createGain();
+            osc.connect(gain); gain.connect(synthSirenCtx.destination);
+            osc.frequency.value = type === 'offline' ? 220 : 880;
+            gain.gain.setValueAtTime(0.2, synthSirenCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0, synthSirenCtx.currentTime + 0.3);
+            osc.start(synthSirenCtx.currentTime);
+            osc.stop(synthSirenCtx.currentTime + 0.3);
+        } catch(e) {}
+    }
+}
+
+// ============================================================================
+// 8. AUTHENTICATION
+// ============================================================================
+
+async function unlockMonitor(e) {
+    if (e) e.preventDefault();
+    const inputEl  = document.getElementById('masterKeyInput');
+    const activeKey = (inputEl && inputEl.value) ? inputEl.value : API_KEY;
+    if (!activeKey) return;
+
+    try {
+        // Unlock Tone.js audio context on this user gesture
+        if (typeof Tone !== 'undefined') {
+            await Tone.start();
+            synth = new Tone.Synth().toDestination();
+        }
+
+        // Validate key against the backend using JSONP (avoids CORS when hosted cross-origin)
+        await new Promise((resolve, reject) => {
+            const cbName = '_gasLogin_' + Date.now();
+            const script = document.createElement('script');
+            const timeout = setTimeout(() => {
+                script.remove(); delete window[cbName];
+                reject(new Error("Timeout"));
+            }, 15000);
+
+            window[cbName] = function(data) {
+                clearTimeout(timeout); script.remove(); delete window[cbName];
+                if (data.status === "success") resolve(data);
+                else reject(new Error("Invalid Key"));
+            };
+            script.onerror = () => {
+                clearTimeout(timeout); script.remove(); delete window[cbName];
+                reject(new Error("Network error"));
+            };
+            script.src = `${SCRIPT_URL}?key=${encodeURIComponent(activeKey)}&test=true&callback=${cbName}&_cb=${Date.now()}`;
+            document.head.appendChild(script);
+        });
+
+        API_KEY = activeKey;
+        // Persist for auto-login across refreshes
+        try { localStorage.setItem('monitor_master_key', activeKey); } catch(err) {}
+        // Also keep an encrypted copy in sessionStorage
+        await secureStoreKey(activeKey);
+
+        document.getElementById('audioGate').classList.add('hidden');
+        startPolling();
+    } catch(err) {
+        const errLabel = document.getElementById('loginError');
+        if (errLabel) errLabel.classList.remove('hidden');
+    }
+}
+
+// ============================================================================
+// 9. POLLING ENGINE
+// ============================================================================
+
+function startPolling() {
+    if (isPollingActive) return;
+    isPollingActive  = true;
+    lastHeartbeat    = Date.now();
+
+    fetchData();
+    activeIntervals.push(setInterval(fetchData,   10000));
+    activeIntervals.push(setInterval(renderGrid,   1000));
+
+    // Tone.js keep-alive tick (prevents scheduling lag on long sessions)
+    activeIntervals.push(setInterval(() => {
+        if (audioEnabled && synth && Tone.context.state === 'running') {
+            try { synth.triggerAttackRelease(10, "1n", Tone.now() + 0.1, 0.0001); } catch(e) {}
+        }
+    }, 25000));
+
+    // Connection watchdog
+    activeIntervals.push(setInterval(() => {
+        const ol = document.getElementById('connectionOverlay');
+        if (!ol) return;
+        if (Date.now() - lastHeartbeat > 60000) {
+            ol.classList.remove('hidden');
+            playSound('offline');
+        } else {
+            ol.classList.add('hidden');
+        }
+    }, 10000));
+}
+
+function fetchData() {
+    if (!API_KEY) return;
+    const statusLabel = document.getElementById('connectionStatus');
+
+    // JSONP avoids CORS entirely — GAS returns callbackFn({...}) which we eval via script tag.
+    // The backend's sendResponse() already supports ?callback=xxx.
+    const cbName  = '_gasCallback_' + Date.now();
+    const script  = document.createElement('script');
+    const timeout = setTimeout(() => {
+        script.remove();
+        delete window[cbName];
+        failureCount++;
+        if (statusLabel) {
+            statusLabel.textContent = "● RECONNECTING...";
+            statusLabel.className   = "text-orange-500 animate-pulse font-black text-xs";
+        }
+    }, 15000);
+
+    window[cbName] = function(data) {
+        clearTimeout(timeout);
+        script.remove();
+        delete window[cbName];
+
+        if (data.status === "error" && data.message?.includes("Key")) {
+            return stopPollingAndLock();
+        }
+
+        if (data.status === "success" || data.workers) {
+            lastHeartbeat = Date.now();
+            failureCount  = 0;
+            if (statusLabel) {
+                statusLabel.textContent = "● LIVE";
+                statusLabel.className   = "text-green-500 font-black text-xs";
+            }
+            if (data.workers) {
+                workerData = typeof processWorkers === 'function'
+                    ? processWorkers(data.workers) : data.workers;
+                allRows = data.all || data.workers;
+                handleData(data);
+            }
+        }
+    };
+
+    script.src = `${SCRIPT_URL}?key=${encodeURIComponent(API_KEY)}&callback=${cbName}&_cb=${Date.now()}`;
+    script.onerror = () => {
+        clearTimeout(timeout);
+        script.remove();
+        delete window[cbName];
+        failureCount++;
+        if (statusLabel) {
+            statusLabel.textContent = "● RECONNECTING...";
+            statusLabel.className   = "text-orange-500 animate-pulse font-black text-xs";
+        }
+    };
+    document.head.appendChild(script);
+}
+
+function stopPollingAndLock() {
+    activeIntervals.forEach(id => clearInterval(id));
+    activeIntervals  = [];
+    isPollingActive  = false;
+    failureCount     = 0;
+    API_KEY          = null;
+    localStorage.removeItem('monitor_master_key');
+    const gate = document.getElementById('audioGate');
+    if (gate) gate.classList.remove('hidden');
+    alert("🔒 Monitor Session Expired: Please re-enter the Master Security Key.");
+}
+
+// ============================================================================
+// 10. INITIALISATION
+// ============================================================================
+window.onload = () => {
+    // navigator.storage.persist() intentionally omitted: despite being the modern
+    // W3C API it still triggers Chrome's "StorageType.persistent is deprecated"
+    // DevTools warning via the underlying quota-management layer. The call is
+    // purely advisory (hints the browser not to evict cached data under pressure)
+    // and has no effect on Monitor functionality, so it is not called here.
+    if (API_KEY) unlockMonitor();
+    initMap();
+};
+
+// ============================================================================
+// 11. DATA PROCESSING
+// ============================================================================
+
+/**
+ * Normalises raw spreadsheet rows into worker objects with both full keys
+ * (for rendering) and shorthand aliases (for system logic).
+ * Retains GPS history for map trail rendering.
+ */
+function processWorkers(rows) {
+    const workers = {};
+    const history = {};
+
+    rows.sort((a, b) => new Date(a.Timestamp) - new Date(b.Timestamp));
+
+    rows.forEach(r => {
+        const name = r['Worker Name'];
+        if (!name) return;
+
+        const timestamp = new Date(r['Timestamp']).getTime();
+        if (!history[name]) history[name] = [];
+        if (r['Last Known GPS']?.includes(',')) history[name].push(r['Last Known GPS']);
+
+        if (!workers[name] || timestamp > workers[name].timestamp) {
+            workers[name] = {
+                // Full-key aliases (for HTML rendering)
+                "Worker Name":              name,
+                "Status":                   r['Alarm Status'] || r['Status'] || "Unknown",
+                "Worker Phone Number":      r['Worker Phone Number'],
+                "Location Name":            r['Location Name'] || r['Location Address'] || "Unknown",
+                "Last Known GPS":           r['Last Known GPS'] || r['gps'],
+                "Battery Level":            r['Battery Level'],
+                "Anticipated Departure Time": r['Anticipated Departure Time'],
+                "timestamp":                timestamp,
+                // Shorthand aliases (for system logic)
+                name,
+                status:   r['Alarm Status'] || r['Status'] || "Unknown",
+                gps:      r['Last Known GPS'] || r['gps'],
+                phone:    r['Worker Phone Number'],
+                battery:  r['Battery Level'],
+                location: r['Location Name'] || r['Location Address'] || "Unknown",
+                dueTime:  r['Anticipated Departure Time']
+            };
+        }
+    });
+
+    Object.values(workers).forEach(w => {
+        w.history = (history[w["Worker Name"]] || []).slice(-10);
+    });
+
+    return Object.values(workers);
+}
+
+// ============================================================================
+// 12. ALERT HANDLING
+// ============================================================================
+
+function handleData(response) {
+    const serverEl = document.getElementById('serverStatus');
+    if (serverEl) serverEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-green-500 inline-block mr-1"></span>Online';
+
+    const lastUpdateEl = document.getElementById('lastUpdate');
+    if (lastUpdateEl) lastUpdateEl.textContent = new Date().toLocaleTimeString();
+
+    // Use shorthand .status/.name aliases for alert filtering
+    const unackedDuress = workerData.filter(w =>
+        w.status.toUpperCase().includes("DURESS") && !acknowledgedAlerts.has(w.name));
+    const unackedAlert  = workerData.filter(w =>
+        (w.status.toUpperCase().includes("EMERGENCY")     ||
+         w.status.toUpperCase().includes("PANIC")          ||
+         w.status.toUpperCase().includes("SOS")            ||
+         w.status.toUpperCase().includes("OVERDUE ALARM")) && !acknowledgedAlerts.has(w.name));
+
+    const alertBox = document.getElementById('fullScreenAlert');
+    if (unackedDuress.length > 0) {
+        alertBox.classList.remove('hidden', 'alert-red');
+        alertBox.classList.add('alert-purple');
+        document.getElementById('alertTitle').textContent = "DURESS ALARM (SILENT)";
+        document.getElementById('alertIcon').textContent  = "🥷";
+        document.getElementById('alertNames').textContent = unackedDuress.map(w => w.name).join(", ");
+        startAlertLoop();
+    } else if (unackedAlert.length > 0) {
+        alertBox.classList.remove('hidden', 'alert-purple');
+        alertBox.classList.add('alert-red');
+        document.getElementById('alertTitle').textContent = "EMERGENCY ALERT";
+        document.getElementById('alertIcon').textContent  = "🚨";
+        document.getElementById('alertNames').textContent = unackedAlert.map(w => w.name).join(", ");
+        startAlertLoop();
+    } else {
+        alertBox.classList.add('hidden');
+        stopAlertLoop();
+    }
+
+    if (currentView === 'MAP' && mapInstance) renderMap(); else renderGrid();
+    renderLog();
+}
+
+function startAlertLoop() {
+    if (alertLoopInterval) return;
+    alertLoopInterval = setInterval(() => {
+        if (audioEnabled && synth && Tone.context.state === 'running') {
+            try { synth.triggerAttackRelease("C5", "4n"); } catch(e) {}
+        }
+    }, 1000);
+}
+function stopAlertLoop() { clearInterval(alertLoopInterval); alertLoopInterval = null; }
+
+function acknowledgeAlert() {
+    document.getElementById('alertNames').textContent.split(", ")
+        .forEach(n => acknowledgedAlerts.add(n.trim()));
+    document.getElementById('fullScreenAlert').classList.add('hidden');
+    stopAlertLoop();
+}
+
+// ============================================================================
+// 13. GRID RENDERER
+// ============================================================================
+
+/**
+ * Alarm status strings used throughout for consistency.
+ */
+const ALERT_STATUSES = ['SOS', 'DURESS', 'PANIC', 'OVERDUE ALARM'];
+
+/**
+ * Formats elapsed milliseconds as a human-readable "Xm ago" / "Xh Xm ago" string.
+ */
+function formatElapsed(ms) {
+    if (ms < 60000)   return "just now";
+    const mins = Math.floor(ms / 60000);
+    if (mins < 60)    return `${mins}m ago`;
+    const hrs  = Math.floor(mins / 60);
+    const rem  = mins % 60;
+    return rem > 0 ? `${hrs}h ${rem}m ago` : `${hrs}h ago`;
+}
+
+function renderGrid() {
+    const grid   = document.getElementById('workerGrid');
+    const search = document.getElementById('searchBox')?.value.toLowerCase() || "";
+    const now    = Date.now();
+    if (!grid) return;
+
+    // ── Count across ALL workers before filtering ─────────────────────────────
+    let activeC = 0, alertC = 0, staleC = 0;
+    workerData.forEach(w => {
+        const s       = (w.Status || "").toUpperCase();
+        const isSafe  = ['DEPARTED', 'COMPLETED'].includes(s) || s.includes('SAFE') || s === 'NOTICE_ACK';
+        const isAlert = ALERT_STATUSES.some(a => s.includes(a));
+        const isStale = !isSafe && (now - (w.timestamp || 0)) > STALE_THRESHOLD_MS;
+        if (!isSafe) activeC++;
+        if (isAlert) alertC++;
+        if (isStale) staleC++;
+    });
+
+    // ── Filter ────────────────────────────────────────────────────────────────
+    let filtered = workerData.filter(w => {
+        const s      = (w.Status || "").toUpperCase();
+        const isSafe = ['DEPARTED', 'COMPLETED'].includes(s) || s.includes('SAFE') || s === 'NOTICE_ACK';
+        const isAlert = ALERT_STATUSES.some(a => s.includes(a));
+        const name   = (w['Worker Name'] || "").toLowerCase();
+        if (search && !name.includes(search)) return false;
+        if (currentFilter === 'ACTIVE' && isSafe && !isAlert) return false;
+        return true;
+    });
+
+    // ── Sort: alerts(1) → stale(2) → overdue(3) → active(4) → inactive(9) ────
+    filtered.sort((a, b) => {
+        const rank = w => {
+            const s      = (w.Status || "").toUpperCase();
+            const isSafe = ['DEPARTED','COMPLETED'].includes(s) || s.includes('SAFE') || s === 'NOTICE_ACK';
+            if (ALERT_STATUSES.some(x => s.includes(x))) return 1;
+            const isStale = !isSafe && (now - (w.timestamp || 0)) > STALE_THRESHOLD_MS;
+            if (isStale) return 2;
+            const dueTime = new Date(w['Anticipated Departure Time']);
+            const isOverdue = dueTime.getTime() > 0 && dueTime < now &&
+                              !['DEPARTED','DURESS','SOS','PANIC'].some(x => s.includes(x));
+            if (isOverdue) return 3;
+            if (!isSafe)   return 4;
+            return 9;
+        };
+        return rank(a) - rank(b);
+    });
+
+    // ── Render cards ──────────────────────────────────────────────────────────
+    grid.innerHTML = filtered.map(w => {
+        const safeName = escapeHtml(w['Worker Name'] || 'Unknown');
+        const attrName = safeName.replace(/'/g, "&#39;");
+        const status   = w.Status || "";
+        const statusUp = status.toUpperCase();
+
+        const dueTime   = new Date(w['Anticipated Departure Time']);
+        const isSafe    = ['DEPARTED','COMPLETED'].includes(statusUp) || statusUp.includes('SAFE') || statusUp === 'NOTICE_ACK';
+        const isOverdue = dueTime.getTime() > 0 && dueTime < now &&
+                          !['DEPARTED','DURESS','SOS','PANIC'].some(s => statusUp.includes(s));
+        const isAlert   = ALERT_STATUSES.some(s => statusUp.includes(s));
+
+        // Last Pulse Watchdog — age of most recent data from this worker
+        const pulseAge   = now - (w.timestamp || now);
+        // Only flag as stale when the worker is in a state where GPS pulses are expected.
+        // Named-site visits do not send GPS, so missing pulses are normal there.
+        const GPS_RELEVANT_STATUSES = ['TRAVELLING','OVERDUE','SOS','PANIC','DURESS','EMERGENCY','OVERDUE ALARM'];
+        const isGpsExpected = GPS_RELEVANT_STATUSES.some(s => statusUp.includes(s));
+        const isStale    = !isSafe && isGpsExpected && pulseAge > STALE_THRESHOLD_MS;
+        const pulseLabel = isSafe ? null : formatElapsed(pulseAge);
+        const pulseClass = isStale
+            ? 'text-amber-400 font-bold animate-pulse'
+            : 'text-slate-300';
+
+        const gps = w.gps || w['Last Known GPS'] || "0,0";
+        // Use live GPS when worker is in alarm/travel state AND a real fix exists.
+        // For normal named-site visits, use the recorded site address — it's the
+        // authoritative location and avoids showing where the worker's phone happened
+        // to be when they tapped Hold to Start.
+        const GPS_STATUSES = ['TRAVELLING','OVERDUE','PANIC','SOS','DURESS','EMERGENCY'];
+        const statusIsGps  = GPS_STATUSES.some(s => statusUp.includes(s));
+        const hasRealGps   = gps !== '0,0' && gps !== '0.0,0.0' && gps.includes(',');
+        const address  = w['Location Address'] || w['Location Name'] || "";
+        const mapQuery = (statusIsGps && hasRealGps) ? gps : address;
+        // mapUrl intentionally removed — Map button now opens Leaflet directly.
+
+        const statusClass = isAlert   ? 'text-purple-400 font-black animate-pulse' :
+                            isOverdue ? 'text-red-500 animate-pulse font-black' :
+                            isStale   ? 'text-amber-400 font-black' :
+                                        'text-blue-400';
+
+        const statusLabel = isAlert   ? ('⚠️ ' + status) :
+                            isOverdue ? '⏰ OVERDUE' :
+                                        status;
+
+        const cardBorder = isAlert   ? 'border-purple-500 shadow-[0_0_15px_rgba(217,70,239,0.3)] bg-purple-900/10' :
+                           isStale   ? 'border-amber-600 bg-amber-900/10' :
+                           isOverdue ? 'border-red-500 bg-red-900/10' :
+                                       'border-slate-700';
+
+        const bat   = w['Battery Level'] || w.battery || '--';
+        const loc   = escapeHtml(w['Location Name'] || w.location || 'Unknown');
+        const phone = w['Worker Phone Number'] || w.phone || '';
+
+        return `
+            <div class="p-4 bg-slate-800/50 border ${cardBorder} rounded-xl transition-all">
+                <div class="flex justify-between items-start mb-2">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full flex-shrink-0 ${getStatusDot(status, isOverdue, isStale)}"></span>
+                        <h3 class="font-bold text-white truncate max-w-[150px] cursor-pointer hover:text-blue-400 transition"
+                            onclick="focusWorkerOrMap('${gps}','${escapeHtml(address)}',${statusIsGps && hasRealGps})">${safeName}</h3>
+                    </div>
+                    <div class="text-sm text-slate-300 font-bold flex-shrink-0 ml-2">🔋 ${escapeHtml(String(bat))}</div>
+                </div>
+
+                <div class="space-y-1 mb-4">
+                    <div class="flex justify-between text-sm uppercase tracking-tighter">
+                        <span class="text-sm text-slate-300">Status</span>
+                        <span class="${statusClass}">${escapeHtml(statusLabel)}</span>
+                    </div>
+                    <div class="flex justify-between text-sm uppercase tracking-tighter">
+                        <span class="text-sm text-slate-300">Location</span>
+                        <span class="text-slate-300 truncate w-32 text-right">${loc}</span>
+                    </div>
+                    ${pulseLabel ? `
+                    <div class="flex justify-between text-sm tracking-tighter">
+                        <span class="text-sm text-slate-300 uppercase">Last Pulse</span>
+                        <span class="${pulseClass}">${isStale ? '📡 ' : ''}${pulseLabel}</span>
+                    </div>` : ''}
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <button onclick="focusWorkerOrMap('${gps}','${escapeHtml(address)}',${statusIsGps && hasRealGps})"
+                            class="bg-slate-700 text-white py-2 rounded text-xs font-bold hover:bg-slate-600 transition text-center w-full"
+                            title="${(statusIsGps && hasRealGps) ? 'Live GPS position' : 'Site on map'}">
+                        ${(statusIsGps && hasRealGps) ? '📡' : '📍'} Map
+                    </button>
+                    <a href="tel:${escapeHtml(phone)}"
+                       class="bg-blue-600/20 text-blue-400 text-center py-2 rounded text-xs font-bold border border-blue-500/30">
+                        📞 Call
+                    </a>
+                </div>
+
+                ${isAlert ? `
+                    <button onclick="openResolve('${attrName}')"
+                            class="mt-2 w-full bg-green-600 hover:bg-green-500 py-2 rounded text-xs font-bold text-white shadow-lg active:scale-95 transition-transform">
+                        ✅ RESOLVE ALERT
+                    </button>
+                ` : ''}
+                ${isStale && !isAlert ? `
+                    <div class="mt-2 w-full bg-amber-900/30 border border-amber-600/50 py-1.5 rounded text-xs font-bold text-amber-400 text-center uppercase tracking-wider">
+                        ⚠️ No signal for ${formatElapsed(pulseAge)}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }).join('');
+
+    // ── Update header counters ────────────────────────────────────────────────
+    const activeEl = document.getElementById('activeCount');
+    const alertEl  = document.getElementById('alertCount');
+    const staleEl  = document.getElementById('staleCount');
+    if (activeEl) activeEl.textContent = activeC;
+    if (alertEl)  alertEl.textContent  = alertC;
+    if (staleEl)  staleEl.textContent  = staleC;
+
+    // Drive the siren
+    updateAlarmAudio(alertC > 0);
+}
+
+// ============================================================================
+// 14. HELPERS
+// ============================================================================
+
+function escapeHtml(text) {
+    return text
+        ? String(text).replace(/&/g,"&amp;").replace(/</g,"&lt;")
+                      .replace(/>/g,"&gt;").replace(/"/g,"&quot;")
+        : "";
+}
+
+/**
+ * Returns Tailwind classes for the status dot on each worker card.
+ * Priority: alert (purple) → stale (amber) → overdue (red) → status-based colour
+ */
+function getStatusDot(status, isOverdue, isStale) {
+    if (!status) return 'bg-slate-500';
+    const s = status.toUpperCase();
+    if (ALERT_STATUSES.some(a => s.includes(a))) return 'bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.8)] animate-pulse';
+    if (isStale)   return 'bg-amber-500 animate-pulse';
+    if (isOverdue) return 'bg-red-500 animate-pulse';
+    switch (s) {
+        case 'ARRIVED':
+        case 'ON SITE':    return 'bg-green-500';
+        case 'TRAVELLING': return 'bg-blue-500';
+        case 'DEPARTED':
+        case 'COMPLETED':
+        case 'USER_SAFE':  return 'bg-slate-600';
+        default:           return 'bg-slate-500';
+    }
+}
+
+/**
+ * Returns CSS class string for a status pill in the activity log.
+ */
+function getStatusClass(status) {
+    const s = String(status || "").toUpperCase();
+    if (ALERT_STATUSES.some(a => s.includes(a))) return 'bg-red-500/20 text-red-400 border border-red-500/50';
+    if (s === 'ARRIVED')    return 'bg-green-500/20  text-green-400  border border-green-500/50';
+    if (s === 'TRAVELLING') return 'bg-blue-500/20   text-blue-400   border border-blue-500/50';
+    return 'bg-slate-500/20 text-slate-400 border border-slate-500/50';
+}
+
+// ============================================================================
+// 15. MAP
+// ============================================================================
+
+function initMap() {
+    if (mapInstance) { mapInstance.invalidateSize(); return; }
+    mapInstance  = L.map('mapView').setView([MAP_LAT, MAP_LNG], 10);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+                { attribution: '© CARTO' }).addTo(mapInstance);
+    markersLayer = L.layerGroup().addTo(mapInstance);
+}
+
+/**
+ * Returns the map icon colour matching the card/dot logic.
+ * PANIC, DURESS, SOS → purple  |  Overdue → red  |  Arrived/On-site → green  |  Travelling → blue
+ */
+function getMarkerColor(w) {
+    const s = (w.status || w.Status || "").toUpperCase();
+    if (ALERT_STATUSES.some(a => s.includes(a))) return 'purple';
+    const dueTime  = new Date(w['Anticipated Departure Time'] || w.dueTime);
+    const isOverdue = dueTime.getTime() > 0 && dueTime < Date.now() &&
+                      !['DEPARTED','DURESS','SOS','PANIC'].some(a => s.includes(a));
+    if (isOverdue) return 'red';
+    if (s === 'ARRIVED' || s === 'ON SITE') return 'green';
+    if (s === 'TRAVELLING') return 'blue';
+    return 'green';
+}
+
+function renderMap() {
+    if (!markersLayer) return;
+    markersLayer.clearLayers();
+    workerData.forEach(w => {
+        const gps = w.gps || w['Last Known GPS'];
+        if (!gps || !gps.includes(',')) return;
+        const [lat, lng] = gps.split(',').map(Number);
+        if (isNaN(lat) || isNaN(lng)) return;
+
+        // GPS breadcrumb trail — strip placeholder 0,0 coordinates
+        if (w.history?.length > 1) {
+            const path = w.history
+                .map(h => h.split(',').map(Number))
+                .filter(p => !isNaN(p[0]) && !isNaN(p[1])
+                          && (Math.abs(p[0]) > 0.001 || Math.abs(p[1]) > 0.001));
+            if (path.length > 1) {
+                L.polyline(path, { color: getComputedStyle(document.documentElement).getPropertyValue('--brand-accent').trim() || '#3b82f6', weight: 3, opacity: 0.5 })
+                 .addTo(markersLayer);
+            }
+        }
+
+        const color = getMarkerColor(w);
+        const icon  = L.divIcon({
+            className: 'custom-div-icon',
+            html: `<div class="map-icon ${color}"></div>`,
+            iconSize: [24, 24]
+        });
+        L.marker([lat, lng], { icon })
+         .bindPopup(`<b>${escapeHtml(w.name || w['Worker Name'])}</b><br>${escapeHtml(w.status || w.Status)}`)
+         .addTo(markersLayer);
+    });
+}
+
+function focusWorker(gps) {
+    if (!gps || gps === '0,0') return;
+    toggleView('MAP');
+    setTimeout(() => {
+        const [lat, lng] = gps.split(',').map(Number);
+        if (!isNaN(lat) && mapInstance) mapInstance.flyTo([lat, lng], 17);
+    }, 250);
+}
+
+/**
+ * Universal map handler — never opens Google Maps.
+ * With live GPS: fly to exact coordinates.
+ * Without GPS: switch to map view (marker already placed for site visits).
+ */
+function focusWorkerOrMap(gps, address, hasLiveGps) {
+    toggleView('MAP');
+    setTimeout(() => {
+        if (hasLiveGps && gps && gps !== '0,0' && mapInstance) {
+            const [lat, lng] = gps.split(',').map(Number);
+            if (!isNaN(lat)) { mapInstance.flyTo([lat, lng], 17); return; }
+        }
+        // No live GPS — search markers for one matching this site address
+        if (markersLayer && mapInstance) {
+            markersLayer.eachLayer(layer => {
+                try {
+                    const content = layer.getPopup()?.getContent() || '';
+                    if (address && content.includes(address.substring(0, 20))) {
+                        mapInstance.flyTo(layer.getLatLng(), 15);
+                    }
+                } catch(e) {}
+            });
+        }
+    }, 300);
+}
+
+function toggleView(view) {
+    currentView = view;
+    document.getElementById('workerGrid').classList.toggle('hidden', view === 'MAP');
+    document.getElementById('mapView').classList.toggle('hidden',    view === 'GRID');
+    document.getElementById('btnGrid').className = view === 'GRID'
+        ? 'px-3 py-1 rounded text-xs font-bold bg-gray-600 text-white shadow'
+        : 'px-3 py-1 rounded text-xs font-bold text-gray-400';
+    document.getElementById('btnMap').className = view === 'MAP'
+        ? 'px-3 py-1 rounded text-xs font-bold bg-gray-600 text-white shadow'
+        : 'px-3 py-1 rounded text-xs font-bold text-gray-400';
+    if (view === 'MAP') { initMap(); renderMap(); }
+}
+
+// ============================================================================
+// 16. ACTIVITY LOG
+// ============================================================================
+
+function renderLog() {
+    const el = document.getElementById('eventLogList');
+    if (!el) return;
+    el.innerHTML = [...allRows]
+        .sort((a, b) => new Date(b.Timestamp) - new Date(a.Timestamp))
+        .slice(0, 100)
+        .map(r => {
+            const t   = new Date(r['Timestamp']).toLocaleTimeString();
+            const n   = escapeHtml(r['Worker Name']  || '');
+            const s   = escapeHtml(r['Alarm Status'] || '');
+            const cls = getStatusClass(r['Alarm Status']);
+            return `<div class="text-xs py-1 border-b border-gray-800">
+                        <span class="text-gray-300">${t}</span>
+                        <span class="text-white font-semibold ml-1">${n}</span>
+                        <span class="ml-1 px-1 rounded text-xs ${cls}">${s}</span>
+                    </div>`;
+        }).join('');
+}
+
+// ============================================================================
+// 17. ALERT RESOLUTION
+// ============================================================================
+
+function openResolve(name) {
+    const modal     = document.getElementById('resolveModal');
+    const displayEl = document.getElementById('resWorkerNameDisplay');
+    const inputEl   = document.getElementById('resNameInput');
+    const noteEl    = document.getElementById('resNoteInput');
+    if (!modal || !displayEl || !inputEl) return;
+
+    displayEl.textContent = name;
+    inputEl.value  = '';       // Operator must type name — NOT pre-filled
+    if (noteEl) noteEl.value = '';
+    modal.classList.remove('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+}
+
+function closeResolve() {
+    document.getElementById('resolveModal').classList.add('hidden');
+}
+
+function submitResolution() {
+    const targetName = document.getElementById('resWorkerNameDisplay').textContent.trim();
+    const typedName  = document.getElementById('resNameInput').value.trim();
+    const note       = document.getElementById('resNoteInput').value.trim();
+
+    if (targetName !== typedName) { alert("Error: Name does not match exactly."); return; }
+    if (note.length < 5)          { alert("Error: Please enter a resolution note (min 5 chars)."); return; }
+
+    const formData = new FormData();
+    formData.append('action',       'resolve');
+    formData.append('key',          API_KEY);
+    formData.append('Worker Name',  targetName);
+    formData.append('Alarm Status', 'SAFE - MANUALLY CLEARED');
+    formData.append('Notes',        `[HQ RESOLVED]: ${note}`);
+    formData.append('Battery Level', 'N/A');
+    formData.append('Location Name', 'HQ Manual Resolution');
+
+    fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: formData })
+        .then(() => {
+            showToast("✅ Resolution sent — update may take ~10s.");
+            closeResolve();
+            acknowledgedAlerts.add(targetName);
+            fetchData();
+        })
+        .catch(e => alert("Connection Error: " + e));
+}
+
+// ============================================================================
+// 18. FILTER
+// ============================================================================
+
+function setFilter(f) {
+    currentFilter = f;
+    // Highlight active filter button using the filter-btn class
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        const isActive = btn.getAttribute('onclick').includes(`'${f}'`);
+        btn.className = isActive
+            ? 'filter-btn px-3 py-1 rounded text-xs font-bold btn-brand text-white shadow'
+            : 'filter-btn px-3 py-1 rounded text-xs font-bold text-gray-400';
+    });
+    renderGrid();
+}
+
+// ============================================================================
+// 19. BROADCAST
+// ============================================================================
+// Requires the backend script to handle action:'broadcast' and write a new
+// row to the Notices sheet. Workers read this sheet during their sync cycle.
+// Suggested backend fields: title, message, priority, source, timestamp.
+
+function openBroadcast() {
+    const modal = document.getElementById('broadcastModal');
+    if (!modal) return;
+    document.getElementById('broadcastMessage').value = '';
+    document.getElementById('broadcastCount').textContent = '0';
+    setBroadcastPriority('NORMAL');
+    modal.classList.remove('hidden');
+    setTimeout(() => document.getElementById('broadcastMessage').focus(), 50);
+}
+
+function closeBroadcast() {
+    document.getElementById('broadcastModal').classList.add('hidden');
+}
+
+function setBroadcastPriority(p) {
+    broadcastPriority = p;
+    const configs = {
+        NORMAL:    { id: 'bpNormal',    on: 'border-blue-500 text-blue-400 bg-blue-900/20'    },
+        URGENT:    { id: 'bpUrgent',    on: 'border-amber-500 text-amber-400 bg-amber-900/20' },
+        EMERGENCY: { id: 'bpEmergency', on: 'border-red-500 text-red-400 bg-red-900/20'       },
+    };
+    const off = 'border-gray-600 text-gray-400 bg-transparent';
+    Object.entries(configs).forEach(([key, cfg]) => {
+        const btn = document.getElementById(cfg.id);
+        if (!btn) return;
+        btn.className = `broadcast-priority-btn flex-1 py-2 rounded text-xs font-bold border-2 ${key === p ? cfg.on : off}`;
+    });
+}
+
+function updateBroadcastCount() {
+    const el  = document.getElementById('broadcastMessage');
+    const cnt = document.getElementById('broadcastCount');
+    if (el && cnt) cnt.textContent = el.value.length;
+}
+
+function submitBroadcast() {
+    const msg = document.getElementById('broadcastMessage').value.trim();
+    if (!msg || msg.length < 5) { showToast("❌ Please enter a message (min 5 characters)."); return; }
+
+    const formData = new FormData();
+    formData.append('action',    'broadcast');
+    formData.append('key',       API_KEY);
+    formData.append('message',   msg);
+    formData.append('priority',  broadcastPriority);
+    formData.append('source',    'HQ Monitor');
+    formData.append('timestamp', new Date().toISOString());
+
+    // mode:'no-cors' means we can't read the response — trust and log locally
+    fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: formData })
+        .then(() => {
+            const entry = {
+                time:     new Date().toLocaleTimeString(),
+                priority: broadcastPriority,
+                msg:      msg.length > 60 ? msg.slice(0, 60) + '…' : msg
+            };
+            broadcastHistory.unshift(entry);
+            renderBroadcastHistory();
+            showToast(`📢 Broadcast sent (${broadcastPriority}) — workers notified at next sync.`, 5000);
+            closeBroadcast();
+        })
+        .catch(e => showToast("❌ Broadcast failed: " + e));
+}
+
+function renderBroadcastHistory() {
+    const el = document.getElementById('broadcastHistoryList');
+    if (!el) return;
+    if (broadcastHistory.length === 0) {
+        el.innerHTML = '<div class="text-sm text-gray-400 py-2 text-center">No broadcasts this session.</div>';
+        return;
+    }
+    const colours = { NORMAL: 'text-blue-400', URGENT: 'text-amber-400', EMERGENCY: 'text-red-400' };
+    el.innerHTML = broadcastHistory.map(b => `
+        <div class="text-xs py-1 border-b border-gray-800">
+            <span class="text-gray-400">${b.time}</span>
+            <span class="ml-1 font-bold ${colours[b.priority] || 'text-gray-400'}">[${b.priority}]</span>
+            <span class="text-gray-300 ml-1">${escapeHtml(b.msg)}</span>
+        </div>
+    `).join('');
+}
+
+function toggleBroadcastHistory() {
+    const list   = document.getElementById('broadcastHistoryList');
+    const toggle = document.getElementById('broadcastHistoryToggle');
+    if (!list) return;
+    const isHidden = list.classList.toggle('hidden');
+    if (toggle) toggle.textContent = isHidden ? '▸' : '▾';
+    if (!isHidden) renderBroadcastHistory();
+}
+
+// ============================================================================
+// 20. EXPORT
+// ============================================================================
+
+function exportSystemLog() {
+    const csv  = "Timestamp,Worker,Status,Location\n" +
+        allRows.map(r =>
+            `"${r.Timestamp}","${r['Worker Name']}","${r['Alarm Status']}","${r['Location Name']}"`
+        ).join("\n");
+    const link = document.createElement("a");
+    link.href     = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+    link.download = `OTG_Log_${new Date().toISOString().slice(0,10)}.csv`;
+    link.click();
+}
+
+// ============================================================================
+// 20. SESSION MANAGEMENT
+// ============================================================================
+
+function confirmSignOut() {
+    document.getElementById('signOutModal').classList.remove('hidden');
+}
+
+function resetKey() {
+    localStorage.removeItem('monitor_master_key');
+    location.reload();
+}
+
+// ============================================================================
+// 21. SECURE KEY STORAGE  (defence-in-depth: encrypted sessionStorage copy)
+// ============================================================================
+
+/**
+ * Stores an AES-GCM encrypted copy of the master key in sessionStorage.
+ * The key is derived using PBKDF2 so it can be re-derived on the same session
+ * without storing the derivation key anywhere.
+ * Note: the plain-text localStorage copy is still needed for auto-login across
+ * page refreshes — this is an additional layer, not a replacement.
+ */
+async function secureStoreKey(key) {
+    try {
+        const encoder = new TextEncoder();
+        const iv      = window.crypto.getRandomValues(new Uint8Array(12));
+
+        const baseKey = await window.crypto.subtle.importKey(
+            "raw", encoder.encode("OTG_STATION_IV"), "PBKDF2", false, ["deriveKey"]
+        );
+        const aesKey = await window.crypto.subtle.deriveKey(
+            {
+                name:       "PBKDF2",
+                salt:       encoder.encode("%%ORG_NAME%%"),   // org-specific salt
+                iterations: 100000,
+                hash:       "SHA-256"
+            },
+            baseKey,
+            { name: "AES-GCM", length: 256 },
+            false,
+            ["encrypt", "decrypt"]
+        );
+
+        const cipher = await window.crypto.subtle.encrypt(
+            { name: "AES-GCM", iv },
+            aesKey,
+            encoder.encode(key)
+        );
+
+        sessionStorage.setItem('monitor_payload', JSON.stringify({
+            iv:   Array.from(iv),
+            data: Array.from(new Uint8Array(cipher))
+        }));
+    } catch(e) {
+        // Non-fatal — plain localStorage copy is the auth source of truth
+        console.warn("secureStoreKey failed (non-fatal):", e);
+    }
+}
+
+function zoomToWorker(gps) {
+    if (!gps || gps === '0,0' || !mapInstance) return;
+    const coords = gps.split(',').map(Number);
+    mapInstance.setView(coords, 16);
+}
+
+</script>
+</body>
+</html>

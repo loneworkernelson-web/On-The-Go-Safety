@@ -1,0 +1,38 @@
+{
+  "_comment": "OTG Lone Worker Safety System — Org Config. Commit to orgs/<your-org>/config.json",
+
+  "version": "1.0.0",
+
+  "orgName":  "Acme Safety Co",
+  "appName":  "Acme Safety",
+
+  "backendUrl": "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec",
+
+  "workerKey": "change-me-32-char-shared-app-key",
+
+  "ntfyServer": "https://ntfy.sh",
+
+  "mileageEnabled":    true,
+  "checkinEnabled":    true,
+  "checkinInterval":   30,
+  "escalationMinutes": 15,
+
+  "vehicleEnabled":  true,
+  "vehicleInterval": 90,
+  "vehicleTerm":     "WOF",
+
+  "countryPrefix":      "+64",
+  "voiceLocale":        "en-NZ",
+  "requireTravelReport": false,
+
+  "theme": {
+    "primary":       "#1e40af",
+    "accent":        "#0ea5e9",
+    "surface":       "#1e3a8a",
+    "accentGlow":    "rgba(14,165,233,0.35)",
+    "textOnPrimary": "#ffffff",
+    "textOnAccent":  "#ffffff"
+  },
+
+  "logoUrl": ""
+}
