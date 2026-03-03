@@ -699,6 +699,23 @@ function dataURItoBlob(dataURI) {
     }
 }
 
+function handleRegisterDevice(p) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Staff');
+  if (!sheet) return { status: "error", message: "Staff sheet missing" };
+  const data = sheet.getDataRange().getValues();
+  const workerName = p['Worker Name'];
+  const deviceId = p.deviceId;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === workerName) {
+      // Column E (index 4) — bind this device ID to the worker
+      sheet.getRange(i + 1, 5).setValue(deviceId);
+      return { status: "success", message: "Device successfully bound to " + workerName };
+    }
+  }
+  return { status: "error", message: "Worker not found in Staff registry" };
+}
+
 function updateStaffStatus(p) {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     let sheet = ss.getSheetByName('Staff');
@@ -1011,14 +1028,6 @@ function triggerAlerts(p, type) {
     });
 }
 
-/**
- * RE-ENGINEERED: Multi-Stage Escalation Engine
- * Intervals: 15, 30, 45 (Primary) | 60 (Dual) | [CRITICAL_TIMING] (Immediate Dual)
- */
-/**
- * RE-ENGINEERED: Multi-Stage Escalation Engine
- * Logic: Handles 15/30/45 alerts and immediate [CRITICAL_TIMING] dual-alerts.
- */
 /**
  * NTFY PUSH NOTIFICATION HELPER
  * Posts a push notification to a contact's ntfy topic.
