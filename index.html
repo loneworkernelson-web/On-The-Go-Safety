@@ -436,6 +436,11 @@
                 </button>
                 <p class="text-xs text-gray-400 font-bold">Place this file at the root of your hosted worker app — same folder as <code class="text-green-400">index.html</code></p>
 
+                <button onclick="downloadSW()" class="btn py-4 text-base w-full max-w-md bg-gray-700 hover:bg-gray-600 text-white shadow font-black uppercase tracking-widest transition">
+                    ⬇ Download sw.js
+                </button>
+                <p class="text-xs text-gray-400 font-bold">Service worker — place alongside <code class="text-green-400">config.json</code>. Only needed once; does not change between deployments.</p>
+
                 <div class="mt-4 border-t border-gray-700 pt-6 w-full max-w-md text-center">
                     <p class="text-xs text-gray-400 font-bold uppercase tracking-widest mb-3">Supervisor Dashboard</p>
                     <button onclick="downloadMonitor()" class="btn py-4 text-base w-full bg-indigo-700 hover:bg-indigo-600 text-white shadow-lg font-black uppercase tracking-widest transition">
@@ -465,7 +470,7 @@
 
             <div class="max-w-2xl mx-auto text-left bg-blue-900/20 border border-blue-500/30 rounded-2xl p-6">
                 <p class="text-blue-300 font-black text-xs uppercase tracking-widest mb-3">Also download Code.gs from Step 3 — the backend injection system is unchanged.</p>
-                <p class="text-gray-300 text-sm font-bold leading-relaxed">The worker app files (<code class="text-green-400">index.html</code>, <code class="text-green-400">sw.js</code>, <code class="text-green-400">manifest.json</code>) are the canonical versions from the OTG repository. Only <code class="text-green-400">config.json</code> and your logo are org-specific.</p>
+                <p class="text-gray-300 text-sm font-bold leading-relaxed">The worker app (<code class="text-green-400">index.html</code>) and PWA manifest (<code class="text-green-400">manifest.json</code>) are the canonical versions from the OTG repository. <code class="text-green-400">config.json</code>, <code class="text-green-400">sw.js</code>, and your logo are downloaded from this page.</p>
             </div>
 
             <div class="flex justify-between pt-12">
@@ -488,9 +493,20 @@
                 <div class="grid gap-10">
                     <div class="flex gap-6">
                         <div class="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center font-black text-xl shrink-0 shadow-lg border-2 border-blue-400">1</div>
-                        <div>
-                            <p class="text-blue-300 font-black uppercase tracking-[0.2em] text-[10px] mb-1">Get the Canonical App Files</p>
-                            <p class="text-white font-bold text-sm leading-relaxed">The canonical worker app files (<code class="text-green-400">index.html</code>, <code class="text-green-400">sw.js</code>, <code class="text-green-400">manifest.json</code>) come from the OTG repository. Place your <code class="text-green-400">config.json</code> and <code class="text-green-400">icon.png</code> in the same folder.</p>
+                        <div class="flex-1">
+                            <p class="text-blue-300 font-black uppercase tracking-[0.2em] text-[10px] mb-1">Assemble Your Deployment Folder</p>
+                            <p class="text-white font-bold text-sm leading-relaxed mb-3">Create a folder on your computer and place all of the following files in it — everything at the <strong>same level</strong>, no subfolders.</p>
+                            <div class="bg-gray-950 rounded-xl border border-gray-700 p-4 font-mono text-xs leading-relaxed">
+                                <div class="text-gray-500 mb-2">your-org-safety/</div>
+                                <div class="ml-4 space-y-1">
+                                    <div><span class="text-green-400">index.html</span> <span class="text-gray-600 font-sans">— worker app (from OTG repository)</span></div>
+                                    <div><span class="text-green-400">sw.js</span> <span class="text-gray-600 font-sans">— service worker (downloaded from Step 4)</span></div>
+                                    <div><span class="text-green-400">manifest.json</span> <span class="text-gray-600 font-sans">— PWA manifest (from OTG repository)</span></div>
+                                    <div><span class="text-yellow-400">config.json</span> <span class="text-gray-600 font-sans">— your org config (downloaded from Step 4) ✦</span></div>
+                                    <div><span class="text-yellow-400">icon.png</span> <span class="text-gray-600 font-sans">— your logo, 512×512px recommended ✦</span></div>
+                                </div>
+                                <div class="mt-3 pt-3 border-t border-gray-800 text-gray-600 font-sans">✦ org-specific — everything else is shared across all deployments</div>
+                            </div>
                         </div>
                     </div>
 
@@ -563,6 +579,136 @@
  <script>
     const MASTER_SHEET_URL = "https://docs.google.com/spreadsheets/d/1QtcQVe0Ppl-mQbN4MOEp2RgncnHv1jyphKB4vCBPe4g/copy";
     const FILES = { worker: 'worker_template.html', monitor: 'monitor_template.html', backend: 'backend_template.js', guide: 'guide_template.html', manual: 'ops_manual_template.html' };
+
+    // Service worker source — embedded directly so no extra file is needed in the factory folder.
+    // Identical for every org (no variable injection required).
+    const SW_SOURCE = `// OTG Lone Worker Safety System — Canonical Service Worker
+// Cache name is updated by reading the version field from config.json at install time.
+// This replaces the old build-stamp approach; cache invalidation is now driven by
+// incrementing "version" in config.json rather than by regenerating files.
+
+let CACHE_NAME = 'otg-safety-v1'; // updated dynamically at install time (see below)
+
+const CRITICAL_ASSETS = [
+    './',
+    './index.html',
+    './config.json',
+    './manifest.json',
+    './icon.png',
+    'https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js',
+    'https://cdn.tailwindcss.com'
+];
+
+// ─── 1. INSTALL ──────────────────────────────────────────────────────────────
+self.addEventListener('install', event => {
+    event.waitUntil(
+        (async () => {
+            try {
+                const cfgResp = await fetch('./config.json', { cache: 'no-cache' });
+                if (cfgResp.ok) {
+                    const cfg = await cfgResp.json();
+                    if (cfg.version) {
+                        const slug = String(cfg.version).replace(/[^a-z0-9]/gi, '-');
+                        CACHE_NAME = \`otg-safety-\${slug}\`;
+                    }
+                }
+            } catch (e) {
+                console.warn('[SW] Could not read config.json version at install:', e.message);
+            }
+
+            const cache = await caches.open(CACHE_NAME);
+            console.log('[SW] Pre-caching critical assets for', CACHE_NAME);
+
+            for (const url of CRITICAL_ASSETS) {
+                try {
+                    const response = await fetch(url, {
+                        mode: url.startsWith('http') ? 'no-cors' : 'cors',
+                        redirect: 'follow'
+                    });
+                    await cache.put(url, response);
+                } catch (err) {
+                    console.warn('[SW] Could not pre-cache:', url);
+                }
+            }
+
+            await self.skipWaiting();
+        })()
+    );
+});
+
+// ─── 2. ACTIVATE ─────────────────────────────────────────────────────────────
+self.addEventListener('activate', event => {
+    event.waitUntil(
+        caches.keys().then(keys =>
+            Promise.all(
+                keys
+                    .filter(k => k !== CACHE_NAME)
+                    .map(k => {
+                        console.log('[SW] Removing old cache:', k);
+                        return caches.delete(k);
+                    })
+            )
+        ).then(() => self.clients.claim())
+    );
+});
+
+// ─── 3. FETCH ────────────────────────────────────────────────────────────────
+self.addEventListener('fetch', event => {
+    if (event.request.method !== 'GET') return;
+
+    const url = new URL(event.request.url);
+    const isConfig = url.pathname.endsWith('/config.json');
+
+    event.respondWith(
+        isConfig
+            ? networkFirstConfig(event.request)
+            : cacheFirst(event.request)
+    );
+});
+
+async function networkFirstConfig(request) {
+    try {
+        const networkResp = await fetch(request);
+        if (networkResp.ok || networkResp.status === 0) {
+            const cache = await caches.open(CACHE_NAME);
+            cache.put(request, networkResp.clone());
+        }
+        return networkResp;
+    } catch (_) {
+        const cached = await caches.match(request);
+        return cached || new Response('{"error":"config unavailable offline"}', {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' }
+        });
+    }
+}
+
+async function cacheFirst(request) {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+
+    try {
+        const networkResp = await fetch(request);
+        if (networkResp && (networkResp.status === 200 || networkResp.status === 0)) {
+            const cache = await caches.open(CACHE_NAME);
+            cache.put(request, networkResp.clone());
+        }
+        return networkResp;
+    } catch (_) {
+        return caches.match('./') || new Response('Offline', {
+            status: 503,
+            headers: { 'Content-Type': 'text/plain' }
+        });
+    }
+}
+
+// ─── 4. MESSAGES ─────────────────────────────────────────────────────────────
+self.addEventListener('message', event => {
+    if (event.data && event.data.type === 'SKIP_WAITING') {
+        event.waitUntil(self.skipWaiting());
+    }
+});`;
+
     const BLUEPRINTS = {
         Visits: `Timestamp\tDate\tWorker Name\tWorker Phone Number\tEmergency Contact Name\tEmergency Contact Number\tEmergency Contact Email\tEscalation Contact Name\tEscalation Contact Number\tEscalation Contact Email\tAlarm Status\tNotes\tLocation Name\tLocation Address\tLast Known GPS\tGPS Timestamp\tBattery Level\tPhoto 1\tDistance (km)\tVisit Report Data\tAnticipated Departure Time\tSignature\tPhoto 2\tPhoto 3\tPhoto 4`,
         Staff: `Name\tRole\tStatus\tToken\tDeviceID\tLastVehCheck\tWOFExpiry`,
@@ -1115,6 +1261,17 @@ function testConnection() {
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
         a.download = filename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 500);
+    }
+
+    function downloadSW() {
+        const blob = new Blob([SW_SOURCE], { type: 'application/javascript' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'sw.js';
         a.style.display = 'none';
         document.body.appendChild(a);
         a.click();
