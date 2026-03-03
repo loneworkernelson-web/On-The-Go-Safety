@@ -6099,7 +6099,14 @@ function toggleBatterySaver() {
         // 1. UI: Show black screen
         saver.classList.remove('hidden');
 
-        // 2. RENDERING: Stop GPU/Layout calculations
+        // 2. FULLSCREEN: Hide Android navigation bar + status bar.
+        // A fullscreenchange listener (below) re-enters fullscreen if the user
+        // drags down to reveal the browser chrome while the saver is still active.
+        const el = document.documentElement;
+        const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+        if (rfs) rfs.call(el).catch(() => {});
+
+        // 3. RENDERING: Stop GPU/Layout calculations
         main.style.display = 'none';
 
         // 4. CPU: Throttle the heartbeat
@@ -6111,26 +6118,49 @@ function toggleBatterySaver() {
         updateBatterySaverHUD();
         console.log('Battery Saver Active: throttled to 30s.');
     } else {
-        // 1. UI: Hide black screen
+        // 1. FULLSCREEN: Restore normal browser chrome
+        const efs = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen;
+        if (efs && document.fullscreenElement) efs.call(document).catch(() => {});
+
+        // 2. UI: Hide black screen
         saver.classList.add('hidden');
         
-        // 2. RENDERING: Resume UI
+        // 3. RENDERING: Resume UI
         main.style.display = 'block';
 
-        // 3. CPU: Restore normal heartbeat
+        // 4. CPU: Restore normal heartbeat
         clearInterval(tickIntervalId);
         tickIntervalId = setInterval(tick, TICK_NORMAL);
 
-        // 4. Immediate tick so the main UI is up-to-date right away
+        // 5. Immediate tick so the main UI is up-to-date right away
         tick();
         console.log('Normal Mode: Heartbeat restored to 1s.');
 
-        // 5. RESTART INACTIVITY COUNTDOWN so battery saver reactivates
+        // 6. RESTART INACTIVITY COUNTDOWN so battery saver reactivates
         // after 10 s of inactivity — this was the reason dim mode never
         // re-triggered after the user swiped to wake.
         resetInactivityTimer();
     }
 }
+
+// FULLSCREEN RE-ENTRY GUARD
+// If the user drags from the top to reveal the Android browser chrome while
+// the battery saver is active, the OS exits fullscreen. This listener detects
+// that and immediately re-requests fullscreen, keeping the nav/status bars
+// hidden and preventing accidental navigation away from the app.
+;(function() {
+    const fsChange = () => {
+        if (document.fullscreenElement) return; // Still fullscreen — nothing to do
+        const saver = document.getElementById('batterySaver');
+        if (!saver || saver.classList.contains('hidden')) return; // Saver not active
+        // Saver IS active but fullscreen was exited — re-enter it
+        const el = document.documentElement;
+        const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+        if (rfs) rfs.call(el).catch(() => {});
+    };
+    document.addEventListener('fullscreenchange',       fsChange);
+    document.addEventListener('webkitfullscreenchange', fsChange);
+})();
 
 // Feature 14: Critical Timing Mode
 function updateCriticalTimingBadge() {
