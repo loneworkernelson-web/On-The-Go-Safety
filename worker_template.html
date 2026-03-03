@@ -1558,8 +1558,6 @@ let volumeConfirmationMode = false;
 let volumeConfirmationTimeout = null;
 
 let wakeLock = null;
-let isSliding = false;
-let slideStartX = 0;
 let isSosLocked = false; // Prevent SOS immediately after wake
 
 let tickIntervalId = null; // To manage the heartbeat
@@ -1709,12 +1707,22 @@ function announce(text) {
     if ('speechSynthesis' in window) {
         try {
             const utter = new SpeechSynthesisUtterance(text);
-            
-            // Wait for voices to load on some browsers
+
             if (speechSynthesis.getVoices().length === 0) {
-                speechSynthesis.addEventListener('voiceschanged', () => {
-                    speechSynthesis.speak(utter);
-                }, { once: true });
+                // Voices not yet loaded. Store the utterance and register a single
+                // one-shot listener. If announce() is called again before voices
+                // load, the stored utterance is replaced so only the latest fires.
+                announce._pendingUtter = utter;
+                if (!announce._voicesListenerAdded) {
+                    announce._voicesListenerAdded = true;
+                    speechSynthesis.addEventListener('voiceschanged', () => {
+                        announce._voicesListenerAdded = false;
+                        if (announce._pendingUtter) {
+                            speechSynthesis.speak(announce._pendingUtter);
+                            announce._pendingUtter = null;
+                        }
+                    }, { once: true });
+                }
             } else {
                 speechSynthesis.speak(utter);
             }
@@ -1740,7 +1748,7 @@ async function logSafety(type, message) {
         'Last Known GPS': lastGPS || "0,0",
         'GPS Timestamp': new Date().toLocaleString(),
         'Battery Level': await getBatteryPercent(),
-        'App Version': 'v81.36'
+        'App Version': CONFIG.buildVersion
     };
 
     // Pass this through buildPayload to add worker credentials and action keys
@@ -1775,17 +1783,9 @@ async function refreshBatteryLevel() {
 }
 
 /**
- * FULL MISSION-CRITICAL SUBMIT REPORT
- * Includes: Action Routing for Notes, Vehicle Nag clearing, Canvas Cleanup,
- * and NEW: Site Emergency Procedures Integration.
- */
-/**
- * FULL MISSION-CRITICAL SUBMIT REPORT
- * Fixed: Site/Company handshake and media transmission for Emergency Procedures.
- */
-/**
- * PATCHED: High-Integrity Report Submission
- * Ensures media, signatures, and site context are correctly transmitted.
+ * MISSION-CRITICAL: High-Integrity Report Submission
+ * Includes action routing for notes, vehicle nag clearing, canvas cleanup,
+ * site emergency procedures integration, and correct media/signature transmission.
  */
 function submitReport() {
     // REQUIRED FIELD GATE: validate before doing anything else
@@ -3251,8 +3251,9 @@ function tick() {
  */
 function _warmAudio() {
     if (typeof Tone !== 'undefined') {
-        Tone.start().catch(e => console.warn('[Audio] Warm-up deferred:', e.message));
+        return Tone.start().catch(e => console.warn('[Audio] Warm-up deferred:', e.message));
     }
+    return Promise.resolve();
 }
 
 // ============================================================================
@@ -4543,7 +4544,6 @@ function processUploadQueue(payload) {
     else outboxProcess();
 }
 
-/**
 /**
  * PATCHED: High-Integrity Data Gathering Engine
  * Ensures signatures and auto-filled site data are correctly captured for the backend.
@@ -5875,14 +5875,41 @@ function confirmExtension(minutes) {
 // ============================================================================
 function openMidVisitMenu() {
     isMidVisitUpdate = true;
-    // For now, just trigger a simple note
-    if (confirm('Send a mid-visit status update?')) {
-        const note = prompt('Enter status update:');
-        if (note) {
-            logSafety('MID_VISIT_UPDATE', note);
-            showToast('📝 Update sent');
-        }
+    // confirm() and prompt() are blocked in iOS Safari standalone (PWA) mode.
+    // Build a lightweight modal overlay dynamically so no pre-built HTML is required.
+    const overlay = document.createElement('div');
+    overlay.id = 'midVisitOverlay';
+    overlay.className = 'fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4';
+    overlay.innerHTML = `
+        <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-sm space-y-4">
+            <h3 class="text-white font-black text-sm uppercase tracking-widest">Mid-Visit Update</h3>
+            <textarea id="midVisitNote" rows="4" placeholder="Enter status update…"
+                class="w-full bg-gray-800 border border-gray-600 rounded-xl p-3 text-white text-sm resize-none outline-none focus:border-blue-500"></textarea>
+            <div class="flex gap-3">
+                <button onclick="cancelMidVisit()" class="flex-1 py-3 rounded-xl bg-gray-700 text-white font-bold text-sm">Cancel</button>
+                <button onclick="sendMidVisitUpdate()" class="flex-1 py-3 rounded-xl bg-blue-600 text-white font-bold text-sm">Send Update</button>
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
+    setTimeout(() => document.getElementById('midVisitNote')?.focus(), 100);
+}
+
+function cancelMidVisit() {
+    isMidVisitUpdate = false;
+    const overlay = document.getElementById('midVisitOverlay');
+    if (overlay) overlay.remove();
+}
+
+function sendMidVisitUpdate() {
+    const noteEl  = document.getElementById('midVisitNote');
+    const note    = noteEl ? noteEl.value.trim() : '';
+    const overlay = document.getElementById('midVisitOverlay');
+    if (overlay) overlay.remove();
+    if (note) {
+        logSafety('MID_VISIT_UPDATE', note);
+        showToast('📝 Update sent');
     }
+    isMidVisitUpdate = false;
 }
 
 // ============================================================================
