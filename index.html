@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏭</text></svg>">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>On-The-Go App Factory v82.0 — Config Model</title>
   <script src="https://cdn.tailwindcss.com"></script>
@@ -928,6 +929,7 @@ function applyPreset(p, a, el) {
     }
 
    // NEW: Logic to sync the UI Mockup with user inputs
+function updateMockupUI() {
     const org = document.getElementById('orgName').value;
     const logo = document.getElementById('logoUrl').value;
     const primary = localStorage.getItem('otg_theme_primary') || "#1e40af";
