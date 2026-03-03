@@ -442,7 +442,7 @@
                     ZIP containing <code class="text-green-400">index.html</code> (worker app),
                     <code class="text-green-400">sw.js</code>, and
                     <code class="text-green-400">config.json</code> — ready to deploy.
-                    Add <code class="text-yellow-400">manifest.json</code> and <code class="text-yellow-400">icon.png</code> from the OTG repository to complete the folder.
+                    Your logo is embedded in config.json; no separate image file is needed.
                 </p>
             </div>
 
@@ -477,9 +477,10 @@
                 <p class="text-blue-300 font-black text-xs uppercase tracking-widest mb-3">Also download Code.gs from Step 3 — the backend is unchanged.</p>
                 <p class="text-gray-300 text-sm font-bold leading-relaxed">
                     The worker app and service worker are included in the pack above.
-                    <code class="text-yellow-400">manifest.json</code> and <code class="text-yellow-400">icon.png</code>
-                    come from the OTG repository and are shared across all deployments — only
-                    <code class="text-green-400">config.json</code> changes between orgs.
+                    Your logo, theme, and keys are all embedded inside <code class="text-green-400">config.json</code> —
+                    no separate image file is needed.
+                    A static <code class="text-yellow-400">manifest.json</code> from the OTG repository is recommended
+                    as a fallback, but the app generates its own manifest at runtime from config.
                 </p>
             </div>
 
@@ -510,12 +511,12 @@
                                 <div class="text-gray-500 mb-2">your-org-safety/</div>
                                 <div class="ml-4 space-y-1">
                                     <div><span class="text-green-400">index.html</span> <span class="text-gray-600 font-sans">— worker app (from OTG repository)</span></div>
-                                    <div><span class="text-green-400">sw.js</span> <span class="text-gray-600 font-sans">— service worker (downloaded from Step 4)</span></div>
-                                    <div><span class="text-green-400">manifest.json</span> <span class="text-gray-600 font-sans">— PWA manifest (from OTG repository)</span></div>
+                                    <div><span class="text-green-400">sw.js</span> <span class="text-gray-600 font-sans">— service worker (from OTG repository)</span></div>
+                                    <div><span class="text-green-400">manifest.json</span> <span class="text-gray-600 font-sans">— PWA manifest fallback (from OTG repository)</span></div>
                                     <div><span class="text-yellow-400">config.json</span> <span class="text-gray-600 font-sans">— your org config (downloaded from Step 4) ✦</span></div>
-                                    <div><span class="text-yellow-400">icon.png</span> <span class="text-gray-600 font-sans">— your logo, 512×512px recommended ✦</span></div>
                                 </div>
-                                <div class="mt-3 pt-3 border-t border-gray-800 text-gray-600 font-sans">✦ org-specific — everything else is shared across all deployments</div>
+                                <div class="mt-3 pt-3 border-t border-gray-800 text-gray-600 font-sans">✦ only org-specific file — logo, theme, and keys are all embedded inside it</div>
+                                <div class="mt-2 text-gray-600 font-sans italic">icon.png and manifest.json are only needed as fallbacks — the app generates both at runtime from config.json</div>
                             </div>
                         </div>
                     </div>
@@ -1318,19 +1319,19 @@ CONTENTS
   index.html   — Worker PWA (canonical, same for all orgs)
   sw.js        — Service worker (canonical, same for all orgs)
   config.json  — Your org configuration ← only this file changes between orgs
+                 (your logo, theme colours, and keys are all embedded inside it)
 
-STILL NEEDED FROM THE OTG REPOSITORY
---------------------------------------
-  manifest.json  — PWA manifest (shared across all deployments)
-  icon.png       — App icon, 512×512px recommended (replace with your logo)
+OPTIONAL — FROM THE OTG REPOSITORY
+-------------------------------------
+  manifest.json  — Static PWA manifest fallback (the app generates its own at
+                   runtime from config.json, but a static fallback is good practice)
 
 DEPLOYMENT
 ----------
-1. Add manifest.json and icon.png to this folder.
-2. Drag the complete folder to https://app.netlify.com/drop
+1. Drag this folder to https://app.netlify.com/drop
    — or push to a GitHub Pages branch.
-3. Your worker app will be live at the URL Netlify/GitHub assigns.
-4. Paste that URL back into the Factory (Step 3) and regenerate config.json
+2. Your worker app will be live at the URL Netlify/GitHub assigns.
+3. Paste that URL back into the Factory (Step 3) and regenerate config.json
    if you haven't already set the backend URL.
 
 The Monitor app (supervisor dashboard) is a separate download — it is
