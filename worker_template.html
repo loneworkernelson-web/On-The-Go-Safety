@@ -6099,16 +6099,7 @@ function toggleBatterySaver() {
         // 1. UI: Show black screen
         saver.classList.remove('hidden');
 
-        // 2. FULLSCREEN: Hide Android navigation bar + status bar
-        // requestFullscreen() suppresses both the bottom nav bar and top info bar
-        // on Android Chrome. Silently ignored on iOS (which uses meta tags instead).
-        const el = document.documentElement;
-        const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
-        if (rfs) {
-            rfs.call(el).catch(() => {}); // non-fatal if permission denied
-        }
-        
-        // 3. RENDERING: Stop GPU/Layout calculations
+        // 2. RENDERING: Stop GPU/Layout calculations
         main.style.display = 'none';
 
         // 4. CPU: Throttle the heartbeat
@@ -6120,27 +6111,21 @@ function toggleBatterySaver() {
         updateBatterySaverHUD();
         console.log('Battery Saver Active: throttled to 30s.');
     } else {
-        // 1. FULLSCREEN: Restore normal chrome
-        const efs = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen;
-        if (efs && document.fullscreenElement) {
-            efs.call(document).catch(() => {});
-        }
-
-        // 2. UI: Hide black screen
+        // 1. UI: Hide black screen
         saver.classList.add('hidden');
         
-        // 3. RENDERING: Resume UI
+        // 2. RENDERING: Resume UI
         main.style.display = 'block';
 
-        // 4. CPU: Restore normal heartbeat
+        // 3. CPU: Restore normal heartbeat
         clearInterval(tickIntervalId);
         tickIntervalId = setInterval(tick, TICK_NORMAL);
 
-        // 5. Immediate tick so the main UI is up-to-date right away
+        // 4. Immediate tick so the main UI is up-to-date right away
         tick();
         console.log('Normal Mode: Heartbeat restored to 1s.');
 
-        // 6. RESTART INACTIVITY COUNTDOWN so battery saver reactivates
+        // 5. RESTART INACTIVITY COUNTDOWN so battery saver reactivates
         // after 10 s of inactivity — this was the reason dim mode never
         // re-triggered after the user swiped to wake.
         resetInactivityTimer();
