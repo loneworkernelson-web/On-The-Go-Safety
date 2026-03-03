@@ -29,6 +29,13 @@ const sp = PropertiesService.getScriptProperties();
 const tid = sp.getProperty('REPORT_TEMPLATE_ID');
 if(tid) CONFIG.REPORT_TEMPLATE_ID = tid;
 
+// Derive the correct emergency services number from the configured country code.
+// Used in all alert email templates so contacts see the right number for their region.
+const EMERGENCY_NUMBER = (function() {
+    const map = { '+64': '111', '+61': '000', '+44': '999', '+1': '911' };
+    return map[CONFIG.COUNTRY_CODE] || '111';
+})();
+
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('🛡️ OTG Admin')
@@ -401,7 +408,7 @@ function handleResolvePost(p) {
     // This sends the Email and SMS to both emergency contacts immediately.
     handleSafetyResolution(p); 
 }
-function handleWorkerPost(p, e) {
+function handleWorkerPost(p) {
     // ── IDEMPOTENCY GUARD ────────────────────────────────────────────────────
     // The IndexedDB outbox on the worker device retries failed deliveries until
     // it receives an HTTP 200. Under no-cors mode the response is always opaque,
@@ -780,7 +787,7 @@ function triggerAlerts(p, type) {
         actionSteps   = `
             <li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhone}</li>
             <li>If there is no answer within a few minutes, contact someone at the site and ask them to check on the worker's safety</li>
-            <li>If you believe they are in danger, <strong>contact emergency services (111)</strong></li>
+            <li>If you believe they are in danger, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>
             <li>Once contact is made, ask them to resolve the alert using their safety app or call their Safety Manager</li>`;
         noteToContact = `Before escalating to police, consider that the worker may be unable to speak freely. A silent duress is designed to look like a normal message — do not reveal that you have received this alert if you speak to someone at the scene who could be the threat.`;
     }
@@ -793,7 +800,7 @@ function triggerAlerts(p, type) {
         actionSteps   = `
             <li>Try to <strong>call ${workerFirst}</strong> on ${workerPhone} immediately</li>
             <li>If there is no answer, contact someone at the site to check on the worker</li>
-            <li>If you believe they are in danger, <strong>contact emergency services (111)</strong></li>
+            <li>If you believe they are in danger, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>
             <li>Once contact is made, ask them to clear the alarm using their app PIN</li>`;
         noteToContact = `This alarm was triggered manually by the worker pressing the SOS button. It should be treated as a genuine alert unless confirmed otherwise.`;
     }
@@ -806,7 +813,7 @@ function triggerAlerts(p, type) {
         actionSteps   = `
             <li>Try to <strong>call ${workerFirst}</strong> on ${workerPhone} immediately</li>
             <li>Contact someone at the site to check on the worker's welfare</li>
-            <li>If unreachable after a reasonable effort, <strong>consider contacting emergency services (111)</strong> and providing the location above</li>`;
+            <li>If unreachable after a reasonable effort, <strong>consider contacting emergency services (${EMERGENCY_NUMBER})</strong> and providing the location above</li>`;
         noteToContact = `Before escalating to police, consider that the worker may be out of mobile data coverage, may have closed the app, or may have a flat battery. Try calling, texting, and checking with the site first.`;
     }
     else if (status.includes('OVERDUE') || status.includes('CRITICAL ESCALATION') || status.includes('OVERDUE WARNING')) {
@@ -818,7 +825,7 @@ function triggerAlerts(p, type) {
         actionSteps   = `
             <li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhone}</li>
             <li>If you cannot reach them, contact someone at the site and ask them to check on the worker's safety</li>
-            <li>If they remain unreachable and you have concerns, <strong>contact emergency services (111)</strong></li>`;
+            <li>If they remain unreachable and you have concerns, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>`;
         noteToContact = `Before escalating to police, consider that the worker may be running late, out of coverage, or have a flat battery. Try calling, texting, and other contact methods first.`;
     }
     else if (status.includes('TEST_ALERT')) {
@@ -837,7 +844,7 @@ function triggerAlerts(p, type) {
         // Fallback for any other status (CRITICAL TIMING, LOW BATTERY, etc.)
         whatHappened  = `A safety event has been recorded for this worker. Status: <strong>${status}</strong>.`;
         actionSteps   = `<li>Try to contact <strong>${workerFirst}</strong> on ${workerPhone}</li>
-                         <li>If you have concerns about their safety, contact emergency services (111)</li>`;
+                         <li>If you have concerns about their safety, contact emergency services (${EMERGENCY_NUMBER})</li>`;
         noteToContact = '';
     }
 
