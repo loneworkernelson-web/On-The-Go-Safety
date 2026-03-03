@@ -29,13 +29,6 @@ const sp = PropertiesService.getScriptProperties();
 const tid = sp.getProperty('REPORT_TEMPLATE_ID');
 if(tid) CONFIG.REPORT_TEMPLATE_ID = tid;
 
-// Derive the correct emergency services number from the configured country code.
-// Used in all alert email templates so contacts see the right number for their region.
-const EMERGENCY_NUMBER = (function() {
-    const map = { '+64': '111', '+61': '000', '+44': '999', '+1': '911' };
-    return map[CONFIG.COUNTRY_CODE] || '111';
-})();
-
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('🛡️ OTG Admin')
@@ -699,6 +692,23 @@ function dataURItoBlob(dataURI) {
     }
 }
 
+function handleRegisterDevice(p) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Staff');
+  if (!sheet) return { status: "error", message: "Staff sheet missing" };
+  const data = sheet.getDataRange().getValues();
+  const workerName = p['Worker Name'];
+  const deviceId = p.deviceId;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === workerName) {
+      // Column E (index 4) — bind this device ID to the worker
+      sheet.getRange(i + 1, 5).setValue(deviceId);
+      return { status: "success", message: "Device successfully bound to " + workerName };
+    }
+  }
+  return { status: "error", message: "Worker not found in Staff registry" };
+}
+
 function updateStaffStatus(p) {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     let sheet = ss.getSheetByName('Staff');
@@ -787,7 +797,7 @@ function triggerAlerts(p, type) {
         actionSteps   = `
             <li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhone}</li>
             <li>If there is no answer within a few minutes, contact someone at the site and ask them to check on the worker's safety</li>
-            <li>If you believe they are in danger, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>
+            <li>If you believe they are in danger, <strong>contact emergency services (111)</strong></li>
             <li>Once contact is made, ask them to resolve the alert using their safety app or call their Safety Manager</li>`;
         noteToContact = `Before escalating to police, consider that the worker may be unable to speak freely. A silent duress is designed to look like a normal message — do not reveal that you have received this alert if you speak to someone at the scene who could be the threat.`;
     }
@@ -800,7 +810,7 @@ function triggerAlerts(p, type) {
         actionSteps   = `
             <li>Try to <strong>call ${workerFirst}</strong> on ${workerPhone} immediately</li>
             <li>If there is no answer, contact someone at the site to check on the worker</li>
-            <li>If you believe they are in danger, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>
+            <li>If you believe they are in danger, <strong>contact emergency services (111)</strong></li>
             <li>Once contact is made, ask them to clear the alarm using their app PIN</li>`;
         noteToContact = `This alarm was triggered manually by the worker pressing the SOS button. It should be treated as a genuine alert unless confirmed otherwise.`;
     }
@@ -813,7 +823,7 @@ function triggerAlerts(p, type) {
         actionSteps   = `
             <li>Try to <strong>call ${workerFirst}</strong> on ${workerPhone} immediately</li>
             <li>Contact someone at the site to check on the worker's welfare</li>
-            <li>If unreachable after a reasonable effort, <strong>consider contacting emergency services (${EMERGENCY_NUMBER})</strong> and providing the location above</li>`;
+            <li>If unreachable after a reasonable effort, <strong>consider contacting emergency services (111)</strong> and providing the location above</li>`;
         noteToContact = `Before escalating to police, consider that the worker may be out of mobile data coverage, may have closed the app, or may have a flat battery. Try calling, texting, and checking with the site first.`;
     }
     else if (status.includes('OVERDUE') || status.includes('CRITICAL ESCALATION') || status.includes('OVERDUE WARNING')) {
@@ -825,7 +835,7 @@ function triggerAlerts(p, type) {
         actionSteps   = `
             <li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhone}</li>
             <li>If you cannot reach them, contact someone at the site and ask them to check on the worker's safety</li>
-            <li>If they remain unreachable and you have concerns, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>`;
+            <li>If they remain unreachable and you have concerns, <strong>contact emergency services (111)</strong></li>`;
         noteToContact = `Before escalating to police, consider that the worker may be running late, out of coverage, or have a flat battery. Try calling, texting, and other contact methods first.`;
     }
     else if (status.includes('TEST_ALERT')) {
@@ -844,7 +854,7 @@ function triggerAlerts(p, type) {
         // Fallback for any other status (CRITICAL TIMING, LOW BATTERY, etc.)
         whatHappened  = `A safety event has been recorded for this worker. Status: <strong>${status}</strong>.`;
         actionSteps   = `<li>Try to contact <strong>${workerFirst}</strong> on ${workerPhone}</li>
-                         <li>If you have concerns about their safety, contact emergency services (${EMERGENCY_NUMBER})</li>`;
+                         <li>If you have concerns about their safety, contact emergency services (111)</li>`;
         noteToContact = '';
     }
 
@@ -1825,8 +1835,11 @@ function triggerEscalation(sheet, entry, newStatus, isDual) {
  * Logic: Notifies both contacts that the emergency has ended.
  */
 function handleSafetyResolution(p) {
-    // 1. Update the Visit Record for the audit trail
-    handleWorkerPost(p);
+    // NOTE: handleWorkerPost is NOT called here. When invoked via the 'resolve'
+    // action, handleResolvePost has already written/updated the Visits row.
+    // When invoked directly via 'notifySafety', the caller is responsible for
+    // any prior sheet write. Calling handleWorkerPost here caused a duplicate
+    // row on every resolution.
 
     // GUARD: Only send All Clear if an overdue/alarm alert was actually sent.
     // If the worker resolved quickly before any alert fired, contacts never
