@@ -336,6 +336,9 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 </div>
 
 <div id="batterySaver" class="fixed inset-0 bg-black z-[9999] hidden flex flex-col items-center justify-between py-16 px-10 text-white select-none"
+     role="status"
+     aria-label="Screen dimmed — visit in progress. Slide to wake."
+     aria-live="polite"
      ontouchstart="event.stopPropagation()" onclick="event.stopPropagation()">
     
     <div class="text-center space-y-4">
@@ -347,7 +350,8 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 
     <!-- Timer display - tap-to-wake removed (8d); timer was never clickable anyway -->
     <div class="space-y-1">
-        <p id="saverTimerHUD" class="text-5xl font-mono font-bold text-gray-300">--:--</p>
+        <p id="saverTimerHUD" class="text-5xl font-mono font-bold text-gray-300"
+           aria-live="off" aria-label="Time remaining">--:--</p>
     </div>
         
         <div class="flex items-center justify-center gap-2 text-gray-300">
@@ -359,8 +363,12 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
     </div>
 
     <div class="w-full max-w-xs space-y-8">
-        <div id="wakeSlidePill" class="relative bg-gray-900/40 h-16 rounded-full p-1 border border-gray-800 flex items-center overflow-hidden shadow-inner">
+        <div id="wakeSlidePill"
+             class="relative bg-gray-900/40 h-16 rounded-full p-1 border border-gray-800 flex items-center overflow-hidden shadow-inner"
+             role="group"
+             aria-label="Slide to wake screen">
             <input type="range" id="wakeSlider" min="0" max="100" value="0" 
+                   aria-label="Drag right to wake screen"
                    class="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10">
             
             <div id="sliderThumb" class="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-2xl transition-all duration-75 pointer-events-none z-20">
@@ -3235,6 +3243,18 @@ function tick() {
     }
 }
 
+/**
+ * Audio context warm-up. Must be called during a user gesture to satisfy
+ * browser autoplay policies — particularly important on iOS where the audio
+ * context starts suspended and silent beeps result if not pre-unlocked.
+ * Safe to call multiple times; Tone ignores subsequent calls if already running.
+ */
+function _warmAudio() {
+    if (typeof Tone !== 'undefined') {
+        Tone.start().catch(e => console.warn('[Audio] Warm-up deferred:', e.message));
+    }
+}
+
 // ============================================================================
 // ENHANCED RENDER LOCATIONS (Layout Corrected)
 // ============================================================================
@@ -3508,6 +3528,10 @@ async function saveWizard() {
     renderLocations();
     setupHoldToStart();
     updateArrivedButtonState();
+
+    // Warm up the audio context on this confirmed user gesture so Tone.js is
+    // ready before the first visit — avoids silent beeps on iOS.
+    _warmAudio();
 
     navigate('main');
 
@@ -4085,7 +4109,7 @@ async function startVisit(isSkipCheck = false) {
     }
 
     try {
-        await Promise.race([Tone.start(), new Promise(r => setTimeout(r, 500))]);
+        await Promise.race([_warmAudio(), new Promise(r => setTimeout(r, 500))]);
     } catch (e) { console.warn("Audio skipped"); }
 
     const locId = state.selectedLocationId;
@@ -4342,6 +4366,29 @@ async function outboxEnqueue(payload) {
                     .replace(/[^A-Z0-9_\- ]/g, '').replace(/\s+/g, '_').slice(0, 30));
     const rand = Math.random().toString(36).slice(2, 6);
     const idempotencyKey = `${wn}:${st}:${Date.now()}:${rand}`;
+
+    // ── Queue cap guard ──────────────────────────────────────────────────────
+    // Count pending items before writing. Safety events are never dropped, but
+    // we warn the worker loudly when the queue is unusually deep — this almost
+    // always means a persistent connectivity failure that needs attention.
+    try {
+        const db = await _outboxDB();
+        const pendingCount = await new Promise(resolve => {
+            const tx  = db.transaction('events', 'readonly');
+            const req = tx.objectStore('events').index('status').count(IDBKeyRange.only('pending'));
+            req.onsuccess = e => resolve(e.target.result || 0);
+            req.onerror   = () => resolve(0);
+        });
+        if (pendingCount >= 50) {
+            // Show toast once per session (guard via flag to avoid toast spam)
+            if (!outboxEnqueue._capWarnedThisSession) {
+                outboxEnqueue._capWarnedThisSession = true;
+                showToast('⚠️ 50+ unsent events queued — check your connection. Data is safe and will send when online.');
+            }
+            console.warn(`Outbox: ${pendingCount} pending items — connectivity issue suspected.`);
+        }
+    } catch (_) { /* Non-fatal — cap check failure never blocks enqueue */ }
+    // ────────────────────────────────────────────────────────────────────────
 
     const record = {
         idempotencyKey,
@@ -5188,6 +5235,7 @@ function saveSettings() {
     saveState();
     
     showToast('✅ Settings Saved');
+    _warmAudio(); // Secondary warm-up opportunity on confirmed user gesture
     navigate('main');
 }
 
