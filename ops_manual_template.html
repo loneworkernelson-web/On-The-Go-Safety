@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>%%ORG_NAME%% - OTG Safety System Operations Manual</title>
+    <style>
+        :root {
+            --primary: #1e3a8a;
+            --accent: #3b82f6;
+            --success: #059669;
+            --warning: #d97706;
+            --danger: #dc2626;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.7;
+            color: #1f2937;
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 0;
+            background: #f3f4f6;
+        }
+        .outer { background: white; padding: 50px; border-radius: 0; }
+        @media (max-width: 700px) { .outer { padding: 20px; } }
+        h1 {
+            color: #111827;
+            font-size: 2.2em;
+            border-bottom: 5px solid var(--accent);
+            padding-bottom: 16px;
+            margin-bottom: 8px;
+        }
+        .doc-meta { color: #6b7280; font-size: 0.9em; margin-bottom: 40px; }
+        h2 {
+            color: var(--primary);
+            font-size: 1.7em;
+            margin-top: 60px;
+            border-left: 7px solid var(--accent);
+            padding-left: 18px;
+        }
+        h3 { color: #374151; margin-top: 32px; font-size: 1.2em; font-weight: 800; }
+        h4 { color: #4b5563; margin-top: 20px; font-size: 1em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+        p, li { margin-bottom: 10px; font-size: 15px; }
+        ul { padding-left: 1.4em; }
+        ol { padding-left: 1.4em; }
+        code {
+            background: #f3f4f6;
+            border: 1px solid #e5e7eb;
+            padding: 2px 7px;
+            border-radius: 4px;
+            font-family: 'Consolas', monospace;
+            color: #dc2626;
+            font-weight: 700;
+            font-size: 0.9em;
+        }
+        .key-rule {
+            background: #fefce8;
+            border: 2px solid #ca8a04;
+            border-radius: 12px;
+            padding: 24px 28px;
+            margin: 32px 0;
+        }
+        .key-rule h3 { color: #92400e; margin-top: 0; }
+        .key-rule p { color: #78350f; }
+
+        .warning-box {
+            background: #fff5f5;
+            border: 1px solid #fecaca;
+            border-left: 6px solid var(--danger);
+            padding: 18px 22px;
+            border-radius: 0 10px 10px 0;
+            margin: 20px 0;
+        }
+        .warning-box h3 { color: #7f1d1d; margin-top: 0; }
+        .info-box {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-left: 6px solid var(--accent);
+            padding: 18px 22px;
+            border-radius: 0 10px 10px 0;
+            margin: 20px 0;
+        }
+        .success-box {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-left: 6px solid var(--success);
+            padding: 18px 22px;
+            border-radius: 0 10px 10px 0;
+            margin: 20px 0;
+        }
+        .step-card {
+            display: flex;
+            gap: 20px;
+            padding: 20px 0;
+            border-bottom: 1px solid #f3f4f6;
+            align-items: flex-start;
+        }
+        .step-card:last-child { border-bottom: none; }
+        .step-num {
+            width: 44px;
+            height: 44px;
+            background: var(--accent);
+            color: white;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 900;
+            font-size: 1.2em;
+            flex-shrink: 0;
+            box-shadow: 0 4px 12px rgba(59,130,246,0.35);
+        }
+        .step-card-body { flex: 1; }
+        .step-card-body h4 { margin: 0 0 8px; color: #111827; font-size: 1em; text-transform: none; letter-spacing: normal; }
+
+        .trigger-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+        @media (max-width: 620px) { .trigger-grid { grid-template-columns: 1fr; } }
+        .trigger-card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 18px;
+            color: white;
+        }
+        .trigger-card h5 {
+            margin: 0 0 8px;
+            font-size: 0.8em;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #94a3b8;
+        }
+        .trigger-card .fn { font-family: 'Consolas', monospace; font-size: 0.9em; color: #a5b4fc; margin-bottom: 6px; font-weight: 700; }
+        .trigger-card .schedule { font-size: 0.8em; color: #86efac; }
+        .trigger-badge {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            padding: 2px 8px;
+            border-radius: 99px;
+            margin-left: 8px;
+            letter-spacing: 0.05em;
+        }
+        .badge-required { background: #1e3a8a; color: #93c5fd; }
+        .badge-recommended { background: #064e3b; color: #6ee7b7; }
+        .badge-optional { background: #374151; color: #d1d5db; }
+
+        /* ── File tree ── */
+        .file-tree {
+            background: #0f172a;
+            border: 1px solid #1e293b;
+            border-radius: 10px;
+            padding: 20px 24px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.85em;
+            line-height: 2;
+            margin: 16px 0;
+        }
+        .file-tree .folder { color: #64748b; }
+        .file-tree .repo  { color: #86efac; }
+        .file-tree .org   { color: #fde68a; }
+        .file-tree .note  { color: #475569; font-family: 'Segoe UI', sans-serif; margin-left: 12px; }
+
+        /* ── Mock-up Factory UI ── */
+        .mock-factory {
+            background: #0f172a;
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid #1e293b;
+            margin: 24px 0;
+            box-shadow: 0 16px 40px rgba(0,0,0,0.3);
+            font-family: 'Segoe UI', sans-serif;
+        }
+        .mock-factory-tabs {
+            background: #1e293b;
+            display: flex;
+            border-bottom: 1px solid #334155;
+        }
+        .mock-tab {
+            flex: 1;
+            padding: 10px 4px;
+            text-align: center;
+            font-size: 9px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #64748b;
+            border-bottom: 3px solid transparent;
+        }
+        .mock-tab.active { color: #60a5fa; border-color: #3b82f6; background: #1f2937; }
+        .mock-factory-body { padding: 20px; }
+
+        /* ── Mock Monitor Dashboard ── */
+        .mock-monitor {
+            background: #0f172a;
+            border-radius: 12px;
+            padding: 16px;
+            margin: 20px 0;
+            border: 1px solid #1e293b;
+        }
+        .mock-monitor-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 14px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #1e293b;
+        }
+        .monitor-card-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        @media (max-width: 560px) { .monitor-card-grid { grid-template-columns: 1fr 1fr; } }
+        .monitor-card {
+            border-radius: 10px;
+            padding: 12px;
+            font-size: 10px;
+            color: white;
+        }
+        .mc-active  { background: #14532d; border: 1px solid #16a34a; }
+        .mc-overdue { background: #78350f; border: 1px solid #d97706; }
+        .mc-sos     { background: #7f1d1d; border: 1px solid #dc2626; animation: mc-pulse 1.5s infinite; }
+        .mc-duress  { background: #581c87; border: 1px solid #9333ea; }
+        .mc-idle    { background: #1e293b; border: 1px solid #334155; color: #64748b; }
+        @keyframes mc-pulse { 0%,100% { opacity:1; } 50% { opacity:0.7; } }
+        .monitor-card .mc-name { font-weight: 800; margin-bottom: 3px; }
+        .monitor-card .mc-loc  { color: rgba(255,255,255,0.65); font-size: 9px; }
+        .monitor-card .mc-time { color: rgba(255,255,255,0.5); font-size: 9px; margin-top: 4px; }
+        .monitor-card .mc-status { display:inline-block; font-weight:800; font-size:9px; padding:2px 6px; border-radius:99px; margin-top:4px; }
+        .ms-active  { background:#166534; color:#86efac; }
+        .ms-overdue { background:#92400e; color:#fde68a; }
+        .ms-sos     { background:#991b1b; color:#fca5a5; }
+        .ms-duress  { background:#6b21a8; color:#d8b4fe; }
+
+        /* ── Code snippet box ── */
+        .code-box {
+            background: #0f172a;
+            border: 1px solid #1e293b;
+            border-left: 4px solid #6366f1;
+            border-radius: 0 8px 8px 0;
+            padding: 16px 20px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.82em;
+            color: #a5b4fc;
+            white-space: pre-wrap;
+            margin: 12px 0;
+            line-height: 1.6;
+            overflow-x: auto;
+        }
+
+        /* ── Tables ── */
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
+        th { background: #eff6ff; color: var(--primary); text-align: left; padding: 12px; border: 1px solid #dbeafe; font-weight: 800; }
+        td { padding: 12px; border: 1px solid #e5e7eb; color: #374151; vertical-align: top; }
+        tr:nth-child(even) td { background: #f9fafb; }
+
+        hr { border: 0; border-top: 3px solid #e5e7eb; margin: 60px 0; }
+        .toc { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px 28px; margin: 32px 0; }
+        .toc h3 { margin-top: 0; }
+        .toc ol { margin: 0; padding-left: 1.4em; }
+        .toc li { margin-bottom: 4px; font-size: 14px; }
+        .toc a { color: var(--accent); text-decoration: none; font-weight: 600; }
+        .toc a:hover { text-decoration: underline; }
+        footer { text-align: center; font-size: 0.85em; color: #9ca3af; padding: 30px 0 10px; border-top: 1px solid #e5e7eb; margin-top: 60px; }
+    </style>
+</head>
+<body>
+<div class="outer">
+
+    <h1>Operations Manual</h1>
+    <p class="doc-meta">
+        <strong>System:</strong> %%ORG_NAME%% — OTG Lone Worker Safety System &nbsp;|&nbsp;
+        <strong>Architecture:</strong> Config Model &nbsp;|&nbsp;
+        <strong>Version:</strong> v82.0
+    </p>
+
+    <div class="toc">
+        <h3>Contents</h3>
+        <ol>
+            <li><a href="#security">Security Keys — The Golden Rule</a></li>
+            <li><a href="#deployment">Initial Deployment — 5 Steps</a></li>
+            <li><a href="#monitor">Monitor Dashboard</a></li>
+            <li><a href="#admin">Daily Administration</a></li>
+            <li><a href="#updates">Updates &amp; Configuration Changes</a></li>
+            <li><a href="#features">Advanced Features</a></li>
+            <li><a href="#troubleshoot">Troubleshooting</a></li>
+        </ol>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2 id="security">Part 1: Security Keys — The Golden Rule</h2>
+
+    <div class="key-rule">
+        <h3>🔐 Save Your Keys — Right Now</h3>
+        <p>Your system uses two secret keys generated in <strong>Factory Step 1</strong>. These must be saved somewhere secure (e.g. a password manager) <em>before</em> you proceed with deployment.</p>
+        <table style="margin:0;">
+            <thead><tr><th>Key</th><th>Purpose</th><th>Who Needs It</th></tr></thead>
+            <tbody>
+                <tr><td><strong>Secret Key</strong> (Admin)</td><td>Authenticates the backend script. Used to access the spreadsheet and unlock the Monitor.</td><td>Administrators only — never share.</td></tr>
+                <tr><td><strong>Worker Key</strong> (App)</td><td>Authenticates worker devices connecting to the backend.</td><td>Embedded in <code>config.json</code> — workers don't enter it manually.</td></tr>
+            </tbody>
+        </table>
+        <p style="margin-top:16px;color:#92400e;"><strong>⚠️ If you deploy with different keys later:</strong> Every device will lose its connection and require a full reinstall. If you use the same keys in future config updates, devices update seamlessly in the background. There is no penalty for keeping the same keys indefinitely.</p>
+    </div>
+
+    <div class="info-box">
+        <strong>Where to find your keys:</strong> Open the OTG Factory app (<code>index.html</code>) — your keys are shown in <strong>Step 1 → Security Connection Keys</strong>. The Factory remembers them between sessions using your browser's local storage. They are not re-printed in this document for security reasons.
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2 id="deployment">Part 2: Initial Deployment — 5 Steps</h2>
+
+    <div class="info-box">
+        <strong>Config Model architecture:</strong> The OTG worker app is a <em>single canonical codebase</em> shared by all organisations. You do not build or customise the app itself — you produce a small <code>config.json</code> file that the app reads at runtime. The only files unique to your organisation are <code>config.json</code> and <code>icon.png</code>.
+    </div>
+
+    <div class="mock-factory">
+        <div class="mock-factory-tabs">
+            <div class="mock-tab active">1. Config</div>
+            <div class="mock-tab">2. Database</div>
+            <div class="mock-tab">3. Cloud System</div>
+            <div class="mock-tab">4. Download Config</div>
+            <div class="mock-tab">5. Deployment</div>
+        </div>
+        <div class="mock-factory-body">
+            <div style="color:#94a3b8;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">OTG AppSuite Factory — v82.0 · Config Model</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div>
+                    <div style="font-size:9px;color:#60a5fa;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Organisation Name</div>
+                    <div style="background:#1e293b;border:2px solid #475569;border-radius:8px;padding:8px 12px;font-size:11px;color:white;font-weight:700;">%%ORG_NAME%%</div>
+                </div>
+                <div>
+                    <div style="font-size:9px;color:#60a5fa;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">App Icon Label</div>
+                    <div style="background:#1e293b;border:2px solid #475569;border-radius:8px;padding:8px 12px;font-size:11px;color:#4ade80;font-weight:700;">Safety</div>
+                </div>
+            </div>
+            <div style="margin-top:12px;background:#1e293b;border-radius:10px;padding:12px;border:1px solid #334155;">
+                <div style="font-size:9px;color:#94a3b8;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">🔐 Security Connection Keys</div>
+                <div style="font-size:9px;color:#60a5fa;font-weight:800;margin-bottom:3px;">Secret Key (Admin Only)</div>
+                <div style="background:#020617;border:2px solid #22c55e;border-radius:6px;padding:7px 10px;font-family:monospace;font-size:10px;color:#fde68a;margin-bottom:8px;">kauri-harbour-ember-summit-47-rimu</div>
+                <div style="font-size:9px;color:#60a5fa;font-weight:800;margin-bottom:3px;">Worker Key (App Setup)</div>
+                <div style="background:#020617;border:1px solid #334155;border-radius:6px;padding:7px 10px;font-family:monospace;font-size:10px;color:#4ade80;">wk_m3x9pzk2q</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 1 -->
+    <div class="step-card">
+        <div class="step-num">1</div>
+        <div class="step-card-body">
+            <h4>Configure (Factory Step 1)</h4>
+            <p>In the Factory app, fill in all fields on the <strong>Config tab</strong>:</p>
+            <ul>
+                <li><strong>Organisation Name</strong> — appears in all emails and generated documents</li>
+                <li><strong>App Icon Label</strong> — short name shown under the home screen icon (max 12 characters)</li>
+                <li><strong>Security Keys</strong> — click 🔄 to auto-generate both keys, or enter your own. The Secret Key must be 32–64 characters (the counter turns green when valid).</li>
+                <li><strong>Regional Logic</strong> — sets the timezone, voice locale, and vehicle roadworthy term (%%VEHICLE_TERM%% for NZ, Rego for AU, etc.)</li>
+                <li><strong>App Branding</strong> — upload your logo; the Factory will extract your brand colours and preview the app live</li>
+                <li><strong>Safety &amp; Fleet Options</strong> — configure alarm grace period, mileage tracking, travel reports, welfare check-ins, vehicle tracking, AI redaction, API keys, and notification services</li>
+            </ul>
+            <div class="warning-box" style="margin-top:12px;">
+                <strong>Save your keys now</strong> — before moving to Step 2. See Part 1 of this manual.
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="step-card">
+        <div class="step-num">2</div>
+        <div class="step-card-body">
+            <h4>Database Setup (Factory Step 2)</h4>
+            <p>You need a Google Sheet to store visit records, staff, sites, and report templates.</p>
+            <p><strong>Option A — Recommended:</strong> Click <strong>"✨ Create Database Copy"</strong>. This opens a pre-configured Google Sheet template in your browser. Make a copy to your own Google Drive.</p>
+            <p><strong>Option B — Manual:</strong> Create a new sheet at <a href="https://sheets.new" style="color:var(--accent);">sheets.new</a>, create 4 tabs named exactly: <code>Visits</code>, <code>Staff</code>, <code>Templates</code>, <code>Sites</code>, then click each <strong>"Copy Blueprint"</strong> button and paste into the first row of each tab.</p>
+            <div class="info-box" style="margin-top:12px;">
+                <strong>Identity Matching (important):</strong> The name in the <code>Staff</code> tab must match exactly what workers type into the setup wizard — case-sensitive.
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="step-card">
+        <div class="step-num">3</div>
+        <div class="step-card-body">
+            <h4>Install the Backend (Factory Step 3)</h4>
+            <p>The backend is a Google Apps Script that handles all safety logic — overdue detection, email alerts, SMS, AI report processing, and data archiving.</p>
+
+            <h4 style="margin-top:16px;">A. Paste the Code</h4>
+            <ol>
+                <li>In the Factory, click <strong>"📋 Copy System Code"</strong>.</li>
+                <li>In your Google Sheet, go to <strong>Extensions → Apps Script</strong>.</li>
+                <li>Delete all existing code in the editor.</li>
+                <li>Paste and click <strong>Save</strong> (disk icon).</li>
+            </ol>
+
+            <h4 style="margin-top:16px;">B. Deploy as a Web App</h4>
+            <ol>
+                <li>Click <strong>Deploy</strong> (blue button) → <strong>New Deployment</strong>.</li>
+                <li>Click the gear icon ⚙ next to "Select type" → choose <strong>Web App</strong>.</li>
+                <li>Set <strong>Execute as: Me</strong>.</li>
+                <li>Set <strong>Who has access: Anyone</strong>.</li>
+                <li>Click <strong>Deploy</strong>. Accept the permissions prompt.</li>
+                <li><strong>Copy the Web App URL</strong> — you'll need it in Step 3 of the Factory.</li>
+            </ol>
+
+            <h4 style="margin-top:16px;">C. Set Up Triggers (Automated Tasks)</h4>
+            <p>Triggers are the automation engine — without them, overdue detection and alerting will not work. Set up all five:</p>
+
+            <div class="trigger-grid">
+                <div class="trigger-card">
+                    <h5>A. Safety Watchdog <span class="trigger-badge badge-required">Required</span></h5>
+                    <div class="fn">checkOverdueVisits</div>
+                    <div class="schedule">⏱ Time-driven · Every 10 minutes</div>
+                    <p style="font-size:11px;color:#94a3b8;margin-top:8px;margin-bottom:0;">Scans for workers who haven't checked out or confirmed safety within the grace period. Fires email + SMS alerts.</p>
+                </div>
+                <div class="trigger-card">
+                    <h5>B. Privacy Shredder <span class="trigger-badge badge-required">Required</span></h5>
+                    <div class="fn">cleanupPrivateSentNotes</div>
+                    <div class="schedule">⏱ Time-driven · Every hour</div>
+                    <p style="font-size:11px;color:#94a3b8;margin-top:8px;margin-bottom:0;">Removes raw personal notes from processed visit records after AI has processed them.</p>
+                </div>
+                <div class="trigger-card">
+                    <h5>C. Daily Health Report <span class="trigger-badge badge-recommended">Recommended</span></h5>
+                    <div class="fn">sendHealthEmail</div>
+                    <div class="schedule">⏱ Day timer · e.g. 7am–8am</div>
+                    <p style="font-size:11px;color:#94a3b8;margin-top:8px;margin-bottom:0;">Emails a daily system summary — visit counts, escalations, failed alert emails, any stale open visits. Your early-warning system.</p>
+                </div>
+                <div class="trigger-card">
+                    <h5>D. Data Archiver <span class="trigger-badge badge-optional">Optional</span></h5>
+                    <div class="fn">archiveOldData</div>
+                    <div class="schedule">⏱ Week timer · e.g. Sunday</div>
+                    <p style="font-size:11px;color:#94a3b8;margin-top:8px;margin-bottom:0;">Moves completed visits older than 30 days to an Archive tab. Only closed visits are moved — active records are never touched.</p>
+                </div>
+                <div class="trigger-card" style="grid-column:span 2;">
+                    <h5>E. Weekly Safety Summary <span class="trigger-badge badge-optional">Optional</span></h5>
+                    <div class="fn">sendWeeklySummary</div>
+                    <div class="schedule">⏱ Week timer · e.g. Monday 7am–8am</div>
+                    <p style="font-size:11px;color:#94a3b8;margin-top:8px;margin-bottom:0;">Emails a brief weekly digest — total visits, distance travelled, and safety alerts fired in the past 7 days. Useful for management reporting without opening the spreadsheet.</p>
+                </div>
+            </div>
+
+            <div class="info-box">
+                <strong>How to add triggers:</strong> In the Apps Script editor, click the <strong>Alarm Clock icon</strong> in the left sidebar → <strong>+ Add Trigger</strong> (bottom right). Set the function name, source (Time-driven), and interval as shown above for each trigger.
+            </div>
+
+            <h4 style="margin-top:16px;">D. Paste the Web App URL Back into the Factory</h4>
+            <p>Return to the Factory, go to <strong>Step 3</strong>, paste your Web App URL into the URL field, then click <strong>"📡 Test System Connection"</strong>. A green "System Link Established" response confirms everything is working before you proceed.</p>
+        </div>
+    </div>
+
+    <!-- Step 4 -->
+    <div class="step-card">
+        <div class="step-num">4</div>
+        <div class="step-card-body">
+            <h4>Download Your Files (Factory Step 4)</h4>
+            <p>Once the connection test passes, proceed to Step 4. Download everything listed here:</p>
+            <table>
+                <thead><tr><th>File</th><th>What it is</th><th>Required?</th></tr></thead>
+                <tbody>
+                    <tr><td><code>config.json</code></td><td>Your organisation's configuration file. The only org-specific file the worker app needs.</td><td>✅ Required</td></tr>
+                    <tr><td><code>sw.js</code></td><td>Service worker — enables offline use and PWA caching. Identical for all organisations.</td><td>✅ Required (once only)</td></tr>
+                    <tr><td><code>{org}_monitor.html</code></td><td>Self-contained supervisor dashboard. Open in any browser — no hosting required.</td><td>✅ Required</td></tr>
+                    <tr><td><code>{org}_worker_guide.html</code></td><td>Printable/shareable worker guide, pre-filled with your org name and vehicle term.</td><td>Optional</td></tr>
+                    <tr><td><code>{org}_ops_manual.html</code></td><td>This document.</td><td>Optional</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Step 5 -->
+    <div class="step-card">
+        <div class="step-num">5</div>
+        <div class="step-card-body">
+            <h4>Deploy the Worker App (Factory Step 5)</h4>
+
+            <h4 style="margin-top:16px;">A. Assemble Your Deployment Folder</h4>
+            <p>Create a folder on your computer with all of the following files at the same level — no subfolders:</p>
+            <div class="file-tree">
+<span class="folder">your-org-safety/</span>
+├── <span class="repo">index.html</span>        <span class="note">← worker app (from OTG repository)</span>
+├── <span class="repo">sw.js</span>             <span class="note">← downloaded from Factory Step 4</span>
+├── <span class="repo">manifest.json</span>     <span class="note">← PWA manifest (from OTG repository)</span>
+├── <span class="org">config.json</span>        <span class="note">← your org config (downloaded from Step 4) ✦</span>
+└── <span class="org">icon.png</span>           <span class="note">← your logo, 512×512px recommended ✦</span>
+
+<span class="note">✦ org-specific — everything else is shared across all deployments</span></div>
+
+            <h4 style="margin-top:16px;">B. Upload to a Static Host</h4>
+            <p>Drag your folder to <strong>Netlify Drop</strong> (<a href="https://app.netlify.com/drop" style="color:var(--accent);">app.netlify.com/drop</a>) or push to a GitHub Pages branch.</p>
+
+            <div class="warning-box" style="margin-top:12px;">
+                <strong>Important — Netlify:</strong> After the initial upload, click <strong>"Sign up to claim site"</strong> so the URL doesn't expire after 24 hours. For future config updates, drag the new folder onto your existing Netlify site dashboard (not the Drop page) to update it in place without changing the URL.
+            </div>
+
+            <h4 style="margin-top:16px;">C. Test Offline Before Launch</h4>
+            <p>Install the PWA on a test device, load it once on Wi-Fi, then switch to Airplane Mode and reopen. Confirm it loads fully with correct branding. This verifies the offline-first safety guarantee.</p>
+
+            <h4 style="margin-top:16px;">D. Generate Your Onboarding Pack</h4>
+            <p>Back in the Factory, go to <strong>Step 5 → Staff Onboarding Pack</strong>. Paste your deployed URL to generate:</p>
+            <ul>
+                <li>A ready-to-send <strong>welcome email</strong> for staff with installation instructions</li>
+                <li>A <strong>QR code</strong> linking directly to the app (right-click to save as image)</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2 id="monitor">Part 3: Monitor Dashboard</h2>
+
+    <p>The Monitor is a self-contained HTML file (downloaded in Step 4). Open it in any modern browser — it does not require hosting or internet access to load, though it needs connectivity to poll for live data.</p>
+
+    <h3>Unlocking the Monitor</h3>
+    <ol>
+        <li>Open the <code>{org}_monitor.html</code> file in Chrome, Edge, or Firefox.</li>
+        <li>Enter your <strong>Secret Key</strong> (Admin Key from Factory Step 1).</li>
+        <li>Click <strong>Unlock</strong>. Polling begins automatically.</li>
+        <li>Click <strong>Start Audio</strong> — you must interact with the page once before the browser will allow audio alerts to play.</li>
+    </ol>
+
+    <div class="mock-monitor">
+        <div class="mock-monitor-header">
+            <div style="color:white;font-weight:800;font-size:13px;">%%ORG_NAME%% — Live Monitor</div>
+            <div style="font-size:10px;color:#22c55e;font-weight:700;">● Polling · Last update: 12 sec ago</div>
+        </div>
+        <div class="monitor-card-grid">
+            <div class="monitor-card mc-active">
+                <div class="mc-name">Sarah Kim</div>
+                <div class="mc-loc">📍 City Library</div>
+                <div class="mc-time">Started: 09:30 AM</div>
+                <span class="mc-status ms-active">ACTIVE</span>
+            </div>
+            <div class="monitor-card mc-overdue">
+                <div class="mc-name">James Tane</div>
+                <div class="mc-loc">📍 North Office</div>
+                <div class="mc-time">Overdue by: 18 min</div>
+                <span class="mc-status ms-overdue">OVERDUE</span>
+            </div>
+            <div class="monitor-card mc-sos">
+                <div class="mc-name">Maria Perez</div>
+                <div class="mc-loc">📍 Westfield Site</div>
+                <div class="mc-time">Alert raised: 10:44 AM</div>
+                <span class="mc-status ms-sos">🚨 SOS</span>
+            </div>
+            <div class="monitor-card mc-duress">
+                <div class="mc-name">Tom Bell</div>
+                <div class="mc-loc">📍 East Warehouse</div>
+                <div class="mc-time">Alert raised: 10:47 AM</div>
+                <span class="mc-status ms-duress">⚠ DURESS</span>
+            </div>
+            <div class="monitor-card mc-idle">
+                <div class="mc-name">Lisa Park</div>
+                <div class="mc-loc">Not checked in</div>
+                <div class="mc-time">Last seen: yesterday</div>
+            </div>
+            <div class="monitor-card mc-active" style="background:#1e3a8a;border-color:#3b82f6;">
+                <div class="mc-name">David Roe</div>
+                <div class="mc-loc">🚗 Travelling</div>
+                <div class="mc-time">Depart: 11:15 AM</div>
+                <span class="mc-status" style="background:#1e40af;color:#93c5fd;">TRAVEL</span>
+            </div>
+        </div>
+    </div>
+    <p style="text-align:center;font-size:12px;color:#9ca3af;font-style:italic;margin-top:-12px;margin-bottom:20px;">Monitor Dashboard — live worker status cards</p>
+
+    <h3>Status Colours</h3>
+    <table>
+        <thead><tr><th>Colour</th><th>Status</th><th>Required Action</th></tr></thead>
+        <tbody>
+            <tr><td style="background:#d1fae5;font-weight:700;">🟢 Green</td><td>Active visit in progress, within time</td><td>None — monitoring only</td></tr>
+            <tr><td style="background:#fef3c7;font-weight:700;">🟠 Amber</td><td>Visit is overdue — worker has not checked out</td><td>Attempt to contact the worker; follow your escalation protocol</td></tr>
+            <tr><td style="background:#fee2e2;font-weight:700;">🔴 Red (pulsing)</td><td>SOS alarm raised</td><td>Follow emergency response protocol; acknowledge in monitor</td></tr>
+            <tr><td style="background:#f3e8ff;font-weight:700;">🟣 Purple</td><td>Duress alarm (worker entered duress PIN)</td><td>Follow emergency response protocol without contacting worker directly</td></tr>
+        </tbody>
+    </table>
+
+    <div class="warning-box">
+        <strong>⚠️ Duress protocol:</strong> A Duress alarm means the worker may be under coercion. Do not call the worker directly — this could put them in greater danger. Contact emergency services and follow your organisation's incident protocol.
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2 id="admin">Part 4: Daily Administration</h2>
+
+    <h3>Staff Tab</h3>
+    <p>Manage your staff list in the <code>Staff</code> tab of your Google Sheet. The <strong>Name</strong> field must match exactly what workers enter in the app setup wizard (case-sensitive). Key fields:</p>
+    <table>
+        <thead><tr><th>Column</th><th>Purpose</th></tr></thead>
+        <tbody>
+            <tr><td><code>Name</code></td><td>Full name — must match app entry exactly</td></tr>
+            <tr><td><code>Role</code></td><td>Job title (informational)</td></tr>
+            <tr><td><code>Status</code></td><td>Active / Inactive — inactive staff are excluded from overdue checks</td></tr>
+            <tr><td><code>LastVehCheck</code></td><td>Date of last vehicle safety check — auto-updated by app</td></tr>
+            <tr><td><code>WOFExpiry</code></td><td>Vehicle %%VEHICLE_TERM%% expiry date — manually maintained</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Sites Tab</h3>
+    <p>Pre-load approved locations into the <code>Sites</code> tab. Workers see these as tiles in their location list after tapping Sync. Assign a template to a site in the <strong>Template Name</strong> column to automatically prompt workers with a form on departure.</p>
+
+    <h3>Building Report Templates (Templates Tab)</h3>
+    <p>The <code>Templates</code> tab defines the report forms workers complete at the end of visits. Use this syntax in the question columns:</p>
+    <table>
+        <thead><tr><th>Code</th><th>Renders As</th><th>Best For</th></tr></thead>
+        <tbody>
+            <tr><td><code># Header</code></td><td>Section header</td><td>Dividing form sections</td></tr>
+            <tr><td><code>% Question</code></td><td>Multi-line text area</td><td>Freeform notes</td></tr>
+            <tr><td><code>$ Label</code></td><td>Number input (summed in reports)</td><td>Mileage, costs</td></tr>
+            <tr><td><code>[YESNO] Label</code></td><td>Yes / No buttons</td><td>Compliance checks</td></tr>
+            <tr><td><code>[CHECK] Label</code></td><td>Checkbox</td><td>Confirmations</td></tr>
+            <tr><td><code>[PHOTO] Label</code></td><td>Camera capture button</td><td>Evidence, site photos</td></tr>
+            <tr><td><code>[GPS] Label</code></td><td>GPS capture button</td><td>Pinpointing hazards</td></tr>
+            <tr><td><code>[DATE] Label</code></td><td>Date picker</td><td>Expiry dates, schedules</td></tr>
+            <tr><td><code>[SIGN] Label</code></td><td>Signature capture</td><td>Client sign-off</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Access Reports</h3>
+    <p>In your Google Sheet, use the <strong>"🛡️ OTG Admin"</strong> menu for administrative actions including running the health report manually, triggering data archiving, or sending the weekly summary on-demand.</p>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2 id="updates">Part 5: Updates &amp; Configuration Changes</h2>
+
+    <h3>Performing a Config-Only Update (Recommended)</h3>
+    <p>Under the Config Model, most changes — branding, intervals, feature toggles — only require replacing <code>config.json</code>. The worker app detects the updated version field and refreshes automatically.</p>
+
+    <div class="step-card">
+        <div class="step-num">1</div>
+        <div class="step-card-body">
+            <h4>Open the Factory</h4>
+            <p>Open <code>index.html</code> (the Factory app). Your previous settings should be remembered in the browser's local storage. If not, re-enter them — especially your keys.</p>
+            <div class="warning-box">
+                <strong>⚠️ Use your original keys.</strong> If you click 🔄 to regenerate new keys, devices will lose connection. Only use the same keys you originally deployed with.
+            </div>
+        </div>
+    </div>
+    <div class="step-card">
+        <div class="step-num">2</div>
+        <div class="step-card-body">
+            <h4>Adjust Settings</h4>
+            <p>Change whatever needs updating — new branding colour, different grace period, toggle a feature on or off, new API key, etc.</p>
+        </div>
+    </div>
+    <div class="step-card">
+        <div class="step-num">3</div>
+        <div class="step-card-body">
+            <h4>Download &amp; Deploy New config.json</h4>
+            <p>Go to Factory Step 4, click <strong>"⬇ Download config.json"</strong>. Upload the new file to your Netlify site (drag the folder onto your existing site's dashboard — not the Netlify Drop page). The version stamp in the file changes automatically, which triggers devices to refresh their cached config next time they connect.</p>
+        </div>
+    </div>
+    <div class="step-card">
+        <div class="step-num">4</div>
+        <div class="step-card-body">
+            <h4>Backend Changes (if any)</h4>
+            <p>If you also changed backend settings (API keys, escalation logic), you need to re-copy the Code.gs and deploy a new version in Apps Script. See the "New Version Trap" warning below.</p>
+        </div>
+    </div>
+
+    <div class="warning-box">
+        <h3>⚠️ The "New Version" Trap — Apps Script</h3>
+        <p>When you edit code in Google Apps Script, clicking <strong>Save</strong> does <em>not</em> update the live system. For any change to take effect:</p>
+        <ol>
+            <li>Click <strong>Deploy</strong> (blue button).</li>
+            <li>Select <strong>Manage Deployments</strong>.</li>
+            <li>Click the <strong>Pencil icon</strong> (Edit).</li>
+            <li>Change "Version" to <strong>"New version"</strong>.</li>
+            <li>Click <strong>Deploy</strong>.</li>
+        </ol>
+    </div>
+
+    <h3>Modifying the Backend Logic (Advanced)</h3>
+    <p>You can edit <code>Code.gs</code> directly to change system behaviour — email formatting, AI prompts, alert thresholds, etc.</p>
+    <ul>
+        <li>Go to your Google Sheet → <strong>Extensions → Apps Script</strong></li>
+        <li>Find the function to change (e.g. <code>smartScribe</code> for AI, <code>sendAlertEmail</code> for notifications)</li>
+        <li>Test with the <strong>Run</strong> button before deploying</li>
+        <li>Always follow the "New Version" deployment steps after saving changes</li>
+    </ul>
+
+    <h4>Example: Customising the AI Report Prompt</h4>
+    <div class="code-box">// Inside the 'smartScribe' function — replace the prompt variable:
+const prompt = `Read these notes: "${safeNotes}".
+1. Correct grammar and spelling.
+2. If the worker describes a hazard, begin the note with "[HAZARD IDENTIFIED]".
+3. Return corrected text only.`;</div>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2 id="features">Part 6: Advanced Features</h2>
+
+    <h3>ntfy Push Notifications</h3>
+    <p><a href="https://ntfy.sh" style="color:var(--accent);">ntfy</a> is a free, open-source push notification service that delivers instant alerts directly to contacts' phones the moment an alarm fires — no email delay, no polling required.</p>
+    <ul>
+        <li><strong>Setup:</strong> Enter your ntfy server URL in Factory Step 1 (leave blank to use the free hosted <code>ntfy.sh</code> service). For higher privacy, self-host ntfy using Docker and paste your server URL.</li>
+        <li><strong>How contacts subscribe:</strong> When an alarm fires, contacts automatically receive a subscribe link in the alert email. They install the free ntfy app and subscribe to their assigned topic.</li>
+        <li><strong>Worker setup:</strong> During the app setup wizard, workers enter their contacts' ntfy topic names (provided by your administrator).</li>
+    </ul>
+
+    <h3>Healthchecks.io Dead-Man's Switch</h3>
+    <p>The backend's escalation engine runs every ~15 minutes via a trigger. If that trigger silently stops firing (a known Google Apps Script limitation), workers could reach overdue status without any alarm. Healthchecks.io catches this.</p>
+    <ul>
+        <li>Sign up free at <a href="https://healthchecks.io" style="color:var(--accent);">healthchecks.io</a></li>
+        <li>Create one check with a <strong>20-minute period</strong> and <strong>15-minute grace</strong></li>
+        <li>Copy the ping URL and paste it into the <strong>Healthchecks.io Ping URL</strong> field in Factory Step 1</li>
+        <li>The backend pings this URL after every successful escalation check. If it goes silent for ~35 minutes, Healthchecks.io emails you — before any worker reaches overdue status</li>
+    </ul>
+    <div class="success-box">
+        <strong>Strongly recommended</strong> for any organisation where worker safety is critical. The free tier supports up to 20 checks.
+    </div>
+
+    <h3>Daily Health Report Email</h3>
+    <p>When the <strong>sendHealthEmail</strong> trigger is configured (Trigger C), the system emails a daily summary each morning containing:</p>
+    <ul>
+        <li>Total visits logged in the past 24 hours</li>
+        <li>Number of escalations fired</li>
+        <li>Any alert emails that failed to send</li>
+        <li>Workers with an open visit older than 24 hours (stale records)</li>
+    </ul>
+    <p>Configure the recipient in Factory Step 1 (<strong>System Health Report Email</strong>). If left blank, the report goes to the Google account that owns the Apps Script. You can also trigger it manually at any time via <strong>OTG Admin → Send Health Email Now</strong> in the spreadsheet.</p>
+
+    <h3>AI Privacy Redaction</h3>
+    <p>When enabled in Factory Step 1, the AI report processor automatically removes worker names and other identifying information from visit notes before sending them to the Gemini AI API. This is a data minimisation practice and is <strong>strongly recommended</strong> when using any external AI service to process staff records.</p>
+    <p>You can toggle this on or off per deployment via the <strong>AI Privacy Redaction</strong> checkbox in Factory Step 1 → Safety &amp; Fleet Options.</p>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2 id="troubleshoot">Part 7: Troubleshooting</h2>
+
+    <table>
+        <thead>
+            <tr><th>Symptom</th><th>Likely Cause</th><th>Fix</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>"Access Denied"</strong> when worker submits a report</td>
+                <td>Worker Key mismatch — the key in <code>config.json</code> doesn't match the deployed backend</td>
+                <td>Regenerate <code>config.json</code> using your original keys and re-upload. If you used new keys, you'll need to redeploy the backend with matching keys too.</td>
+            </tr>
+            <tr>
+                <td><strong>"Failed to Fetch"</strong> on the Worker App</td>
+                <td>Incorrect or outdated Web App URL in <code>config.json</code></td>
+                <td>Check your Apps Script deployment URL, update it in the Factory, regenerate and redeploy <code>config.json</code>.</td>
+            </tr>
+            <tr>
+                <td><strong>Code changes ignored</strong> — backend behaviour unchanged</td>
+                <td>The "New Version" trap — you saved but didn't deploy</td>
+                <td>Deploy → Manage Deployments → Edit → New version → Deploy.</td>
+            </tr>
+            <tr>
+                <td><strong>Monitor plays no sound</strong></td>
+                <td>Browser autoplay policy — audio requires user interaction first</td>
+                <td>Click anywhere on the Monitor page before alerts are expected, then click <strong>Start Audio</strong>.</td>
+            </tr>
+            <tr>
+                <td><strong>App shows wrong branding</strong> after config update</td>
+                <td>Old config.json is cached — version bump may not have propagated yet</td>
+                <td>Confirm the new <code>config.json</code> is uploaded. Wait 60 seconds and reopen the app. If still cached, open the app and leave it open — the service worker will fetch the new config in the background.</td>
+            </tr>
+            <tr>
+                <td><strong>Overdue alerts not firing</strong></td>
+                <td>The Safety Watchdog trigger (Trigger A) is not running</td>
+                <td>Check Apps Script → Triggers. Confirm <code>checkOverdueVisits</code> exists and is set to run every 10 minutes. Check the Executions log for errors.</td>
+            </tr>
+            <tr>
+                <td><strong>Worker can't install PWA</strong> on iPhone</td>
+                <td>Not using Safari — Chrome on iOS doesn't support "Add to Home Screen" for PWAs</td>
+                <td>Worker must use <strong>Safari</strong> on iPhone. Share → Add to Home Screen.</td>
+            </tr>
+            <tr>
+                <td><strong>Worker Guide / Ops Manual download button is greyed out</strong></td>
+                <td>Template files not present in the Factory folder</td>
+                <td>Ensure <code>guide_template.html</code> and <code>ops_manual_template.html</code> are in the same folder as the Factory's <code>index.html</code> and refresh the Factory page.</td>
+            </tr>
+            <tr>
+                <td><strong>Healthchecks.io is alerting</strong> — backend has gone silent</td>
+                <td>Apps Script trigger quota exceeded, project error, or Google service disruption</td>
+                <td>Check Apps Script Executions log. Re-create the trigger if needed. Check Google Workspace Status Dashboard for outages.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <hr>
+
+    <div class="info-box">
+        <strong>Need help?</strong> Check the OTG GitHub repository for the latest documentation, release notes, and known issues. When reporting an issue, include your backend version (visible in the backend Code.gs header), the Factory version, and the exact error message or behaviour observed.
+    </div>
+
+    <footer>
+        <p><strong>%%ORG_NAME%%</strong> — OTG Lone Worker Safety System Operations Manual</p>
+        <p>For support, contact your system administrator or refer to the OTG repository documentation.</p>
+    </footer>
+
+</div>
+</body>
+</html>

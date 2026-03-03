@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>%%ORG_NAME%% - Worker Safety App Guide</title>
+    <style>
+        :root {
+            --primary: #1e3a8a;
+            --accent: #3b82f6;
+            --app-bg: #111827;
+            --app-surface: #1f2937;
+            --app-border: #374151;
+            --app-text: #f9fafb;
+            --app-muted: #9ca3af;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.7;
+            color: #1f2937;
+            max-width: 820px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background: #f8fafc;
+        }
+        h1 {
+            color: var(--primary);
+            font-size: 2em;
+            border-bottom: 4px solid var(--accent);
+            padding-bottom: 12px;
+            margin-bottom: 8px;
+        }
+        .subtitle { color: #6b7280; font-size: 0.95em; margin-bottom: 40px; }
+        h2 {
+            color: #111827;
+            margin-top: 48px;
+            border-left: 6px solid var(--accent);
+            padding-left: 16px;
+            font-size: 1.4em;
+        }
+        h3 { color: #374151; margin-top: 28px; font-size: 1.1em; font-weight: 700; }
+        p, li { margin-bottom: 10px; font-size: 15px; line-height: 1.7; }
+        ul { padding-left: 1.4em; }
+        ol { padding-left: 1.4em; }
+        li { margin-bottom: 8px; }
+        code { background: #e5e7eb; padding: 2px 7px; border-radius: 4px; font-family: 'Consolas', monospace; font-weight: 700; font-size: 0.9em; }
+        .highlight {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-left: 5px solid var(--accent);
+            padding: 16px 20px;
+            border-radius: 0 8px 8px 0;
+            margin: 20px 0;
+        }
+        .warning {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-left: 5px solid #dc2626;
+            padding: 16px 20px;
+            border-radius: 0 8px 8px 0;
+            margin: 20px 0;
+            color: #7f1d1d;
+        }
+        .tip {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-left: 5px solid #16a34a;
+            padding: 16px 20px;
+            border-radius: 0 8px 8px 0;
+            margin: 20px 0;
+        }
+        .step-list { counter-reset: step; list-style: none; padding: 0; }
+        .step-list li {
+            position: relative;
+            padding: 12px 12px 12px 52px;
+            margin-bottom: 12px;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+        }
+        .step-list li::before {
+            counter-increment: step;
+            content: counter(step);
+            position: absolute;
+            left: 14px; top: 12px;
+            width: 26px; height: 26px;
+            background: var(--accent);
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 26px;
+            font-weight: 800;
+            font-size: 13px;
+        }
+
+        /* ── GPS Signal Indicators ── */
+        .gps-row { display: flex; align-items: center; gap: 12px; padding: 10px; margin: 6px 0; background: #f9fafb; border-radius: 8px; }
+        .gps-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+        .g-green { background: #22c55e; box-shadow: 0 0 6px #22c55e88; }
+        .g-amber { background: #f59e0b; box-shadow: 0 0 6px #f59e0b88; }
+        .g-red   { background: #ef4444; box-shadow: 0 0 6px #ef444488; }
+
+        /* ── MOCK-UP PHONE SHELL ── */
+        .mock-wrap {
+            display: flex;
+            justify-content: center;
+            margin: 32px 0;
+        }
+        .mock-phone {
+            width: 280px;
+            background: var(--app-bg);
+            border-radius: 2.5rem;
+            border: 6px solid #0f172a;
+            overflow: hidden;
+            box-shadow: 0 24px 48px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05);
+            font-family: 'Segoe UI', sans-serif;
+        }
+        .mock-statusbar {
+            background: #0f172a;
+            color: #64748b;
+            font-size: 10px;
+            padding: 6px 20px 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+        }
+        .mock-header {
+            background: var(--primary);
+            color: white;
+            padding: 10px 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+        .mock-header-left { display: flex; align-items: center; gap: 8px; }
+        .mock-logo-dot { width: 20px; height: 20px; background: var(--accent); border-radius: 4px; }
+        .mock-gps-bars { display: flex; gap: 2px; align-items: flex-end; }
+        .mock-gps-bars span { display: block; width: 3px; background: #22c55e; border-radius: 1px; }
+        .mock-body { padding: 12px; }
+        .mock-body-pad { padding: 14px; }
+        .mock-location-tile {
+            background: var(--app-surface);
+            border: 1px solid var(--app-border);
+            border-radius: 10px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 11px;
+        }
+        .mock-location-tile.active {
+            border-color: var(--accent);
+            background: rgba(59,130,246,0.15);
+        }
+        .mock-tile-name { color: var(--app-text); font-weight: 700; }
+        .mock-tile-sub { color: var(--app-muted); font-size: 9px; margin-top: 2px; }
+        .mock-tile-info { color: var(--app-muted); font-size: 14px; }
+        .mock-travel-tile {
+            background: var(--app-surface);
+            border: 1px solid var(--accent);
+            border-radius: 10px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            font-size: 11px;
+        }
+        .mock-start-btn {
+            background: var(--accent);
+            color: white;
+            border-radius: 10px;
+            padding: 12px;
+            text-align: center;
+            font-size: 10px;
+            font-weight: 900;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-top: 8px;
+        }
+        .mock-end-btn {
+            background: #dc2626;
+            color: white;
+            border-radius: 10px;
+            padding: 12px;
+            text-align: center;
+            font-size: 10px;
+            font-weight: 900;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-top: 8px;
+        }
+        .mock-sos-screen {
+            background: #7f1d1d;
+            border-radius: 10px;
+            padding: 18px 12px;
+            text-align: center;
+            color: white;
+        }
+        .mock-sos-title { font-size: 18px; font-weight: 900; color: #fca5a5; margin-bottom: 4px; }
+        .mock-sos-sub { font-size: 9px; color: #fca5a5; margin-bottom: 12px; }
+        .mock-sos-btn {
+            background: #15803d;
+            color: white;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 9px;
+            font-weight: 800;
+            margin-top: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+        .mock-timer-row { display: flex; gap: 6px; margin-bottom: 8px; }
+        .mock-quick-btn {
+            flex: 1;
+            background: var(--app-surface);
+            border: 1px solid var(--app-border);
+            border-radius: 8px;
+            padding: 8px 4px;
+            text-align: center;
+            color: var(--app-text);
+            font-size: 10px;
+            font-weight: 700;
+        }
+        .mock-progress-bar {
+            background: var(--app-border);
+            border-radius: 99px;
+            height: 6px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+        .mock-progress-fill {
+            background: var(--accent);
+            height: 100%;
+            border-radius: 99px;
+        }
+        .mock-label { color: var(--app-muted); font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+        .mock-value { color: var(--app-text); font-size: 13px; font-weight: 800; margin-bottom: 10px; }
+        .mock-modal-overlay {
+            background: rgba(0,0,0,0.75);
+            border-radius: 10px;
+            padding: 14px;
+        }
+        .mock-modal-card {
+            background: var(--app-surface);
+            border: 1px solid var(--app-border);
+            border-radius: 10px;
+            padding: 14px;
+            font-size: 10px;
+            color: var(--app-text);
+        }
+        .mock-modal-title { font-weight: 900; font-size: 12px; margin-bottom: 8px; }
+        .mock-modal-btn { background: var(--accent); color: white; border-radius: 7px; padding: 8px; text-align: center; font-size: 9px; font-weight: 800; margin-top: 6px; text-transform: uppercase; }
+        .mock-toast { background: #064e3b; border: 1px solid #059669; border-radius: 8px; padding: 8px 12px; font-size: 10px; color: #a7f3d0; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+        .mock-checkin-overlay {
+            background: rgba(0,0,0,0.85);
+            border-radius: 10px;
+            padding: 20px 12px;
+            text-align: center;
+            color: white;
+        }
+        .mock-checkin-title { font-size: 14px; font-weight: 900; margin-bottom: 4px; }
+        .mock-checkin-sub { font-size: 9px; color: #d1d5db; margin-bottom: 12px; }
+        .mock-checkin-countdown { font-size: 22px; font-weight: 900; color: #fbbf24; margin-bottom: 8px; }
+        .mock-safe-btn { background: #15803d; color: white; border-radius: 8px; padding: 10px; font-size: 9px; font-weight: 800; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.08em; }
+
+        /* ── Two-column for mock + text ── */
+        .mock-with-text {
+            display: grid;
+            grid-template-columns: 1fr 240px;
+            gap: 32px;
+            align-items: start;
+            margin: 28px 0;
+        }
+        @media (max-width: 680px) {
+            .mock-with-text { grid-template-columns: 1fr; }
+            .mock-with-text .mock-wrap { margin: 0; }
+        }
+        .mock-caption {
+            text-align: center;
+            font-size: 11px;
+            color: #9ca3af;
+            font-style: italic;
+            margin-top: -20px;
+            margin-bottom: 20px;
+        }
+
+        /* ── Platform Install Badges ── */
+        .platform-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+        .platform-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 16px;
+        }
+        .platform-card h4 { margin: 0 0 8px; font-size: 1em; }
+        .platform-card ol { margin: 0; padding-left: 1.2em; font-size: 13px; }
+        @media (max-width: 500px) { .platform-grid { grid-template-columns: 1fr; } }
+
+        hr { border: 0; border-top: 2px solid #e5e7eb; margin: 48px 0; }
+        footer { text-align: center; font-size: 0.85em; color: #9ca3af; margin-top: 48px; padding-top: 20px; border-top: 1px solid #e5e7eb; }
+    </style>
+</head>
+<body>
+
+    <h1>%%ORG_NAME%% — Worker Safety App Guide</h1>
+    <p class="subtitle">Your complete guide to the OTG Lone Worker Safety App. Keep this document handy during your first week of use.</p>
+
+    <div class="highlight">
+        <strong>What this app does:</strong> The OTG Safety App lets you log where you are, track how long you've been there, and instantly alert your contacts and your organisation's safety monitor if something goes wrong. It works offline and runs as a standalone app on your phone's home screen.
+    </div>
+
+    <div class="warning">
+        <strong>⚠️ The app does NOT call emergency services.</strong> In a life-threatening emergency, always call <strong>111</strong> (or your local emergency number) first. The SOS button is a notification tool — it alerts your contacts and HQ monitor, but is not a substitute for calling emergency services.
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2>1. Installation — Add to Your Home Screen</h2>
+
+    <p>The safety app is a <strong>Progressive Web App (PWA)</strong>. You must install it onto your phone's home screen. Running it only in a browser window will prevent offline use, GPS background tracking, and audio alerts from working correctly.</p>
+
+    <div class="platform-grid">
+        <div class="platform-card">
+            <h4>🤖 Android</h4>
+            <ol>
+                <li>Open the link your manager sent in <strong>Chrome</strong>.</li>
+                <li>Tap the <strong>Menu (⋮)</strong> button.</li>
+                <li>Tap <strong>"Install App"</strong> or <strong>"Add to Home Screen"</strong>.</li>
+                <li>Tap <strong>Install</strong> to confirm.</li>
+            </ol>
+        </div>
+        <div class="platform-card">
+            <h4>🍎 iPhone / iPad</h4>
+            <ol>
+                <li>Open the link in <strong>Safari</strong> (not Chrome).</li>
+                <li>Tap the <strong>Share</strong> button (□ with arrow).</li>
+                <li>Scroll down and tap <strong>"Add to Home Screen"</strong>.</li>
+                <li>Tap <strong>Add</strong> in the top right.</li>
+            </ol>
+        </div>
+    </div>
+
+    <div class="tip">
+        <strong>💡 iPhone tip:</strong> Always launch the app from the home screen icon — not from your browser history. The two behave differently; only the home screen version will work correctly offline and will be able to sound audio alerts.
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2>2. First-Run Setup Wizard</h2>
+
+    <p>The first time you open the app from your home screen, a setup wizard will guide you through four steps. This only happens once.</p>
+
+    <div class="mock-with-text">
+        <div>
+            <ol class="step-list">
+                <li><strong>Your Name:</strong> Enter your full name exactly as it appears in your organisation's records — <em>First Last</em>. This is case-sensitive and must match the Staff list precisely.</li>
+                <li><strong>Safety PIN:</strong> Create a 4-digit PIN (e.g. 1234). You'll use this to confirm you're safe after an alarm.</li>
+                <li><strong>Duress PIN:</strong> Create a <em>different</em> secret PIN (e.g. 9999). If someone forces you to cancel an alarm, enter this PIN instead. It appears to cancel the alarm but silently sends a <strong>DURESS</strong> alert with your GPS to your contacts and HQ.</li>
+                <li><strong>Emergency Contact:</strong> Your personal emergency contact (e.g. spouse or next-of-kin).</li>
+                <li><strong>Escalation Contact:</strong> Your work escalation contact (e.g. your manager).</li>
+            </ol>
+        </div>
+        <div class="mock-wrap">
+            <div class="mock-phone">
+                <div class="mock-statusbar"><span>9:41 AM</span><span>▐▐▐ 🔋</span></div>
+                <div class="mock-header">
+                    <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
+                    <span style="color:#94a3b8;font-size:9px">SETUP 2/4</span>
+                </div>
+                <div class="mock-body-pad">
+                    <div class="mock-label">Safety PIN</div>
+                    <div style="display:flex;gap:8px;margin-bottom:14px;">
+                        <div style="flex:1;background:#1f2937;border:2px solid #3b82f6;border-radius:8px;height:40px;display:flex;align-items:center;justify-content:center;color:white;font-size:18px;font-weight:900;">•</div>
+                        <div style="flex:1;background:#1f2937;border:2px solid #3b82f6;border-radius:8px;height:40px;display:flex;align-items:center;justify-content:center;color:white;font-size:18px;font-weight:900;">•</div>
+                        <div style="flex:1;background:#1f2937;border:1px solid #374151;border-radius:8px;height:40px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:18px;font-weight:900;">_</div>
+                        <div style="flex:1;background:#1f2937;border:1px solid #374151;border-radius:8px;height:40px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:18px;font-weight:900;">_</div>
+                    </div>
+                    <div class="mock-label" style="color:#f59e0b;">⚠️ Duress PIN (Different!)</div>
+                    <div style="background:#1f2937;border:1px solid #78350f;border-radius:8px;padding:10px;font-size:9px;color:#fbbf24;margin-bottom:12px;">
+                        Enter a DIFFERENT 4-digit code. If forced to cancel an alarm, enter this — it looks like you cancelled but silently alerts HQ.
+                    </div>
+                    <div class="mock-start-btn">Next →</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <p class="mock-caption">Setup Wizard — PIN creation screen</p>
+
+    <div class="tip">
+        <strong>💡 Choose your PINs carefully:</strong> Your Duress PIN should be something you can remember under pressure but clearly different from your Safety PIN. Write both down and keep them somewhere safe at home.
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2>3. The Location List</h2>
+
+    <p>The main screen of the app shows your list of approved locations. Tap a tile to select it before starting a visit.</p>
+
+    <div class="mock-with-text">
+        <div>
+            <h3>GPS Signal Indicator</h3>
+            <p>The signal bars in the top-right corner show your GPS accuracy:</p>
+            <div class="gps-row"><div class="gps-dot g-green"></div><strong>Green (3 bars):</strong> Good signal — accurate within ~20 metres. Safe to start.</div>
+            <div class="gps-row"><div class="gps-dot g-amber"></div><strong>Amber (2 bars):</strong> Weak signal — location may be approximate.</div>
+            <div class="gps-row"><div class="gps-dot g-red"></div><strong>Red (1 bar):</strong> No GPS signal — try moving outdoors or near a window.</div>
+        </div>
+        <div class="mock-wrap">
+            <div class="mock-phone">
+                <div class="mock-statusbar"><span>9:41 AM</span><span>▐▐▐ 🔋</span></div>
+                <div class="mock-header">
+                    <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
+                    <div class="mock-gps-bars"><span style="height:6px"></span><span style="height:10px"></span><span style="height:14px"></span></div>
+                </div>
+                <div class="mock-body">
+                    <div class="mock-location-tile active">
+                        <div><div class="mock-tile-name">📍 City Library</div><div class="mock-tile-sub">123 Main St, Auckland</div></div>
+                        <div class="mock-tile-info">ℹ</div>
+                    </div>
+                    <div class="mock-location-tile">
+                        <div><div class="mock-tile-name">🏢 Head Office</div><div class="mock-tile-sub">45 Queen St, Auckland</div></div>
+                        <div class="mock-tile-info">ℹ</div>
+                    </div>
+                    <div class="mock-travel-tile">
+                        <div class="mock-tile-name">🚗 Travelling</div>
+                        <div class="mock-tile-sub" style="color:#93c5fd;">Tap ℹ to configure travel settings</div>
+                    </div>
+                    <div style="background:#1f2937;border:1px dashed #374151;border-radius:10px;padding:10px;text-align:center;font-size:10px;color:#6b7280;margin-top:4px;">+ Add Manual Location</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <p class="mock-caption">Main location list — City Library selected (highlighted blue)</p>
+
+    <h3>Syncing the Location List</h3>
+    <p>Tap the <strong>Sync</strong> button to download the latest approved locations from your organisation. This requires an internet connection. Once synced, locations are available offline.</p>
+
+    <h3>Adding a Manual Location</h3>
+    <p>If you're visiting somewhere not on the list (e.g. a new client):</p>
+    <ol class="step-list">
+        <li>Tap <strong>"+ Add Manual Location"</strong> at the bottom of the list.</li>
+        <li>Enter the <strong>Business Name</strong> and <strong>Site Name</strong> clearly.</li>
+        <li>For the address: if you're already on-site, tap the <strong>📍 GPS</strong> button to fill it in automatically. Otherwise, type it manually.</li>
+        <li>Set whether a <strong>Report is Required</strong> on departure (if applicable).</li>
+        <li>Tap <strong>Save</strong>.</li>
+    </ol>
+
+    <h3>Editing a Location</h3>
+    <p>Tap the small <code>ℹ</code> button on any tile you created, or on the Travelling tile, to edit its settings. You cannot edit organisation-provided locations.</p>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2>4. Starting a Visit</h2>
+
+    <div class="mock-with-text">
+        <div>
+            <ol class="step-list">
+                <li>Tap a location tile to select it (it will highlight in your organisation's colour).</li>
+                <li>Use the <strong>quick buttons</strong> (15 min, 30 min, 1 hr) or the <strong>slider</strong> to set how long you expect to be there.</li>
+                <li><strong>Hold the green "Start Visit" button</strong> for a moment to confirm and begin.</li>
+            </ol>
+            <div class="tip">
+                <strong>🔊 Audio check:</strong> When starting, you may hear a brief quiet click or beep. This is normal — it wakes the app's audio system so it can alert you with a voice prompt if you go overtime.
+            </div>
+        </div>
+        <div class="mock-wrap">
+            <div class="mock-phone">
+                <div class="mock-statusbar"><span>9:41 AM</span><span>▐▐▐ 🔋</span></div>
+                <div class="mock-header">
+                    <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
+                    <div class="mock-gps-bars"><span style="height:6px"></span><span style="height:10px"></span><span style="height:14px"></span></div>
+                </div>
+                <div class="mock-body">
+                    <div class="mock-location-tile active" style="margin-bottom:10px;">
+                        <div><div class="mock-tile-name">📍 City Library</div><div class="mock-tile-sub" style="color:#93c5fd;">Selected — tap to deselect</div></div>
+                    </div>
+                    <div class="mock-label">Expected Duration</div>
+                    <div class="mock-timer-row">
+                        <div class="mock-quick-btn">15m</div>
+                        <div class="mock-quick-btn" style="border-color:#3b82f6;color:#93c5fd;">30m</div>
+                        <div class="mock-quick-btn">1hr</div>
+                    </div>
+                    <div class="mock-progress-bar"><div class="mock-progress-fill" style="width:50%"></div></div>
+                    <div style="text-align:center;color:#9ca3af;font-size:9px;margin-bottom:10px;">30 minutes selected</div>
+                    <div class="mock-start-btn">▶ Hold to Start Visit</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <p class="mock-caption">Starting a visit — duration set to 30 minutes</p>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2>5. During a Visit</h2>
+
+    <p>Once a visit is active, the app moves to a <strong>locked screen</strong> — this is intentional. It conserves your battery and keeps the GPS running in the background.</p>
+
+    <h3>Mid-Visit Updates</h3>
+    <p>If you need to extend your time, add a note, or update your status during a visit, tap the <strong>menu button</strong> on the locked screen. A pop-up will appear (not a browser dialog) with options to:</p>
+    <ul>
+        <li><strong>Extend your visit</strong> — give yourself more time before the overtime alert fires</li>
+        <li><strong>Send a note to HQ</strong> — logged against your visit record in the spreadsheet</li>
+    </ul>
+
+    <div class="mock-wrap">
+        <div class="mock-phone">
+            <div class="mock-statusbar"><span>10:02 AM</span><span>▐▐▐ 🔋</span></div>
+            <div class="mock-header">
+                <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
+                <span style="color:#22c55e;font-size:9px;font-weight:900;">● ACTIVE</span>
+            </div>
+            <div class="mock-body">
+                <div class="mock-label">Current Visit</div>
+                <div class="mock-value" style="font-size:11px;">📍 City Library</div>
+                <div class="mock-label">Time Remaining</div>
+                <div class="mock-value" style="color:#22c55e;">18 min</div>
+                <div class="mock-progress-bar"><div class="mock-progress-fill" style="width:40%;background:#22c55e;"></div></div>
+                <div class="mock-modal-overlay" style="margin-top:8px;">
+                    <div class="mock-modal-card">
+                        <div class="mock-modal-title">⚙ Mid-Visit Options</div>
+                        <div style="font-size:10px;color:#d1d5db;margin-bottom:8px;">What would you like to do?</div>
+                        <div class="mock-modal-btn" style="margin-bottom:6px;">⏱ Extend Visit (+30 min)</div>
+                        <div class="mock-modal-btn" style="background:#374151;">📝 Send a Note to HQ</div>
+                        <div style="text-align:center;font-size:9px;color:#6b7280;margin-top:8px;cursor:pointer;">Cancel</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <p class="mock-caption">Mid-visit options menu — tap "Extend" or "Send a Note"</p>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2>6. Ending a Visit</h2>
+
+    <ol class="step-list">
+        <li>Open the app and <strong>hold the red "Hold to End" button</strong>.</li>
+        <li>If a report form is required for this location, fill it in — notes, photos, signature as prompted.</li>
+        <li>Tap <strong>Submit</strong>.</li>
+        <li>A green <strong>toast notification</strong> (✅ Report Sent) will appear at the top of the screen. No "OK" button needed — this is intentional.</li>
+    </ol>
+
+    <div class="mock-wrap">
+        <div class="mock-phone" style="width:260px;">
+            <div class="mock-statusbar"><span>10:15 AM</span><span>▐▐▐ 🔋</span></div>
+            <div class="mock-header">
+                <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
+            </div>
+            <div class="mock-body-pad">
+                <div class="mock-toast">✅ Report sent successfully</div>
+                <div class="mock-label">Visit Complete</div>
+                <div style="background:#1f2937;border:1px solid #374151;border-radius:10px;padding:12px;font-size:10px;color:#9ca3af;text-align:center;">
+                    <div style="color:white;font-weight:800;font-size:14px;margin-bottom:4px;">📍 City Library</div>
+                    <div>Duration: 47 minutes</div>
+                    <div>Departed: 10:14 AM</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <p class="mock-caption">Visit complete — green toast confirms the report was sent</p>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2>7. Travel Mode</h2>
+
+    <p>Use the <strong>Travelling</strong> tile for time spent in transit between locations.</p>
+
+    <h3>Personal Travel</h3>
+    <p>If you're travelling for personal reasons (not work-related), tap the <code>ℹ</code> button on the Travelling tile and set <strong>"Report Required"</strong> to <strong>No</strong>. The app will not ask for mileage or a report when you finish.</p>
+
+    <h3>Business Travel</h3>
+    <p>For work travel, ensure <strong>"Report Required"</strong> is set to <strong>Yes</strong>. When you end the trip, the app will calculate your distance and — if mileage tracking is enabled for your organisation — ask for your odometer reading.</p>
+
+    <div class="tip">
+        <strong>💡 Travel settings persist:</strong> Your preferred setting for the Travelling tile is remembered between sessions unless your organisation mandates reports for all travel, in which case it cannot be changed.
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2>8. Safety Check-ins</h2>
+
+    <p>If your organisation has enabled periodic welfare check-ins, the app will chime and display a prompt at regular intervals while a visit is active.</p>
+
+    <div class="mock-wrap">
+        <div class="mock-phone" style="width:260px;">
+            <div class="mock-statusbar"><span>10:41 AM</span><span>▐▐▐ 🔋</span></div>
+            <div class="mock-header">
+                <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
+            </div>
+            <div class="mock-body-pad">
+                <div class="mock-checkin-overlay">
+                    <div class="mock-checkin-title">🔔 Are you OK?</div>
+                    <div class="mock-checkin-sub">Welfare check — tap to confirm you're safe</div>
+                    <div class="mock-checkin-countdown">01:47</div>
+                    <div style="font-size:9px;color:#9ca3af;margin-bottom:10px;">Alert fires if unanswered in time</div>
+                    <div class="mock-safe-btn">✔ I Am Safe — Hold to Confirm</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <p class="mock-caption">Welfare check-in prompt — you have 2 minutes to respond</p>
+
+    <p><strong>When the prompt appears:</strong></p>
+    <ul>
+        <li>Unlock your phone and <strong>hold the green "I Am Safe" button</strong> to confirm you're OK.</li>
+        <li>If you don't respond within 2 minutes, a safety alarm will automatically fire and alert your contacts.</li>
+        <li>The check-in interval is set by your organisation — check with your manager if you're unsure what to expect.</li>
+    </ul>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2>9. Vehicle Safety Checks</h2>
+
+    <p>Your organisation tracks vehicle safety through the app.</p>
+    <ul>
+        <li><strong>%%VEHICLE_TERM%% Expiry:</strong> If your vehicle's %%VEHICLE_TERM%% is expired or approaching its expiry date, the app will display a warning. You may be blocked from starting travel until it is renewed.</li>
+        <li><strong>Periodic Checks:</strong> You must complete a vehicle safety check at the interval set by your organisation. To complete one, tap <strong>"Quick Notes" → "Vehicle Safety Check"</strong> and fill in the required fields.</li>
+    </ul>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2>10. Push Notifications</h2>
+
+    <p>Your organisation may use <strong>ntfy</strong> — a free push notification service — to send instant alerts directly to your phone, separate from the app. If your contacts have been set up with ntfy, they will receive a notification the moment any alarm fires, without needing to have email open.</p>
+
+    <p>You don't need to do anything to enable this — it's configured by your administrator. Your contacts will receive a link to subscribe when they're first set up in the system.</p>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2>11. In an Emergency</h2>
+
+    <div class="warning">
+        <h3 style="margin-top:0;">🚨 IMPORTANT — Read Before You Need It</h3>
+        <p style="margin-bottom:0;"><strong>The SOS button does NOT call emergency services.</strong> In a life-threatening emergency, call <strong>111</strong> (NZ), <strong>000</strong> (Australia), <strong>999</strong> (UK), or <strong>911</strong> (USA/Canada) first. The SOS function is a notification tool for your contacts and your organisation's safety monitor — it does not automatically dispatch police or ambulance.</p>
+    </div>
+
+    <h3>Raising an Alarm (SOS)</h3>
+    <ol class="step-list">
+        <li>Tap the large red <strong>SOS button 3 times rapidly</strong>.</li>
+        <li>The screen turns red and begins broadcasting your GPS location.</li>
+        <li>Your emergency contact, escalation contact, and your organisation's monitor are alerted immediately.</li>
+        <li>Continue to move to safety and call emergency services if needed.</li>
+    </ol>
+
+    <div class="mock-wrap">
+        <div class="mock-phone" style="width:260px;">
+            <div class="mock-statusbar" style="background:#450a0a;color:#fca5a5;"><span>10:47 AM</span><span>▐▐▐ 🔋</span></div>
+            <div class="mock-header" style="background:#7f1d1d;">
+                <div class="mock-header-left"><div class="mock-logo-dot" style="background:#ef4444;"></div><span style="color:#fca5a5;">%%ORG_NAME%%</span></div>
+                <span style="color:#ef4444;font-size:9px;font-weight:900;animation:pulse 1s infinite">● SOS ACTIVE</span>
+            </div>
+            <div class="mock-body-pad">
+                <div class="mock-sos-screen">
+                    <div class="mock-sos-title">🚨 ALARM RAISED</div>
+                    <div class="mock-sos-sub">Your location is being shared with contacts</div>
+                    <div style="font-size:10px;color:#fca5a5;margin:8px 0;">GPS: -36.848461, 174.763336</div>
+                    <div style="font-size:9px;color:#9ca3af;margin-bottom:8px;">Alert sent to: J. Smith, M. Brown</div>
+                    <div class="mock-sos-btn">✔ I Am Safe — Hold &amp; Enter PIN</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <p class="mock-caption">SOS active screen — red indicates alarm is broadcasting</p>
+
+    <h3>Cancelling an Alarm (Normal)</h3>
+    <ol class="step-list">
+        <li>When you are safe, hold the green <strong>"I Am Safe"</strong> button.</li>
+        <li>Enter your <strong>standard 4-digit PIN</strong>.</li>
+        <li>The alarm is cancelled and an "All Clear" message is sent to your contacts and the monitor.</li>
+    </ol>
+
+    <h3>Cancelling Under Duress</h3>
+    <p>If someone is watching you and forcing you to "cancel" an alarm:</p>
+    <ol class="step-list">
+        <li>Hold the "I Am Safe" button as normal.</li>
+        <li>Enter your <strong>Duress PIN</strong> (the different one you set up during setup).</li>
+        <li>The app will appear to cancel normally, but will silently send a <strong>DURESS</strong> alert with your location to your contacts and HQ.</li>
+    </ol>
+
+    <div class="tip">
+        <strong>💡 Remember:</strong> Your Duress PIN is your secret safety net. Never tell anyone what it is — not even someone pretending to be from your organisation.
+    </div>
+
+    <hr>
+
+    <h2>Quick Reference Card</h2>
+
+    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+        <thead>
+            <tr style="background:#eff6ff;">
+                <th style="text-align:left;padding:10px;border:1px solid #dbeafe;color:#1e40af;">Situation</th>
+                <th style="text-align:left;padding:10px;border:1px solid #dbeafe;color:#1e40af;">Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Start a visit</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap location tile → set duration → hold green Start button</td></tr>
+            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">End a visit</td><td style="padding:10px;border:1px solid #e5e7eb;">Hold red End button → submit report if required</td></tr>
+            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Extend time / send note</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap menu button on locked screen → Mid-Visit Options</td></tr>
+            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Welfare check-in</td><td style="padding:10px;border:1px solid #e5e7eb;">Hold green "I Am Safe" button when prompted (within 2 min)</td></tr>
+            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Raise emergency alarm</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap red SOS button 3 times rapidly</td></tr>
+            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Cancel alarm (you're safe)</td><td style="padding:10px;border:1px solid #e5e7eb;">Hold "I Am Safe" → enter standard PIN</td></tr>
+            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Cancel alarm under duress</td><td style="padding:10px;border:1px solid #e5e7eb;">Hold "I Am Safe" → enter Duress PIN (silent DURESS alert sent)</td></tr>
+            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Sync new locations</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap Sync button on main screen</td></tr>
+        </tbody>
+    </table>
+
+    <footer>
+        <p>Generated for <strong>%%ORG_NAME%%</strong> | OTG Lone Worker Safety System</p>
+        <p>For technical support, contact your system administrator.</p>
+    </footer>
+
+</body>
+</html>
