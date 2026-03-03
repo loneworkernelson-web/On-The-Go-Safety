@@ -382,6 +382,7 @@ let useSynthFallback = false;    // True when CDN audio unavailable; uses Web Au
 let synthSirenCtx    = null;     // Web Audio context for synthesized siren
 let synthSirenActive = false;    // Whether synth siren loop is currently running
 let acknowledgedAlerts = new Set();
+let _pendingAlertNames = [];   // Source-of-truth list for acknowledgeAlert() — avoids DOM round-trip parsing
 
 // ============================================================================
 // 5. WATCHDOG & BROADCAST STATE
@@ -669,6 +670,7 @@ function fetchData() {
         script.remove();
         delete window[cbName];
         failureCount++;
+        if (failureCount >= MAX_FAILURES) { stopPollingAndLock(); return; }
         if (statusLabel) {
             statusLabel.textContent = "● RECONNECTING...";
             statusLabel.className   = "text-orange-500 animate-pulse font-black text-xs";
@@ -706,6 +708,7 @@ function fetchData() {
         script.remove();
         delete window[cbName];
         failureCount++;
+        if (failureCount >= MAX_FAILURES) { stopPollingAndLock(); return; }
         if (statusLabel) {
             statusLabel.textContent = "● RECONNECTING...";
             statusLabel.className   = "text-orange-500 animate-pulse font-black text-xs";
@@ -723,7 +726,13 @@ function stopPollingAndLock() {
     localStorage.removeItem('monitor_master_key');
     const gate = document.getElementById('audioGate');
     if (gate) gate.classList.remove('hidden');
-    alert("🔒 Monitor Session Expired: Please re-enter the Master Security Key.");
+    // alert() is silently suppressed in iOS Safari PWA mode — use visible UI instead.
+    const errEl = document.getElementById('loginError');
+    if (errEl) {
+        errEl.textContent = '🔒 Session expired or connection lost. Re-enter Master Key.';
+        errEl.classList.remove('hidden');
+    }
+    showToast("🔒 Monitor session ended — please re-authenticate.");
 }
 
 // ============================================================================
@@ -818,14 +827,16 @@ function handleData(response) {
         alertBox.classList.add('alert-purple');
         document.getElementById('alertTitle').textContent = "DURESS ALARM (SILENT)";
         document.getElementById('alertIcon').textContent  = "🥷";
-        document.getElementById('alertNames').textContent = unackedDuress.map(w => w.name).join(", ");
+        _pendingAlertNames = unackedDuress.map(w => w.name);
+        document.getElementById('alertNames').textContent = _pendingAlertNames.join(", ");
         startAlertLoop();
     } else if (unackedAlert.length > 0) {
         alertBox.classList.remove('hidden', 'alert-purple');
         alertBox.classList.add('alert-red');
         document.getElementById('alertTitle').textContent = "EMERGENCY ALERT";
         document.getElementById('alertIcon').textContent  = "🚨";
-        document.getElementById('alertNames').textContent = unackedAlert.map(w => w.name).join(", ");
+        _pendingAlertNames = unackedAlert.map(w => w.name);
+        document.getElementById('alertNames').textContent = _pendingAlertNames.join(", ");
         startAlertLoop();
     } else {
         alertBox.classList.add('hidden');
@@ -847,8 +858,8 @@ function startAlertLoop() {
 function stopAlertLoop() { clearInterval(alertLoopInterval); alertLoopInterval = null; }
 
 function acknowledgeAlert() {
-    document.getElementById('alertNames').textContent.split(", ")
-        .forEach(n => acknowledgedAlerts.add(n.trim()));
+    _pendingAlertNames.forEach(n => acknowledgedAlerts.add(n));
+    _pendingAlertNames = [];
     document.getElementById('fullScreenAlert').classList.add('hidden');
     stopAlertLoop();
 }
@@ -1156,14 +1167,6 @@ function renderMap() {
     });
 }
 
-function focusWorker(gps) {
-    if (!gps || gps === '0,0') return;
-    toggleView('MAP');
-    setTimeout(() => {
-        const [lat, lng] = gps.split(',').map(Number);
-        if (!isNaN(lat) && mapInstance) mapInstance.flyTo([lat, lng], 17);
-    }, 250);
-}
 
 /**
  * Universal map handler — never opens Google Maps.
@@ -1254,8 +1257,8 @@ function submitResolution() {
     const typedName  = document.getElementById('resNameInput').value.trim();
     const note       = document.getElementById('resNoteInput').value.trim();
 
-    if (targetName !== typedName) { alert("Error: Name does not match exactly."); return; }
-    if (note.length < 5)          { alert("Error: Please enter a resolution note (min 5 chars)."); return; }
+    if (targetName !== typedName) { showToast("❌ Name does not match exactly — please try again."); return; }
+    if (note.length < 5)          { showToast("❌ Please enter a resolution note (min 5 characters)."); return; }
 
     const formData = new FormData();
     formData.append('action',       'resolve');
@@ -1273,7 +1276,7 @@ function submitResolution() {
             acknowledgedAlerts.add(targetName);
             fetchData();
         })
-        .catch(e => alert("Connection Error: " + e));
+        .catch(e => showToast("❌ Connection error: " + e));
 }
 
 // ============================================================================
@@ -1393,9 +1396,13 @@ function toggleBroadcastHistory() {
 // ============================================================================
 
 function exportSystemLog() {
+    // Per RFC 4180: fields containing quotes must have each " doubled,
+    // then the whole field wrapped in quotes.
+    const csvEscape = v => `"${String(v || '').replace(/"/g, '""')}"`;
     const csv  = "Timestamp,Worker,Status,Location\n" +
         allRows.map(r =>
-            `"${r.Timestamp}","${r['Worker Name']}","${r['Alarm Status']}","${r['Location Name']}"`
+            [r.Timestamp, r['Worker Name'], r['Alarm Status'], r['Location Name']]
+                .map(csvEscape).join(',')
         ).join("\n");
     const link = document.createElement("a");
     link.href     = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
@@ -1404,7 +1411,7 @@ function exportSystemLog() {
 }
 
 // ============================================================================
-// 20. SESSION MANAGEMENT
+// 21. SESSION MANAGEMENT
 // ============================================================================
 
 function confirmSignOut() {
@@ -1417,7 +1424,7 @@ function resetKey() {
 }
 
 // ============================================================================
-// 21. SECURE KEY STORAGE  (defence-in-depth: encrypted sessionStorage copy)
+// 22. SECURE KEY STORAGE  (defence-in-depth: encrypted sessionStorage copy)
 // ============================================================================
 
 /**
@@ -1426,11 +1433,20 @@ function resetKey() {
  * without storing the derivation key anywhere.
  * Note: the plain-text localStorage copy is still needed for auto-login across
  * page refreshes — this is an additional layer, not a replacement.
+ *
+ * SECURITY NOTE: The PBKDF2 password below is visible in the page source.
+ * This means a determined attacker with access to sessionStorage AND source
+ * could decrypt the payload. This layer is defence-in-depth against casual
+ * sessionStorage inspection only — it is NOT a substitute for HTTPS or
+ * server-side session validation.
  */
 async function secureStoreKey(key) {
     try {
         const encoder = new TextEncoder();
         const iv      = window.crypto.getRandomValues(new Uint8Array(12));
+        // Per-session random salt — each login produces a unique derived key
+        // even though the PBKDF2 password itself is a fixed constant.
+        const salt    = window.crypto.getRandomValues(new Uint8Array(16));
 
         const baseKey = await window.crypto.subtle.importKey(
             "raw", encoder.encode("OTG_STATION_IV"), "PBKDF2", false, ["deriveKey"]
@@ -1438,7 +1454,7 @@ async function secureStoreKey(key) {
         const aesKey = await window.crypto.subtle.deriveKey(
             {
                 name:       "PBKDF2",
-                salt:       encoder.encode("%%ORG_NAME%%"),   // org-specific salt
+                salt:       salt,
                 iterations: 100000,
                 hash:       "SHA-256"
             },
@@ -1456,6 +1472,7 @@ async function secureStoreKey(key) {
 
         sessionStorage.setItem('monitor_payload', JSON.stringify({
             iv:   Array.from(iv),
+            salt: Array.from(salt),
             data: Array.from(new Uint8Array(cipher))
         }));
     } catch(e) {
