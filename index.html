@@ -22,7 +22,7 @@
     .btn-success { background: linear-gradient(to right, #059669, #10b981); color: white; }
     .code-scroll { background: #020617; border: 1px solid #334155; border-radius: 0.5rem; padding: 1rem; font-family: 'Menlo', monospace; font-size: 0.8rem; color: #a5b4fc; overflow-y: auto; max-height: 250px; white-space: pre-wrap; }
     .highlight-box { background: #1e293b; border: 1px solid #334155; border-radius: 1rem; padding: 1.5rem; }
-    .tab-btn { flex: 1; py-4; font-weight: bold; color: #94a3b8; border-bottom: 4px solid transparent; transition: all 0.2s; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+    .tab-btn { flex: 1; padding-top: 1rem; padding-bottom: 1rem; font-weight: bold; color: #94a3b8; border-bottom: 4px solid transparent; transition: all 0.2s; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
     .tab-btn.active { color: #60a5fa; border-color: #3b82f6; background: #1f2937; }
     a.link { color: #60a5fa; text-decoration: underline; font-size: 0.85rem; cursor: pointer; font-weight: 700; }
     .drop-zone { border: 4px dashed #475569; border-radius: 16px; padding: 20px; text-align: center; background: #0f172a; cursor: pointer; transition: 0.2s; position: relative; overflow: hidden; }
@@ -738,6 +738,7 @@ self.addEventListener('message', event => {
         );
         document.getElementById('mainContent').classList.remove('blur-sm');
         loadPersistedData();
+        updateMockupUI();
         if(!document.getElementById('secretKey').value) generateSecureKey('secretKey');
         if(!document.getElementById('workerKey').value) generateSecureKey('workerKey');
         updateRegionInfo();
@@ -892,7 +893,7 @@ function applyPreset(p, a, el) {
     function copyData(k) { navigator.clipboard.writeText(BLUEPRINTS[k]); alert(k + " Blueprint Copied!"); }
     function openMagicLink() { window.open(MASTER_SHEET_URL, '_blank'); }
     function toggleCheck(el) { el.classList.toggle('checked'); el.querySelector('input').checked = el.classList.contains('checked'); }
-    function loadPersistedData() { ['orgName', 'secretKey', 'workerKey', 'webAppUrl', 'geminiKey', 'orsKey', 'textbeltKey', 'folderId', 'healthEmail', 'healthcheckUrl', 'ntfyServer', 'escalationMins', 'countrySelect', 'appName', 'checkinMins'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v) document.getElementById(id).value = v; }); ['chkRedaction', 'chkVehicle', 'chkCheckin', 'chkTravelReport'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v !== null) document.getElementById(id).checked = (v === 'true'); }); }
+    function loadPersistedData() { ['orgName', 'secretKey', 'workerKey', 'webAppUrl', 'geminiKey', 'orsKey', 'textbeltKey', 'folderId', 'healthEmail', 'healthcheckUrl', 'ntfyServer', 'escalationMins', 'countrySelect', 'appName', 'checkinMins'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v) document.getElementById(id).value = v; }); ['chkRedaction', 'chkVehicle', 'chkCheckin', 'chkTravelReport', 'chkMileage'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v !== null) document.getElementById(id).checked = (v === 'true'); }); }
     function updateRegionInfo() { const sel = document.getElementById('countrySelect').value; selectedConfig = REGION_DATA[sel] || REGION_DATA["+64"]; document.getElementById('detectedTz').textContent = selectedConfig.tz; document.getElementById('vehTermDisplay').textContent = selectedConfig.term; document.getElementById('voiceLocaleDisplay').textContent = selectedConfig.locale; document.getElementById('phoneFmtDisplay').textContent = sel; document.getElementById('timezoneVal').value = selectedConfig.tz; }
     function closeModal(id) { document.getElementById(id).style.display = 'none'; document.getElementById('mainContent').classList.remove('blur-sm'); }
     function toggleEnterBtn() {
@@ -1132,7 +1133,7 @@ function testConnection() {
         }
         const url = document.getElementById('webAppUrl').value.trim();
         if (!url || !url.startsWith('https://script.google.com')) {
-            alert('⚠️ Please enter your Google Apps Script Web App URL (Step 2) before downloading config.');
+            alert('⚠️ Please enter your Google Apps Script Web App URL (Step 3) before downloading config.');
             return;
         }
 
