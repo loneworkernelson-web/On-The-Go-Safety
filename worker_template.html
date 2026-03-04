@@ -1997,15 +1997,9 @@ function activateDimMode() {
     document.documentElement.classList.add('system-dim');
     document.body.classList.add('system-dim');
     isDimmed = true;
-
-    // Activate via the canonical path so fullscreen is always entered,
-    // lockedPage is always hidden, and the tick is throttled consistently.
-    // Direct classList manipulation was the old path — it skipped fullscreen,
-    // leaving nav/status bars visible and creating state mismatches on wake.
+    
     const batterySaver = document.getElementById('batterySaver');
-    if (batterySaver && batterySaver.classList.contains('hidden')) {
-        toggleBatterySaver(); // activation branch: shows saver + fullscreen + hides lockedPage
-    }
+    if (batterySaver) batterySaver.classList.remove('hidden');
 }
     
 /**
@@ -4115,6 +4109,18 @@ async function startVisit(isSkipCheck = false) {
         return;
     }
 
+    // FULLSCREEN: Must be called synchronously here, before any await, while the
+    // user gesture (button tap) is still in the call stack. requestFullscreen()
+    // silently fails if called from a timer or after an await — which is why
+    // calling it from the inactivity timer in activateDimMode() never worked.
+    // The fullscreenchange guard (near toggleBatterySaver) maintains fullscreen
+    // for the rest of the visit without needing another user gesture.
+    (function() {
+        const el = document.documentElement;
+        const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+        if (rfs) rfs.call(el).catch(() => {});
+    })();
+
     try {
         await Promise.race([_warmAudio(), new Promise(r => setTimeout(r, 500))]);
     } catch (e) { console.warn("Audio skipped"); }
@@ -6105,12 +6111,10 @@ function toggleBatterySaver() {
         // 1. UI: Show black screen
         saver.classList.remove('hidden');
 
-        // 2. FULLSCREEN: Hide Android navigation bar + status bar.
-        // A fullscreenchange listener (below) re-enters fullscreen if the user
-        // drags down to reveal the browser chrome while the saver is still active.
-        const el = document.documentElement;
-        const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
-        if (rfs) rfs.call(el).catch(() => {});
+        // 2. FULLSCREEN: Not managed here. Fullscreen is entered once in startVisit()
+        // (a real user gesture) and kept alive by the fullscreenchange guard below.
+        // Calling requestFullscreen() here would silently fail — this branch is reached
+        // from activateDimMode() which fires from a timer, never a user gesture.
 
         // 3. RENDERING: Stop GPU/Layout calculations
         main.style.display = 'none';
@@ -6132,14 +6136,12 @@ function toggleBatterySaver() {
         // never re-activates the lock during an intentional slide-to-wake.
         saver.classList.add('hidden');
 
-        // 2. RENDERING: Resume UI — clear inline style so CSS .page.active restores
-        // display:flex. Setting 'block' was overriding the class and breaking the
-        // locked screen's flex layout every time it was woken from dim mode.
+        // 2. RENDERING: Resume UI — clear inline style so CSS .page.active { display:flex }
+        // takes over. 'block' was overriding the class and breaking the flex layout.
         main.style.display = '';
 
-        // 3. FULLSCREEN: Restore normal browser chrome (saver already hidden above)
-        const efs = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen;
-        if (efs && document.fullscreenElement) efs.call(document).catch(() => {});
+        // 3. FULLSCREEN: Not managed here. Fullscreen runs for the whole visit and
+        // exits only in exitLockedScreen() when the visit ends.
 
         // 4. CPU: Restore normal heartbeat
         clearInterval(tickIntervalId);
@@ -6164,9 +6166,10 @@ function toggleBatterySaver() {
 ;(function() {
     const fsChange = () => {
         if (document.fullscreenElement) return; // Still fullscreen — nothing to do
-        const saver = document.getElementById('batterySaver');
-        if (!saver || saver.classList.contains('hidden')) return; // Saver not active
-        // Saver IS active but fullscreen was exited — re-enter it
+        // Re-enter fullscreen whenever a visit is active, regardless of whether
+        // the battery saver overlay is showing or not. Fullscreen is a visit-level
+        // concern, not an overlay concern — the two are now fully decoupled.
+        if (!state || !state.activeVisit) return;
         const el = document.documentElement;
         const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
         if (rfs) rfs.call(el).catch(() => {});
@@ -6887,6 +6890,10 @@ function _unlockOrientation() {
 function exitLockedScreen() {
     releaseWakeLock();
     _unlockOrientation();
+    // Exit fullscreen when the visit ends. Fullscreen was entered at visit start
+    // (startVisit) and is the only correct place to exit it.
+    const efs = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen;
+    if (efs && document.fullscreenElement) efs.call(document).catch(() => {});
 }
 
 function checkWizPinMatch() {
