@@ -1420,7 +1420,7 @@ function _injectDynamicManifest(cfg) {
             name:             `${orgName} Safety`,
             short_name:       appName,
             description:      'Lone worker safety monitoring app',
-            start_url:        window.location.origin + window.location.pathname,
+            start_url:        './index.html',
             display:          'standalone',
             background_color: primary,
             theme_color:      primary,
@@ -2929,14 +2929,6 @@ function enterLockedScreen() {
     }
     
     _lockOrientation();   // Prevent landscape rotation for the duration of the visit
-
-    // FULLSCREEN: Hide Android nav/status bars for the visit duration.
-    // Must be called from a user gesture context — the long-press "Start Visit"
-    // handler is the correct place. Timer-based paths (activateDimMode) cannot
-    // call requestFullscreen because browsers block it outside a user gesture.
-    const el = document.documentElement;
-    const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
-    if (rfs) rfs.call(el).catch(() => {});
 }
 
 /**
@@ -3043,13 +3035,8 @@ function iamSafe() {
         });
         processUploadQueue(payload);
 
-        // 3. AUDIT TRAIL: The notifySafety payload above routes through
-        //    handleSafetyResolution() → handleWorkerPost(), which writes
-        //    USER_SAFE_CONFIRMED to the open alarm row and handles updateStaffStatus().
-        //    A second logSafety("USER_SAFE") call is intentionally omitted here —
-        //    it would arrive after the row is already closed and cause handleWorkerPost()
-        //    to append an orphan row with no departure time, which checkOverdueVisits()
-        //    would then see as a new open alarm.
+        // 3. AUDIT TRAIL: Standard log entry for the spreadsheet
+        logSafety("USER_SAFE", "Worker entered PIN to cancel alarm state.");
         
         // 4. STATE MANAGEMENT: Reset safety flags
         state.activeVisit.isSafeConfirmed = true; 
@@ -6112,9 +6099,12 @@ function toggleBatterySaver() {
         // 1. UI: Show black screen
         saver.classList.remove('hidden');
 
-        // 2. FULLSCREEN: Fullscreen is entered once in enterLockedScreen() (user gesture)
-        //    and held for the entire visit. The activate path here does not request it
-        //    again — the IIFE fullscreenchange guard below handles any accidental exits.
+        // 2. FULLSCREEN: Hide Android navigation bar + status bar.
+        // A fullscreenchange listener (below) re-enters fullscreen if the user
+        // drags down to reveal the browser chrome while the saver is still active.
+        const el = document.documentElement;
+        const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+        if (rfs) rfs.call(el).catch(() => {});
 
         // 3. RENDERING: Stop GPU/Layout calculations
         main.style.display = 'none';
@@ -6128,14 +6118,20 @@ function toggleBatterySaver() {
         updateBatterySaverHUD();
         console.log('Battery Saver Active: throttled to 30s.');
     } else {
-        // 1. FULLSCREEN: Fullscreen persists — do NOT exit it when the saver deactivates.
-        //    exitLockedScreen() handles fullscreen cleanup when the visit ends.
-
-        // 2. UI: Hide black screen
+        // 1. UI: Hide black screen FIRST — before exitFullscreen.
+        // The fullscreenchange guard re-enters fullscreen if it fires while the
+        // saver is still visible. On some Android WebViews fullscreenchange can
+        // fire synchronously inside exitFullscreen(), before the next JS line runs.
+        // Hiding the saver first ensures the guard always sees it as hidden and
+        // never re-activates the lock during an intentional slide-to-wake.
         saver.classList.add('hidden');
-        
-        // 3. RENDERING: Resume UI
+
+        // 2. RENDERING: Resume UI
         main.style.display = 'block';
+
+        // 3. FULLSCREEN: Restore normal browser chrome (saver already hidden above)
+        const efs = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen;
+        if (efs && document.fullscreenElement) efs.call(document).catch(() => {});
 
         // 4. CPU: Restore normal heartbeat
         clearInterval(tickIntervalId);
@@ -6153,36 +6149,19 @@ function toggleBatterySaver() {
 }
 
 // FULLSCREEN RE-ENTRY GUARD
-// If the user drags from the top of the screen to reveal the Android browser chrome
-// during an active visit, the OS exits fullscreen. This listener detects that and
-// re-requests fullscreen after a short delay.
-//
-// The 1-second delay is intentional: the slide-to-wake gesture can trigger a brief
-// fullscreen exit before the slide completes. If we re-enter immediately, the toast
-// and gesture interruption cause the thumb to snap back. The delay lets the slide
-// complete (or the user's drag settle) before we act.
-//
-// Condition is state.activeVisit (not saver visibility) so the guard fires even
-// when the battery saver is not active — e.g. an Android drag-from-top during
-// normal visit operation.
+// If the user drags from the top to reveal the Android browser chrome while
+// the battery saver is active, the OS exits fullscreen. This listener detects
+// that and immediately re-requests fullscreen, keeping the nav/status bars
+// hidden and preventing accidental navigation away from the app.
 ;(function() {
-    let fsGuardTimer = null;
     const fsChange = () => {
         if (document.fullscreenElement) return; // Still fullscreen — nothing to do
-        if (!state || !state.activeVisit) return; // No active visit — let fullscreen exit
-        // Re-enter fullscreen after a brief delay so in-progress gestures can complete
-        clearTimeout(fsGuardTimer);
-        fsGuardTimer = setTimeout(() => {
-            // Re-check: visit may have ended during the delay
-            if (!state || !state.activeVisit) return;
-            // Re-check: saver may have been woken (slide succeeded)
-            const saver = document.getElementById('batterySaver');
-            // Re-enter regardless — if saver is hidden we're in normal visit mode,
-            // which also needs nav bars hidden.
-            const el = document.documentElement;
-            const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
-            if (rfs) rfs.call(el).catch(() => {});
-        }, 1000);
+        const saver = document.getElementById('batterySaver');
+        if (!saver || saver.classList.contains('hidden')) return; // Saver not active
+        // Saver IS active but fullscreen was exited — re-enter it
+        const el = document.documentElement;
+        const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+        if (rfs) rfs.call(el).catch(() => {});
     };
     document.addEventListener('fullscreenchange',       fsChange);
     document.addEventListener('webkitfullscreenchange', fsChange);
@@ -6790,10 +6769,6 @@ function initSlideToWake() {
         currentOffset = 0;
     }
 
-    // Handle Android system cancelling the touch (e.g. gesture nav interference).
-    // Without this, isSliding stays true and the next touch is mishandled.
-    const onCancel = onEnd;
-
     function completeSlide() {
         isSliding    = false;
         gestureValid = false;
@@ -6815,11 +6790,10 @@ function initSlideToWake() {
     // Attach to the slider container (covers the full pill area)
     container.addEventListener('touchstart', onStart, { passive: false });
     container.addEventListener('mousedown',  onStart);
-    window.addEventListener('touchmove',   onMove,   { passive: false });
-    window.addEventListener('mousemove',   onMove);
-    window.addEventListener('touchend',    onEnd);
-    window.addEventListener('touchcancel', onCancel);
-    window.addEventListener('mouseup',     onEnd);
+    window.addEventListener('touchmove',  onMove, { passive: false });
+    window.addEventListener('mousemove',  onMove);
+    window.addEventListener('touchend',   onEnd);
+    window.addEventListener('mouseup',    onEnd);
 }
     
 // Update dimmed screen timer and battery
@@ -6901,13 +6875,10 @@ function _unlockOrientation() {
     } catch (e) { /* safe to ignore */ }
 }
 
-// Release wake lock, orientation lock, and fullscreen when visit ends
+// Release wake lock and orientation lock when visit ends
 function exitLockedScreen() {
     releaseWakeLock();
     _unlockOrientation();
-    // Exit fullscreen — mirrors the requestFullscreen() in enterLockedScreen()
-    const efs = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen;
-    if (efs && document.fullscreenElement) efs.call(document).catch(() => {});
 }
 
 function checkWizPinMatch() {
