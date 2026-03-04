@@ -49,6 +49,14 @@ function onOpen() {
 }
 
 // ==========================================
+// SHARED CONSTANTS
+// ==========================================
+// Single source of truth for "visit is closed" status detection.
+// Used by handleWorkerPost(), checkOverdueVisits(), and sendHealthEmail().
+// Add any new terminal statuses here — do not duplicate inline.
+const CLOSED_VISIT_STATUSES = ['DEPARTED', 'COMPLETED', 'DATA_ENTRY_ONLY', 'USER_SAFE', 'NOTICE_ACK'];
+
+// ==========================================
 // 3. WEB HANDLERS (GET/POST)
 // ==========================================
 function doGet(e) {
@@ -499,7 +507,7 @@ function handleWorkerPost(p) {
                 const rowData = data[i];
                 if (rowData[2] === workerName) {
                     const status = String(rowData[10]);
-                    const isClosed = status.includes('DEPARTED') || status.includes('COMPLETED') || status.includes('DATA_ENTRY_ONLY') || status.includes('USER_SAFE') || status.includes('NOTICE_ACK');
+                    const isClosed = CLOSED_VISIT_STATUSES.some(s => status.includes(s));
                     
                     if (!isClosed) {
                         const targetRow = startRow + i;
@@ -1110,7 +1118,7 @@ function checkOverdueVisits() {
             const entry = latest[worker].rowData;
             const status = String(entry[10]); 
             const dueTimeStr = entry[20]; 
-            const isClosed = status.includes("DEPARTED") || status.includes("COMPLETED") || status.includes("DATA_ENTRY_ONLY");
+            const isClosed = CLOSED_VISIT_STATUSES.some(s => status.includes(s));
             
             if(!isClosed && dueTimeStr) {
                 const due = new Date(dueTimeStr);
@@ -1173,7 +1181,7 @@ function sendHealthEmail() {
     const stalledVisits = []; // Open visits that started > 24h ago
 
     const ESCALATION_STATUSES = ['OVERDUE', 'EMERGENCY', 'PANIC', 'SOS', 'DURESS'];
-    const CLOSED_STATUSES     = ['DEPARTED', 'COMPLETED', 'DATA_ENTRY_ONLY', 'USER_SAFE', 'NOTICE_ACK'];
+    // CLOSED_VISIT_STATUSES is the module-level constant — no local copy needed.
 
     if (sheet && sheet.getLastRow() > 1) {
         const data = sheet.getDataRange().getValues();
@@ -1203,7 +1211,7 @@ function sendHealthEmail() {
         // Flag workers whose latest row is open and older than 24h
         Object.keys(latestRowPerWorker).forEach(worker => {
             const entry = latestRowPerWorker[worker];
-            const isClosed = CLOSED_STATUSES.some(s => entry.status.toUpperCase().includes(s));
+            const isClosed = CLOSED_VISIT_STATUSES.some(s => entry.status.toUpperCase().includes(s));
             if (!isClosed && entry.time < oneDayAgo) {
                 stalledVisits.push({
                     worker:   worker,
