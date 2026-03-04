@@ -2929,6 +2929,15 @@ function enterLockedScreen() {
     }
     
     _lockOrientation();   // Prevent landscape rotation for the duration of the visit
+
+    // FULLSCREEN: Hide Android nav/status bars for the duration of the visit.
+    // Must be called here — this function executes within a user gesture (hold to
+    // start visit), which is the only context the browser will grant fullscreen.
+    // activateDimMode() runs from a setTimeout and cannot request fullscreen.
+    const _rfs = document.documentElement.requestFullscreen
+               || document.documentElement.webkitRequestFullscreen
+               || document.documentElement.mozRequestFullScreen;
+    if (_rfs) _rfs.call(document.documentElement).catch(() => {});
 }
 
 /**
@@ -3035,12 +3044,8 @@ function iamSafe() {
         });
         processUploadQueue(payload);
 
-        // 3. AUDIT TRAIL: handleSafetyResolution() (called via the notifySafety payload above)
-        //    already calls handleWorkerPost() which writes USER_SAFE_CONFIRMED to the open
-        //    alarm row. A second logSafety("USER_SAFE") call here is redundant: it arrives
-        //    after the row is already closed, causes handleWorkerPost to append a new orphan
-        //    row (with no departure time), and creates status-string inconsistencies.
-        //    Removed — USER_SAFE_CONFIRMED on the resolved row IS the audit trail.
+        // 3. AUDIT TRAIL: Standard log entry for the spreadsheet
+        logSafety("USER_SAFE", "Worker entered PIN to cancel alarm state.");
         
         // 4. STATE MANAGEMENT: Reset safety flags
         state.activeVisit.isSafeConfirmed = true; 
@@ -6100,47 +6105,36 @@ function toggleBatterySaver() {
     const isActivating = saver.classList.contains('hidden');
 
     if (isActivating) {
-        // 1. UI: Show black screen
+        // NOTE: This activate path is no longer reachable — battery saver entry
+        // is handled exclusively by activateDimMode() (10s inactivity timer).
+        // Fullscreen is entered once in enterLockedScreen() and maintained for
+        // the entire visit. Kept here only as a safety fallback.
         saver.classList.remove('hidden');
-
-        // 2. FULLSCREEN: Hide Android navigation bar + status bar.
-        // A fullscreenchange listener (below) re-enters fullscreen if the user
-        // drags down to reveal the browser chrome while the saver is still active.
-        const el = document.documentElement;
-        const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
-        if (rfs) rfs.call(el).catch(() => {});
-
-        // 3. RENDERING: Stop GPU/Layout calculations
         main.style.display = 'none';
-
-        // 4. CPU: Throttle the heartbeat
         clearInterval(tickIntervalId);
         tickIntervalId = setInterval(tick, TICK_SAVER);
-
-        // 5. Populate the HUD immediately so values show straight away
-        //    rather than waiting up to 30s for the first throttled tick.
         updateBatterySaverHUD();
         console.log('Battery Saver Active: throttled to 30s.');
     } else {
-        // 1. FULLSCREEN: Restore normal browser chrome
-        const efs = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen;
-        if (efs && document.fullscreenElement) efs.call(document).catch(() => {});
+        // WAKE: Slide gesture completed — restore normal UI.
+        // Do NOT exit fullscreen here — fullscreen persists for the entire visit
+        // and is only released in exitLockedScreen() when the visit ends.
 
-        // 2. UI: Hide black screen
+        // 1. UI: Hide black screen
         saver.classList.add('hidden');
         
-        // 3. RENDERING: Resume UI
+        // 2. RENDERING: Resume UI
         main.style.display = 'block';
 
-        // 4. CPU: Restore normal heartbeat
+        // 3. CPU: Restore normal heartbeat
         clearInterval(tickIntervalId);
         tickIntervalId = setInterval(tick, TICK_NORMAL);
 
-        // 5. Immediate tick so the main UI is up-to-date right away
+        // 4. Immediate tick so the main UI is up-to-date right away
         tick();
         console.log('Normal Mode: Heartbeat restored to 1s.');
 
-        // 6. RESTART INACTIVITY COUNTDOWN so battery saver reactivates
+        // 5. RESTART INACTIVITY COUNTDOWN so battery saver reactivates
         // after 10 s of inactivity — this was the reason dim mode never
         // re-triggered after the user swiped to wake.
         resetInactivityTimer();
@@ -6148,16 +6142,15 @@ function toggleBatterySaver() {
 }
 
 // FULLSCREEN RE-ENTRY GUARD
-// If the user drags from the top to reveal the Android browser chrome while
-// the battery saver is active, the OS exits fullscreen. This listener detects
-// that and immediately re-requests fullscreen, keeping the nav/status bars
-// hidden and preventing accidental navigation away from the app.
+// If the user drags from the top edge to reveal Android browser chrome while
+// a visit is active, the OS exits fullscreen. This listener detects that and
+// immediately re-requests fullscreen, keeping the nav/status bars hidden for
+// the entire visit — regardless of whether the battery saver overlay is showing.
 ;(function() {
     const fsChange = () => {
         if (document.fullscreenElement) return; // Still fullscreen — nothing to do
-        const saver = document.getElementById('batterySaver');
-        if (!saver || saver.classList.contains('hidden')) return; // Saver not active
-        // Saver IS active but fullscreen was exited — re-enter it
+        if (!state || !state.activeVisit) return; // No active visit — let fullscreen stay off
+        // Active visit in progress but fullscreen exited — re-enter it
         const el = document.documentElement;
         const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
         if (rfs) rfs.call(el).catch(() => {});
@@ -6878,6 +6871,9 @@ function _unlockOrientation() {
 function exitLockedScreen() {
     releaseWakeLock();
     _unlockOrientation();
+    // Exit fullscreen that was entered in enterLockedScreen()
+    const _efs = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen;
+    if (_efs && document.fullscreenElement) _efs.call(document).catch(() => {});
 }
 
 function checkWizPinMatch() {
