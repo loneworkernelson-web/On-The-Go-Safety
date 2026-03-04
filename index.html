@@ -1048,9 +1048,7 @@ function testConnection() {
 
         const logoUrl = document.getElementById('logoUrl').value || './icon.png';
 
-        // Bump version from current date+time stamp so cache invalidation fires.
-        // Includes HHmm so multiple regenerations on the same day each produce a
-        // distinct version string — e.g. v82.202603041423 vs v82.202603041507.
+        // Bump version from current date-stamp so cache invalidation fires
         const version = 'v82.' + new Date().toISOString().slice(0,16).replace(/[-T:]/g,'');
 
         return {
