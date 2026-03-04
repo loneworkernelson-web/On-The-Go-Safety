@@ -36,6 +36,11 @@ const EMERGENCY_NUMBER = (function() {
     return map[CONFIG.COUNTRY_CODE] || '111';
 })();
 
+// Single source of truth for visit statuses that mean "this visit is closed".
+// Used by handleWorkerPost(), checkOverdueVisits(), and sendHealthEmail()
+// to prevent drift between the three locations.
+const CLOSED_VISIT_STATUSES = ['DEPARTED', 'COMPLETED', 'DATA_ENTRY_ONLY', 'USER_SAFE', 'NOTICE_ACK'];
+
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('🛡️ OTG Admin')
@@ -47,14 +52,6 @@ function onOpen() {
       .addItem('Force Sync Forms', 'getGlobalForms')
       .addToUi();
 }
-
-// ==========================================
-// SHARED CONSTANTS
-// ==========================================
-// Single source of truth for "visit is closed" status detection.
-// Used by handleWorkerPost(), checkOverdueVisits(), and sendHealthEmail().
-// Add any new terminal statuses here — do not duplicate inline.
-const CLOSED_VISIT_STATUSES = ['DEPARTED', 'COMPLETED', 'DATA_ENTRY_ONLY', 'USER_SAFE', 'NOTICE_ACK'];
 
 // ==========================================
 // 3. WEB HANDLERS (GET/POST)
@@ -1181,7 +1178,7 @@ function sendHealthEmail() {
     const stalledVisits = []; // Open visits that started > 24h ago
 
     const ESCALATION_STATUSES = ['OVERDUE', 'EMERGENCY', 'PANIC', 'SOS', 'DURESS'];
-    // CLOSED_VISIT_STATUSES is the module-level constant — no local copy needed.
+    // CLOSED_VISIT_STATUSES is the module-level constant — no local redefinition needed
 
     if (sheet && sheet.getLastRow() > 1) {
         const data = sheet.getDataRange().getValues();
