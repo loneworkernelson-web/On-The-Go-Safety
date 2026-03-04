@@ -1997,9 +1997,15 @@ function activateDimMode() {
     document.documentElement.classList.add('system-dim');
     document.body.classList.add('system-dim');
     isDimmed = true;
-    
+
+    // Activate via the canonical path so fullscreen is always entered,
+    // lockedPage is always hidden, and the tick is throttled consistently.
+    // Direct classList manipulation was the old path — it skipped fullscreen,
+    // leaving nav/status bars visible and creating state mismatches on wake.
     const batterySaver = document.getElementById('batterySaver');
-    if (batterySaver) batterySaver.classList.remove('hidden');
+    if (batterySaver && batterySaver.classList.contains('hidden')) {
+        toggleBatterySaver(); // activation branch: shows saver + fullscreen + hides lockedPage
+    }
 }
     
 /**
@@ -6126,8 +6132,10 @@ function toggleBatterySaver() {
         // never re-activates the lock during an intentional slide-to-wake.
         saver.classList.add('hidden');
 
-        // 2. RENDERING: Resume UI
-        main.style.display = 'block';
+        // 2. RENDERING: Resume UI — clear inline style so CSS .page.active restores
+        // display:flex. Setting 'block' was overriding the class and breaking the
+        // locked screen's flex layout every time it was woken from dim mode.
+        main.style.display = '';
 
         // 3. FULLSCREEN: Restore normal browser chrome (saver already hidden above)
         const efs = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen;
