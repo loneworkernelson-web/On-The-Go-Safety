@@ -3035,8 +3035,12 @@ function iamSafe() {
         });
         processUploadQueue(payload);
 
-        // 3. AUDIT TRAIL: Standard log entry for the spreadsheet
-        logSafety("USER_SAFE", "Worker entered PIN to cancel alarm state.");
+        // 3. AUDIT TRAIL: handleSafetyResolution() (called via the notifySafety payload above)
+        //    already calls handleWorkerPost() which writes USER_SAFE_CONFIRMED to the open
+        //    alarm row. A second logSafety("USER_SAFE") call here is redundant: it arrives
+        //    after the row is already closed, causes handleWorkerPost to append a new orphan
+        //    row (with no departure time), and creates status-string inconsistencies.
+        //    Removed — USER_SAFE_CONFIRMED on the resolved row IS the audit trail.
         
         // 4. STATE MANAGEMENT: Reset safety flags
         state.activeVisit.isSafeConfirmed = true; 
