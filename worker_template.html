@@ -95,6 +95,9 @@ body {
     transition: width 0.2s ease-out; 
     z-index: 0;
 }
+/* SLIDE ACTION PILLS */
+.slide-action-pill { position: relative; overflow: hidden; user-select: none; touch-action: pan-y; cursor: pointer; }
+.slide-action-pill.pill-disabled { opacity: 0.45; pointer-events: none; }
 /* 5. GPS SIGNAL BARS */
 .gps-bar { width: 4px; height: 12px; background-color: #374151; border-radius: 1px; transition: background-color 0.3s; }
 .gps-bar.active-red { background-color: #ef4444; box-shadow: 0 0 5px #ef4444; }
@@ -661,17 +664,20 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
     </div>
 </div>
         
-        <!-- Forms Button + Hold to Start Button -->
+        <!-- Forms Button + Slide to Begin Visit Pill -->
 <div class="flex gap-3 h-16 items-stretch">
     <button id="btnForms" onclick="openFormsLibrary()" 
             class="w-1/4 bg-indigo-950 text-indigo-300 font-black rounded-2xl border border-indigo-700/50 shadow-lg active:scale-95 transition text-xs uppercase tracking-tighter leading-none">
         Forms
     </button>
-    <button type="button" id="btnStart" 
-            class="long-press-btn flex-1 bg-gray-700 text-gray-300 font-black rounded-2xl text-xl shadow-lg transition-all" 
-            disabled>
-        <span class="relative z-10">Hold to Start</span>
-    </button>
+    <div id="btnStart" class="slide-action-pill pill-disabled flex-1 relative bg-gray-800 h-16 rounded-2xl p-1 border border-gray-700 flex items-center overflow-hidden shadow-inner">
+        <div id="slideStartThumb" class="w-14 h-14 rounded-xl flex items-center justify-center shadow-2xl z-20 pointer-events-none" style="background:var(--accent,#3b82f6)">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
+        </div>
+        <div class="w-full flex justify-center pointer-events-none">
+            <span id="slideStartLabel" class="text-xs font-black text-gray-400 uppercase tracking-[0.2em] transition-opacity duration-200">Select a Site</span>
+        </div>
+    </div>
 </div>
     </div>
 </div>
@@ -726,12 +732,18 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
                 </button>
             </div>
 
-            <button id="btnDepart" class="long-press-btn w-full py-5 bg-red-600 hover:bg-red-500 text-white font-black rounded-2xl text-xl shadow-2xl">
-                Hold to End
-            </button>
+            <div id="btnDepart" class="slide-action-pill w-full relative bg-red-700 h-20 rounded-2xl p-1 border border-red-900 flex items-center overflow-hidden shadow-2xl">
+                <div id="slideDepartThumb" class="w-16 h-16 rounded-xl bg-white flex items-center justify-center shadow-2xl z-20 pointer-events-none flex-shrink-0">
+                    <svg class="w-7 h-7 text-red-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
+                </div>
+                <div class="w-full flex flex-col items-center justify-center pointer-events-none">
+                    <span id="slideDepartLabel" class="text-lg font-black text-white uppercase tracking-widest transition-opacity duration-200">Slide to End Visit</span>
+                    <span id="slideDepartSub" class="text-xs font-bold text-red-200 opacity-80 tracking-widest mt-0.5"></span>
+                </div>
+            </div>
             
             <button id="btnSafe" class="hidden long-press-btn w-full py-5 bg-green-600 hover:bg-green-500 text-white font-black rounded-2xl text-xl shadow-2xl animate-pulse">
-                I Am Safe
+                Hold to Confirm Safe
             </button>
 
             <!-- REDUNDANT ESCALATION: Direct mailto fallback shown when alarm fires.
@@ -760,6 +772,10 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
     <div class="header-bar">
         <h1 id="reportTitle" class="text-xl font-bold">Visit Report</h1>
         <button onclick="navigate(state.activeVisit ? 'locked' : 'main')" class="text-3xl text-gray-400 hover:text-white px-2">×</button>
+    </div>
+    <div id="formLocationBanner" class="hidden mx-4 mt-1 mb-1 px-4 py-2 bg-blue-900/40 border border-blue-700/50 rounded-xl flex items-center gap-2">
+        <span class="text-blue-400 text-sm flex-shrink-0">📍</span>
+        <span id="formLocationName" class="text-sm font-bold text-blue-300 truncate"></span>
     </div>
     <div class="content-area">
         <div id="reportFields"></div>
@@ -1528,9 +1544,7 @@ let state; // Declared but not initialized until onload
 let formExecutionContext = null;
 let dimTimer;
 let isDimmed = false;
-let lastWakeTime = 0;           // Timestamp of last manual wake — used for grace period
-const DIM_DELAY     = 10000;    // 10 seconds inactivity before auto-dim
-const WAKE_GRACE_MS = 30000;    // 30 seconds grace after wake before timer can re-arm
+const DIM_DELAY = 10000; // 10 seconds
 let welfareIntervalId  = null;  // Drives the periodic welfare check schedule
 let welfareCountdownId = null;  // Drives the 2-minute countdown within the modal
 let travellingInterval;
@@ -1970,16 +1984,9 @@ function resetInactivityTimer() {
     if (saverEl && !saverEl.classList.contains('hidden')) return;
 
     clearTimeout(dimTimer);
-
-    // WAKE GRACE PERIOD: After the user manually wakes the screen, don't re-arm
-    // the inactivity timer for WAKE_GRACE_MS (30s). Without this, the timer fires
-    // on the wake touch itself and re-dims the screen 10s later — making it feel
-    // like the wake had no effect. The grace period gives the worker time to read
-    // the timer/battery before the screen dims again.
-    if (state && state.activeVisit && (Date.now() - lastWakeTime > WAKE_GRACE_MS)) {
+    if (state && state.activeVisit) {
         dimTimer = setTimeout(activateDimMode, DIM_DELAY);
     }
-
     deactivateDimMode();
 }
 
@@ -2020,7 +2027,6 @@ function deactivateDimMode() {
     document.documentElement.classList.remove('system-dim');
     document.body.classList.remove('system-dim');
     isDimmed = false;
-    lastWakeTime = Date.now(); // Start grace period — inactivity timer won't re-arm for 30s
     const batterySaver = document.getElementById('batterySaver');
     const slideProgress = document.getElementById('slideProgress'); 
     
@@ -2624,6 +2630,27 @@ function loadFormAndShow(templateName, context = null) {
     
     navigate('report'); 
     
+    // ── LOCATION BANNER ──────────────────────────────────────────────────────
+    // Show the site name at top of form so the worker can confirm context.
+    // Source priority: active visit → selected location tile → hidden.
+    const banner     = document.getElementById('formLocationBanner');
+    const bannerName = document.getElementById('formLocationName');
+    if (banner && bannerName) {
+        let locName = null;
+        if (state.activeVisit && state.activeVisit.locationName) {
+            locName = state.activeVisit.locationName;
+        } else if (state.selectedLocationId && state.locations) {
+            const loc = state.locations.find(l => l.id === state.selectedLocationId);
+            if (loc) locName = loc.name;
+        }
+        if (locName) {
+            bannerName.textContent = locName;
+            banner.classList.remove('hidden');
+        } else {
+            banner.classList.add('hidden');
+        }
+    }
+
     const title = templateName === '(Standard)' ? 'Status Update' : templateName;
     const titleEl = document.getElementById('reportTitle');
     if (titleEl) {
@@ -2687,27 +2714,43 @@ function loadFormAndShow(templateName, context = null) {
         }, 500); 
     }
     
-    // GOLDEN FIX: Every form submission now requires a 1.8s long-press
-    const btn = document.getElementById('btnSubmitRep');
-    if (btn) {
-        const newBtn = btn.cloneNode(true);
-        btn.parentNode.replaceChild(newBtn, btn);
-        
-        // Adds necessary classes for the long-press animation
-        newBtn.classList.add('active:scale-95', 'transition-all', 'long-press-btn');
+    // ── SUBMIT BUTTON / PILL ────────────────────────────────────────────────
+    // Context determines the interaction:
+    //   Submit & End Visit  → slide pill (high-stakes, one-way action)
+    //   Send Update         → short hold 800ms (deliberate but low-stakes)
+    //   Submit Form         → short hold 500ms (standalone, no active visit)
+    const submitBtn = document.getElementById('btnSubmitRep');
+    if (submitBtn) {
+        const footer = submitBtn.parentNode;
 
-        // Logic: Determines the label based on the current safety context
-        let label = "HOLD TO SUBMIT";
         if (state.activeVisit && !isMidVisitUpdate) {
-            label = "HOLD TO SUBMIT & END";
-        } else if (isMidVisitUpdate) {
-            label = "HOLD TO SEND UPDATE";
+            // ── SLIDE PILL: Submit & End Visit ──
+            const pill = document.createElement('div');
+            pill.id        = 'slideSubmitPill';
+            pill.className = 'slide-action-pill flex-[2] relative bg-green-700 h-14 rounded-xl p-1 border border-green-900 flex items-center overflow-hidden shadow-lg';
+            pill.innerHTML = `
+                <div id="slideSubmitThumb" class="w-11 h-11 rounded-lg bg-white flex items-center justify-center shadow-xl z-20 pointer-events-none flex-shrink-0">
+                    <svg class="w-5 h-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
+                </div>
+                <div class="w-full flex flex-col items-center justify-center pointer-events-none">
+                    <span id="slideSubmitLabel" class="text-sm font-black text-white uppercase tracking-widest transition-opacity duration-200">Slide to Submit &amp; End Visit</span>
+                </div>`;
+            footer.replaceChild(pill, submitBtn);
+            setTimeout(() => initSlidePill('slideSubmitPill', 'slideSubmitThumb', 'slideSubmitLabel', submitReport), 50);
+
+        } else {
+            // ── SHORT HOLD: Send Update or Submit Form ──
+            const newBtn = submitBtn.cloneNode(true);
+            submitBtn.parentNode.replaceChild(newBtn, submitBtn);
+            newBtn.classList.add('active:scale-95', 'transition-all', 'long-press-btn');
+            if (isMidVisitUpdate) {
+                newBtn.textContent = 'Send Update';
+                setupLongPress(newBtn, 800, submitReport);
+            } else {
+                newBtn.textContent = 'Submit Form';
+                setupLongPress(newBtn, 500, submitReport);
+            }
         }
-        
-        newBtn.textContent = label;
-        
-        // Standardises the hold duration to 1.8 seconds (1800ms)
-        setupLongPress(newBtn, 1500, submitReport); 
     }
 }
     
@@ -2788,7 +2831,7 @@ function preDepart() {
         }
 
         const btnDepart = document.getElementById('btnDepart');
-        if (btnDepart) btnDepart.textContent = 'Getting GPS...';
+        const _dLabel = document.getElementById('slideDepartLabel'); if (_dLabel) _dLabel.textContent = 'Getting GPS...';
         
         navigator.geolocation.getCurrentPosition(
             async (pos) => {
@@ -2812,11 +2855,11 @@ function preDepart() {
                         calculatedDist = { km: dist.toFixed(2), type: 'crow', offline: true };
                     }
                 }
-                if (btnDepart) btnDepart.textContent = 'Hold to End';
+                updateDepartLabel();
                 loadFormAndShow('Travel Report'); // Correctly loads Travel template
             },
             (err) => {
-                if (btnDepart) btnDepart.textContent = 'Hold to End';
+                updateDepartLabel();
                 calculatedDist = null;
                 loadFormAndShow('Travel Report');
             },
@@ -2855,11 +2898,11 @@ function preDepart() {
  * opens and whenever noReport status changes (site info toggle, travel settings).
  */
 function updateDepartLabel() {
-    const btn = document.getElementById('btnDepart');
-    if (!btn) return;
+    const label = document.getElementById('slideDepartLabel');
+    const sub   = document.getElementById('slideDepartSub');
+    if (!label) return;
 
     let noReport = false;
-
     if (state && state.activeVisit) {
         const isTravelSession = state.activeVisit.isTravel || state.activeVisit.locationId === 'travel';
         if (isTravelSession) {
@@ -2870,10 +2913,13 @@ function updateDepartLabel() {
         }
     }
 
-    // Keep label text — just update/add a small subtitle inside the button
-    btn.innerHTML = noReport
-        ? `Hold to End<br><span class="text-xs font-bold opacity-70 tracking-widest">No report — direct exit</span>`
-        : `Hold to End<br><span class="text-xs font-bold opacity-60 tracking-widest">📋 Report required</span>`;
+    if (noReport) {
+        label.textContent = 'Slide to End Visit';
+        if (sub) sub.textContent = 'No report — direct exit';
+    } else {
+        label.textContent = 'Slide to Proceed to Report';
+        if (sub) sub.textContent = '📋 Complete your visit report next';
+    }
 }
 
 // ============================================================================
@@ -2908,8 +2954,7 @@ function enterLockedScreen() {
     }
     
     // Setup long-press handlers for buttons
-    const btnDepart = document.getElementById('btnDepart');
-    if (btnDepart) setupLongPress(btnDepart, 1500, preDepart);
+    // (Depart pill is wired once at startup via initAllActionPills)
     updateDepartLabel(); // Set label + report/no-report subtitle
     
     const btnExtend = document.getElementById('btnExtend');
@@ -4040,65 +4085,51 @@ function saveTravelSettings() {
     updateDepartLabel();
     showToast('✅ Travel settings updated');
 }
- 
-function updateArrivedButtonState() {
-    const btn = document.getElementById('btnStart');
-    const slider = document.getElementById('durationSlider');
-    if (!btn || !slider) return;
-    
-    const hasLocation = !!state.selectedLocationId;
-    const durationMins = DURATION_MAP[parseInt(slider.value)];
-    const hasDuration = durationMins > 0;
 
-    btn.disabled = false; 
-    btn.classList.remove('bg-blue-600', 'btn-accent', 'bg-gray-700', 'text-white', 'text-gray-300', 'opacity-50');
+function updateArrivedButtonState() {
+    const pill  = document.getElementById('btnStart');
+    const label = document.getElementById('slideStartLabel');
+    const slider = document.getElementById('durationSlider');
+    if (!pill || !label || !slider) return;
+
+    const hasLocation  = !!state.selectedLocationId;
+    const durationMins = DURATION_MAP[parseInt(slider.value)];
+    const hasDuration  = durationMins > 0;
+
+    // Reset state
+    pill.classList.remove('pill-disabled');
+    pill.style.borderColor = '';
 
     // TRAVEL LOGIC: Time is mandatory, Site is optional
     if (state.isTravelActive) {
         if (!hasDuration) {
-            btn.innerText = 'SELECT TRAVEL TIME';
-            btn.classList.add('btn-accent', 'text-white', 'opacity-50');
+            label.textContent = 'Select Travel Time';
+            pill.classList.add('pill-disabled');
         } else {
-            const loc = state.locations.find(l => l.id === state.selectedLocationId);
-            btn.innerText = loc ? `HOLD TO TRAVEL TO ${loc.name.toUpperCase()}` : 'HOLD TO START TRAVEL';
-            btn.classList.add('btn-accent', 'text-white');
+            const loc = state.locations && state.locations.find(l => l.id === state.selectedLocationId);
+            label.textContent = loc ? `Slide to Travel to ${loc.name}` : 'Slide to Start Travel';
+            pill.style.borderColor = 'var(--accent, #3b82f6)';
         }
-    } 
+    }
     // STANDARD LOGIC: Both Time and Site mandatory
     else if (hasLocation && hasDuration) {
-        btn.innerText = 'HOLD TO START';
-        btn.classList.add('bg-blue-600', 'text-white');
+        const loc = state.locations && state.locations.find(l => l.id === state.selectedLocationId);
+        label.textContent = loc ? `Slide to Begin — ${loc.name}` : 'Slide to Begin Visit';
+        pill.style.borderColor = 'var(--accent, #3b82f6)';
     } else if (!hasLocation) {
-        btn.innerText = 'SELECT SITE';
-        btn.classList.add('bg-gray-700', 'text-gray-500', 'opacity-50');
+        label.textContent = 'Select a Site First';
+        pill.classList.add('pill-disabled');
     } else {
-        btn.innerText = 'SELECT TIME';
-        btn.classList.add('bg-gray-700', 'text-gray-500', 'opacity-50');
+        label.textContent = 'Select a Duration';
+        pill.classList.add('pill-disabled');
     }
-    setupHoldToStart();
 }
-   
+
 /**
- * Modular "Hold to Start" Logic
- * Connects the UI to the Safety Engine using the Long-Press Utility.
+ * setupHoldToStart — retained as no-op for any legacy callers.
+ * The Start pill is wired once by initAllActionPills() at startup.
  */
-function setupHoldToStart() {
-    const btn = document.getElementById('btnStart');
-    const slider = document.getElementById('durationSlider');
-    if (!btn || !slider) return;
-    
-    const durationMins = DURATION_MAP[parseInt(slider.value)];
-    
-    setupLongPress('btnStart', 1500, () => {
-        // MANDATORY: Block start if time is zero
-        if (durationMins <= 0) return showToast('⏳ Select a duration first');
-        
-        // MANDATORY: Block if no site (unless in Travel Mode)
-        if (!state.isTravelActive && !state.selectedLocationId) return showToast('📍 Select a site first');
-        
-        startVisit();
-    });
-}
+function setupHoldToStart() { /* wired via initAllActionPills */ }
     
 /**
  * RE-ENGINEERED: startVisit with Data Integrity
@@ -4107,15 +4138,15 @@ function setupHoldToStart() {
 async function startVisit(isSkipCheck = false) {
     if (state.activeVisit) return;
     const btn = document.getElementById('btnStart');
-    if (btn && btn.disabled) return; 
-    if (btn) btn.disabled = true;
+    if (btn && btn.dataset.starting) return;
+    if (btn) btn.dataset.starting = '1';
 
     isMidVisitUpdate = false;
 
     // Determine travel mode early so the WOF check knows whether to apply.
     const isTravelEarly = !!state.isTravelActive;
     if (!isSkipCheck && typeof checkVehicleBeforeVisit === 'function' && checkVehicleBeforeVisit(isTravelEarly)) {
-        if (btn) btn.disabled = false;
+        if (btn) delete btn.dataset.starting;
         return;
     }
 
@@ -4127,7 +4158,7 @@ async function startVisit(isSkipCheck = false) {
     const isTravelMode = !!state.isTravelActive; 
     
     if (!locId && !isTravelMode) {
-        if (btn) btn.disabled = false;
+        if (btn) delete btn.dataset.starting;
         return showToast('⚠️ Select a destination first');
     }
 
@@ -5165,6 +5196,7 @@ function _initApp() {
     initShakeDetection();
     initVolumeDetection();
     initSlideToWake();
+    initAllActionPills();
     
     // 5. User Interaction Bindings
     const btnPanic = document.getElementById('btnPanic');
@@ -6136,9 +6168,7 @@ function toggleBatterySaver() {
         saver.classList.add('hidden');
         
         // 3. RENDERING: Resume UI
-        // '' removes the inline override so .page.active { display:flex } applies correctly.
-        // 'block' would break the flex layout of lockedPage.
-        main.style.display = '';
+        main.style.display = 'block';
 
         // 4. CPU: Restore normal heartbeat
         clearInterval(tickIntervalId);
@@ -6713,6 +6743,103 @@ function cancelVolumeConfirmation() {
 }
 
 // ====== FEATURE 3: SLIDE-TO-WAKE (Hold-to-Slide) ======
+
+/**
+ * Wire up all persistent slide-to-confirm action pills.
+ * Called once at startup — listeners are registered once and remain active.
+ */
+function initAllActionPills() {
+    // Start Visit pill
+    initSlidePill('btnStart', 'slideStartThumb', 'slideStartLabel', () => {
+        const slider = document.getElementById('durationSlider');
+        const durationMins = DURATION_MAP[parseInt(slider ? slider.value : 0)];
+        if (durationMins <= 0) return showToast('⏳ Select a duration first');
+        if (!state.isTravelActive && !state.selectedLocationId) return showToast('📍 Select a site first');
+        startVisit();
+    });
+
+    // Depart pill
+    initSlidePill('btnDepart', 'slideDepartThumb', 'slideDepartLabel', preDepart);
+}
+
+/**
+ * Generic Slide-to-Confirm pill initialiser.
+ * Mirrors initSlideToWake but is reusable for any action pill.
+ * Register once at startup — uses closure flags so multiple pills coexist safely.
+ *
+ * @param {string} pillId      - container element id
+ * @param {string} thumbId     - draggable thumb element id
+ * @param {string} labelId     - label span id (fades as thumb moves)
+ * @param {Function} onComplete - callback fired when gesture completes
+ */
+function initSlidePill(pillId, thumbId, labelId, onComplete) {
+    const pill  = document.getElementById(pillId);
+    const thumb = document.getElementById(thumbId);
+    const label = document.getElementById(labelId);
+    if (!pill || !thumb) return;
+
+    const THUMB_W    = thumb.offsetWidth || 56;
+    const START_ZONE = 0.30; // gesture must begin within first 30% of track
+
+    let isSliding    = false;
+    let gestureValid = false;
+    let startClientX = 0;
+    let maxSlide     = 0;
+
+    function getClientX(e) { return e.touches ? e.touches[0].clientX : e.clientX; }
+
+    function onStart(e) {
+        if (pill.classList.contains('pill-disabled')) return;
+        const rect = pill.getBoundingClientRect();
+        const relX = getClientX(e) - rect.left;
+        maxSlide = rect.width - THUMB_W - 8;
+        if (relX / rect.width > START_ZONE) return;
+        isSliding    = true;
+        gestureValid = true;
+        startClientX = getClientX(e);
+        thumb.style.transition = 'none';
+        e.preventDefault();
+    }
+
+    function onMove(e) {
+        if (!isSliding || !gestureValid) return;
+        const delta = Math.max(0, Math.min(getClientX(e) - startClientX, maxSlide));
+        thumb.style.transform = `translateX(${delta}px)`;
+        const progress = delta / maxSlide;
+        if (label) label.style.opacity = String(Math.max(0, 1 - progress * 1.3));
+        if (progress >= 0.85) completeSlide();
+    }
+
+    function onEnd() {
+        if (!isSliding) return;
+        isSliding    = false;
+        gestureValid = false;
+        thumb.style.transition = 'transform 0.3s ease';
+        thumb.style.transform  = 'translateX(0)';
+        if (label) label.style.opacity = '1';
+    }
+
+    function completeSlide() {
+        isSliding    = false;
+        gestureValid = false;
+        thumb.style.transition = 'transform 0.15s ease-out';
+        thumb.style.transform  = `translateX(${maxSlide}px)`;
+        if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
+        setTimeout(() => {
+            thumb.style.transition = 'none';
+            thumb.style.transform  = 'translateX(0)';
+            if (label) label.style.opacity = '1';
+            onComplete();
+        }, 150);
+    }
+
+    pill.addEventListener('touchstart', onStart, { passive: false });
+    pill.addEventListener('mousedown',  onStart);
+    window.addEventListener('touchmove',  onMove, { passive: false });
+    window.addEventListener('mousemove',  onMove);
+    window.addEventListener('touchend',   onEnd);
+    window.addEventListener('mouseup',    onEnd);
+}
 
 function initSlideToWake() {
     // Wire to the ACTUAL battery-saver elements: wakeSlider (touch target),
