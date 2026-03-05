@@ -457,7 +457,7 @@
                     <tr><td><code>config.json</code></td><td>Your organisation's configuration file. The only org-specific file the worker app needs.</td><td>✅ Required</td></tr>
                     <tr><td><code>sw.js</code></td><td>Service worker — enables offline use and PWA caching. Identical for all organisations.</td><td>✅ Required (once only)</td></tr>
                     <tr><td><code>{org}_monitor.html</code></td><td>Self-contained supervisor dashboard. Open in any browser — no hosting required.</td><td>✅ Required</td></tr>
-                    <tr><td><code>{org}_worker_guide.html</code></td><td>Printable/shareable worker guide, pre-filled with your org name and vehicle term.</td><td>Optional</td></tr>
+                    <tr><td><code>worker_guide.html</code></td><td>Worker reference guide, pre-filled with your org name and vehicle term. Deploy alongside the worker app — it's automatically linked in the app's Resource Library.</td><td>Recommended</td></tr>
                     <tr><td><code>{org}_ops_manual.html</code></td><td>This document.</td><td>Optional</td></tr>
                 </tbody>
             </table>
@@ -478,9 +478,11 @@
 ├── <span class="repo">sw.js</span>             <span class="note">← downloaded from Factory Step 4</span>
 ├── <span class="repo">manifest.json</span>     <span class="note">← PWA manifest (from OTG repository)</span>
 ├── <span class="org">config.json</span>        <span class="note">← your org config (downloaded from Step 4) ✦</span>
-└── <span class="org">icon.png</span>           <span class="note">← your logo, 512×512px recommended ✦</span>
+├── <span class="org">icon.png</span>           <span class="note">← your logo, 512×512px recommended ✦</span>
+└── <span class="repo">worker_guide.html</span>  <span class="note">← worker guide (downloaded from Step 4) ◆</span>
 
-<span class="note">✦ org-specific — everything else is shared across all deployments</span></div>
+<span class="note">✦ org-specific — everything else is shared across all deployments</span>
+<span class="note">◆ optional but recommended — linked automatically in the app's Resource Library</span></div>
 
             <h4 style="margin-top:16px;">B. Upload to a Static Host</h4>
             <p>Drag your folder to <strong>Netlify Drop</strong> (<a href="https://app.netlify.com/drop" style="color:var(--accent);">app.netlify.com/drop</a>) or push to a GitHub Pages branch.</p>
