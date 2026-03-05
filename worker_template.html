@@ -4288,6 +4288,7 @@ async function startVisit(isSkipCheck = false) {
     resetInactivityTimer(); 
     renderLocations();
     updateArrivedButtonState(); 
+    if (btn) delete btn.dataset.starting;  // Clear guard — allows next visit to start
     enterLockedScreen();
 }
     
