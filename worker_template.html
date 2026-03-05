@@ -2011,11 +2011,18 @@ function activateDimMode() {
     
     if (isReportActive || activeModal) return;
 
-    // 3. OVERDUE GATE: Do not dim if time has run out or in panic mode
+    // 3. BATTERY SAVER GATE: Do not set isDimmed if the black screen is already
+    // showing via toggleBatterySaver() — that path manages its own wake sequence
+    // and doesn't use isDimmed. Setting it here would leave isDimmed=true after
+    // the slide-to-wake gesture, causing the UI to remain visually dimmed.
+    const saverAlreadyActive = document.getElementById('batterySaver');
+    if (saverAlreadyActive && !saverAlreadyActive.classList.contains('hidden')) return;
+
+    // 4. OVERDUE GATE: Do not dim if time has run out or in panic mode
     const remaining = state.activeVisit.duration - (Date.now() - state.activeVisit.startTime) / 1000;
     if (remaining <= 0 || state.activeVisit.isPanic) return;
 
-    // 4. ACTIVATE DIMMING
+    // 5. ACTIVATE DIMMING
     document.documentElement.classList.add('system-dim');
     document.body.classList.add('system-dim');
     isDimmed = true;
@@ -6194,7 +6201,15 @@ function toggleBatterySaver() {
         tick();
         console.log('Normal Mode: Heartbeat restored to 1s.');
 
-        // 6. RESTART INACTIVITY COUNTDOWN so battery saver reactivates
+        // 6. CLEAR DIM MODE — must be explicit here because resetInactivityTimer()
+        // (called next) will return early due to the grace period guard, so its
+        // trailing deactivateDimMode() call never runs. If activateDimMode() fired
+        // while the battery saver was already showing (setting isDimmed=true and
+        // adding system-dim to <html>/<body>), that state must be cleared now or the
+        // UI will remain visually dimmed even though the black overlay is gone.
+        deactivateDimMode();
+
+        // 7. RESTART INACTIVITY COUNTDOWN so battery saver reactivates
         // after DIM_DELAY of inactivity. lastWakeTime is stamped BEFORE
         // calling resetInactivityTimer() so the grace period guard is
         // already in effect when the timer-arming logic runs — otherwise
@@ -6948,6 +6963,7 @@ function initSlideToWake() {
     window.addEventListener('touchmove',  onMove, { passive: false });
     window.addEventListener('mousemove',  onMove);
     window.addEventListener('touchend',   onEnd);
+    window.addEventListener('touchcancel', onEnd); // Interrupted gestures (e.g. incoming call) must reset state
     window.addEventListener('mouseup',    onEnd);
 }
     
