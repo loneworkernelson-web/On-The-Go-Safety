@@ -36,11 +36,6 @@ const EMERGENCY_NUMBER = (function() {
     return map[CONFIG.COUNTRY_CODE] || '111';
 })();
 
-// Single source of truth for visit statuses that mean "this visit is closed".
-// Used by handleWorkerPost(), checkOverdueVisits(), and sendHealthEmail()
-// to prevent drift between the three locations.
-const CLOSED_VISIT_STATUSES = ['DEPARTED', 'COMPLETED', 'DATA_ENTRY_ONLY', 'USER_SAFE', 'NOTICE_ACK'];
-
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('🛡️ OTG Admin')
@@ -504,7 +499,7 @@ function handleWorkerPost(p) {
                 const rowData = data[i];
                 if (rowData[2] === workerName) {
                     const status = String(rowData[10]);
-                    const isClosed = CLOSED_VISIT_STATUSES.some(s => status.includes(s));
+                    const isClosed = status.includes('DEPARTED') || status.includes('COMPLETED') || status.includes('DATA_ENTRY_ONLY') || status.includes('USER_SAFE') || status.includes('NOTICE_ACK');
                     
                     if (!isClosed) {
                         const targetRow = startRow + i;
@@ -517,6 +512,17 @@ function handleWorkerPost(p) {
                         }
                         if (p['Last Known GPS']) sheet.getRange(targetRow, 15).setValue(p['Last Known GPS']);
                         if (p['Visit Report Data']) sheet.getRange(targetRow, headers.indexOf("Visit Report Data") + 1).setValue(p['Visit Report Data']);
+                        // Write Drive file links for photos and signature
+                        const p1Col  = headers.indexOf("Photo 1");
+                        const sigCol = headers.indexOf("Signature");
+                        const p2Col  = headers.indexOf("Photo 2");
+                        const p3Col  = headers.indexOf("Photo 3");
+                        const p4Col  = headers.indexOf("Photo 4");
+                        if (p1  && p1Col  > -1) sheet.getRange(targetRow, p1Col  + 1).setValue(p1);
+                        if (sig && sigCol > -1) sheet.getRange(targetRow, sigCol + 1).setValue(sig);
+                        if (p2  && p2Col  > -1) sheet.getRange(targetRow, p2Col  + 1).setValue(p2);
+                        if (p3  && p3Col  > -1) sheet.getRange(targetRow, p3Col  + 1).setValue(p3);
+                        if (p4  && p4Col  > -1) sheet.getRange(targetRow, p4Col  + 1).setValue(p4);
                         rowUpdated = true;
                         break;
                     }
@@ -1115,7 +1121,7 @@ function checkOverdueVisits() {
             const entry = latest[worker].rowData;
             const status = String(entry[10]); 
             const dueTimeStr = entry[20]; 
-            const isClosed = CLOSED_VISIT_STATUSES.some(s => status.includes(s));
+            const isClosed = status.includes("DEPARTED") || status.includes("COMPLETED") || status.includes("DATA_ENTRY_ONLY") || status.includes("USER_SAFE") || status.includes("NOTICE_ACK");
             
             if(!isClosed && dueTimeStr) {
                 const due = new Date(dueTimeStr);
@@ -1178,7 +1184,7 @@ function sendHealthEmail() {
     const stalledVisits = []; // Open visits that started > 24h ago
 
     const ESCALATION_STATUSES = ['OVERDUE', 'EMERGENCY', 'PANIC', 'SOS', 'DURESS'];
-    // CLOSED_VISIT_STATUSES is the module-level constant — no local redefinition needed
+    const CLOSED_STATUSES     = ['DEPARTED', 'COMPLETED', 'DATA_ENTRY_ONLY', 'USER_SAFE', 'NOTICE_ACK'];
 
     if (sheet && sheet.getLastRow() > 1) {
         const data = sheet.getDataRange().getValues();
@@ -1208,7 +1214,7 @@ function sendHealthEmail() {
         // Flag workers whose latest row is open and older than 24h
         Object.keys(latestRowPerWorker).forEach(worker => {
             const entry = latestRowPerWorker[worker];
-            const isClosed = CLOSED_VISIT_STATUSES.some(s => entry.status.toUpperCase().includes(s));
+            const isClosed = CLOSED_STATUSES.some(s => entry.status.toUpperCase().includes(s));
             if (!isClosed && entry.time < oneDayAgo) {
                 stalledVisits.push({
                     worker:   worker,
