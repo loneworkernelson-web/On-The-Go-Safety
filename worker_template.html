@@ -27,12 +27,6 @@
     --text-on-accent:   #ffffff;
 }
 
-/* 2. FORCE SYSTEM DIM: Required to dim the OS navigation bar for Battery Saver */
-html.system-dim, body.system-dim { 
-    background-color: #000000 !important; 
-    color-scheme: dark !important; 
-}
-
 /* 3. SOPHISTICATED UI BASE */
 body { 
     font-family: 'Inter', sans-serif; 
@@ -1543,7 +1537,7 @@ document.addEventListener('DOMContentLoaded', loadConfig);
 let state; // Declared but not initialized until onload
 let formExecutionContext = null;
 let dimTimer;
-let isDimmed = false;
+let isBatterySaverActive = false;   // Single source of truth for battery saver state
 const DIM_DELAY = 10000; // 10 seconds
 const WAKE_GRACE_MS = 30000; // 30s after waking, inactivity timer will not re-arm
 let lastWakeTime = 0;
@@ -1613,11 +1607,8 @@ document.addEventListener('click', initAudio, { once: true });
 document.addEventListener('touchstart', initAudio, { once: true });
 ['mousedown', 'touchstart', 'scroll', 'keydown'].forEach(evt => {
     document.addEventListener(evt, () => {
-        // Guard: do not reset idle clock while battery saver black screen is showing.
-        // Without this, any touch on the black screen resets idleSeconds and can
-        // interfere with dim/wake state tracking.
-        const saverEl = document.getElementById('batterySaver');
-        if (saverEl && !saverEl.classList.contains('hidden')) return;
+        // Guard: do not reset idle clock while battery saver is active.
+        if (isBatterySaverActive) return;
         if (state && state.activeVisit) {
             state.idleSeconds = 0; // Activity detected, reset the clock
         }
@@ -1975,99 +1966,103 @@ function setupLongPress(target, duration, callback) {
 }
     
 // ============================================================================
-// INACTIVITY DIM MODE
+// BATTERY SAVER — SINGLE UNIFIED SYSTEM
+// One state variable (isBatterySaverActive). One activate path. One deactivate
+// path. No divergence possible.
 // ============================================================================
-function resetInactivityTimer() {
-    // ALWAYS cancel any pending dim timer first — before any guards.
-    // This is critical: the grace period guard (below) returns early without
-    // re-arming a new timer, but it must ALSO cancel any timer that was already
-    // running before the wake. Without this, a timer armed at t=0 survives a
-    // wake at t=5s and fires activateDimMode() at t=10s regardless of the grace
-    // period, because the grace period only prevents new timers being set —
-    // it never had a chance to kill the old one.
-    clearTimeout(dimTimer);
-
-    // Guard: if the battery saver black screen is showing, any touch should be
-    // completely ignored here. The ONLY valid wake path is the slide gesture.
-    const saverEl = document.getElementById('batterySaver');
-    if (saverEl && !saverEl.classList.contains('hidden')) return;
-
-    // Grace period guard: don't re-arm the dim timer within 30s of a wake.
-    if (Date.now() - lastWakeTime < WAKE_GRACE_MS) return;
-
-    if (state && state.activeVisit) {
-        dimTimer = setTimeout(activateDimMode, DIM_DELAY);
-    }
-    deactivateDimMode();
-}
 
 /**
- * REWRITTEN: High-Integrity Auto-Dim
- * Fixed: Removed non-existent modalBackdrop check.
+ * ACTIVATE: Show battery saver overlay.
+ * Called ONLY by the inactivity timer (dimTimer).
+ * Single path — no ambiguity.
  */
-function activateDimMode() {
+function activateBatterySaver() {
     if (!state || !state.activeVisit) return;
-    
-    // 1. SAFETY GATE: Do not dim if the user is filling out a report
+
+    // Gates: don't dim during report, modal, overdue/panic
     const isReportActive = document.getElementById('reportPage')?.classList.contains('active');
-    
-    // 2. MODAL GATE: Check if ANY modal is physically visible
     const activeModal = document.querySelector('[id$="Modal"]:not(.hidden)');
-    
     if (isReportActive || activeModal) return;
-
-    // 3. BATTERY SAVER GATE: Do not set isDimmed if the black screen is already
-    // showing via toggleBatterySaver() — that path manages its own wake sequence
-    // and doesn't use isDimmed. Setting it here would leave isDimmed=true after
-    // the slide-to-wake gesture, causing the UI to remain visually dimmed.
-    const saverAlreadyActive = document.getElementById('batterySaver');
-    if (saverAlreadyActive && !saverAlreadyActive.classList.contains('hidden')) return;
-
-    // 4. OVERDUE GATE: Do not dim if time has run out or in panic mode
     const remaining = state.activeVisit.duration - (Date.now() - state.activeVisit.startTime) / 1000;
     if (remaining <= 0 || state.activeVisit.isPanic) return;
 
-    // 5. ACTIVATE DIMMING
-    document.documentElement.classList.add('system-dim');
-    document.body.classList.add('system-dim');
-    isDimmed = true;
-    
-    const batterySaver = document.getElementById('batterySaver');
-    if (batterySaver) batterySaver.classList.remove('hidden');
-}
-    
-/**
- * HIGH-INTEGRITY WAKE LOGIC
- * Logic: Restores full UI visibility and resets the battery saver overlays.
- */
-function deactivateDimMode() {
-    if (!isDimmed) return; // Exit immediately if already awake
-    document.documentElement.classList.remove('system-dim');
-    document.body.classList.remove('system-dim');
-    isDimmed = false;
-    lastWakeTime = Date.now(); // Stamp wake time — grace period starts now
-    const batterySaver = document.getElementById('batterySaver');
-    const slideProgress = document.getElementById('slideProgress'); 
-    
-    if (batterySaver) batterySaver.classList.add('hidden');
-    if (slideProgress) slideProgress.style.width = '0%';
-    
-    console.log("Device UI Restored: Dim Mode Deactivated");
+    const saver = document.getElementById('batterySaver');
+    const main  = document.getElementById('lockedPage');
+    if (!saver) return;
+
+    isBatterySaverActive = true;
+
+    // Show overlay
+    saver.classList.remove('hidden');
+
+    // Hide locked page to save GPU
+    if (main) main.style.display = 'none';
+
+    // Fullscreen: suppress Android nav/status bars
+    const el  = document.documentElement;
+    const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+    if (rfs) rfs.call(el).catch(() => {});
+
+    // Throttle heartbeat
+    clearInterval(tickIntervalId);
+    tickIntervalId = setInterval(tick, TICK_SAVER);
+
+    // Populate HUD immediately
+    updateBatterySaverHUD();
+    console.log('Battery Saver: active.');
 }
 
-// Battery saver wake button
-const wakeButton = document.getElementById('wakeButton');
-if (wakeButton) {
-    wakeButton.addEventListener('touchstart', e => {
-        e.preventDefault();
-        let wakeTimer = setTimeout(() => {
-            deactivateDimMode();
-            resetInactivityTimer();
-        }, 1500);
-        ['touchend', 'touchcancel'].forEach(ev => {
-            document.addEventListener(ev, () => clearTimeout(wakeTimer), { once: true });
-        });
-    });
+/**
+ * DEACTIVATE: Hide battery saver overlay.
+ * Called by completeSlide() and any emergency wake paths.
+ * Single path — no ambiguity.
+ */
+function deactivateBatterySaver() {
+    if (!isBatterySaverActive) return;  // Idempotent
+
+    const saver = document.getElementById('batterySaver');
+    const main  = document.getElementById('lockedPage');
+
+    isBatterySaverActive = false;
+
+    // Hide overlay
+    if (saver) saver.classList.add('hidden');
+
+    // Restore locked page
+    if (main) main.style.display = '';
+
+    // Exit fullscreen
+    const efs = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen;
+    if (efs && document.fullscreenElement) efs.call(document).catch(() => {});
+
+    // Restore normal heartbeat
+    clearInterval(tickIntervalId);
+    tickIntervalId = setInterval(tick, TICK_NORMAL);
+    tick();
+
+    // Stamp wake time — grace period starts now
+    lastWakeTime = Date.now();
+
+    // Cancel any pending saver timer and re-arm outside grace period
+    resetInactivityTimer();
+
+    console.log('Battery Saver: deactivated.');
+}
+
+/**
+ * ARM INACTIVITY TIMER.
+ * Always clears any existing timer first.
+ * Only re-arms if outside the wake grace period and saver not already active.
+ */
+function resetInactivityTimer() {
+    clearTimeout(dimTimer);  // Always cancel pending timer — must be first
+
+    if (isBatterySaverActive) return;  // Saver active — slide gesture is the only valid wake path
+    if (Date.now() - lastWakeTime < WAKE_GRACE_MS) return;  // Grace period — don't re-arm
+
+    if (state && state.activeVisit) {
+        dimTimer = setTimeout(activateBatterySaver, DIM_DELAY);
+    }
 }
 
 // ============================================================================
@@ -2633,7 +2628,7 @@ function buildReportForm(templateName, fieldArea) {
  */
 function loadFormAndShow(templateName, context = null) {
     if (typeof dimTimer !== 'undefined') clearTimeout(dimTimer);
-    if (typeof deactivateDimMode === 'function') deactivateDimMode();
+    deactivateBatterySaver();
 
     // 1. DYNAMIC CONTEXT CAPTURE
     // Priority: 1. Passed context (Map) -> 2. Active Session (Visit) -> 3. Reset
@@ -3235,8 +3230,7 @@ function tick() {
         }
     }
 
-    const saverEl = document.getElementById('batterySaver');
-    if (saverEl && !saverEl.classList.contains('hidden')) {
+    if (isBatterySaverActive) {
         updateBatterySaverHUD();
         // Still check for 15m expiry in background.
         // isSafeConfirmed guard prevents re-triggering after worker clears the alarm.
@@ -6156,76 +6150,6 @@ function updateLastSyncUI() {
 // PHASE 2 & 3: ALL REMAINING FEATURES
 // ============================================================================
 
-/**
- * RE-ENGINEERED: Adaptive Battery Saver
- * Logic: Throttles the CPU heartbeat and stops DOM rendering during power-save.
- */
-function toggleBatterySaver() {
-    const saver = document.getElementById('batterySaver');
-    const main = document.getElementById('lockedPage');
-    const isActivating = saver.classList.contains('hidden');
-
-    if (isActivating) {
-        // 1. UI: Show black screen
-        saver.classList.remove('hidden');
-
-        // 2. FULLSCREEN: Hide Android navigation bar + status bar.
-        // A fullscreenchange listener (below) re-enters fullscreen if the user
-        // drags down to reveal the browser chrome while the saver is still active.
-        const el = document.documentElement;
-        const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
-        if (rfs) rfs.call(el).catch(() => {});
-
-        // 3. RENDERING: Stop GPU/Layout calculations
-        main.style.display = 'none';
-
-        // 4. CPU: Throttle the heartbeat
-        clearInterval(tickIntervalId);
-        tickIntervalId = setInterval(tick, TICK_SAVER);
-
-        // 5. Populate the HUD immediately so values show straight away
-        //    rather than waiting up to 30s for the first throttled tick.
-        updateBatterySaverHUD();
-        console.log('Battery Saver Active: throttled to 30s.');
-    } else {
-        // 1. FULLSCREEN: Restore normal browser chrome
-        const efs = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen;
-        if (efs && document.fullscreenElement) efs.call(document).catch(() => {});
-
-        // 2. UI: Hide black screen
-        saver.classList.add('hidden');
-        
-        // 3. RENDERING: Resume UI (use '' not 'block' — lets .page.active CSS flex take effect)
-        main.style.display = '';
-
-        // 4. CPU: Restore normal heartbeat
-        clearInterval(tickIntervalId);
-        tickIntervalId = setInterval(tick, TICK_NORMAL);
-
-        // 5. Immediate tick so the main UI is up-to-date right away
-        tick();
-        console.log('Normal Mode: Heartbeat restored to 1s.');
-
-        // 6. CLEAR DIM MODE — must be explicit here because resetInactivityTimer()
-        // (called next) will return early due to the grace period guard, so its
-        // trailing deactivateDimMode() call never runs. If activateDimMode() fired
-        // while the battery saver was already showing (setting isDimmed=true and
-        // adding system-dim to <html>/<body>), that state must be cleared now or the
-        // UI will remain visually dimmed even though the black overlay is gone.
-        deactivateDimMode();
-
-        // 7. RESTART INACTIVITY COUNTDOWN so battery saver reactivates
-        // after DIM_DELAY of inactivity. lastWakeTime is stamped BEFORE
-        // calling resetInactivityTimer() so the grace period guard is
-        // already in effect when the timer-arming logic runs — otherwise
-        // the 10s countdown starts before deactivateDimMode() can stamp it,
-        // causing the screen to re-dim before the worker has had a chance
-        // to interact.
-        lastWakeTime = Date.now();
-        resetInactivityTimer();
-    }
-}
-
 // FULLSCREEN RE-ENTRY GUARD
 // If the user drags from the top to reveal the Android browser chrome while
 // the battery saver is active, the OS exits fullscreen. This listener detects
@@ -6234,8 +6158,7 @@ function toggleBatterySaver() {
 ;(function() {
     const fsChange = () => {
         if (document.fullscreenElement) return; // Still fullscreen — nothing to do
-        const saver = document.getElementById('batterySaver');
-        if (!saver || saver.classList.contains('hidden')) return; // Saver not active
+        if (!isBatterySaverActive) return; // Saver not active — don't re-enter fullscreen
         // Saver IS active but fullscreen was exited — re-enter it
         const el = document.documentElement;
         const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
@@ -6587,10 +6510,8 @@ function enterShakeConfirmation() {
     const modal = document.getElementById('shakeConfirmModal');
     if (!modal) return;
     
-    // Wake from dim if needed
-    if (isDimmed) {
-        deactivateDimMode();
-    }
+    // Wake from battery saver if needed
+    deactivateBatterySaver();
     
     // Show confirmation modal
     modal.classList.remove('hidden');
@@ -6707,10 +6628,8 @@ function enterVolumeConfirmation() {
     const modal = document.getElementById('volumeConfirmModal');
     if (!modal) return;
     
-    // Wake from dim if needed
-    if (isDimmed) {
-        deactivateDimMode();
-    }
+    // Wake from battery saver if needed
+    deactivateBatterySaver();
     
     // Show confirmation modal
     modal.classList.remove('hidden');
@@ -6951,7 +6870,7 @@ function initSlideToWake() {
         thumb.style.transform  = `translateX(${maxSlide}px)`;
         if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
         setTimeout(() => {
-            toggleBatterySaver();
+            deactivateBatterySaver();
             isSosLocked = true;
             setTimeout(() => { isSosLocked = false; }, 2000);
             // Reset visual state for next time saver is activated
@@ -6972,26 +6891,6 @@ function initSlideToWake() {
     window.addEventListener('mouseup',    onEnd);
 }
     
-// Update dimmed screen timer and battery
-function updateDimmedDisplay() {
-    if (!isDimmed || !state || !state.activeVisit) return;
-    
-    // Update timer
-    const dimmedTimer = document.getElementById('dimmedTimer');
-    if (dimmedTimer) {
-        const elapsed = Math.floor((Date.now() - state.activeVisit.startTime) / 1000);
-        const remaining = state.activeVisit.duration - elapsed;
-        dimmedTimer.textContent = formatCountdown(remaining);
-    }
-    
-    // Update battery
-    const dimmedBattery = document.getElementById('dimmedBattery');
-    if (dimmedBattery && currentBatteryLevel) {
-        dimmedBattery.textContent = currentBatteryLevel.replace('%', '');
-    }
-}
-
-setInterval(updateDimmedDisplay, 1000);
 
 /**
  * MISSION-CRITICAL: Screen Wake Lock
