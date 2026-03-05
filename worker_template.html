@@ -1545,6 +1545,8 @@ let formExecutionContext = null;
 let dimTimer;
 let isDimmed = false;
 const DIM_DELAY = 10000; // 10 seconds
+const WAKE_GRACE_MS = 30000; // 30s after waking, inactivity timer will not re-arm
+let lastWakeTime = 0;
 let welfareIntervalId  = null;  // Drives the periodic welfare check schedule
 let welfareCountdownId = null;  // Drives the 2-minute countdown within the modal
 let travellingInterval;
@@ -1978,10 +1980,14 @@ function setupLongPress(target, duration, callback) {
 function resetInactivityTimer() {
     // Guard: if the battery saver black screen is showing, any touch should be
     // completely ignored here. The ONLY valid wake path is the slide gesture.
-    // Without this, the window-level inactivity listeners wake the screen on
-    // any tap regardless of stopPropagation on the #batterySaver div.
     const saverEl = document.getElementById('batterySaver');
     if (saverEl && !saverEl.classList.contains('hidden')) return;
+
+    // Grace period guard: don't re-arm the dim timer within 30s of a wake.
+    // Without this, the resetInactivityTimer() call inside toggleBatterySaver
+    // would immediately start a 10s countdown, dimming the screen before the
+    // worker has had a chance to interact.
+    if (Date.now() - lastWakeTime < WAKE_GRACE_MS) return;
 
     clearTimeout(dimTimer);
     if (state && state.activeVisit) {
@@ -2027,6 +2033,7 @@ function deactivateDimMode() {
     document.documentElement.classList.remove('system-dim');
     document.body.classList.remove('system-dim');
     isDimmed = false;
+    lastWakeTime = Date.now(); // Stamp wake time — grace period starts now
     const batterySaver = document.getElementById('batterySaver');
     const slideProgress = document.getElementById('slideProgress'); 
     
@@ -6167,8 +6174,8 @@ function toggleBatterySaver() {
         // 2. UI: Hide black screen
         saver.classList.add('hidden');
         
-        // 3. RENDERING: Resume UI
-        main.style.display = 'block';
+        // 3. RENDERING: Resume UI (use '' not 'block' — lets .page.active CSS flex take effect)
+        main.style.display = '';
 
         // 4. CPU: Restore normal heartbeat
         clearInterval(tickIntervalId);
