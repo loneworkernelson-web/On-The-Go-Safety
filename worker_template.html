@@ -1978,18 +1978,23 @@ function setupLongPress(target, duration, callback) {
 // INACTIVITY DIM MODE
 // ============================================================================
 function resetInactivityTimer() {
+    // ALWAYS cancel any pending dim timer first — before any guards.
+    // This is critical: the grace period guard (below) returns early without
+    // re-arming a new timer, but it must ALSO cancel any timer that was already
+    // running before the wake. Without this, a timer armed at t=0 survives a
+    // wake at t=5s and fires activateDimMode() at t=10s regardless of the grace
+    // period, because the grace period only prevents new timers being set —
+    // it never had a chance to kill the old one.
+    clearTimeout(dimTimer);
+
     // Guard: if the battery saver black screen is showing, any touch should be
     // completely ignored here. The ONLY valid wake path is the slide gesture.
     const saverEl = document.getElementById('batterySaver');
     if (saverEl && !saverEl.classList.contains('hidden')) return;
 
     // Grace period guard: don't re-arm the dim timer within 30s of a wake.
-    // Without this, the resetInactivityTimer() call inside toggleBatterySaver
-    // would immediately start a 10s countdown, dimming the screen before the
-    // worker has had a chance to interact.
     if (Date.now() - lastWakeTime < WAKE_GRACE_MS) return;
 
-    clearTimeout(dimTimer);
     if (state && state.activeVisit) {
         dimTimer = setTimeout(activateDimMode, DIM_DELAY);
     }
