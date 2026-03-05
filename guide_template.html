@@ -290,6 +290,54 @@
             margin-bottom: 20px;
         }
 
+        /* ── Slide Pill (replaces hold-to-confirm buttons) ── */
+        .mock-slide-pill {
+            position: relative;
+            background: rgba(59,130,246,0.12);
+            border: 1.5px solid #3b82f6;
+            border-radius: 99px;
+            padding: 9px 12px 9px 46px;
+            margin-top: 8px;
+            text-align: center;
+            font-size: 9px;
+            font-weight: 800;
+            color: #93c5fd;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            overflow: hidden;
+        }
+        .mock-pill-thumb {
+            position: absolute;
+            left: 4px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 32px;
+            height: 32px;
+            background: #3b82f6;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 13px;
+        }
+        .mock-slide-pill.danger {
+            background: rgba(220,38,38,0.12);
+            border-color: #dc2626;
+            color: #fca5a5;
+        }
+        .mock-slide-pill.danger .mock-pill-thumb {
+            background: #dc2626;
+        }
+        .mock-slide-pill.success {
+            background: rgba(5,150,105,0.12);
+            border-color: #059669;
+            color: #6ee7b7;
+        }
+        .mock-slide-pill.success .mock-pill-thumb {
+            background: #059669;
+        }
+
         /* ── Platform Install Badges ── */
         .platform-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
         .platform-card {
@@ -458,7 +506,7 @@
             <ol class="step-list">
                 <li>Tap a location tile to select it (it will highlight in your organisation's colour).</li>
                 <li>Use the <strong>quick buttons</strong> (15 min, 30 min, 1 hr) or the <strong>slider</strong> to set how long you expect to be there.</li>
-                <li><strong>Hold the green "Start Visit" button</strong> for a moment to confirm and begin.</li>
+                <li><strong>Slide the green "Start Visit" pill</strong> from left to right to confirm and begin. The pill label will show the name of your selected site — if it's greyed out, check you've selected both a location and a duration.</li>
             </ol>
             <div class="tip">
                 <strong>🔊 Audio check:</strong> When starting, you may hear a brief quiet click or beep. This is normal — it wakes the app's audio system so it can alert you with a voice prompt if you go overtime.
@@ -483,12 +531,15 @@
                     </div>
                     <div class="mock-progress-bar"><div class="mock-progress-fill" style="width:50%"></div></div>
                     <div style="text-align:center;color:#9ca3af;font-size:9px;margin-bottom:10px;">30 minutes selected</div>
-                    <div class="mock-start-btn">▶ Hold to Start Visit</div>
+                    <div class="mock-slide-pill">
+                        <div class="mock-pill-thumb">▶</div>
+                        Slide to Begin — City Library
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    <p class="mock-caption">Starting a visit — duration set to 30 minutes</p>
+    <p class="mock-caption">Starting a visit — duration set to 30 minutes, slide pill ready</p>
 
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2>5. During a Visit</h2>
@@ -533,11 +584,34 @@
     <h2>6. Ending a Visit</h2>
 
     <ol class="step-list">
-        <li>Open the app and <strong>hold the red "Hold to End" button</strong>.</li>
+        <li>Open the app — the locked screen shows the <strong>"End Visit" pill</strong> at the bottom. Slide it from left to right to begin the departure process.</li>
         <li>If a report form is required for this location, fill it in — notes, photos, signature as prompted.</li>
-        <li>Tap <strong>Submit</strong>.</li>
+        <li><strong>Slide the "Submit &amp; End Visit" pill</strong> from left to right to send your report and close the visit.</li>
         <li>A green <strong>toast notification</strong> (✅ Report Sent) will appear at the top of the screen. No "OK" button needed — this is intentional.</li>
     </ol>
+
+    <div class="mock-wrap">
+        <div class="mock-phone" style="width:260px;">
+            <div class="mock-statusbar"><span>10:02 AM</span><span>▐▐▐ 🔋</span></div>
+            <div class="mock-header">
+                <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
+                <span style="color:#22c55e;font-size:9px;font-weight:900;">● ACTIVE</span>
+            </div>
+            <div class="mock-body-pad">
+                <div class="mock-label">Current Visit</div>
+                <div class="mock-value" style="font-size:11px;">📍 City Library</div>
+                <div class="mock-label">Time Remaining</div>
+                <div class="mock-value" style="color:#22c55e;">18 min</div>
+                <div class="mock-progress-bar"><div class="mock-progress-fill" style="width:40%;background:#22c55e;"></div></div>
+                <div class="mock-slide-pill danger" style="margin-top:16px;">
+                    <div class="mock-pill-thumb">→</div>
+                    Slide to Proceed to Report
+                </div>
+                <div style="text-align:center;font-size:8px;color:#fca5a5;margin-top:5px;">📋 Complete your visit report next</div>
+            </div>
+        </div>
+    </div>
+    <p class="mock-caption">Locked screen — slide the red pill to begin departure</p>
 
     <div class="mock-wrap">
         <div class="mock-phone" style="width:260px;">
@@ -687,8 +761,8 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Start a visit</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap location tile → set duration → hold green Start button</td></tr>
-            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">End a visit</td><td style="padding:10px;border:1px solid #e5e7eb;">Hold red End button → submit report if required</td></tr>
+            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Start a visit</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap location tile → set duration → slide the Start pill</td></tr>
+            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">End a visit</td><td style="padding:10px;border:1px solid #e5e7eb;">Slide the End Visit pill → slide Submit &amp; End if report required</td></tr>
             <tr><td style="padding:10px;border:1px solid #e5e7eb;">Extend time / send note</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap menu button on locked screen → Mid-Visit Options</td></tr>
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Welfare check-in</td><td style="padding:10px;border:1px solid #e5e7eb;">Hold green "I Am Safe" button when prompted (within 2 min)</td></tr>
             <tr><td style="padding:10px;border:1px solid #e5e7eb;">Raise emergency alarm</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap red SOS button 3 times rapidly</td></tr>
