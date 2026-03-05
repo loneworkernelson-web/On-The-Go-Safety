@@ -5221,8 +5221,17 @@ function _initApp() {
     }
 
     // 6. Global Inactivity Monitoring
+    // Debounced so that sliders and other controls generating rapid touchmove/mousemove
+    // events don't hammer resetInactivityTimer() and accidentally re-arm the timer
+    // mid-interaction. 300ms is imperceptible to the user but collapses bursts into
+    // a single call.
+    function _debounce(fn, delay) {
+        let t;
+        return function(...args) { clearTimeout(t); t = setTimeout(() => fn.apply(this, args), delay); };
+    }
+    const _debouncedResetInactivity = _debounce(resetInactivityTimer, 300);
     ['mousedown', 'touchstart', 'mousemove', 'keydown'].forEach(evt => {
-        window.addEventListener(evt, resetInactivityTimer, { passive: true });
+        window.addEventListener(evt, _debouncedResetInactivity, { passive: true });
     });
 
     console.log("OTG Safety Engine: Robust Initialization Complete.");
@@ -6186,8 +6195,13 @@ function toggleBatterySaver() {
         console.log('Normal Mode: Heartbeat restored to 1s.');
 
         // 6. RESTART INACTIVITY COUNTDOWN so battery saver reactivates
-        // after 10 s of inactivity — this was the reason dim mode never
-        // re-triggered after the user swiped to wake.
+        // after DIM_DELAY of inactivity. lastWakeTime is stamped BEFORE
+        // calling resetInactivityTimer() so the grace period guard is
+        // already in effect when the timer-arming logic runs — otherwise
+        // the 10s countdown starts before deactivateDimMode() can stamp it,
+        // causing the screen to re-dim before the worker has had a chance
+        // to interact.
+        lastWakeTime = Date.now();
         resetInactivityTimer();
     }
 }
@@ -7454,22 +7468,13 @@ function switchHubTab(tab) {
 function renderResources() {
     const container = document.getElementById('hubContent');
     const items = state.meta.resources || [];
-
-    // Pinned guide entry — always shown first if the file is co-deployed
-    const guideEntry = `
-        <div class="p-4 bg-blue-500/10 border border-blue-500/30 rounded-2xl active:scale-95 transition" onclick="window.open('./worker_guide.html', '_blank')">
-            <div class="text-xs text-blue-400 font-black uppercase tracking-widest mb-1">Reference</div>
-            <div class="text-sm font-bold text-white">Worker Safety App Guide</div>
-            <div class="text-sm text-gray-300 mt-2 uppercase font-black">Open Guide ↗</div>
-        </div>`;
-
-    container.innerHTML = guideEntry + (items.length ? items.map(r => `
+    container.innerHTML = items.length ? items.map(r => `
         <div class="p-4 bg-white/5 border border-white/5 rounded-2xl active:scale-95 transition" onclick="window.open('${escapeHtml(r.url)}', '_blank')">
             <div class="text-xs text-blue-400 font-black uppercase tracking-widest mb-1">${escapeHtml(r.category)}</div>
             <div class="text-sm font-bold text-white">${escapeHtml(r.title)}</div>
             <div class="text-sm text-gray-300 mt-2 uppercase font-black">Open ${escapeHtml(r.type)} ↗</div>
         </div>
-    `).join('') : '');
+    `).join('') : '<p class="text-center text-xs opacity-40 py-10">No resources assigned.</p>';
 }
 
 function renderNoticeArchive() {
