@@ -719,7 +719,13 @@ function handleRegisterDevice(p) {
   const deviceId = p.deviceId;
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === workerName) {
-      // Column E (index 4) — bind this device ID to the worker
+      const existingId = (data[i][4] || '').toString().trim();
+      // Only allow registration if column E is empty or already matches this device.
+      // If a different device ID is bound, an admin must clear column E first.
+      if (existingId && existingId !== deviceId) {
+        console.warn(`Registration blocked for ${workerName}: bound to a different device.`);
+        return { status: "error", message: "This worker is already registered on another device. Ask your administrator to clear the existing registration." };
+      }
       sheet.getRange(i + 1, 5).setValue(deviceId);
       return { status: "success", message: "Device successfully bound to " + workerName };
     }
@@ -734,7 +740,13 @@ function updateStaffStatus(p) {
     const data = sheet.getDataRange().getValues();
     for(let i=1; i<data.length; i++) {
         if(data[i][0] === p['Worker Name']) {
-            sheet.getRange(i+1, 5).setValue(p['deviceId']); 
+            // Only update column E if it is empty or already matches this device.
+            // Prevents visit events from overwriting a legitimately bound device ID.
+            const existingId = (data[i][4] || '').toString().trim();
+            const incomingId = (p['deviceId'] || '').toString().trim();
+            if (!existingId || existingId === incomingId) {
+                sheet.getRange(i+1, 5).setValue(incomingId);
+            }
             if(p['Template Name'] && p['Template Name'].includes('Vehicle')) {
                 sheet.getRange(i+1, 6).setValue(new Date()); 
                 try {
