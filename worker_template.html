@@ -369,8 +369,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
              aria-label="Slide to wake screen">
             <input type="range" id="wakeSlider" min="0" max="100" value="0" 
                    aria-label="Drag right to wake screen"
-                   class="absolute inset-0 opacity-0 w-full h-full z-10"
-                   style="pointer-events:none">
+                   class="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10">
             
             <div id="sliderThumb" class="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-2xl transition-all duration-75 pointer-events-none z-20">
                  <svg class="w-6 h-6 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -393,18 +392,6 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
     </div>
 </div>
     
-<!-- DEBUG OVERLAY — shows only when ?debug=1 in URL. Tap log to copy. Remove before production. -->
-<div id="dbgOverlay" class="hidden fixed bottom-0 left-0 right-0 z-[99999]"
-     style="background:rgba(0,0,0,0.9);border-top:2px solid #0f0;font-family:monospace;font-size:10px;color:#0f0;max-height:35vh;display:none;flex-direction:column;">
-    <div style="display:flex;justify-content:space-between;padding:3px 8px;border-bottom:1px solid #0f0;flex-shrink:0">
-        <span style="font-weight:bold">🔬 SAVER DEBUG</span>
-        <span onclick="document.getElementById('dbgLog').innerHTML=''" style="padding:1px 8px;border:1px solid #0f0;cursor:pointer">CLR</span>
-    </div>
-    <div id="dbgLog" onclick="navigator.clipboard&&navigator.clipboard.writeText(this.innerText).then(()=>alert('Copied!'))"
-         style="overflow-y:auto;padding:4px 8px;flex:1;word-break:break-all;cursor:copy"
-         title="Tap to copy"></div>
-</div>
-
 <div id="pageContainer">
 <div id="setupPage" class="page">
     <div class="header-bar">
@@ -1541,7 +1528,9 @@ let state; // Declared but not initialized until onload
 let formExecutionContext = null;
 let dimTimer;
 let isDimmed = false;
-const DIM_DELAY = 10000; // 10 seconds
+let lastWakeTime = 0;           // Timestamp of last manual wake — used for grace period
+const DIM_DELAY     = 10000;    // 10 seconds inactivity before auto-dim
+const WAKE_GRACE_MS = 30000;    // 30 seconds grace after wake before timer can re-arm
 let welfareIntervalId  = null;  // Drives the periodic welfare check schedule
 let welfareCountdownId = null;  // Drives the 2-minute countdown within the modal
 let travellingInterval;
@@ -1981,9 +1970,16 @@ function resetInactivityTimer() {
     if (saverEl && !saverEl.classList.contains('hidden')) return;
 
     clearTimeout(dimTimer);
-    if (state && state.activeVisit) {
+
+    // WAKE GRACE PERIOD: After the user manually wakes the screen, don't re-arm
+    // the inactivity timer for WAKE_GRACE_MS (30s). Without this, the timer fires
+    // on the wake touch itself and re-dims the screen 10s later — making it feel
+    // like the wake had no effect. The grace period gives the worker time to read
+    // the timer/battery before the screen dims again.
+    if (state && state.activeVisit && (Date.now() - lastWakeTime > WAKE_GRACE_MS)) {
         dimTimer = setTimeout(activateDimMode, DIM_DELAY);
     }
+
     deactivateDimMode();
 }
 
@@ -2024,6 +2020,7 @@ function deactivateDimMode() {
     document.documentElement.classList.remove('system-dim');
     document.body.classList.remove('system-dim');
     isDimmed = false;
+    lastWakeTime = Date.now(); // Start grace period — inactivity timer won't re-arm for 30s
     const batterySaver = document.getElementById('batterySaver');
     const slideProgress = document.getElementById('slideProgress'); 
     
@@ -6139,8 +6136,8 @@ function toggleBatterySaver() {
         saver.classList.add('hidden');
         
         // 3. RENDERING: Resume UI
-        // '' removes the inline style entirely so .page.active { display:flex } takes effect.
-        // 'block' was incorrect — it overrides the CSS and breaks the flex layout.
+        // '' removes the inline override so .page.active { display:flex } applies correctly.
+        // 'block' would break the flex layout of lockedPage.
         main.style.display = '';
 
         // 4. CPU: Restore normal heartbeat
@@ -6748,12 +6745,8 @@ function initSlideToWake() {
         maxSlide = rect.width - THUMB_W - 8;
 
         // Only begin tracking if the touch starts in the left START_ZONE
-        if (relX / rect.width > START_ZONE) {
-            _dbg('onStart REJECT relX=' + relX.toFixed(0) + ' w=' + rect.width.toFixed(0) + ' ratio=' + (relX/rect.width).toFixed(2));
-            return;
-        }
+        if (relX / rect.width > START_ZONE) return;
 
-        _dbg('onStart OK relX=' + relX.toFixed(0) + ' w=' + rect.width.toFixed(0));
         isSliding    = true;
         gestureValid = true;
         startClientX = getClientX(e);
@@ -6784,7 +6777,6 @@ function initSlideToWake() {
     }
 
     function completeSlide() {
-        _dbg('completeSlide fired');
         isSliding    = false;
         gestureValid = false;
         thumb.style.transition = 'transform 0.15s ease-out';
@@ -6812,64 +6804,6 @@ function initSlideToWake() {
 }
     
 // Update dimmed screen timer and battery
-// ─────────────────────────────────────────────────────────────────────────────
-// ON-SCREEN DEBUG LOG — active only when URL contains ?debug=1
-// Plain function (no IIFE) to avoid any top-level return issues.
-// Patches key functions to log timestamped events to a green-on-black panel
-// that floats above the battery saver overlay.
-// Remove this block (and the #dbgOverlay HTML) before final production.
-// ─────────────────────────────────────────────────────────────────────────────
-function _dbg(msg) {
-    const log = document.getElementById('dbgLog');
-    if (!log) return;
-    const t  = new Date();
-    const ts = t.toTimeString().slice(0,8) + '.' + String(t.getMilliseconds()).padStart(3,'0');
-    const el = document.createElement('div');
-    el.textContent = ts + ' ' + msg;
-    log.appendChild(el);
-    while (log.children.length > 80) log.removeChild(log.firstChild);
-    log.scrollTop = log.scrollHeight;
-}
-
-if (/[?&]debug=1/.test(location.search)) {
-    const dbgOverlay = document.getElementById('dbgOverlay');
-    if (dbgOverlay) {
-        dbgOverlay.style.display = 'flex';
-        dbgOverlay.classList.remove('hidden');
-    }
-
-    // Wrap activateDimMode
-    const _origActivateDimMode = activateDimMode;
-    activateDimMode = function() {
-        const s = document.getElementById('batterySaver');
-        _dbg('activateDimMode isDimmed=' + isDimmed + ' saverHidden=' + (s ? s.classList.contains('hidden') : '?'));
-        _origActivateDimMode.apply(this, arguments);
-        _dbg('  after: isDimmed=' + isDimmed + ' saverHidden=' + (s ? s.classList.contains('hidden') : '?'));
-    };
-
-    // Wrap deactivateDimMode
-    const _origDeactivateDimMode = deactivateDimMode;
-    deactivateDimMode = function() {
-        _dbg('deactivateDimMode isDimmed=' + isDimmed);
-        _origDeactivateDimMode.apply(this, arguments);
-        _dbg('  after: isDimmed=' + isDimmed);
-    };
-
-    // Wrap toggleBatterySaver
-    const _origToggleBatterySaver = toggleBatterySaver;
-    toggleBatterySaver = function() {
-        const s = document.getElementById('batterySaver');
-        const m = document.getElementById('lockedPage');
-        const branch = (s && s.classList.contains('hidden')) ? 'ACTIVATION' : 'DEACTIVATION';
-        _dbg('toggleBatterySaver ' + branch + ' isDimmed=' + isDimmed
-            + ' mainDisplay=' + (m ? (m.style.display||'[css]') : '?')
-            + ' fs=' + !!document.fullscreenElement);
-        _origToggleBatterySaver.apply(this, arguments);
-        _dbg('  after: saverHidden=' + (s ? s.classList.contains('hidden') : '?')
-            + ' mainDisplay=' + (m ? (m.style.display||'[css]') : '?'));
-    };
-}
-
 function updateDimmedDisplay() {
     if (!isDimmed || !state || !state.activeVisit) return;
     
