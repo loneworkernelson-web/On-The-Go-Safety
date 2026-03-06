@@ -830,6 +830,11 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
                     <button onclick="forceSync(true)" class="flex-1 bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs font-bold text-white uppercase">Force Sync</button>
                     <button onclick="clearFormsCache()" class="flex-1 bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs font-bold text-white uppercase">Clear Cache</button>
                 </div>
+                <button onclick="forceAppUpdate()"
+                        class="w-full mt-2 bg-orange-900/40 hover:bg-orange-900/60 border border-orange-700/50 py-2 rounded text-xs font-bold text-orange-300 uppercase tracking-widest">
+                    🔄 Force App Update
+                </button>
+                <p class="text-xs text-gray-500 mt-1.5 italic">Clears all cached app files and reloads from the server. Use if the app looks wrong after an update. Your settings and registration are preserved.</p>
             </div>
         </div>
         
@@ -5470,6 +5475,55 @@ function clearData() {
         }
     }
 }
+
+/**
+ * FORCE APP UPDATE — Hard cache wipe + SW unregister + reload.
+ *
+ * Solves the problem where a redeployed app (new colours, new HTML) still shows
+ * stale content because the Service Worker is serving files from its Cache API.
+ * The normal SW update path (updatefound → SKIP_WAITING → reload) only replaces
+ * the SW itself; it does not guarantee that newly-cached assets are fetched if
+ * the cache key logic doesn't invalidate the old entries.
+ *
+ * This function does a full nuclear reset of the browser-side app layer:
+ *   1. Deletes ALL Cache API entries (every cache the SW has created)
+ *   2. Unregisters the SW so there is no stale controller on next load
+ *   3. Hard-reloads — everything is fetched fresh from the server
+ *
+ * What is intentionally NOT touched:
+ *   - IndexedDB (outbox queue — safety-critical, must survive)
+ *   - localStorage (worker identity, registration, settings — would require re-registration)
+ *
+ * After reload the SW re-registers, fetches all assets from the server, and
+ * caches the fresh versions. The app will be fully up to date.
+ */
+async function forceAppUpdate() {
+    if (!confirm('This will clear all cached app files and reload from the server.\n\nYour registration and settings will be preserved. Use this if the app looks wrong after an update.\n\nContinue?')) return;
+
+    showToast('🔄 Clearing app cache…');
+
+    try {
+        // 1. Nuke all Cache API entries
+        if ('caches' in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(k => caches.delete(k)));
+            console.log(`[UPDATE] Deleted ${keys.length} cache(s):`, keys);
+        }
+
+        // 2. Unregister the SW — removes the stale controller entirely
+        if ('serviceWorker' in navigator) {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(regs.map(r => r.unregister()));
+            console.log(`[UPDATE] Unregistered ${regs.length} service worker(s).`);
+        }
+    } catch (err) {
+        console.warn('[UPDATE] Cleanup error (non-fatal):', err);
+    }
+
+    // 3. Hard reload — fetches everything from the server
+    window.location.reload(true);
+}
+
 
 // Update system info on settings page  
 /**
