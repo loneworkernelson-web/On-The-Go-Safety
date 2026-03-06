@@ -7235,6 +7235,8 @@ function deletePersonalSite(locationId) {
 }
 
 
+// Fixed existing Locked Screen info trigger
+function showCurrentSiteInfo() {
     if (!state || !state.activeVisit) return;
     const location = state.locations.find(l => l.id === state.activeVisit.locationId);
     if (location) {
