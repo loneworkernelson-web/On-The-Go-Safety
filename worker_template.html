@@ -94,10 +94,9 @@ body {
 .slide-action-pill.pill-disabled { opacity: 0.45; pointer-events: none; }
 /* 5. GPS SIGNAL BARS */
 .gps-bar { width: 4px; height: 12px; background-color: #374151; border-radius: 1px; transition: background-color 0.3s; }
-.gps-bar.active-red { background-color: #ef4444; box-shadow: 0 0 5px #ef4444; }
+.gps-bar.active-red   { background-color: #ef4444; box-shadow: 0 0 5px #ef4444; }
 .gps-bar.active-amber { background-color: #f59e0b; box-shadow: 0 0 5px #f59e0b; }
 .gps-bar.active-green { background-color: #22c55e; box-shadow: 0 0 5px #22c55e; }
-.gps-bar.active-blue { background-color: #3b82f6; box-shadow: 0 0 5px #3b82f6; }
 
 /* BEST: Combines your custom arrow with high-contrast menu items */
 select.form-input {
@@ -1939,10 +1938,20 @@ function activateBatterySaver() {
     // Hide locked page to save GPU
     if (main) main.style.display = 'none';
 
-    // Fullscreen: suppress Android nav/status bars
+    // Fullscreen: suppress Android nav/status bars.
+    // NOTE: requestFullscreen() requires a user gesture on Android Chrome. Since
+    // activateBatterySaver() fires from a setTimeout (dimTimer), this request is
+    // likely to be rejected. Retained as best-effort for contexts where it may
+    // succeed. Do NOT rely on this to suppress the nav bar — see theme-color below.
     const el  = document.documentElement;
     const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
-    if (rfs) rfs.call(el).catch(() => {});
+    if (rfs) rfs.call(el).catch(err => console.warn('[BSAVER] requestFullscreen rejected (expected in setTimeout context):', err.name));
+
+    // Black out the Android status bar by setting theme-color to #000.
+    // Works without a user gesture — blends the status bar with the black overlay
+    // even when fullscreen is not active. Restored on deactivate.
+    const metaTheme = document.getElementById('metaThemeColor');
+    if (metaTheme) metaTheme.setAttribute('content', '#000000');
 
     // Throttle heartbeat
     clearInterval(tickIntervalId);
@@ -1975,6 +1984,10 @@ function deactivateBatterySaver() {
     // Exit fullscreen
     const efs = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen;
     if (efs && document.fullscreenElement) efs.call(document).catch(() => {});
+
+    // Restore theme-color to the configured primary colour.
+    const metaTheme = document.getElementById('metaThemeColor');
+    if (metaTheme) metaTheme.setAttribute('content', CONFIG.theme_color || '#1e3a8a');
 
     // Restore normal heartbeat
     clearInterval(tickIntervalId);
@@ -2123,16 +2136,16 @@ function updateGPSBars(pos) {
     const accuracy = pos.coords.accuracy;
     const bars = document.querySelectorAll('.gps-bar');
     const label = document.getElementById('gpsLabel');
-    bars.forEach(b => b.classList.remove('active-red', 'active-amber', 'active-green', 'active-blue'));
+    bars.forEach(b => b.classList.remove('active-red', 'active-amber', 'active-green'));
 
     if (accuracy > 200) {
         // IP-level only — very rough
         bars[0]?.classList.add('active-red');
         if (label) label.textContent = 'IP';
     } else if (accuracy > 50) {
-        // WiFi triangulation — usable
-        bars[0]?.classList.add('active-blue');
-        bars[1]?.classList.add('active-blue');
+        // WiFi triangulation — usable but moderate accuracy
+        bars[0]?.classList.add('active-amber');
+        bars[1]?.classList.add('active-amber');
         if (label) label.textContent = 'WiFi';
     } else if (accuracy > 20) {
         // GPS coarse lock
@@ -2924,6 +2937,13 @@ function enterLockedScreen() {
     tickIntervalId = setInterval(tick, TICK_NORMAL);
     tick(); // Immediate first tick so the display is right straight away
     
+    // Acquire wake lock for the duration of the visit. This prevents the OS from
+    // automatically applying its own lock screen while a visit is active.
+    // Released in exitLockedScreen() when the visit ends.
+    // Note: WakeLock is automatically released when the page is hidden; the
+    // visibilitychange handler re-acquires it when the page returns to the foreground.
+    if (typeof requestWakeLock === 'function') requestWakeLock();
+
     startWelfareChecks(); // Only fires if CONFIG.checkinEnabled — no-op otherwise
     
     // Update welfare badge on locked screen
@@ -7055,6 +7075,17 @@ function populateSiteInfoModal(location) {
     }
 
     html += `</div>`;
+
+    // Delete button — personal (loc_) sites only. Org-configured sites are not deletable.
+    if (location.id.startsWith('loc_')) {
+        html += `<div class="pt-4 border-t border-gray-700 mt-4">
+            <button onclick="deletePersonalSite('${escapeHtml(location.id)}')"
+                    class="w-full py-3 bg-red-900/30 border border-red-800/50 text-red-400 font-black rounded-xl text-sm hover:bg-red-900/50 active:scale-95 transition-all">
+                🗑️ Delete Personal Site
+            </button>
+        </div>`;
+    }
+
     content.innerHTML = html;
 
     // 3. Configure Action Buttons (Call, Email, Navigation)
@@ -7122,8 +7153,34 @@ function toggleSiteReport(locationId, checked) {
     renderLocations();
 }
 
-// Fixed existing Locked Screen info trigger
-function showCurrentSiteInfo() {
+/**
+ * Deletes a personal (worker-added) site from state.
+ * Only valid for loc_ sites — org-configured sites (site_ prefix) are not deletable.
+ * Guards against deleting the site currently active in a visit.
+ */
+function deletePersonalSite(locationId) {
+    if (!locationId || !locationId.startsWith('loc_')) return;
+
+    // Guard: don't allow deletion of the active visit site
+    if (state.activeVisit && state.activeVisit.locationId === locationId) {
+        showToast('⚠️ Cannot delete a site while a visit is in progress at that site.');
+        return;
+    }
+
+    const loc = state.locations.find(l => l.id === locationId);
+    if (!loc) return;
+
+    if (!confirm(`Delete "${loc.name}"?\n\nThis will permanently remove this personal site from your device.`)) return;
+
+    state.locations = state.locations.filter(l => l.id !== locationId);
+    saveState();
+    closeModal('info');
+    renderLocations();
+    updateMySitesSummary();
+    showToast(`🗑️ "${loc.name}" deleted`);
+}
+
+
     if (!state || !state.activeVisit) return;
     const location = state.locations.find(l => l.id === state.activeVisit.locationId);
     if (location) {
@@ -7566,12 +7623,12 @@ function updateBatterySaverHUD() {
  */
 document.addEventListener("visibilitychange", async () => {
     if (document.visibilityState === 'visible') {
-        // Only re-acquire wake lock if in alarm/panic state — not on every
-        // foreground event. Holding it during normal visits prevents the OS
-        // from sleeping the screen and drains battery all shift.
-        const inAlarm = state && state.activeVisit &&
-                        (state.activeVisit.isPanic || state.activeVisit.criticalSent);
-        if (inAlarm && typeof requestWakeLock === 'function') {
+        // Re-acquire wake lock whenever a visit is active and the page returns to
+        // the foreground. The WakeLock API automatically releases the lock when
+        // the page is hidden (e.g. user switches apps) — we must re-request it on
+        // every foreground event to maintain continuous screen-on behaviour.
+        // This prevents the OS from applying its own lock screen during a visit.
+        if (state && state.activeVisit && typeof requestWakeLock === 'function') {
             await requestWakeLock();
         }
 
