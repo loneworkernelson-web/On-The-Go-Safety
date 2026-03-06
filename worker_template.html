@@ -187,36 +187,6 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
     border-radius: 1rem;
 }
     
-/* Duration slider styling */
-.slider-thumb::-webkit-slider-thumb {
-    appearance: none;
-    width: 20px;
-    height: 20px;
-    background: var(--accent);
-    cursor: pointer;
-    border-radius: 50%;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-}
-
-.slider-thumb::-moz-range-thumb {
-    width: 20px;
-    height: 20px;
-    background: var(--accent);
-    cursor: pointer;
-    border-radius: 50%;
-    border: none;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-}
-
-.slider-thumb::-webkit-slider-thumb:hover {
-    background: var(--primary);
-    transform: scale(1.1);
-}
-
-.slider-thumb::-moz-range-thumb:hover {
-    background: var(--primary);
-    transform: scale(1.1);
-}
 
 /* Panic mode styling */
 .panic-mode {
@@ -629,15 +599,11 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 
 <!-- Duration Selector -->
 <div class="mb-4 bg-gray-800 rounded-lg p-3 border border-gray-700">
-    <div class="flex justify-between items-center mb-3">
+    <div class="flex justify-between items-center mb-2">
         <span class="text-gray-400 text-xs font-black">Expected Duration</span>
-        <div id="durationDisplay" class="text-right">
-            <span class="text-blue-400 font-black text-sm">10 min</span>
-        </div>
+        <span id="durationDue" class="text-blue-400 font-black text-sm"></span>
     </div>
-
-    <!-- Quick presets ABOVE slider -->
-    <div class="grid grid-cols-4 gap-1.5 mb-3">
+    <div class="grid grid-cols-4 gap-1.5">
         <button onclick="setQuickDuration(15)"  class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400">15m</button>
         <button onclick="setQuickDuration(30)"  class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400">30m</button>
         <button onclick="setQuickDuration(45)"  class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400">45m</button>
@@ -646,15 +612,6 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
         <button onclick="setQuickDuration(120)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400">2 hr</button>
         <button onclick="setQuickDuration(180)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400">3 hr</button>
         <button onclick="setQuickDuration(240)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400">4 hr</button>
-    </div>
-
-    <!-- Fine-tune slider -->
-    <input id="durationSlider" type="range" min="0" max="30" value="0" 
-           class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer slider-thumb" 
-           oninput="updateDurationDisplay()">
-    <div class="flex justify-between mt-1">
-        <span class="text-xs text-gray-400">10 min <span class="text-blue-500 font-black">MIN</span></span>
-        <span class="text-xs text-gray-400">8 hr</span>
     </div>
 </div>
         
@@ -1248,18 +1205,6 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 // ============================================================================
 // CONFIGURATION SYSTEM (Phase 2, Feature 11)
 // ============================================================================
-// Duration mapping: 31 steps from 10 min to 8 hours (480 minutes)
-// Slider positions 0-30 map to these durations in minutes.
-// 0 has been removed — 10 minutes is the enforced minimum safety window.
-const DURATION_MAP = [
-    10, 15, 20, 30, 45,         // 0-4:  Quick visits (10-45 min)
-    60, 75, 90, 105, 120,       // 5-9:  Short visits (1-2 hours)
-    135, 150, 165, 180,         // 10-13: Medium visits (2-3 hours)
-    195, 210, 225, 240,         // 14-17: Long visits (3-4 hours)
-    255, 270, 285, 300,         // 18-21: Extended visits (4-5 hours)
-    315, 330, 345, 360,         // 22-25: Very long visits (5-6 hours)
-    390, 420, 450, 480          // 26-30: Maximum visits (6-8 hours)
-];
 
 // Maps site risk level (set by supervisor in the Sites sheet) to a default
 // welfare check interval in minutes. Used as the starting point for the
@@ -1885,12 +1830,8 @@ function submitReport() {
     state.visitDurationMinutes = 0;
     state.photoStore = {}; 
     
-    // NEW: Reset Duration Slider to Zero
-    const slider = document.getElementById('durationSlider');
-    if (slider) {
-        slider.value = 0;
-        updateDurationDisplay(); // Refreshes the "0 mins" label
-    }
+    // Reset duration selection
+    updateDurationDisplay();
 
     if (typeof travelTargetName !== 'undefined') travelTargetName = ""; 
     if (tickIntervalId) { clearInterval(tickIntervalId); tickIntervalId = null; }
@@ -2794,8 +2735,7 @@ function directDepart() {
     state.selectedLocationId = null;
     state.visitDurationMinutes = 0;
     state.photoStore = {};
-    const slider = document.getElementById('durationSlider');
-    if (slider) { slider.value = 0; updateDurationDisplay(); }
+    updateDurationDisplay();
     if (typeof travelTargetName !== 'undefined') travelTargetName = '';
     if (tickIntervalId) { clearInterval(tickIntervalId); tickIntervalId = null; }
     if (typeof travellingInterval !== 'undefined' && travellingInterval) {
@@ -3190,16 +3130,18 @@ function tick() {
     const escMins = CONFIG.escalationMinutes || 15;
     const isHighRiskActive = state.activeVisit.highRisk || false;
 
+    // Detection windows are 0.6 min (36s) wide — safely wider than TICK_SAVER (30s)
+    // so warnings are never skipped when the battery saver throttles the tick rate.
     if (isHighRiskActive) {
         // Critical Timing Mode — early warnings while timer is still counting down
         if (remaining > 0) {
-            if (diffMins <= 5 && diffMins > 4.9 && !state.activeVisit.warn5minSent) {
-                if (navigator.vibrate) navigator.vibrate([800, 200, 800, 200, 800]);
+            if (diffMins <= 5 && diffMins > 4.4 && !state.activeVisit.warn5minSent) {
+                if (navigator.vibrate) navigator.vibrate([1000, 200, 1000, 200, 1000, 200, 1000]);
                 state.activeVisit.warn5minSent = true;
                 saveState();
             }
-            if (diffMins <= 2 && diffMins > 1.9 && !state.activeVisit.warn2minSent) {
-                if (navigator.vibrate) navigator.vibrate([1000, 500, 1000]);
+            if (diffMins <= 2 && diffMins > 1.4 && !state.activeVisit.warn2minSent) {
+                if (navigator.vibrate) navigator.vibrate([1000, 200, 1000, 200, 1000, 200, 1000]);
                 speakWarning("Warning. Safety alarm will activate in two minutes.");
                 state.activeVisit.warn2minSent = true;
                 saveState();
@@ -3213,14 +3155,13 @@ function tick() {
         // warn2: 2 mins before alarm (= escMins-2 mins into grace period)
         if (remaining <= 0) {
             const minsOverdue = Math.abs(diffMins); // positive = how far into grace period
-            if (minsOverdue >= (escMins - 5) && minsOverdue < (escMins - 4.9) && !state.activeVisit.warn5minSent) {
-                if (navigator.vibrate) navigator.vibrate([800, 200, 800, 200, 800]);
-                speakWarning("Warning. Safety alarm will activate in five minutes.");
+            if (minsOverdue >= (escMins - 5) && minsOverdue < (escMins - 4.4) && !state.activeVisit.warn5minSent) {
+                if (navigator.vibrate) navigator.vibrate([1000, 200, 1000, 200, 1000, 200, 1000]);
                 state.activeVisit.warn5minSent = true;
                 saveState();
             }
-            if (minsOverdue >= (escMins - 2) && minsOverdue < (escMins - 1.9) && !state.activeVisit.warn2minSent) {
-                if (navigator.vibrate) navigator.vibrate([1000, 500, 1000]);
+            if (minsOverdue >= (escMins - 2) && minsOverdue < (escMins - 1.4) && !state.activeVisit.warn2minSent) {
+                if (navigator.vibrate) navigator.vibrate([1000, 200, 1000, 200, 1000, 200, 1000]);
                 speakWarning("Warning. Safety alarm will activate in two minutes.");
                 state.activeVisit.warn2minSent = true;
                 saveState();
@@ -3692,55 +3633,42 @@ window.addEventListener('beforeunload', () => {
 // QUICK WINS: DURATION SLIDER, FORMS BUTTON, HOLD TO START, TRAVEL TILE
 // ============================================================================
 
-// Update duration display when slider moves
+// Reset duration UI — clears button highlights and Due display.
+// Called wherever duration state is zeroed (visit end, travel tile deselect).
 function updateDurationDisplay() {
-    // Clear preset highlights when manually sliding
     document.querySelectorAll('.dur-btn').forEach(b => {
         b.classList.remove('bg-blue-600', 'text-white', 'border-blue-500');
         b.classList.add('bg-gray-700/50', 'text-gray-400', 'border-gray-600');
     });
-    const slider = document.getElementById('durationSlider');
-    if (!slider) return;
-    
-    const minutes = DURATION_MAP[parseInt(slider.value)];
-    const display = document.getElementById('durationDisplay');
-    
-    if (display) {
-        // Calculate dynamic arrival/due time
-        const dueTime = new Date(Date.now() + minutes * 60000);
-        const timeStr = dueTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-        
-        // Inside updateDurationDisplay()
-        let durStr = minutes >= 60 ? `${Math.floor(minutes/60)} hr ${minutes%60} min` : `${minutes} min`;
-        display.innerHTML = `<span class="text-blue-400 font-bold">${durStr}</span> <span class="mx-2 opacity-20">|</span> <span class="text-gray-400">Due: ${timeStr}</span>`;
-    }
-    
-    state.visitDurationMinutes = minutes;
-    updateArrivedButtonState();
+    const due = document.getElementById('durationDue');
+    if (due) due.textContent = '';
 }
 
-// Add this helper function to the script section
 function setQuickDuration(mins) {
-    const slider = document.getElementById('durationSlider');
-    if (!slider) return;
-    const idx = DURATION_MAP.indexOf(mins);
-    if (idx !== -1) {
-        slider.value = idx;
-        updateDurationDisplay(); 
-        updateArrivedButtonState(); 
-        if (navigator.vibrate) navigator.vibrate(15);
+    // Store as state source-of-truth
+    state.visitDurationMinutes = mins;
+
+    // Update Due time display
+    const due = document.getElementById('durationDue');
+    if (due) {
+        const dueTime = new Date(Date.now() + mins * 60000);
+        due.textContent = 'Due: ' + dueTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', hour12: true});
     }
-    // Highlight active preset
+
+    // Highlight selected button, clear others
     document.querySelectorAll('.dur-btn').forEach(b => {
         b.classList.remove('bg-blue-600', 'text-white', 'border-blue-500');
         b.classList.add('bg-gray-700/50', 'text-gray-400', 'border-gray-600');
     });
-    const match = [...document.querySelectorAll('.dur-btn')].find(b => 
+    const match = [...document.querySelectorAll('.dur-btn')].find(b =>
         b.getAttribute('onclick')?.includes(`(${mins})`));
     if (match) {
         match.classList.remove('bg-gray-700/50', 'text-gray-400', 'border-gray-600');
         match.classList.add('bg-blue-600', 'text-white', 'border-blue-500');
     }
+
+    updateArrivedButtonState();
+    if (navigator.vibrate) navigator.vibrate(15);
 }
     
 /**
@@ -3842,8 +3770,8 @@ function createTravelTile() {
         state.isTravelActive = !state.isTravelActive;
         // Reset per-trip no-report flag when deselecting
         if (!state.isTravelActive) state.travelNoReport = false;
-        const slider = document.getElementById('durationSlider');
-        if (slider) { slider.value = 0; updateDurationDisplay(); }
+        state.visitDurationMinutes = 0;
+        updateDurationDisplay();
         renderLocations();
         updateArrivedButtonState();
     };
@@ -4102,11 +4030,10 @@ function saveTravelSettings() {
 function updateArrivedButtonState() {
     const pill  = document.getElementById('btnStart');
     const label = document.getElementById('slideStartLabel');
-    const slider = document.getElementById('durationSlider');
-    if (!pill || !label || !slider) return;
+    if (!pill || !label) return;
 
     const hasLocation  = !!state.selectedLocationId;
-    const durationMins = DURATION_MAP[parseInt(slider.value)];
+    const durationMins = state.visitDurationMinutes || 0;
     const hasDuration  = durationMins > 0;
 
     // Reset state
@@ -4176,8 +4103,7 @@ async function startVisit(isSkipCheck = false) {
     }
 
     const loc = state.locations.find(l => l.id === locId) || { id: 'travel', name: 'General Travel', address: 'Field Work' };
-    const slider = document.getElementById('durationSlider');
-    const durationMins = DURATION_MAP[parseInt(slider.value)];
+    const durationMins = state.visitDurationMinutes || 0;
     const isHighRisk = document.getElementById('chkHighRisk')?.checked || false;
 
     // GPS is only relevant for travel (live tracking) and alarm states (locate worker).
@@ -6712,8 +6638,7 @@ function cancelVolumeConfirmation() {
 function initAllActionPills() {
     // Start Visit pill
     initSlidePill('btnStart', 'slideStartThumb', 'slideStartLabel', () => {
-        const slider = document.getElementById('durationSlider');
-        const durationMins = DURATION_MAP[parseInt(slider ? slider.value : 0)];
+        const durationMins = state.visitDurationMinutes || 0;
         if (durationMins <= 0) return showToast('⏳ Select a duration first');
         if (!state.isTravelActive && !state.selectedLocationId) return showToast('📍 Select a site first');
         startVisit();
@@ -7389,13 +7314,21 @@ function switchHubTab(tab) {
 function renderResources() {
     const container = document.getElementById('hubContent');
     const items = state.meta.resources || [];
-    container.innerHTML = items.length ? items.map(r => `
+
+    const guideCard = `
+        <div class="p-4 bg-blue-950/60 border border-blue-700/50 rounded-2xl active:scale-95 transition" onclick="window.open('./worker_guide.html', '_blank')">
+            <div class="text-xs text-blue-400 font-black uppercase tracking-widest mb-1">📘 Built-in</div>
+            <div class="text-sm font-bold text-white">Worker User Guide</div>
+            <div class="text-sm text-gray-300 mt-2 uppercase font-black">Open Guide ↗</div>
+        </div>`;
+
+    container.innerHTML = guideCard + (items.length ? items.map(r => `
         <div class="p-4 bg-white/5 border border-white/5 rounded-2xl active:scale-95 transition" onclick="window.open('${escapeHtml(r.url)}', '_blank')">
             <div class="text-xs text-blue-400 font-black uppercase tracking-widest mb-1">${escapeHtml(r.category)}</div>
             <div class="text-sm font-bold text-white">${escapeHtml(r.title)}</div>
             <div class="text-sm text-gray-300 mt-2 uppercase font-black">Open ${escapeHtml(r.type)} ↗</div>
         </div>
-    `).join('') : '<p class="text-center text-xs opacity-40 py-10">No resources assigned.</p>';
+    `).join('') : '');
 }
 
 function renderNoticeArchive() {
@@ -7592,13 +7525,27 @@ async function checkBatterySafety() {
  * Logic: Updates visible HUD elements using minimal DOM operations.
  */
 function updateBatterySaverHUD() {
-    const timeHUD = document.getElementById('saverTimerHUD');
+    const timeHUD    = document.getElementById('saverTimerHUD');
     const battTextHUD = document.getElementById('saverBatteryHUD');
-    const battBarHUD = document.getElementById('saverBatteryBarHUD');
+    const battBarHUD  = document.getElementById('saverBatteryBarHUD');
 
-    // Display the current formatted time remaining
-    if (timeHUD) timeHUD.innerText = state.timerDisplay || "--:--";
-    
+    // Show whole-minutes remaining, rounded up so the last minute shows
+    // "1 min remaining" rather than jumping to zero on a 30-second tick.
+    if (timeHUD) {
+        if (state && state.activeVisit) {
+            const remainingSecs = state.activeVisit.duration - (Date.now() - state.activeVisit.startTime) / 1000;
+            if (remainingSecs > 0) {
+                const minsUp  = Math.ceil(remainingSecs / 60);
+                const label   = minsUp === 1 ? 'min remaining' : 'mins remaining';
+                timeHUD.innerHTML = `<span class="text-5xl font-mono font-bold text-gray-300">${minsUp}</span><br><span class="text-sm font-bold text-gray-400 uppercase tracking-widest">${label}</span>`;
+            } else {
+                timeHUD.innerHTML = `<span class="text-3xl font-bold text-gray-400">Time up</span>`;
+            }
+        } else {
+            timeHUD.innerText = '--';
+        }
+    }
+
     // Display battery info from currentBatteryLevel (state.battery is never populated)
     const battLevel = parseInt(currentBatteryLevel) || 0;
     if (battTextHUD) {
