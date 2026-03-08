@@ -546,10 +546,10 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
     <div class="content-area">
 <div class="flex flex-col gap-1 mb-4">
     <div class="flex gap-2">
-        <button onclick="forceSync(true)" id="btnSync" class="w-14 h-14 bg-gray-800 border border-gray-600 rounded-xl flex items-center justify-center text-blue-400 text-2xl shadow-lg active:scale-95 transition" title="Sync Database">
+        <button onclick="forceSync(true)" id="btnSync" class="w-14 h-14 bg-gray-800 border border-gray-600 rounded-xl flex items-center justify-center text-blue-400 text-2xl shadow-lg active:scale-95 transition" aria-label="Sync database">
             ↻
         </button>
-        <button onclick="openAddLocationModal()" class="w-14 h-14 bg-gray-800 border border-gray-600 rounded-xl flex items-center justify-center text-green-400 text-2xl shadow-lg active:scale-95 transition" title="Add Destination">
+        <button onclick="openAddLocationModal()" class="w-14 h-14 bg-gray-800 border border-gray-600 rounded-xl flex items-center justify-center text-green-400 text-2xl shadow-lg active:scale-95 transition" aria-label="Add destination">
             +
         </button>
         <div id="travelRow" class="flex-1"></div>
@@ -576,7 +576,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
         <div class="flex justify-end items-center gap-2 mb-2">
             <span class="text-sm font-bold text-gray-300 tracking-widest" id="lblHighRisk">Critical timing mode</span>
             <label class="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" id="chkHighRisk" class="sr-only peer" onchange="toggleHighRiskUI()">
+                <input type="checkbox" id="chkHighRisk" class="sr-only peer" onchange="toggleHighRiskUI()" aria-labelledby="lblHighRisk">
                 <div class="w-9 h-5 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-600"></div>
             </label>
         </div>
@@ -721,7 +721,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 <div id="reportPage" class="page">
     <div class="header-bar">
         <h1 id="reportTitle" class="text-xl font-bold">Visit Report</h1>
-        <button onclick="navigate(state.activeVisit ? 'locked' : 'main')" class="text-3xl text-gray-400 hover:text-white px-2">×</button>
+        <button onclick="navigate(state.activeVisit ? 'locked' : 'main')" aria-label="Close" class="text-3xl text-gray-400 hover:text-white px-2">×</button>
     </div>
     <div id="formLocationBanner" class="hidden mx-4 mt-1 mb-1 px-4 py-2 bg-blue-900/40 border border-blue-700/50 rounded-xl flex items-center gap-2">
         <span class="text-blue-400 text-sm flex-shrink-0">📍</span>
@@ -745,7 +745,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 <div id="settingsPage" class="page bg-gray-800">
     <div class="header-bar">
         <h1 class="text-2xl font-bold" style="color: var(--text-on-primary)">Settings</h1>
-        <button onclick="navigate('main')" class="text-3xl text-gray-400 hover:text-white px-2">×</button>
+        <button onclick="navigate('main')" aria-label="Close settings" class="text-3xl text-gray-400 hover:text-white px-2">×</button>
     </div>
     <div class="content-area pb-24">
         <!-- Restart Wizard Prompt -->
@@ -893,13 +893,13 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 </div>
 
 <!-- Extend Modal -->
-<div id="extendModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70" role="dialog" aria-modal="true">
+<div id="extendModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="extendModalTitle">
     <div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center border border-gray-700">
-        <h2 class="text-xl font-black mb-6 text-white uppercase tracking-widest">Extend Visit</h2>
+        <h2 id="extendModalTitle" class="text-xl font-black mb-6 text-white uppercase tracking-widest">Extend Visit</h2>
         <div class="grid grid-cols-3 gap-3 mb-8">
-            <button onclick="confirmExtension(10)" class="py-5 bg-blue-600 hover:bg-blue-500 rounded-xl font-black text-white shadow-lg">+10</button>
-            <button onclick="confirmExtension(15)" class="py-5 bg-blue-600 hover:bg-blue-500 rounded-xl font-black text-white shadow-lg">+15</button>
-            <button onclick="confirmExtension(30)" class="py-5 bg-blue-600 hover:bg-blue-500 rounded-xl font-black text-white shadow-lg">+30</button>
+            <button onclick="confirmExtension(10)" aria-label="Extend by 10 minutes" class="py-5 bg-blue-600 hover:bg-blue-500 rounded-xl font-black text-white shadow-lg">+10</button>
+            <button onclick="confirmExtension(15)" aria-label="Extend by 15 minutes" class="py-5 bg-blue-600 hover:bg-blue-500 rounded-xl font-black text-white shadow-lg">+15</button>
+            <button onclick="confirmExtension(30)" aria-label="Extend by 30 minutes" class="py-5 bg-blue-600 hover:bg-blue-500 rounded-xl font-black text-white shadow-lg">+30</button>
         </div>
         <button onclick="closeModal('extend')" class="w-full py-4 bg-gray-700 rounded-xl font-black text-gray-400">Cancel</button>
     </div>
@@ -907,10 +907,10 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 </div><!-- /#pageContainer -->
 
 <!-- Vehicle WOF Block Modal -->
-<div id="wofBlockModal" class="hidden fixed inset-0 z-[450] flex items-center justify-center bg-black/70" role="dialog" aria-modal="true">
+<div id="wofBlockModal" class="hidden fixed inset-0 z-[450] flex items-center justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="wofBlockTitle">
     <div class="bg-gray-900 rounded-3xl shadow-2xl w-full max-w-sm p-10 text-center border-4 border-red-600">
         <div class="text-7xl mb-6">⛔</div>
-        <h2 class="text-3xl font-black text-red-500 mb-4 uppercase">Vehicle Grounded</h2>
+        <h2 id="wofBlockTitle" class="text-3xl font-black text-red-500 mb-4 uppercase">Vehicle Grounded</h2>
         <p class="text-lg text-white font-bold mb-4">Your WOF has expired. You must not use your vehicle for work travel until it is renewed.</p>
         <p class="text-sm text-gray-400 font-bold mb-8">Once renewed, submit a <span class="text-orange-400">Vehicle Safety Check</span> form to update your records and restore travel access.</p>
         <button onclick="closeWofBlocker()" class="w-full py-5 bg-red-600 text-white font-black rounded-2xl text-xl shadow-2xl">Understood</button>
@@ -920,10 +920,10 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 <!-- Vehicle WOF Warning Modal -->
 <!-- data-mode="load" = on-open reminder (dismiss only) -->
 <!-- data-mode="visit" = pre-travel gate (checkbox + Continue resumes startVisit) -->
-<div id="wofWarnModal" data-mode="load" class="hidden fixed inset-0 z-[450] flex items-center justify-center bg-black/70" role="dialog" aria-modal="true">
+<div id="wofWarnModal" data-mode="load" class="hidden fixed inset-0 z-[450] flex items-center justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="wofWarnTitle">
     <div class="bg-gray-900 rounded-3xl shadow-2xl w-full max-w-sm p-8 text-center border-4 border-orange-500">
         <div class="text-6xl mb-4">⚠️</div>
-        <h2 class="text-2xl font-black text-orange-500 mb-3">WOF Expiry Reminder</h2>
+        <h2 id="wofWarnTitle" class="text-2xl font-black text-orange-500 mb-3">WOF Expiry Reminder</h2>
         <p class="text-white font-bold mb-2">Your vehicle WOF expires in:</p>
         <p id="wofWarnText" class="text-3xl text-orange-400 font-black mb-4"></p>
         <p class="text-sm text-gray-400 font-bold mb-6">Please book a WOF renewal. Once done, submit a <span class="text-orange-400">Vehicle Safety Check</span> form to update your records.</p>
@@ -940,9 +940,9 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 </div>
 
 <!-- Personal Sites Import Modal -->
-<div id="importSitesModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" role="dialog" aria-modal="true">
+<div id="importSitesModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" role="dialog" aria-modal="true" aria-labelledby="importSitesTitle">
     <div class="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm p-6 border border-gray-700">
-        <h2 class="text-xl font-black text-white mb-1 uppercase tracking-widest">Import My Sites</h2>
+        <h2 id="importSitesTitle" class="text-xl font-black text-white mb-1 uppercase tracking-widest">Import My Sites</h2>
         <p class="text-xs text-gray-400 font-bold mb-4">Paste the export code from your old device below.</p>
         <textarea id="importSitesPayload"
                   class="w-full h-32 bg-gray-800 border border-gray-600 text-white text-xs font-mono rounded-xl p-3 resize-none focus:border-blue-500 focus:outline-none"
@@ -958,9 +958,9 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 </div>
 
 <!-- Site Info Modal (Phase 2, Feature 9) -->
-<div id="infoModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70" role="dialog" aria-modal="true">
+<div id="infoModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="infoModalTitle">
     <div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto border border-gray-700">
-        <h2 class="text-2xl font-black text-white mb-4">Site Safety Information</h2>
+        <h2 id="infoModalTitle" class="text-2xl font-black text-white mb-4">Site Safety Information</h2>
         <div id="siteInfoContent" class="text-gray-300 text-sm space-y-3 mb-6"></div>
         <div class="flex gap-3 mb-4">
             <a id="btnSiteCall" href="#" class="hidden flex-1 bg-green-600 text-white py-4 rounded-xl text-center font-black">📞 Call</a>
@@ -972,12 +972,12 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 </div>
 
 <!-- Travel Settings Modal -->
-<div id="travelSettingsModal" class="hidden fixed inset-0 z-[460] flex items-center justify-center bg-black/80 backdrop-blur-sm" role="dialog" aria-modal="true">
+<div id="travelSettingsModal" class="hidden fixed inset-0 z-[460] flex items-center justify-center bg-black/80 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="travelSettingsTitle">
     <div class="bg-gray-900 rounded-3xl shadow-2xl w-full max-w-sm p-8 border-t-[8px] mx-4" style="border-top-color: var(--accent)">
         <div class="flex items-center gap-3 mb-6">
             <span class="text-3xl">🚗</span>
             <div>
-                <h2 class="text-xl font-black text-white">Travel Settings</h2>
+                <h2 id="travelSettingsTitle" class="text-xl font-black text-white">Travel Settings</h2>
                 <p id="travelSettingsSubtitle" class="text-xs text-gray-300 font-bold">This trip only &mdash; resets after each journey</p>
             </div>
         </div>
@@ -1003,9 +1003,9 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 </div>
 
 <!-- Location Management Modal (Phase 2, Feature 13) -->
-<div id="locationModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70" role="dialog" aria-modal="true">
+<div id="locationModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="locationModalTitle">
     <div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm p-6 border border-gray-700 max-h-[90vh] overflow-y-auto">
-        <h2 class="text-xl font-black mb-6 text-white uppercase tracking-widest">Edit Location</h2>
+        <h2 id="locationModalTitle" class="text-xl font-black mb-6 text-white uppercase tracking-widest">Edit Location</h2>
         <input type="hidden" id="locId">
         <div class="space-y-4">
             <div>
@@ -1070,7 +1070,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
     </div>
 </div>
 
-<div id="noticeModal" class="hidden fixed inset-0 z-[400] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4" role="dialog">
+<div id="noticeModal" class="hidden fixed inset-0 z-[400] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4" role="dialog" aria-modal="true" aria-labelledby="noticeTitle">
     <div id="noticeCard" class="bg-gray-900 rounded-[2.5rem] shadow-2xl w-full max-w-sm p-8 text-center border-t-[12px] border-blue-600">
         <div id="noticeIcon" class="text-6xl mb-6">📢</div>
         <h2 id="noticeTitle" class="text-2xl font-black mb-3 uppercase tracking-tight leading-tight" style="color:var(--text-on-primary)"></h2>
@@ -1087,20 +1087,20 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
     </div>
 </div>
     
-<div id="pinModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70" role="dialog" aria-modal="true">
+<div id="pinModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="pinModalTitle">
     <div class="bg-gray-800 p-6 rounded-xl w-80">
         <form id="pinEntryForm" onsubmit="return false;">
     <input type="text" name="username" autocomplete="username" value="Worker" class="hidden" style="display:none !important;">
-    <h3 class="text-lg font-bold mb-4">Enter PIN</h3>
+    <h3 id="pinModalTitle" class="text-lg font-bold mb-4">Enter PIN</h3>
     <input id="pinInput" type="password" autocomplete="current-password" class="form-input mb-4" inputmode="numeric" maxlength="6">
     <button id="btnPinConfirm" type="button" class="w-full py-3 bg-blue-600 rounded-xl font-bold">Confirm</button>
         </form>
     </div>
 </div>
 
-<div id="groundedModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70" role="dialog" aria-modal="true">
+<div id="groundedModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="groundedModalTitle">
     <div class="bg-gray-800 p-6 rounded-xl w-80">
-        <h3 class="text-lg font-bold mb-4">Vehicle Grounded</h3>
+        <h3 id="groundedModalTitle" class="text-lg font-bold mb-4">Vehicle Grounded</h3>
         <p class="text-gray-300 mb-4">WOF or Rego expired. Cannot proceed.</p>
         <button onclick="closeModal('grounded')" class="w-full py-3 bg-red-600 rounded-xl font-bold">OK</button>
     </div>
@@ -1136,10 +1136,10 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 </div>
     
 <!-- Shake-to-Alert Confirmation Modal -->
-<div id="shakeConfirmModal" class="hidden fixed inset-0 z-[500] bg-red-900 flex items-center justify-center">
+<div id="shakeConfirmModal" class="hidden fixed inset-0 z-[500] bg-red-900 flex items-center justify-center" role="alertdialog" aria-modal="true" aria-labelledby="shakeConfirmTitle">
     <div class="text-center text-white px-8">
         <div class="text-8xl mb-4">🤫</div>
-        <h1 class="text-4xl font-black mb-2 tracking-tight">SHAKE DETECTED</h1>
+        <h1 id="shakeConfirmTitle" class="text-4xl font-black mb-2 tracking-tight">SHAKE DETECTED</h1>
         <p class="text-yellow-300 text-xl font-black mb-2">Shake again to send covert alert</p>
         <p class="text-red-200 text-sm font-bold mb-8">Stop shaking, then shake once more to confirm</p>
         <div class="text-8xl font-mono font-black animate-pulse" id="shakeCountdown">5</div>
@@ -1155,9 +1155,10 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
      but this is 550 so it appears on top; shake is a 5-second self-dismissing
      state that doesn't conflict). -->
 <div id="welfareCheckModal" class="hidden fixed inset-0 z-[550] flex flex-col items-center justify-center text-center px-8"
+     role="alertdialog" aria-modal="true" aria-labelledby="welfareCheckTitle"
      style="background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);">
     <div class="text-7xl mb-5">🙋</div>
-    <h1 class="text-4xl font-black text-white mb-2 uppercase tracking-widest">Are You OK?</h1>
+    <h1 id="welfareCheckTitle" class="text-4xl font-black text-white mb-2 uppercase tracking-widest">Are You OK?</h1>
     <p class="text-blue-300 text-base font-bold mb-1">Periodic welfare check-in</p>
     <p class="text-gray-400 text-sm mb-8">Alarm fires if not confirmed within:</p>
     <div class="text-8xl font-mono font-black text-white mb-10" id="welfareCountdown">2:00</div>
@@ -1171,31 +1172,31 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 </div>
 
 <!-- Volume Panic Confirmation Modal -->
-<div id="volumeConfirmModal" class="hidden fixed inset-0 z-[500] bg-orange-900/90 flex items-center justify-center">
+<div id="volumeConfirmModal" class="hidden fixed inset-0 z-[500] bg-orange-900/90 flex items-center justify-center" role="alertdialog" aria-modal="true" aria-labelledby="volumeConfirmTitle">
     <div class="text-center text-white">
         <div class="text-8xl mb-4">🔊</div>
-        <h1 class="text-4xl font-black mb-4">VOLUME PANIC</h1>
+        <h1 id="volumeConfirmTitle" class="text-4xl font-black mb-4">VOLUME PANIC</h1>
         <p class="text-yellow-400 text-lg font-bold mb-6">Press volume buttons again to confirm</p>
         <div class="text-6xl font-mono" id="volumeCountdown">3</div>
         <p class="text-xs mt-4 text-gray-400">Emergency alert activation</p>
     </div>
 </div>
 
-<div id="formsLibraryModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70" role="dialog" aria-modal="true">
+<div id="formsLibraryModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="formsLibraryTitle">
     <div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm p-6 border border-gray-700 max-h-[80vh] flex flex-col">
         <div class="flex justify-between items-center mb-6">
-            <h2 class="text-xl font-black text-white uppercase tracking-widest text-blue-400">Safety Forms</h2>
-            <button onclick="closeModal('formsLibrary')" class="text-2xl text-gray-400">×</button>
+            <h2 id="formsLibraryTitle" class="text-xl font-black text-white uppercase tracking-widest text-blue-400">Safety Forms</h2>
+            <button onclick="closeModal('formsLibrary')" aria-label="Close forms library" class="text-2xl text-gray-400">×</button>
         </div>
         <div id="formsLibraryList" class="flex-1 overflow-y-auto space-y-3 pr-2"></div>
         <button onclick="closeModal('formsLibrary')" class="mt-6 w-full py-4 bg-gray-700 rounded-xl font-black text-gray-400">Close</button>
     </div>
 </div>
 
-<div id="resourceHubModal" class="hidden fixed inset-0 z-[350] flex items-center justify-center bg-black/90 backdrop-blur-md p-4" role="dialog">
+<div id="resourceHubModal" class="hidden fixed inset-0 z-[350] flex items-center justify-center bg-black/90 backdrop-blur-md p-4" role="dialog" aria-modal="true" aria-labelledby="resourceHubTitle">
     <div class="bg-gray-900 rounded-[2.5rem] shadow-2xl w-full max-w-sm h-[80vh] flex flex-col border border-white/10">
         <div class="p-8 pb-4">
-            <h2 class="text-2xl font-black text-white uppercase tracking-tight">Safety Hub</h2>
+            <h2 id="resourceHubTitle" class="text-2xl font-black text-white uppercase tracking-tight">Safety Hub</h2>
             <div class="flex gap-4 mt-4 border-b border-white/10">
                 <button onclick="switchHubTab('res')" id="tabRes" class="pb-2 text-xs font-black uppercase tracking-widest text-blue-500 border-b-2 border-blue-500">Resources</button>
                 <button onclick="switchHubTab('not')" id="tabNot" class="pb-2 text-xs font-black uppercase tracking-widest text-gray-300">Notice Archive</button>
@@ -3801,6 +3802,7 @@ function createTravelTile() {
             </div>
         </div>
         ${isActive ? `<button class="text-indigo-200 hover:text-white p-1 -mr-1 z-20 text-xl"
+            aria-label="Travel settings"
             onclick="openTravelSettings(event)">ℹ️</button>` : ''}
     `;
 
@@ -3840,7 +3842,7 @@ function createLocationTile(loc) {
     tile.innerHTML = `
         <div class="flex justify-between items-start">
             <span class="text-2xl">${icon}</span>
-            ${hasInfo ? `<button class="text-gray-300 hover:text-white p-1 -mt-1 -mr-1 z-20 text-xl" onclick="showSiteInfo('${escapeHtml(loc.id)}', event)">ℹ️</button>` : ''}
+            ${hasInfo ? `<button class="text-gray-300 hover:text-white p-1 -mt-1 -mr-1 z-20 text-xl" aria-label="Site safety information" onclick="showSiteInfo('${escapeHtml(loc.id)}', event)">ℹ️</button>` : ''}
         </div>
         <div>
             ${loc.companyName ? `<div class="text-xs font-bold text-gray-400 uppercase truncate leading-none mb-1">${escapeHtml(loc.companyName)}</div>` : ''}
@@ -3907,7 +3909,7 @@ function createLocationRow(loc) {
             </div>
             ${loc.companyName ? `<div class="text-[11px] font-bold text-gray-400 truncate leading-none mt-0.5">${escapeHtml(loc.companyName)}</div>` : ''}
         </div>
-        ${hasInfo ? `<button class="text-gray-500 hover:text-gray-300 flex-shrink-0 p-1.5 -mr-1 text-base leading-none z-20" onclick="showSiteInfo('${escapeHtml(loc.id)}', event)">ℹ️</button>` : ''}
+        ${hasInfo ? `<button class="text-gray-500 hover:text-gray-300 flex-shrink-0 p-1.5 -mr-1 text-base leading-none z-20" aria-label="Site safety information" onclick="showSiteInfo('${escapeHtml(loc.id)}', event)">ℹ️</button>` : ''}
     `;
 
     row.onclick = (e) => {
