@@ -1935,6 +1935,8 @@ function activateBatterySaver() {
     const main  = document.getElementById('lockedPage');
     if (!saver) return;
 
+    console.log('[DIM] activateBatterySaver() fired. fullscreenElement:', !!document.fullscreenElement, '| isBatterySaverActive was:', isBatterySaverActive);
+
     isBatterySaverActive = true;
 
     // Show overlay
@@ -1950,7 +1952,11 @@ function activateBatterySaver() {
     // succeed. Do NOT rely on this to suppress the nav bar — see theme-color below.
     const el  = document.documentElement;
     const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
-    if (rfs) rfs.call(el).catch(err => console.warn('[BSAVER] requestFullscreen rejected (expected in setTimeout context):', err.name));
+    if (rfs) rfs.call(el).then(() => {
+        console.log('[DIM] requestFullscreen in activateBatterySaver: SUCCEEDED');
+    }).catch(err => {
+        console.warn('[DIM] requestFullscreen in activateBatterySaver: REJECTED —', err.name);
+    });
 
     // Black out the Android status bar by setting theme-color to #000.
     // Works without a user gesture — blends the status bar with the black overlay
@@ -1973,6 +1979,7 @@ function activateBatterySaver() {
  * Single path — no ambiguity.
  */
 function deactivateBatterySaver() {
+    console.log('[DIM] deactivateBatterySaver() fired. fullscreenElement:', !!document.fullscreenElement, '| isBatterySaverActive:', isBatterySaverActive, '| caller:', new Error().stack?.split('\n')[2]?.trim());
     if (!isBatterySaverActive) return;  // Idempotent
 
     const saver = document.getElementById('batterySaver');
@@ -2014,6 +2021,7 @@ function deactivateBatterySaver() {
  * Only re-arms if outside the wake grace period and saver not already active.
  */
 function resetInactivityTimer() {
+    console.log('[DIM] resetInactivityTimer(). lastWakeTime age:', Date.now() - lastWakeTime, 'ms | graceActive:', (Date.now() - lastWakeTime < WAKE_GRACE_MS), '| visitActive:', !!state?.activeVisit);
     clearTimeout(dimTimer);  // Always cancel pending timer — must be first
 
     if (isBatterySaverActive) return;  // Saver active — slide gesture is the only valid wake path
@@ -6870,6 +6878,7 @@ function initSlideToWake() {
         thumb.style.transform  = `translateX(${maxSlide}px)`;
         if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
         setTimeout(() => {
+            console.log('[DIM] completeSlide() — deactivating. isBatterySaverActive:', isBatterySaverActive, '| fullscreenElement:', !!document.fullscreenElement);
             deactivateBatterySaver();
             isSosLocked = true;
             setTimeout(() => { isSosLocked = false; }, 2000);
