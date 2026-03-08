@@ -546,11 +546,11 @@
 
     <p>Once a visit is active, the app moves to a <strong>locked screen</strong> — this is intentional. It conserves your battery and keeps the GPS running in the background.</p>
 
-    <h3>Mid-Visit Updates</h3>
-    <p>If you need to extend your time, add a note, or update your status during a visit, tap the <strong>menu button</strong> on the locked screen. A pop-up will appear (not a browser dialog) with options to:</p>
+    <h3>Mid-Visit Controls</h3>
+    <p>Two controls are always available on the locked screen during an active visit:</p>
     <ul>
-        <li><strong>Extend your visit</strong> — give yourself more time before the overtime alert fires</li>
-        <li><strong>Send a note to HQ</strong> — logged against your visit record in the spreadsheet</li>
+        <li><strong>Extend</strong> — tap the blue <strong>Extend</strong> button to give yourself more time before the overtime alert fires. Choose a new duration from the options presented.</li>
+        <li><strong>📋 Forms</strong> — tap the <strong>Forms</strong> button to open your organisation's forms library. Use this to submit a status update, a note, or any other mid-visit documentation without ending the visit.</li>
     </ul>
 
     <div class="mock-wrap">
@@ -561,24 +561,23 @@
                 <span style="color:#22c55e;font-size:9px;font-weight:900;">● ACTIVE</span>
             </div>
             <div class="mock-body">
-                <div class="mock-label">Current Visit</div>
+                <div class="mock-label">Currently Active At</div>
                 <div class="mock-value" style="font-size:11px;">📍 City Library</div>
                 <div class="mock-label">Time Remaining</div>
                 <div class="mock-value" style="color:#22c55e;">18 min</div>
                 <div class="mock-progress-bar"><div class="mock-progress-fill" style="width:40%;background:#22c55e;"></div></div>
-                <div class="mock-modal-overlay" style="margin-top:8px;">
-                    <div class="mock-modal-card">
-                        <div class="mock-modal-title">⚙ Mid-Visit Options</div>
-                        <div style="font-size:10px;color:#d1d5db;margin-bottom:8px;">What would you like to do?</div>
-                        <div class="mock-modal-btn" style="margin-bottom:6px;">⏱ Extend Visit (+30 min)</div>
-                        <div class="mock-modal-btn" style="background:#374151;">📝 Send a Note to HQ</div>
-                        <div style="text-align:center;font-size:9px;color:#6b7280;margin-top:8px;cursor:pointer;">Cancel</div>
-                    </div>
+                <div class="mock-timer-row" style="margin-top:10px;">
+                    <div class="mock-quick-btn" style="background:#1d4ed8;color:white;border-color:#1d4ed8;">Extend</div>
+                    <div class="mock-quick-btn" style="background:#2e1065;color:#c4b5fd;border-color:#4c1d95;">📋<br><span style="font-size:8px;">Forms</span></div>
+                </div>
+                <div class="mock-slide-pill danger" style="margin-top:10px;">
+                    <div class="mock-pill-thumb">→</div>
+                    Slide to End Visit
                 </div>
             </div>
         </div>
     </div>
-    <p class="mock-caption">Mid-visit options menu — tap "Extend" or "Send a Note"</p>
+    <p class="mock-caption">Locked screen — Extend and Forms buttons are always visible</p>
 
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2>6. Ending a Visit</h2>
@@ -749,7 +748,38 @@
         <strong>💡 Remember:</strong> Your Duress PIN is your secret safety net. Never tell anyone what it is — not even someone pretending to be from your organisation.
     </div>
 
-    <hr>
+    <h3>Covert Alert — Shake to Trigger</h3>
+    <p>If you cannot safely reach the SOS button — for example, because someone is watching you — you can trigger a silent duress alert by shaking your phone:</p>
+    <ol class="step-list">
+        <li>During any active visit, <strong>shake your phone vigorously</strong> for about one second. The screen will flash red and vibrate.</li>
+        <li>A confirmation screen appears: <em>"Shake again to send covert alert."</em> You have <strong>5 seconds</strong> to confirm.</li>
+        <li><strong>Shake again</strong> to confirm. A silent <strong>DURESS</strong> alert is sent to your contacts and HQ monitor — identical to entering your Duress PIN.</li>
+        <li>If you do <strong>not</strong> shake again within 5 seconds, the screen dismisses automatically and no alert is sent. This prevents accidental triggers from running or rough terrain.</li>
+    </ol>
+
+    <div class="mock-wrap">
+        <div class="mock-phone" style="width:260px;">
+            <div class="mock-statusbar" style="background:#450a0a;color:#fca5a5;"><span>10:47 AM</span><span>▐▐▐ 🔋</span></div>
+            <div class="mock-header" style="background:#7f1d1d;">
+                <div class="mock-header-left"><div class="mock-logo-dot" style="background:#ef4444;"></div><span style="color:#fca5a5;">%%ORG_NAME%%</span></div>
+                <span style="color:#ef4444;font-size:9px;font-weight:900;">⚠ SHAKE DETECTED</span>
+            </div>
+            <div class="mock-body-pad">
+                <div class="mock-sos-screen">
+                    <div class="mock-sos-title" style="font-size:14px;">📳 Shake Detected</div>
+                    <div class="mock-sos-sub" style="margin-bottom:16px;">Shake again to send covert alert</div>
+                    <div style="font-size:10px;color:#fca5a5;margin-bottom:4px;">Stop shaking, then shake once more to confirm</div>
+                    <div style="font-size:36px;font-weight:900;color:white;font-family:monospace;">5</div>
+                    <div style="font-size:9px;color:#9ca3af;margin-top:8px;">No action = dismissed automatically</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <p class="mock-caption">Shake confirmation screen — 5 seconds to confirm or it auto-dismisses</p>
+
+    <div class="tip">
+        <strong>💡 Note:</strong> The shake alert triggers a <strong>DURESS</strong> alert — the same as entering your Duress PIN. Your contacts and HQ will be notified silently. The app will not display any alarm on screen, so it looks normal to anyone watching.
+    </div>
 
     <h2>Quick Reference Card</h2>
 
@@ -763,9 +793,11 @@
         <tbody>
             <tr><td style="padding:10px;border:1px solid #e5e7eb;">Start a visit</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap location tile → set duration → slide the Start pill</td></tr>
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">End a visit</td><td style="padding:10px;border:1px solid #e5e7eb;">Slide the End Visit pill → slide Submit &amp; End if report required</td></tr>
-            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Extend time / send note</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap menu button on locked screen → Mid-Visit Options</td></tr>
+            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Extend visit time</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap <strong>Extend</strong> button on locked screen</td></tr>
+            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Submit a note or form mid-visit</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap <strong>📋 Forms</strong> button on locked screen</td></tr>
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Welfare check-in</td><td style="padding:10px;border:1px solid #e5e7eb;">Hold green "I Am Safe" button when prompted (within 2 min)</td></tr>
             <tr><td style="padding:10px;border:1px solid #e5e7eb;">Raise emergency alarm</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap red SOS button 3 times rapidly</td></tr>
+            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Covert duress alert (can't reach SOS)</td><td style="padding:10px;border:1px solid #e5e7eb;">Shake vigorously → shake again to confirm within 5 sec</td></tr>
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Cancel alarm (you're safe)</td><td style="padding:10px;border:1px solid #e5e7eb;">Hold "I Am Safe" → enter standard PIN</td></tr>
             <tr><td style="padding:10px;border:1px solid #e5e7eb;">Cancel alarm under duress</td><td style="padding:10px;border:1px solid #e5e7eb;">Hold "I Am Safe" → enter Duress PIN (silent DURESS alert sent)</td></tr>
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Sync new locations</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap Sync button on main screen</td></tr>
