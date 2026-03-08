@@ -356,15 +356,6 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
             </div>
         </div>
     </div>
-
-    <!-- ── DEBUG LOG PANEL (temporary diagnostic — remove after bug is confirmed) ── -->
-    <div id="dimDebugPanel"
-         style="position:absolute;bottom:0;left:0;right:0;max-height:160px;overflow-y:auto;
-                background:rgba(0,0,0,0.85);border-top:1px solid #333;padding:6px 8px;
-                font-family:monospace;font-size:10px;line-height:1.4;color:#0f0;
-                pointer-events:none;z-index:10000;">
-        <div style="color:#666;margin-bottom:2px;">[DIM DEBUG — screenshot this panel]</div>
-    </div>
 </div>
     
 <div id="pageContainer">
@@ -1215,29 +1206,8 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 </div>
 
 <script data-cfasync="false">
-// ── DIAGNOSTIC: Mirror [DIM] logs to on-screen panel ─────────────────────────
-(function() {
-    const _log  = console.log.bind(console);
-    const _warn = console.warn.bind(console);
-    function toPanel(args) {
-        const msg = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
-        if (!msg.includes('[DIM]')) return;
-        const panel = document.getElementById('dimDebugPanel');
-        if (!panel) return;
-        const ts  = new Date().toISOString().slice(11, 23); // HH:MM:SS.mmm
-        const row = document.createElement('div');
-        row.style.borderTop = '1px solid #1a1a1a';
-        row.style.paddingTop = '2px';
-        row.style.color = msg.includes('REJECTED') ? '#f88' : '#0f0';
-        row.textContent = ts + '  ' + msg;
-        panel.appendChild(row);
-        panel.scrollTop = panel.scrollHeight;
-    }
-    console.log  = function(...a) { _log(...a);  toPanel(a); };
-    console.warn = function(...a) { _warn(...a); toPanel(a); };
-})();
-// ── END DIAGNOSTIC ────────────────────────────────────────────────────────────
-
+// ============================================================================
+// CONFIGURATION SYSTEM (Phase 2, Feature 11)
 // ============================================================================
 
 // Maps site risk level (set by supervisor in the Sites sheet) to a default
@@ -1965,8 +1935,6 @@ function activateBatterySaver() {
     const main  = document.getElementById('lockedPage');
     if (!saver) return;
 
-    console.log('[DIM] activateBatterySaver() fired. fullscreenElement:', !!document.fullscreenElement, '| isBatterySaverActive was:', isBatterySaverActive);
-
     isBatterySaverActive = true;
 
     // Show overlay
@@ -1982,11 +1950,7 @@ function activateBatterySaver() {
     // succeed. Do NOT rely on this to suppress the nav bar — see theme-color below.
     const el  = document.documentElement;
     const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
-    if (rfs) rfs.call(el).then(() => {
-        console.log('[DIM] requestFullscreen in activateBatterySaver: SUCCEEDED');
-    }).catch(err => {
-        console.warn('[DIM] requestFullscreen in activateBatterySaver: REJECTED —', err.name);
-    });
+    if (rfs) rfs.call(el).catch(() => {});
 
     // Black out the Android status bar by setting theme-color to #000.
     // Works without a user gesture — blends the status bar with the black overlay
@@ -2009,7 +1973,6 @@ function activateBatterySaver() {
  * Single path — no ambiguity.
  */
 function deactivateBatterySaver() {
-    console.log('[DIM] deactivateBatterySaver() fired. fullscreenElement:', !!document.fullscreenElement, '| isBatterySaverActive:', isBatterySaverActive, '| caller:', new Error().stack?.split('\n')[2]?.trim());
     if (!isBatterySaverActive) return;  // Idempotent
 
     const saver = document.getElementById('batterySaver');
@@ -2051,7 +2014,6 @@ function deactivateBatterySaver() {
  * Only re-arms if outside the wake grace period and saver not already active.
  */
 function resetInactivityTimer() {
-    console.log('[DIM] resetInactivityTimer(). lastWakeTime age:', Date.now() - lastWakeTime, 'ms | graceActive:', (Date.now() - lastWakeTime < WAKE_GRACE_MS), '| visitActive:', !!state?.activeVisit);
     clearTimeout(dimTimer);  // Always cancel pending timer — must be first
 
     if (isBatterySaverActive) return;  // Saver active — slide gesture is the only valid wake path
@@ -6820,6 +6782,11 @@ function initSlidePill(pillId, thumbId, labelId, onComplete) {
     function completeSlide() {
         isSliding    = false;
         gestureValid = false;
+        // Request fullscreen here — we are still inside the touch event handler
+        // context, so Android Chrome will allow it. Must be before any setTimeout.
+        const _el  = document.documentElement;
+        const _rfs = _el.requestFullscreen || _el.webkitRequestFullscreen || _el.mozRequestFullScreen;
+        if (_rfs && !document.fullscreenElement) _rfs.call(_el, { navigationUI: 'hide' }).catch(() => {});
         thumb.style.transition = 'transform 0.15s ease-out';
         thumb.style.transform  = `translateX(${maxSlide}px)`;
         if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
@@ -6904,11 +6871,15 @@ function initSlideToWake() {
     function completeSlide() {
         isSliding    = false;
         gestureValid = false;
+        // Request fullscreen here — still inside the touch event handler context.
+        // Must be before any setTimeout or Android Chrome will reject it.
+        const _el  = document.documentElement;
+        const _rfs = _el.requestFullscreen || _el.webkitRequestFullscreen || _el.mozRequestFullScreen;
+        if (_rfs && !document.fullscreenElement) _rfs.call(_el, { navigationUI: 'hide' }).catch(() => {});
         thumb.style.transition = 'transform 0.15s ease-out';
         thumb.style.transform  = `translateX(${maxSlide}px)`;
         if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
         setTimeout(() => {
-            console.log('[DIM] completeSlide() — deactivating. isBatterySaverActive:', isBatterySaverActive, '| fullscreenElement:', !!document.fullscreenElement);
             deactivateBatterySaver();
             isSosLocked = true;
             setTimeout(() => { isSosLocked = false; }, 2000);
