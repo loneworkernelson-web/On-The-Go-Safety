@@ -2801,7 +2801,7 @@ function preDepart() {
     if (!state || !state.activeVisit) return;
     
     // SAFETY GATE 1: Force PIN if an alarm is active
-    if (state.activeVisit.isPanic) {
+    if (getVisitPhase() === VISIT_PHASES.ALARMING) {
         showToast("⚠️ Clear alarm with PIN first");
         iamSafe(); 
         return;
@@ -2811,7 +2811,7 @@ function preDepart() {
     // duress could be 'required' to end their visit before the alarm sounds.
     // Require the I Am Safe PIN from this point forward so a forced departure
     // cannot be made without the PIN being entered.
-    if (state.activeVisit.warn2minSent && !state.activeVisit.isSafeConfirmed) {
+    if (getVisitPhase() === VISIT_PHASES.WARNING) {
         showToast("⚠️ Safety PIN required — alarm imminent");
         iamSafe();
         return;
@@ -2888,6 +2888,111 @@ function preDepart() {
         calculatedDist = null;
         loadFormAndShow(location.templateName || '(Standard)');
     }
+}
+
+// ============================================================================
+// VISIT LIFECYCLE STATE MACHINE
+// ============================================================================
+/**
+ * Formal phase model for the visit lifecycle.
+ *
+ * Phases:
+ *   ACTIVE   — visit running, within scheduled duration
+ *   WARNING  — 2-minute pre-alarm warning has fired, alarm not yet triggered
+ *   ALARMING — alarm has fired (manual SOS, duress, or grace expiry)
+ *   CLOSED   — worker has confirmed safe via PIN
+ *
+ * The null state (state.activeVisit === null) represents IDLE — no visit in
+ * progress. Phase only exists while activeVisit is non-null.
+ *
+ * Legacy boolean flags (isPanic, criticalSent, isSafeConfirmed, warn2minSent)
+ * are kept in sync by setVisitPhase() so existing code that reads them
+ * continues to work without change.
+ */
+const VISIT_PHASES = Object.freeze({
+    ACTIVE:   'ACTIVE',
+    WARNING:  'WARNING',
+    ALARMING: 'ALARMING',
+    CLOSED:   'CLOSED'
+});
+
+const VALID_PHASE_TRANSITIONS = Object.freeze({
+    ACTIVE:   ['WARNING', 'ALARMING'],
+    WARNING:  ['ALARMING', 'CLOSED', 'ACTIVE'],  // ACTIVE on extend
+    ALARMING: ['CLOSED',  'ACTIVE'],             // ACTIVE on extend (PIN-gated)
+    CLOSED:   ['ACTIVE']                         // ACTIVE on extend
+});
+
+/**
+ * Transition the visit to a new phase.
+ * Validates the transition, updates state.activeVisit.phase, syncs legacy
+ * boolean flags, and returns true on success.
+ * Does NOT call saveState() — callers are responsible, to allow flag
+ * additions (e.g. isDuress) before the single save.
+ */
+function setVisitPhase(newPhase) {
+    if (!state || !state.activeVisit) {
+        console.warn('[Phase] setVisitPhase called with no active visit');
+        return false;
+    }
+
+    const current = state.activeVisit.phase || VISIT_PHASES.ACTIVE;
+
+    if (current === newPhase) return true; // no-op
+
+    const allowed = VALID_PHASE_TRANSITIONS[current];
+    if (!allowed || !allowed.includes(newPhase)) {
+        console.warn(`[Phase] Invalid transition: ${current} → ${newPhase} (ignored)`);
+        return false;
+    }
+
+    state.activeVisit.phase = newPhase;
+
+    // Keep legacy booleans in sync so existing consumers remain correct.
+    switch (newPhase) {
+        case VISIT_PHASES.ACTIVE:
+            state.activeVisit.isPanic         = false;
+            state.activeVisit.isSafeConfirmed = false;
+            state.activeVisit.criticalSent    = false;
+            break;
+        case VISIT_PHASES.WARNING:
+            state.activeVisit.warn2minSent    = true;
+            state.activeVisit.isPanic         = false;
+            state.activeVisit.isSafeConfirmed = false;
+            break;
+        case VISIT_PHASES.ALARMING:
+            state.activeVisit.isPanic         = true;
+            state.activeVisit.criticalSent    = true;
+            state.activeVisit.isSafeConfirmed = false;
+            break;
+        case VISIT_PHASES.CLOSED:
+            state.activeVisit.isSafeConfirmed = true;
+            state.activeVisit.isPanic         = false;
+            state.activeVisit.isDuress        = false;
+            state.activeVisit.criticalSent    = false;
+            break;
+    }
+
+    console.log(`[Phase] ${current} → ${newPhase}`);
+    return true;
+}
+
+/**
+ * Returns the current visit phase, or null if no visit is active.
+ * Falls back to deriving the phase from legacy flags for visits loaded
+ * from state saved before the phase field was introduced.
+ */
+function getVisitPhase() {
+    if (!state || !state.activeVisit) return null;
+
+    if (state.activeVisit.phase) return state.activeVisit.phase;
+
+    // Migration: derive phase from legacy flags for pre-phase saved state.
+    const v = state.activeVisit;
+    if (v.isSafeConfirmed)            return VISIT_PHASES.CLOSED;
+    if (v.isPanic || v.criticalSent)  return VISIT_PHASES.ALARMING;
+    if (v.warn2minSent)               return VISIT_PHASES.WARNING;
+    return VISIT_PHASES.ACTIVE;
 }
 
 // ============================================================================
@@ -3064,7 +3169,7 @@ async function triggerPanic(duress = false) {
     await logSafety(duress ? "DURESS" : "PANIC", duress ? "Silent duress alert — triggered via Shake to Alert." : "Manual SOS");
     
     if (state && state.activeVisit) {
-        state.activeVisit.isPanic = true;
+        setVisitPhase(VISIT_PHASES.ALARMING);
         if (duress) state.activeVisit.isDuress = true;
         saveState();
     }
@@ -3112,11 +3217,8 @@ function iamSafe() {
         // 3. AUDIT TRAIL: Standard log entry for the spreadsheet
         logSafety("USER_SAFE", "Worker entered PIN to cancel alarm state.");
         
-        // 4. STATE MANAGEMENT: Reset safety flags
-        state.activeVisit.isSafeConfirmed = true; 
-        state.activeVisit.isPanic = false;
-        state.activeVisit.isDuress = false;
-        state.activeVisit.criticalSent = false;
+        // 4. STATE MANAGEMENT: Transition to CLOSED phase (syncs legacy flags)
+        setVisitPhase(VISIT_PHASES.CLOSED);
         saveState();
         
         // 5. UI VISUAL RESET: Remove high-urgency styling
@@ -3208,7 +3310,7 @@ function tick() {
             if (diffMins <= 2 && diffMins > 1.4 && !state.activeVisit.warn2minSent) {
                 if (navigator.vibrate) navigator.vibrate([1000, 200, 1000, 200, 1000, 200, 1000]);
                 speakWarning("Warning. Safety alarm will activate in two minutes.");
-                state.activeVisit.warn2minSent = true;
+                setVisitPhase(VISIT_PHASES.WARNING);
                 saveState();
                 // Pre-arm GPS so a fix is ready when the alarm fires
                 if (typeof startGPSMonitoring === 'function') startGPSMonitoring();
@@ -3228,7 +3330,7 @@ function tick() {
             if (minsOverdue >= (escMins - 2) && minsOverdue < (escMins - 1.4) && !state.activeVisit.warn2minSent) {
                 if (navigator.vibrate) navigator.vibrate([1000, 200, 1000, 200, 1000, 200, 1000]);
                 speakWarning("Warning. Safety alarm will activate in two minutes.");
-                state.activeVisit.warn2minSent = true;
+                setVisitPhase(VISIT_PHASES.WARNING);
                 saveState();
                 // Pre-arm GPS now so a fix is ready when the alarm fires
                 if (typeof startGPSMonitoring === 'function') startGPSMonitoring();
@@ -4233,6 +4335,7 @@ async function startVisit(isSkipCheck = false) {
         startGPS: verifiedStartGPS,
         highRisk: isHighRisk,
         checkinIntervalMins: _resolvedWelfare, // welfare check interval for this visit
+        phase: VISIT_PHASES.ACTIVE,
         isPanic: false,
         criticalSent: false,
         warn5minSent: false,
@@ -5170,6 +5273,14 @@ function _initApp() {
     setupLongPress('btnMainClearCache', 1500, clearFormsCache);
     setupLongPress('btnDelLoc', 1500, deleteLoc);
 
+    // 2a. Phase migration: if a visit was loaded from state saved before the
+    // phase field was introduced, derive and write phase from legacy flags
+    // so getVisitPhase() returns the correct value for the rest of the session.
+    if (state.activeVisit && !state.activeVisit.phase) {
+        state.activeVisit.phase = getVisitPhase(); // getVisitPhase() derives from flags when phase is absent
+        saveState();
+    }
+
     // 3. Ensure nested objects exist
     if (!state.meta) state.meta = {};
     if (!state.settings) state.settings = {};
@@ -5936,10 +6047,8 @@ function confirmExtension(minutes) {
         // GOLDEN FIX: Increase the total duration budget so timer % stays correct
         state.activeVisit.duration += (minutes * 60);
         
-        // Reset Safety Flags
-        state.activeVisit.isSafeConfirmed = false; 
-        state.activeVisit.isPanic = false;
-        state.activeVisit.criticalSent = false;
+        // Reset visit phase and safety flags
+        setVisitPhase(VISIT_PHASES.ACTIVE);
         state.activeVisit.overdueGpsSent = false;
         
         // Reset warnings so they fire again
@@ -7527,8 +7636,7 @@ function renderNoticeArchive() {
  * Logic: Locks UI to Alarm mode and notifies contacts via backend.
  */
 function triggerGraceExpiryAlarm() {
-    state.activeVisit.criticalSent = true;
-    state.activeVisit.isPanic = true; // Required for PIN resolution
+    setVisitPhase(VISIT_PHASES.ALARMING);
     saveState();
 
     // Acquire wake lock so the alarm screen stays lit — the worker must not
