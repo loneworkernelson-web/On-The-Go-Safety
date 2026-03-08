@@ -505,7 +505,7 @@
         <div>
             <ol class="step-list">
                 <li>Tap a location tile to select it (it will highlight in your organisation's colour).</li>
-                <li>Use the <strong>quick buttons</strong> (15 min, 30 min, 1 hr) or the <strong>slider</strong> to set how long you expect to be there.</li>
+                <li>Tap a <strong>duration button</strong> (15 min, 30 min, 1 hr, 2 hr) to set how long you expect to be there. A "Due:" time will appear beneath the buttons as a reminder.</li>
                 <li><strong>Slide the green "Start Visit" pill</strong> from left to right to confirm and begin. The pill label will show the name of your selected site — if it's greyed out, check you've selected both a location and a duration.</li>
             </ol>
             <div class="tip">
@@ -687,11 +687,59 @@
     </ul>
 
     <!-- ═══════════════════════════════════════════════════════ -->
-    <h2>10. Push Notifications</h2>
+    <h2>10. Instant Push Notifications (ntfy)</h2>
 
-    <p>Your organisation may use <strong>ntfy</strong> — a free push notification service — to send instant alerts directly to your phone, separate from the app. If your contacts have been set up with ntfy, they will receive a notification the moment any alarm fires, without needing to have email open.</p>
+    <h3>Why this exists</h3>
+    <p>When an alarm fires, your contacts are notified by email. Email is reliable, but it has a problem: most people don't have email open on their phone during the day, and notifications can be delayed by minutes or silenced entirely.</p>
 
-    <p>You don't need to do anything to enable this — it's configured by your administrator. Your contacts will receive a link to subscribe when they're first set up in the system.</p>
+    <p><strong>ntfy solves this.</strong> ntfy is a free, open-source push notification service. When it is set up, your contacts will receive an instant alert on their phone the moment any alarm fires — directly on their lock screen, with no email delay. It works even when the phone is locked and silent. Think of it as a direct line to your contacts' phones, separate from email.</p>
+
+    <div class="highlight">
+        <strong>ntfy is optional but strongly recommended.</strong> Your safety system works without it — email and SMS will still be sent. But for genuine emergencies, the seconds saved by a push notification versus an email can matter.
+    </div>
+
+    <h3>How it works</h3>
+    <p>ntfy uses <strong>topics</strong> — private channel names that only you and your contact know. Your contact subscribes to their own topic in the ntfy app. You enter that topic name into your safety app. When an alarm fires, the system posts a notification directly to that topic, and your contact's phone wakes up instantly.</p>
+
+    <p>Topics are private by design — they are just text strings, and nobody can find or subscribe to yours unless you share the name with them.</p>
+
+    <h3>What your contact needs to do (they do this once)</h3>
+    <ol class="step-list">
+        <li>Download the free <strong>ntfy app</strong> on their phone — available from the <a href="https://apps.apple.com/app/ntfy/id1625396347">iOS App Store</a>, <a href="https://play.google.com/store/apps/details?id=io.heckel.ntfy">Google Play</a>, or by visiting <a href="https://ntfy.sh">ntfy.sh</a> in a browser.</li>
+        <li>Open the app and tap <strong>"Subscribe to topic"</strong>.</li>
+        <li>Choose a <strong>private topic name</strong> — something memorable but not easily guessed. For example: <code>jane-safety-7x9k2</code> or <code>smithj-alerts-2026</code>. Avoid anything obvious like your full name alone.</li>
+        <li>Tap <strong>Subscribe</strong>. The app will now listen for notifications on that topic.</li>
+        <li><strong>Tell you the topic name</strong> — you'll need to enter it in your safety app.</li>
+    </ol>
+
+    <div class="tip">
+        <strong>💡 One topic per contact:</strong> Each contact needs their own topic. Your Emergency Contact and Escalation Contact should each choose a different topic name and give it to you separately.
+    </div>
+
+    <h3>What you need to do as the worker</h3>
+    <p>Once your contact has shared their topic name with you, enter it in the safety app. There are two ways to do this:</p>
+
+    <p><strong>During the Setup Wizard (first-time setup):</strong> On the Emergency Contact and Escalation Contact screens, there is an optional field labelled <em>"ntfy topic"</em>. Type in the topic name your contact gave you.</p>
+
+    <p><strong>After setup, via Settings:</strong> Go to the app's <strong>Settings</strong> screen and find the Emergency Contact or Escalation Contact section. There will be an <em>"ntfy topic"</em> field — enter or update the topic name there.</p>
+
+    <div class="tip">
+        <strong>💡 Verify it works:</strong> After entering the topic name, send a <strong>Test Alert</strong> from the Settings screen. Your contact should receive a push notification within a few seconds. The test email they receive will also include a one-tap subscribe link for convenience. If they don't receive the push, check the topic name was entered correctly — it must match exactly, including capitalisation.
+    </div>
+
+    <h3>What your contacts will receive</h3>
+    <p>When any alarm fires — SOS, DURESS, overdue, or welfare check failure — your contacts will receive a push notification on their phone showing:</p>
+    <ul>
+        <li>The alarm type (e.g. <strong>🚨 PANIC / SOS</strong> or <strong>⚠ OVERDUE</strong>)</li>
+        <li>Your name and phone number</li>
+        <li>The site you were at and its address</li>
+        <li>A GPS link (if location was available)</li>
+    </ul>
+    <p>When you mark yourself safe (the alarm is resolved), your contacts also receive an <strong>✅ All Clear</strong> push notification so they know the situation has been resolved.</p>
+
+    <div class="highlight">
+        <strong>ntfy is free and open source.</strong> Your organisation may run its own private ntfy server for additional privacy — if so, your administrator will have configured this and nothing changes from your perspective. If no custom server is configured, the free public service at ntfy.sh is used.
+    </div>
 
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2>11. In an Emergency</h2>
