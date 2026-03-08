@@ -356,6 +356,15 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
             </div>
         </div>
     </div>
+
+    <!-- ── DEBUG LOG PANEL (temporary diagnostic — remove after bug is confirmed) ── -->
+    <div id="dimDebugPanel"
+         style="position:absolute;bottom:0;left:0;right:0;max-height:160px;overflow-y:auto;
+                background:rgba(0,0,0,0.85);border-top:1px solid #333;padding:6px 8px;
+                font-family:monospace;font-size:10px;line-height:1.4;color:#0f0;
+                pointer-events:none;z-index:10000;">
+        <div style="color:#666;margin-bottom:2px;">[DIM DEBUG — screenshot this panel]</div>
+    </div>
 </div>
     
 <div id="pageContainer">
@@ -1206,8 +1215,29 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 </div>
 
 <script data-cfasync="false">
-// ============================================================================
-// CONFIGURATION SYSTEM (Phase 2, Feature 11)
+// ── DIAGNOSTIC: Mirror [DIM] logs to on-screen panel ─────────────────────────
+(function() {
+    const _log  = console.log.bind(console);
+    const _warn = console.warn.bind(console);
+    function toPanel(args) {
+        const msg = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+        if (!msg.includes('[DIM]')) return;
+        const panel = document.getElementById('dimDebugPanel');
+        if (!panel) return;
+        const ts  = new Date().toISOString().slice(11, 23); // HH:MM:SS.mmm
+        const row = document.createElement('div');
+        row.style.borderTop = '1px solid #1a1a1a';
+        row.style.paddingTop = '2px';
+        row.style.color = msg.includes('REJECTED') ? '#f88' : '#0f0';
+        row.textContent = ts + '  ' + msg;
+        panel.appendChild(row);
+        panel.scrollTop = panel.scrollHeight;
+    }
+    console.log  = function(...a) { _log(...a);  toPanel(a); };
+    console.warn = function(...a) { _warn(...a); toPanel(a); };
+})();
+// ── END DIAGNOSTIC ────────────────────────────────────────────────────────────
+
 // ============================================================================
 
 // Maps site risk level (set by supervisor in the Sites sheet) to a default
