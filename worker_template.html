@@ -7727,6 +7727,12 @@ document.addEventListener("visibilitychange", async () => {
             showToast("✅ Safety Monitoring Active");
             if (typeof tick === 'function') tick();
 
+            // Flush any queued outbox payloads now that we're back in the foreground.
+            // The outbox may have accumulated records while offline or backgrounded —
+            // calling here ensures delivery resumes as soon as connectivity is available,
+            // without waiting for the next natural enqueue trigger.
+            if (typeof outboxProcess === 'function') outboxProcess();
+
             // iOS SUSPENSION CATCH-UP — MAIN ALARM
             // On iOS Safari, setInterval is throttled (or fully suspended) when
             // the PWA is backgrounded. tick() runs normally here, but the alarm
