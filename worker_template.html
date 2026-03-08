@@ -343,7 +343,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
                 </svg>
             </div>
             
-            <div class="w-full flex justify-center">
+            <div class="flex-1 flex items-center justify-center pointer-events-none">
                 <span class="text-sm font-black text-gray-400 uppercase tracking-[0.3em] transition-opacity duration-200" id="slideLabel">Slide to Wake</span>
             </div>
         </div>
@@ -621,10 +621,10 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
         Forms
     </button>
     <div id="btnStart" class="slide-action-pill pill-disabled flex-1 relative bg-gray-800 h-16 rounded-2xl p-1 border border-gray-700 flex items-center overflow-hidden shadow-inner">
-        <div id="slideStartThumb" class="w-14 h-14 rounded-xl flex items-center justify-center shadow-2xl z-20 pointer-events-none" style="background:var(--accent,#3b82f6)">
+        <div id="slideStartThumb" class="w-14 h-14 rounded-xl flex items-center justify-center shadow-2xl z-20 pointer-events-none flex-shrink-0" style="background:var(--accent,#3b82f6)">
             <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
         </div>
-        <div class="w-full flex justify-center pointer-events-none">
+        <div class="flex-1 flex items-center justify-center pointer-events-none">
             <span id="slideStartLabel" class="text-xs font-black text-gray-400 uppercase tracking-[0.2em] transition-opacity duration-200">Select a Site</span>
         </div>
     </div>
@@ -686,7 +686,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
                 <div id="slideDepartThumb" class="w-16 h-16 rounded-xl bg-white flex items-center justify-center shadow-2xl z-20 pointer-events-none flex-shrink-0">
                     <svg class="w-7 h-7 text-red-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
                 </div>
-                <div class="w-full flex flex-col items-center justify-center pointer-events-none">
+                <div class="flex-1 flex flex-col items-center justify-center pointer-events-none">
                     <span id="slideDepartLabel" class="text-lg font-black text-white uppercase tracking-widest transition-opacity duration-200">Slide to End Visit</span>
                     <span id="slideDepartSub" class="text-xs font-bold text-red-200 opacity-80 tracking-widest mt-0.5"></span>
                 </div>
@@ -960,7 +960,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 <!-- Site Info Modal (Phase 2, Feature 9) -->
 <div id="infoModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70" role="dialog" aria-modal="true">
     <div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto border border-gray-700">
-        <h2 class="text-2xl font-black text-white mb-4">Site Info</h2>
+        <h2 class="text-2xl font-black text-white mb-4">Site Safety Information</h2>
         <div id="siteInfoContent" class="text-gray-300 text-sm space-y-3 mb-6"></div>
         <div class="flex gap-3 mb-4">
             <a id="btnSiteCall" href="#" class="hidden flex-1 bg-green-600 text-white py-4 rounded-xl text-center font-black">📞 Call</a>
@@ -1076,9 +1076,14 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
         <h2 id="noticeTitle" class="text-2xl font-black mb-3 uppercase tracking-tight leading-tight" style="color:var(--text-on-primary)"></h2>
         <div id="noticeContent" class="text-gray-400 text-base mb-10 leading-relaxed text-left max-h-56 overflow-y-auto pr-3 scrollbar-hide"></div>
         
-        <button id="btnAckNotice" onclick="acknowledgeNotice()" class="w-full py-6 bg-blue-600 text-white font-black rounded-2xl text-lg shadow-xl active:scale-95 transition-all">
-            I have read and understood
-        </button>
+        <div id="btnAckNotice" class="slide-action-pill w-full relative h-20 rounded-2xl p-1 flex items-center overflow-hidden shadow-2xl" style="background:var(--accent,#2563eb);border:1px solid color-mix(in srgb,var(--accent,#2563eb) 60%,black)">
+            <div id="slideAckThumb" class="w-16 h-16 rounded-xl bg-white flex items-center justify-center shadow-2xl z-20 pointer-events-none flex-shrink-0">
+                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--accent,#2563eb)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
+            </div>
+            <div class="flex-1 flex items-center justify-center pointer-events-none">
+                <span id="slideAckLabel" class="text-base font-black text-white uppercase tracking-widest transition-opacity duration-200">Slide to Acknowledge</span>
+            </div>
+        </div>
     </div>
 </div>
     
@@ -6731,6 +6736,9 @@ function initAllActionPills() {
 
     // Depart pill
     initSlidePill('btnDepart', 'slideDepartThumb', 'slideDepartLabel', preDepart);
+
+    // Safety Notice acknowledgement pill
+    initSlidePill('btnAckNotice', 'slideAckThumb', 'slideAckLabel', acknowledgeNotice);
 }
 
 /**
@@ -7045,24 +7053,24 @@ function populateSiteInfoModal(location) {
     if (location.companyName) html += `<div><label class="text-sm text-gray-300 font-black uppercase tracking-widest">Company</label><div class="text-white">${escapeHtml(location.companyName)}</div></div>`;
     if (location.address) html += `<div><label class="text-sm text-gray-300 font-black uppercase tracking-widest">Address</label><div class="text-white">${escapeHtml(location.address)}</div></div>`;
     
-    // 2. EMERGENCY INFO LOGIC: View existing or trigger context-aware submission
+    // 2. SITE SAFETY INFO LOGIC: View existing or trigger context-aware submission
     if (location['Emergency Procedures']) {
         html += `<div class="pt-2">
             <button onclick="viewEmergencyProcedures('${location['Emergency Procedures']}')" 
                     class="w-full py-4 bg-red-600 text-white font-black rounded-2xl flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-transform">
-                🚨 VIEW EMERGENCY PROCEDURES
+                🛡️ VIEW SITE SAFETY INFORMATION
             </button>
         </div>`;
     } else {
-        // 1. Prepare context object and escape quotes for HTML attribute safety
+        // Prepare context object and escape quotes for HTML attribute safety
         const ctx = { siteName: location.name, companyName: location.companyName || "" };
         const ctxSafe = JSON.stringify(ctx).replace(/"/g, '&quot;');        
         
         html += `<div class="pt-2">
             <button onclick="closeModal('info'); loadFormAndShow('Update Site Procedures', ${ctxSafe})" 
                     class="w-full py-4 bg-gray-800 border-2 border-dashed border-gray-600 text-gray-400 font-bold rounded-2xl flex flex-col items-center justify-center gap-1 active:bg-gray-700 active:scale-95 transition-all">
-                <span class="text-xs uppercase tracking-widest opacity-60">No Emergency Info Found</span>
-                <span class="text-xs text-blue-400 font-black uppercase">Click to Submit Procedures</span>
+                <span class="text-xs uppercase tracking-widest opacity-60">No Site Safety Information found</span>
+                <span class="text-xs text-blue-400 font-black uppercase">Click to submit documentation</span>
             </button>
         </div>`;
     }
