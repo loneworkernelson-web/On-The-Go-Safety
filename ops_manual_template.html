@@ -589,8 +589,31 @@
             <tr><td><code>Status</code></td><td>Active / Inactive — inactive staff are excluded from overdue checks</td></tr>
             <tr><td><code>LastVehCheck</code></td><td>Date of last vehicle safety check — auto-updated by app</td></tr>
             <tr><td><code>WOFExpiry</code></td><td>Vehicle %%VEHICLE_TERM%% expiry date — manually maintained</td></tr>
+            <tr><td><code>DeviceId</code> (column E)</td><td>Device binding token — written automatically when a worker first registers. Do not edit unless re-binding a worker to a new device (see below).</td></tr>
         </tbody>
     </table>
+
+    <h3>Re-Registering a Worker on a New Device</h3>
+    <p>Each worker's app installation is bound to a specific device. When a worker first completes the setup wizard, the backend writes a unique device ID to <strong>column E</strong> of their row in the Staff tab. This prevents their account from being claimed by a different device without administrator approval.</p>
+    <p>If a worker gets a new phone, reinstalls the app, or needs to register from a different device, the existing binding must be cleared first. The worker will see the message <em>"This worker is already registered on another device. Ask your administrator to clear the existing registration."</em> if they attempt to register without this step being completed.</p>
+
+    <div class="warning-box">
+        <h3>⚠️ Confirm Identity Before Clearing</h3>
+        <p>Clearing column E allows <em>any</em> device to claim that worker's identity. Confirm directly with the worker — in person or by phone — that it is genuinely them requesting the re-registration, before proceeding.</p>
+    </div>
+
+    <p><strong>To re-bind a worker to a new device:</strong></p>
+    <ol>
+        <li>Open your Google Sheet and go to the <strong>Staff</strong> tab.</li>
+        <li>Find the worker's row.</li>
+        <li>Click the cell in <strong>column E</strong> (DeviceId) — it will contain a long alphanumeric string.</li>
+        <li><strong>Delete the cell contents</strong> and press Enter. Leave the cell empty — do not replace the value with anything.</li>
+        <li>Tell the worker they can now open the app and complete the setup wizard again on their new device. The new device ID will be written to column E automatically on successful registration.</li>
+    </ol>
+
+    <div class="info-box">
+        <strong>No redeploy needed.</strong> Clearing column E takes effect immediately — the backend checks the cell value live on each registration attempt. You do not need to redeploy the Apps Script or regenerate <code>config.json</code>.
+    </div>
 
     <h3>Sites Tab</h3>
     <p>Pre-load approved locations into the <code>Sites</code> tab. Workers see these as tiles in their location list after tapping Sync. Assign a template to a site in the <strong>Template Name</strong> column to automatically prompt workers with a form on departure.</p>
@@ -726,6 +749,11 @@ const prompt = `Read these notes: "${safeNotes}".
             <tr><th>Symptom</th><th>Likely Cause</th><th>Fix</th></tr>
         </thead>
         <tbody>
+            <tr>
+                <td><strong>"Already registered on another device"</strong> — worker cannot complete setup on new phone</td>
+                <td>Column E of the Staff tab still holds the old device's ID</td>
+                <td>In the Staff tab, find the worker's row and clear the contents of column E. See Part 4 — Re-Registering a Worker on a New Device.</td>
+            </tr>
             <tr>
                 <td><strong>"Access Denied"</strong> when worker submits a report</td>
                 <td>Worker Key mismatch — the key in <code>config.json</code> doesn't match the deployed backend</td>
