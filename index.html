@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏭</text></svg>">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>On-The-Go App Factory v82.0 — Config Model</title>
+      <title>On-The-Go App Factory v84.0 — Config Model</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap" rel="stylesheet">
@@ -76,7 +76,7 @@
   <div class="max-w-6xl mx-auto blur-sm transition-all duration-500" id="mainContent">
     <header class="text-center mb-10">
       <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400 mb-2">OTG AppSuite Factory</h1>
-      <p class="text-white font-extrabold tracking-widest text-sm uppercase">v82.0 | Config Model — Runtime Configuration</p>
+      <p class="text-white font-extrabold tracking-widest text-sm uppercase">v84.0 | Config Model — Runtime Configuration</p>
     </header>
 
     <div class="bg-gray-800 rounded-3xl shadow-2xl border border-gray-700 overflow-hidden">
@@ -196,24 +196,36 @@
             <div class="w-3 h-3 rounded-full bg-gray-700"></div>
         </div>
 
-        <div class="p-4 space-y-4">
-            <div class="flex gap-2">
-                <div class="w-8 h-8 bg-gray-800 rounded-lg border border-gray-700"></div>
-                <div class="w-8 h-8 bg-gray-800 rounded-lg border border-gray-700"></div>
-                <div id="mockTravelCard" class="flex-1 h-8 rounded-lg border transition-colors duration-500"></div>
-            </div>
-            
-            <div class="grid grid-cols-2 gap-2">
-                <div class="h-20 bg-gray-800 rounded-lg border border-gray-700 p-2">
-                    <div class="h-1 w-6 bg-gray-600 rounded mb-1"></div>
-                    <div class="h-2 w-10 bg-white/20 rounded"></div>
+        <div class="p-4 space-y-3">
+            <!-- Location tiles: one inactive, one selected -->
+            <div class="space-y-1.5">
+                <div class="h-10 bg-gray-800 rounded-lg border border-gray-700 flex items-center px-2 gap-2">
+                    <div class="w-2 h-2 rounded-full bg-gray-600"></div>
+                    <div class="h-1.5 w-16 bg-gray-600 rounded"></div>
                 </div>
-                <div id="mockAccentCard" class="h-20 border-2 rounded-lg p-2 shadow-lg transition-colors duration-500">
-                    <div class="h-1 w-6 opacity-40 rounded mb-1 bg-white"></div>
-                    <div class="h-2 w-10 opacity-40 rounded bg-white"></div>
+                <div id="mockAccentCard" class="h-10 rounded-lg border-2 flex items-center px-2 gap-2 shadow transition-colors duration-500">
+                    <div class="w-2 h-2 rounded-full bg-white opacity-60"></div>
+                    <div class="h-1.5 w-20 bg-white opacity-40 rounded"></div>
+                    <div class="ml-auto text-[7px] font-black text-white opacity-60 uppercase tracking-wide">Selected</div>
                 </div>
             </div>
-            <div class="h-2 w-24 bg-gray-700 rounded mx-auto mt-4"></div>
+
+            <!-- Travel mode pill -->
+            <div id="mockTravelCard" class="w-full h-7 rounded-full border flex items-center justify-center gap-1 transition-colors duration-500">
+                <span class="text-[7px] font-black text-white opacity-50 uppercase tracking-widest">🚗 Travel Mode</span>
+            </div>
+
+            <!-- Duration preset buttons -->
+            <div>
+                <div class="text-[7px] text-gray-500 font-black uppercase tracking-widest mb-1.5">Expected Duration</div>
+                <div class="flex gap-1">
+                    <div class="flex-1 h-7 rounded-lg border border-gray-600 bg-gray-800 flex items-center justify-center text-[8px] font-black text-gray-500">15m</div>
+                    <div id="mockDurSelected" class="flex-1 h-7 rounded-lg border-2 flex items-center justify-center text-[8px] font-black text-white transition-colors duration-500">30m</div>
+                    <div class="flex-1 h-7 rounded-lg border border-gray-600 bg-gray-800 flex items-center justify-center text-[8px] font-black text-gray-500">1hr</div>
+                    <div class="flex-1 h-7 rounded-lg border border-gray-600 bg-gray-800 flex items-center justify-center text-[8px] font-black text-gray-500">2hr</div>
+                </div>
+                <div class="text-[7px] text-gray-500 font-bold text-right mt-1">Due: 2:45 PM</div>
+            </div>
         </div>
 
         <div id="mockFooter" class="absolute bottom-0 w-full p-4 border-t border-gray-700 bg-[#111827] transition-colors duration-500">
@@ -413,24 +425,13 @@
               </div>
               <div id="testResult" class="hidden mt-4 p-4 rounded-xl text-center font-black uppercase tracking-widest"></div>
           </div>
-          <div class="flex justify-between pt-8"><button onclick="gotoStep(2)" class="text-white font-black uppercase tracking-widest text-xs">Back</button><button id="btnNextDownload" onclick="gotoStep(4); refreshConfigPreview();" disabled class="btn btn-primary text-lg opacity-50 cursor-not-allowed shadow-2xl font-black uppercase tracking-widest">Next: Download Config →</button></div>
+          <div class="flex justify-between pt-8"><button onclick="gotoStep(2)" class="text-white font-black uppercase tracking-widest text-xs">Back</button><button id="btnNextDownload" onclick="gotoStep(4);" disabled class="btn btn-primary text-lg opacity-50 cursor-not-allowed shadow-2xl font-black uppercase tracking-widest">Next: Download Config →</button></div>
         </div>
 
         <div id="step4" class="step-section text-center space-y-12 py-12">
             <div class="text-emerald-400 text-8xl mb-4 animate-bounce">✅</div>
             <h2 class="text-4xl font-black text-white uppercase tracking-widest">Download Your Files</h2>
             <p class="help-text text-lg max-w-xl mx-auto">Download your org-specific config and the complete worker app deployment pack. The monitor app and supporting docs are separate downloads below.</p>
-
-            <!-- config.json preview -->
-            <div class="max-w-2xl mx-auto text-left space-y-4">
-                <div class="bg-gray-900 rounded-2xl border border-gray-700 p-5">
-                    <div class="flex items-center justify-between mb-3">
-                        <span class="text-blue-300 text-xs font-black uppercase tracking-widest">Generated config.json Preview</span>
-                        <button onclick="refreshConfigPreview()" class="text-xs text-gray-400 hover:text-white font-bold">↻ Refresh</button>
-                    </div>
-                    <pre id="configPreview" class="code-scroll text-xs text-green-300 whitespace-pre-wrap max-h-64 overflow-y-auto"></pre>
-                </div>
-            </div>
 
             <!-- ── PRIMARY: Worker Deployment Pack ── -->
             <div class="max-w-md mx-auto flex flex-col gap-3">
@@ -906,6 +907,18 @@ function applyPreset(p, a, el) {
         mockAccentCard.style.backgroundColor = a + '33'; // 20% opacity
     }
 
+    const mockTravelCard = document.getElementById('mockTravelCard');
+    if(mockTravelCard) {
+        mockTravelCard.style.borderColor = a + '4d';
+        mockTravelCard.style.backgroundColor = a + '1a';
+    }
+
+    const mockDurSelected = document.getElementById('mockDurSelected');
+    if(mockDurSelected) {
+        mockDurSelected.style.borderColor = a;
+        mockDurSelected.style.backgroundColor = a + '33';
+    }
+
     document.querySelectorAll('.preset-swatch').forEach(s => s.classList.remove('selected'));
     if(el) el.classList.add('selected');
 }
@@ -988,6 +1001,11 @@ function updateMockupUI() {
     if(travelCard) {
         travelCard.style.borderColor = accent + '4d'; // 30% opacity
         travelCard.style.backgroundColor = accent + '1a'; // 10% opacity
+    }
+    const mockDurSelected = document.getElementById('mockDurSelected');
+    if(mockDurSelected) {
+        mockDurSelected.style.borderColor = accent;
+        mockDurSelected.style.backgroundColor = accent + '33';
     }
 }
 
@@ -1157,15 +1175,6 @@ function testConnection() {
             const b = parseInt(hex.slice(5,7), 16);
             return `rgba(${r},${g},${b},${alpha})`;
         } catch { return `rgba(59,130,246,${alpha})`; }
-    }
-
-    function refreshConfigPreview() {
-        try {
-            const cfg = buildConfigObject();
-            document.getElementById('configPreview').textContent = JSON.stringify(cfg, null, 2);
-        } catch (err) {
-            document.getElementById('configPreview').textContent = 'Error building config: ' + err.message;
-        }
     }
 
     function downloadConfig() {
