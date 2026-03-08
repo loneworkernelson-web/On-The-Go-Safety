@@ -2899,6 +2899,11 @@ function updateDepartLabel() {
 // ============================================================================
 function enterLockedScreen() {
     navigate('locked');
+
+    // Reset wake grace period so the dim timer always arms fresh for each new visit.
+    // Without this, waking near the end of a previous visit suppresses dim for the
+    // first 30s of the next visit.
+    lastWakeTime = 0;
     
     // PHASE 1: Initialize warning flags and anticipated departure time
     if (state && state.activeVisit) {
