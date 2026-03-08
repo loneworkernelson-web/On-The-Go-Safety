@@ -4241,6 +4241,12 @@ async function startVisit(isSkipCheck = false) {
         saveState();
     }
 
+    // Clear the wake grace period BEFORE arming the inactivity timer.
+    // If the previous visit was woken shortly before departure, lastWakeTime would
+    // still be recent and resetInactivityTimer() would refuse to arm — causing the
+    // first dim of this new visit to never fire.
+    lastWakeTime = 0;
+
     resetInactivityTimer(); 
     renderLocations();
     updateArrivedButtonState(); 
