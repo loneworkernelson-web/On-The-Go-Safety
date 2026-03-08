@@ -1213,6 +1213,21 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 
 <script data-cfasync="false">
 // ============================================================================
+// GLOBAL ERROR SAFETY NET
+// Catches any unhandled Promise rejection so silent async failures surface
+// as visible toasts rather than vanishing into the console.
+// showToast is defined later in this script; the handler fires at runtime
+// so the reference is always resolved by the time it could trigger.
+// ============================================================================
+window.addEventListener('unhandledrejection', event => {
+    const reason = event.reason;
+    console.error('[OTG] Unhandled rejection:', reason);
+    if (typeof showToast === 'function') {
+        showToast('⚠️ Unexpected error — check connection', 5000);
+    }
+});
+
+// ============================================================================
 // CONFIGURATION SYSTEM (Phase 2, Feature 11)
 // ============================================================================
 
@@ -1509,6 +1524,7 @@ let gpsTrail = [];              // Breadcrumb trail [{lat, lng}] for the current
 let synth; // Tone.js synth - initialized after user interaction
 let audioReady = false;
 let gpsWatchId = null; // Holds setTimeout ID (or -1 sentinel) when GPS monitoring is active; null when stopped
+let _consecutiveGPSFailures = 0; // Reset on each successful fix; toast shown at threshold during a visit
 
 // PHASE 1 ADDITIONS
 let isMidVisitUpdate = false; // Track if we're updating mid-visit vs ending
@@ -2100,6 +2116,7 @@ function _takeSingleGPSFix() {
                 // 200–500 m: pace unchanged
             }
             lastGPSCoords = { lat, lng };
+            _consecutiveGPSFailures = 0; // Clear failure streak on every good fix
 
             // Record breadcrumb during an active travel session.
             // Skip if within 50 m of the last breadcrumb — avoids inflating the
@@ -2118,6 +2135,13 @@ function _takeSingleGPSFix() {
         },
         err => {
             console.warn('GPS fix failed:', err.message);
+            _consecutiveGPSFailures++;
+            // Surface a warning after 5 consecutive failures during an active visit.
+            // Threshold avoids spamming the worker on a brief signal drop; 5 failures
+            // at the minimum interval (~30 s each) means ~2.5 minutes without a fix.
+            if (_consecutiveGPSFailures === 5 && state && state.activeVisit) {
+                showToast('⚠️ GPS signal lost — location tracking paused', 6000);
+            }
             document.querySelectorAll('.gps-bar').forEach(b => {
                 b.classList.remove('active-red', 'active-amber', 'active-green');
                 b.style.backgroundColor = '#374151';
@@ -6137,7 +6161,13 @@ function forceSync(showUI) {
             console.error('OTG Sync Failure:', e);
             const banner = document.getElementById('uploadBanner');
             if (banner) banner.classList.add('hidden');
-            if (showUI) showToast('❌ Sync failed (Offline)');
+            if (showUI) {
+                showToast('❌ Sync failed — check connection');
+            } else if (state && state.activeVisit) {
+                // Background sync failed during a live visit — the outbox will retry,
+                // but the worker should know their data may not have reached the server.
+                showToast('⚠️ Background sync failed — data queued', 5000);
+            }
         });
 }
 
