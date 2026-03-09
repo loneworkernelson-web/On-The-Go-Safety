@@ -42,9 +42,9 @@
 </head>
 <body class="min-h-screen py-8 px-4 relative">
 
-  <div id="disclaimerModal" class="modal-backdrop" style="display: flex;">
+  <div id="disclaimerModal" class="modal-backdrop" style="display: flex;" role="dialog" aria-modal="true" aria-labelledby="disclaimerTitle">
       <div class="modal-content border-yellow-600">
-          <h2 class="text-2xl font-extrabold text-white mb-2">⚠️ Safety Notice</h2>
+          <h2 id="disclaimerTitle" class="text-2xl font-extrabold text-white mb-2">⚠️ Safety Notice</h2>
           <div class="space-y-4 text-gray-200 text-sm mb-6 font-bold">
               <p>The <strong>OTG AppSuite</strong> is a professional serverless safety solution.</p>
               <ul class="list-disc pl-5 space-y-2">
@@ -62,9 +62,9 @@
       </div>
   </div>
 
-  <div id="driveHelpModal" class="modal-backdrop">
+  <div id="driveHelpModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="driveHelpTitle">
       <div class="modal-content border-blue-500">
-          <h2 class="text-xl font-extrabold text-white mb-4">📂 How to get a Drive Folder ID</h2>
+          <h2 id="driveHelpTitle" class="text-xl font-extrabold text-white mb-4">📂 How to get a Drive Folder ID</h2>
           <p class="text-sm text-white font-bold mb-4">Open your Google Drive folder. Copy the long string of letters and numbers at the very end of the URL.</p>
           <div class="bg-black p-3 rounded font-mono text-xs text-green-400 mb-4 break-all font-bold">
               drive.google.com/drive/folders/<strong>1AbCdEfGhIjKlMnOpQrStUvWxYz</strong>
@@ -80,29 +80,29 @@
     </header>
 
     <div class="bg-gray-800 rounded-3xl shadow-2xl border border-gray-700 overflow-hidden">
-      <div class="flex bg-gray-900 border-b border-gray-700 text-sm md:text-base">
-        <button onclick="gotoStep(1)" id="tab1" class="tab-btn active">1. Config</button>
-        <button onclick="gotoStep(2)" id="tab2" class="tab-btn">2. Database</button>
-        <button onclick="gotoStep(3)" id="tab3" class="tab-btn">3. Cloud System</button>
-        <button onclick="gotoStep(4)" id="tab4" class="tab-btn">4. Download Config</button>
-        <button onclick="gotoStep(5)" id="tab5" class="tab-btn">5. Deployment</button>
+      <div class="flex bg-gray-900 border-b border-gray-700 text-sm md:text-base" role="tablist" aria-label="Factory setup steps">
+        <button onclick="gotoStep(1)" id="tab1" class="tab-btn active" role="tab" aria-selected="true" aria-controls="step1">1. Config</button>
+        <button onclick="gotoStep(2)" id="tab2" class="tab-btn" role="tab" aria-selected="false" aria-controls="step2">2. Database</button>
+        <button onclick="gotoStep(3)" id="tab3" class="tab-btn" role="tab" aria-selected="false" aria-controls="step3">3. Cloud System</button>
+        <button onclick="gotoStep(4)" id="tab4" class="tab-btn" role="tab" aria-selected="false" aria-controls="step4">4. Download Config</button>
+        <button onclick="gotoStep(5)" id="tab5" class="tab-btn" role="tab" aria-selected="false" aria-controls="step5">5. Deployment</button>
       </div>
 
       <div class="p-6 md:p-10">
 
-        <div id="step1" class="step-section active space-y-8">
+        <div id="step1" class="step-section active space-y-8" role="tabpanel" aria-labelledby="tab1">
           <div class="grid md:grid-cols-2 gap-8">
             <div class="space-y-6">
               <div>
-                  <label class="block text-blue-300 font-extrabold mb-1 text-xs uppercase tracking-widest">1. Organisation Name</label>
+                  <label for="orgName" class="block text-blue-300 font-extrabold mb-1 text-xs uppercase tracking-widest">1. Organisation Name</label>
                   <input type="text" id="orgName" class="input-field" value="My Organisation" oninput="saveInput(this)">
                   <p class="help-text italic">Appears in app headers, report emails, and generated safety manuals.</p>
               </div>
               
               <div>
                   <div class="flex justify-between items-center mb-1">
-                      <label class="block text-blue-300 font-extrabold text-xs uppercase tracking-widest">2. App Icon Label</label>
-                      <span class="text-[11px] text-gray-300 font-black" id="charCount">6/12</span>
+                      <label for="appName" class="block text-blue-300 font-extrabold text-xs uppercase tracking-widest">2. App Icon Label</label>
+                      <span class="text-[11px] text-gray-300 font-black" id="charCount" aria-live="polite" aria-label="Character count">6/12</span>
                   </div>
                   <input type="text" id="appName" maxlength="12" class="input-field text-center font-black text-green-400 border-green-600/50" value="Safety" oninput="updateCharCount(this); saveInput(this)">
                   <p class="help-text italic">The short name workers see under the app icon on their phone (Max 12 chars).</p>
@@ -113,7 +113,7 @@
     
 <div class="mb-4">
     <div class="flex justify-between items-end mb-1">
-        <label class="block text-blue-300 font-extrabold text-xs">Secret Key (Admin Only)</label>
+        <label for="secretKey" class="block text-blue-300 font-extrabold text-xs">Secret Key (Admin Only)</label>
         <span id="keyLenCounter" class="text-[10px] font-black text-slate-500 uppercase tracking-widest">0 / 32–64</span>
     </div>
     <div class="flex gap-2">
@@ -126,7 +126,7 @@
     <p class="help-text italic">Used by administrators to access the spreadsheet. <strong>Do not share.</strong></p>
 </div>
     <div>
-        <label class="block text-blue-300 font-extrabold mb-1 text-xs">Worker Key (App Setup)</label>
+        <label for="workerKey" class="block text-blue-300 font-extrabold mb-1 text-xs">Worker Key (App Setup)</label>
         <div class="flex gap-2">
             <input type="text" id="workerKey" class="input-field text-green-400 font-mono text-sm py-2" oninput="saveInput(this)">
             <button onclick="generateSecureKey('workerKey')" class="btn bg-gray-700 hover:bg-gray-600 text-white py-2">🔄</button>
@@ -135,7 +135,7 @@
 </div>
 
               <div>
-                  <label class="block text-blue-300 font-extrabold mb-1 text-xs uppercase tracking-widest">3. Regional Logic</label>
+                  <label for="countrySelect" class="block text-blue-300 font-extrabold mb-1 text-xs uppercase tracking-widest">3. Regional Logic</label>
                   <select id="countrySelect" class="input-field cursor-pointer py-3 text-sm font-black" onchange="updateRegionInfo()">
                       <option value="+64">New Zealand (+64)</option><option value="+61">Australia (+61)</option><option value="+44">United Kingdom (+44)</option><option value="+1">USA / Canada (+1)</option>
                   </select>
@@ -149,7 +149,7 @@
             
             <div class="highlight-box flex flex-col items-center justify-center text-center">
               <label class="block text-blue-300 font-extrabold mb-3 text-sm uppercase tracking-widest">4. App Branding (Customise)</label>
-              <div id="dropZone" class="drop-zone w-40 h-40 mx-auto rounded-full flex items-center justify-center mb-4 border-4" onclick="document.getElementById('logoInput').click()">
+              <div id="dropZone" class="drop-zone w-40 h-40 mx-auto rounded-full flex items-center justify-center mb-4 border-4" onclick="document.getElementById('logoInput').click()" role="button" tabindex="0" aria-label="Upload logo image — click or drag and drop">
                 <img id="logoImg" class="hidden h-full w-full object-cover">
                 <span id="logoText" class="text-white text-[11px] uppercase font-black px-4 leading-tight">Drag Logo Here or Click to Upload</span>
               </div>
@@ -186,7 +186,7 @@
     <div class="mt-8 pt-8 border-t border-gray-700">
     <h3 class="text-white font-black mb-4 uppercase text-[10px] tracking-widest text-center">📱 Live App Preview</h3>   
     
-    <div id="appMockup" class="mx-auto w-64 h-[450px] rounded-[2.5rem] border-[6px] border-gray-900 bg-[#111827] shadow-2xl overflow-hidden relative transition-all duration-500">
+    <div id="appMockup" class="mx-auto w-64 h-[450px] rounded-[2.5rem] border-[6px] border-gray-900 bg-[#111827] shadow-2xl overflow-hidden relative transition-all duration-500" aria-hidden="true">
         
         <div id="mockHeader" class="h-12 border-b border-gray-700 flex items-center px-4 justify-between bg-[#111827]">
             <div class="flex items-center gap-2">
@@ -251,7 +251,7 @@
     <div class="grid md:grid-cols-2 gap-10">
         <div class="space-y-6">
             <div>
-                <label class="block text-white font-black text-xs uppercase tracking-widest">Alarm Grace Period (Mins)</label>
+                <label for="escalationMins" class="block text-white font-black text-xs uppercase tracking-widest">Alarm Grace Period (Mins)</label>
                 <input type="number" id="escalationMins" value="15" class="bg-gray-800 border border-gray-600 rounded p-2 text-white w-20 text-center font-black text-xl" oninput="saveInput(this)">
                 <p class="help-text italic leading-tight">Time allowed for workers to mark themselves "Safe" before the emergency alert fires.</p>
             </div>
@@ -275,18 +275,18 @@
             </div>
         </div>
         <div class="space-y-6">
-            <div><div class="flex justify-between items-end mb-1"><label class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">Textbelt Key (SMS Alerts)</label><a href="https://textbelt.com/#pricing" target="_blank" class="link">Get Key</a></div><input type="text" id="textbeltKey" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Essential for sending high-priority SMS alerts to contacts if an alarm fires.</p></div>
-            <div><div class="flex justify-between items-end mb-1"><label class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">Gemini AI Key (Grammar)</label><a href="https://aistudio.google.com/app/apikey" target="_blank" class="link">Get Key</a></div><input type="text" id="geminiKey" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Used to automatically professionalise worker reports and fix spelling.</p></div>
-            <div><div class="flex justify-between items-end mb-1"><label class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">ORS Key (Mileage Tracking)</label><a href="https://openrouteservice.org/dev/#/signup" target="_blank" class="link">Get Key</a></div><input type="text" id="orsKey" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Required for road-accurate mileage tracking. This key is hidden from workers.</p></div>
-            <div><div class="flex justify-between items-end mb-1"><label class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">Photo Folder ID</label><a onclick="document.getElementById('driveHelpModal').style.display='flex'" class="link">Where is this?</a></div><input type="text" id="folderId" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Organises all report photos into a dedicated Drive folder for the Diocese.</p></div>
+            <div><div class="flex justify-between items-end mb-1"><label for="textbeltKey" class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">Textbelt Key (SMS Alerts)</label><a href="https://textbelt.com/#pricing" target="_blank" class="link">Get Key</a></div><input type="text" id="textbeltKey" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Essential for sending high-priority SMS alerts to contacts if an alarm fires.</p></div>
+            <div><div class="flex justify-between items-end mb-1"><label for="geminiKey" class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">Gemini AI Key (Grammar)</label><a href="https://aistudio.google.com/app/apikey" target="_blank" class="link">Get Key</a></div><input type="text" id="geminiKey" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Used to automatically professionalise worker reports and fix spelling.</p></div>
+            <div><div class="flex justify-between items-end mb-1"><label for="orsKey" class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">ORS Key (Mileage Tracking)</label><a href="https://openrouteservice.org/dev/#/signup" target="_blank" class="link">Get Key</a></div><input type="text" id="orsKey" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Required for road-accurate mileage tracking. This key is hidden from workers.</p></div>
+            <div><div class="flex justify-between items-end mb-1"><label for="folderId" class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">Photo Folder ID</label><a onclick="document.getElementById('driveHelpModal').style.display='flex'" class="link">Where is this?</a></div><input type="text" id="folderId" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Organises all report photos into a dedicated Drive folder for the Diocese.</p></div>
             <div class="pt-4 border-t border-gray-700">
-                <label class="text-[11px] font-black text-emerald-300 uppercase tracking-widest block mb-1">System Health Report Email</label>
+                <label for="healthEmail" class="text-[11px] font-black text-emerald-300 uppercase tracking-widest block mb-1">System Health Report Email</label>
                 <input type="email" id="healthEmail" class="input-field py-2 text-xs font-mono font-bold" placeholder="admin@yourorg.com (optional)" oninput="saveInput(this)">
                 <p class="help-text italic leading-tight">A daily system health summary is emailed here each morning — visit counts, escalations triggered, failed alert emails, and any workers with an open visit older than 24 hours. Leave blank to send to the Google account that owns the Apps Script.</p>
             </div>
             <div class="pt-4 border-t border-gray-700">
                 <div class="flex justify-between items-end mb-1">
-                    <label class="text-[11px] font-black text-amber-300 uppercase tracking-widest">Healthchecks.io Ping URL</label>
+                    <label for="healthcheckUrl" class="text-[11px] font-black text-amber-300 uppercase tracking-widest">Healthchecks.io Ping URL</label>
                     <a href="https://healthchecks.io" target="_blank" class="link">Free signup →</a>
                 </div>
                 <input type="url" id="healthcheckUrl" class="input-field py-2 text-xs font-mono font-bold" placeholder="https://hc-ping.com/your-uuid-here (optional)" oninput="saveInput(this)">
@@ -294,7 +294,7 @@
             </div>
             <div class="pt-4 border-t border-gray-700">
                 <div class="flex justify-between items-end mb-1">
-                    <label class="text-[11px] font-black text-teal-300 uppercase tracking-widest">ntfy Push Notification Server</label>
+                    <label for="ntfyServer" class="text-[11px] font-black text-teal-300 uppercase tracking-widest">ntfy Push Notification Server</label>
                     <a href="https://ntfy.sh" target="_blank" class="link">About ntfy →</a>
                 </div>
                 <input type="url" id="ntfyServer" class="input-field py-2 text-xs font-mono font-bold" placeholder="https://ntfy.sh (default — leave blank to use hosted service)" oninput="saveInput(this)">
@@ -305,7 +305,7 @@
 </div>
           <div class="flex justify-end pt-6"><button onclick="gotoStep(2)" class="btn btn-primary text-lg px-12 shadow-2xl font-black uppercase tracking-widest">Next: Database Setup →</button></div>
         </div>
-        <div id="step2" class="step-section space-y-8">
+        <div id="step2" class="step-section space-y-8" role="tabpanel" aria-labelledby="tab2">
             <div class="bg-gradient-to-r from-blue-900 to-indigo-900 p-10 rounded-3xl border border-blue-500 shadow-xl text-center">
                 <h2 class="text-3xl font-black text-white mb-2 uppercase tracking-widest">Option A: The Automated Way</h2>
                 <div class="bg-yellow-900/40 border-l-8 border-yellow-500 p-5 mb-8 text-left max-w-2xl mx-auto rounded-r font-black">
@@ -329,15 +329,15 @@
             <div class="flex justify-between pt-8"><button onclick="gotoStep(1)" class="text-white font-black uppercase tracking-widest text-xs">Back</button><button onclick="gotoStep(3)" class="btn btn-primary text-lg shadow-2xl font-black uppercase tracking-widest">Next: Cloud System →</button></div>
         </div>
 
-        <div id="step3" class="step-section space-y-10">
+        <div id="step3" class="step-section space-y-10" role="tabpanel" aria-labelledby="tab3">
           <div class="bg-gray-900 p-8 rounded-3xl border border-gray-600 space-y-6 shadow-2xl">
               <h3 class="font-black text-green-400 text-xl uppercase tracking-widest">1. Install System "Brain"</h3>
               <p class="text-sm text-white font-black italic">This script handles all safety logic and database synchronization.</p>
               <div class="space-y-3">
-                  <div class="checklist-item" onclick="toggleCheck(this)"><input type="checkbox" class="checklist-checkbox"><span class="text-sm text-white font-black uppercase tracking-tighter">Click "Copy Code" below.</span></div>
-                  <div class="checklist-item" onclick="toggleCheck(this)"><input type="checkbox" class="checklist-checkbox"><span class="text-sm text-white font-black uppercase tracking-tighter">Go to Spreadsheet > <strong>Extensions > Apps Script</strong>.</span></div>
-                  <div class="checklist-item" onclick="toggleCheck(this)"><input type="checkbox" class="checklist-checkbox"><span class="text-sm text-white font-black uppercase tracking-tighter">Delete any text already in the editor.</span></div>
-                  <div class="checklist-item" onclick="toggleCheck(this)"><input type="checkbox" class="checklist-checkbox"><span class="text-sm text-white font-black uppercase tracking-tighter"><strong>Paste</strong> the code and click <strong>Save</strong> (Disk Icon).</span></div>
+                  <div class="checklist-item" onclick="toggleCheck(this)"><input type="checkbox" class="checklist-checkbox" aria-label="Click Copy Code below"><span class="text-sm text-white font-black uppercase tracking-tighter">Click "Copy Code" below.</span></div>
+                  <div class="checklist-item" onclick="toggleCheck(this)"><input type="checkbox" class="checklist-checkbox" aria-label="Go to Spreadsheet Extensions then Apps Script"><span class="text-sm text-white font-black uppercase tracking-tighter">Go to Spreadsheet > <strong>Extensions > Apps Script</strong>.</span></div>
+                  <div class="checklist-item" onclick="toggleCheck(this)"><input type="checkbox" class="checklist-checkbox" aria-label="Delete any text already in the editor"><span class="text-sm text-white font-black uppercase tracking-tighter">Delete any text already in the editor.</span></div>
+                  <div class="checklist-item" onclick="toggleCheck(this)"><input type="checkbox" class="checklist-checkbox" aria-label="Paste the code and click Save"><span class="text-sm text-white font-black uppercase tracking-tighter"><strong>Paste</strong> the code and click <strong>Save</strong> (Disk Icon).</span></div>
               </div>
               <button onclick="copyScript()" class="btn bg-blue-600 text-white w-full font-black shadow-2xl py-4 uppercase tracking-widest text-lg">📋 COPY SYSTEM CODE</button>
               <div id="codeContainer" class="hidden mt-4"><pre id="codeDisplay" class="code-scroll">Generating...</pre></div>
@@ -418,17 +418,17 @@
           </div>
 
           <div id="urlInputSection" class="space-y-6 pt-8 border-t border-gray-700">
-              <label class="block text-green-400 font-black text-center uppercase tracking-[0.3em] text-sm">3. Paste your Web App URL here:</label>
+              <label for="webAppUrl" class="block text-green-400 font-black text-center uppercase tracking-[0.3em] text-sm">3. Paste your Web App URL here:</label>
               <input type="url" id="webAppUrl" class="input-field text-center font-mono text-yellow-300 border-green-500/50 text-xl" placeholder="https://script.google.com/.../exec" oninput="saveInput(this)">
               <div class="flex justify-center">
                   <button onclick="testConnection()" class="btn bg-yellow-600 hover:bg-yellow-500 text-white font-black py-5 px-16 rounded-2xl shadow-2xl uppercase tracking-widest text-lg">📡 TEST SYSTEM CONNECTION</button>
               </div>
-              <div id="testResult" class="hidden mt-4 p-4 rounded-xl text-center font-black uppercase tracking-widest"></div>
+              <div id="testResult" class="hidden mt-4 p-4 rounded-xl text-center font-black uppercase tracking-widest" role="status" aria-live="polite"></div>
           </div>
           <div class="flex justify-between pt-8"><button onclick="gotoStep(2)" class="text-white font-black uppercase tracking-widest text-xs">Back</button><button id="btnNextDownload" onclick="gotoStep(4);" disabled class="btn btn-primary text-lg opacity-50 cursor-not-allowed shadow-2xl font-black uppercase tracking-widest">Next: Download Config →</button></div>
         </div>
 
-        <div id="step4" class="step-section text-center space-y-12 py-12">
+        <div id="step4" class="step-section text-center space-y-12 py-12" role="tabpanel" aria-labelledby="tab4">
             <div class="text-emerald-400 text-8xl mb-4 animate-bounce">✅</div>
             <h2 class="text-4xl font-black text-white uppercase tracking-widest">Download Your Files</h2>
             <p class="help-text text-lg max-w-xl mx-auto">Download your org-specific config and the complete worker app deployment pack. The monitor app and supporting docs are separate downloads below.</p>
@@ -500,7 +500,7 @@
 
         </div>
 
-<div id="step5" class="step-section space-y-12">
+<div id="step5" class="step-section space-y-12" role="tabpanel" aria-labelledby="tab5">
             <div class="bg-gray-900 p-10 rounded-3xl border border-gray-700 shadow-2xl">
                 <div class="flex items-center gap-4 mb-6">
                     <span class="text-4xl">🚀</span>
@@ -566,21 +566,21 @@
                 <p class="text-gray-200 font-bold text-sm mb-8 leading-relaxed">Paste your final URL below. This generates your official "Welcome" pack for staff.</p>
 
                 <div class="mb-10">
-                    <label class="block text-[10px] text-indigo-300 font-black uppercase tracking-widest mb-2 ml-1">Your Deployed Worker App URL</label>
+                    <label for="workerAppUrl" class="block text-[10px] text-indigo-300 font-black uppercase tracking-widest mb-2 ml-1">Your Deployed Worker App URL</label>
                     <input type="url" id="workerAppUrl" class="input-field shadow-inner font-black border-2 border-indigo-500/30 bg-gray-900 focus:border-blue-500 placeholder-gray-600" placeholder="https://your-org-safety.netlify.app" oninput="generateLaunchPack()">
                 </div>
 
                 <div id="launchPack" class="hidden grid md:grid-cols-3 gap-10">
                     <div class="md:col-span-2">
                         <label class="block text-[10px] text-gray-400 font-black uppercase tracking-widest mb-3 ml-1">Official Welcome Email</label>
-                        <textarea id="launchEmail" class="w-full h-56 bg-gray-900 border border-indigo-500/50 rounded-2xl p-6 text-sm text-white font-mono shadow-inner font-bold leading-relaxed" readonly></textarea>
+                        <textarea id="launchEmail" class="w-full h-56 bg-gray-900 border border-indigo-500/50 rounded-2xl p-6 text-sm text-white font-mono shadow-inner font-bold leading-relaxed" readonly aria-label="Staff welcome email template"></textarea>
                         <div class="mt-4 flex items-center gap-3">
                             <span class="px-3 py-1 bg-indigo-900/50 text-indigo-300 text-[10px] font-black uppercase rounded-lg border border-indigo-500/30">Onboarding Pack Ready</span>
                             <span class="text-[10px] text-gray-500 font-bold">Copy this email and send to your staff team.</span>
                         </div>
                     </div>
                     <div class="bg-white p-6 rounded-3xl flex flex-col items-center justify-center shadow-2xl border-4 border-white transition-transform hover:scale-105">
-                        <img id="qrImage" src="" class="w-44 h-44 mb-4">
+                        <img id="qrImage" src="" class="w-44 h-44 mb-4" alt="QR code for worker app installation">
                         <p class="text-gray-900 text-[10px] font-black uppercase tracking-widest text-center leading-tight">Worker App<br>Setup QR Code</p>
                         <p class="text-gray-500 text-[8px] font-bold mt-2 uppercase tracking-tighter">(Right-click image to save)</p>
                     </div>
@@ -941,7 +941,7 @@ function applyPreset(p, a, el) {
     btn.classList.toggle('shadow-2xl', on);
 }
     function setupDragDrop() { const dz = document.getElementById('dropZone'); dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('border-blue-500'); }); dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('border-blue-500'); if (e.dataTransfer.files.length) handleLogo({files:e.dataTransfer.files}); }); }
-    function gotoStep(n) { document.querySelectorAll('.step-section').forEach(e=>e.classList.remove('active')); document.getElementById('step'+n).classList.add('active'); for(let i=1; i<=5; i++) document.getElementById('tab'+i).classList.toggle('active', i===n); if(n===3) generateScript(); }
+    function gotoStep(n) { document.querySelectorAll('.step-section').forEach(e=>e.classList.remove('active')); document.getElementById('step'+n).classList.add('active'); for(let i=1; i<=5; i++) { document.getElementById('tab'+i).classList.toggle('active', i===n); document.getElementById('tab'+i).setAttribute('aria-selected', i===n ? 'true' : 'false'); } if(n===3) generateScript(); }
     function toggleCheckin() { document.getElementById('checkinOptions').classList.toggle('hidden', !document.getElementById('chkCheckin').checked); }
     function toggleVehicle() { document.getElementById('vehOptions').classList.toggle('hidden', !document.getElementById('chkVehicle').checked); }
     function copyScript() { generateScript(); navigator.clipboard.writeText(document.getElementById('codeDisplay').textContent); alert("Copied!"); }
