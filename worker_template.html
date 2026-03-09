@@ -576,6 +576,53 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
             </div>
         </div>
 
+        <!-- FIRST-USE VERIFICATION CARD — shown until dismissed after wizard -->
+        <div id="verifyCard" class="hidden mb-4 rounded-2xl border border-amber-600/50 bg-amber-950/60 p-4">
+            <div class="flex justify-between items-start mb-3">
+                <div>
+                    <div class="text-amber-400 text-xs font-black uppercase tracking-widest mb-0.5">⚠️ Safety Chain Not Yet Verified</div>
+                    <div class="text-white text-sm font-bold leading-snug">Confirm your setup works before your first real visit</div>
+                </div>
+                <button onclick="dismissVerification()" class="text-gray-500 text-2xl leading-none ml-3 mt-0.5" aria-label="Dismiss verification prompt">×</button>
+            </div>
+
+            <!-- Step 1: Test alert -->
+            <div class="mb-2 rounded-xl bg-black/20 p-3">
+                <div class="text-white text-xs font-black uppercase tracking-widest mb-1">1 · Send a test alert</div>
+                <p class="text-gray-400 text-xs mb-2 leading-relaxed">Sends a real email to your emergency contact. Ask them to confirm they received it — including checking spam.</p>
+                <div id="verifyAlertResult" class="hidden text-xs font-bold rounded-lg px-3 py-2 mb-2"></div>
+                <button onclick="verifyTestAlert()" id="btnVerifyAlert"
+                        class="w-full rounded-lg bg-amber-600 py-2.5 text-xs font-black uppercase tracking-widest text-white">
+                    📧 Send Test Alert
+                </button>
+            </div>
+
+            <!-- Step 2: Contact confirms -->
+            <div class="mb-2 rounded-xl bg-black/20 p-3">
+                <div class="text-white text-xs font-black uppercase tracking-widest mb-2">2 · Your contact confirms receipt</div>
+                <label class="flex cursor-pointer items-center gap-3">
+                    <input type="checkbox" id="verifyContactConfirmed" onchange="updateVerifyProgress()" class="h-5 w-5 rounded text-amber-600">
+                    <span class="text-gray-400 text-xs leading-relaxed">My emergency contact confirmed they received the test alert</span>
+                </label>
+            </div>
+
+            <!-- Step 3: PIN reminder -->
+            <div class="mb-4 rounded-xl bg-black/20 p-3">
+                <div class="text-white text-xs font-black uppercase tracking-widest mb-1">3 · Know your Safety PIN</div>
+                <p class="text-gray-400 text-xs mb-2 leading-relaxed">You'll need this to confirm you're safe after an alarm fires. Entering the wrong PIN triggers a silent duress alert.</p>
+                <div class="flex items-center gap-2">
+                    <div id="verifyPinDisplay" class="flex-1 rounded-lg bg-gray-800 px-3 py-2 text-center font-mono text-lg font-black tracking-[0.4em] text-white">••••</div>
+                    <button onclick="toggleVerifyPin()" id="btnVerifyPin"
+                            class="rounded-lg bg-gray-700 px-3 py-2 text-xs font-bold text-gray-300">Show</button>
+                </div>
+            </div>
+
+            <button id="btnDismissVerify" onclick="dismissVerification()"
+                    class="w-full rounded-xl bg-gray-700 py-3 text-xs font-black uppercase tracking-widest text-gray-400">
+                Dismiss — I'll verify later
+            </button>
+        </div>
+
         <!-- Regular locations — grid (≤6) or compact list (7+) -->
         <div id="locationList" class="grid grid-cols-2 gap-3"></div>
     </div>
@@ -3742,6 +3789,10 @@ async function saveWizard() {
 
     announce(`Welcome ${workerData.name}. Device registered.`);
 
+    // Reset verification flag — wizard re-run means contacts may have changed.
+    state.setupVerified = false;
+    saveState();
+
     // 3. UI Initialisation
     renderLocations();
     setupHoldToStart();
@@ -3752,6 +3803,7 @@ async function saveWizard() {
     _warmAudio();
 
     navigate('main');
+    showVerificationCard();
 
     // 4. Sync metadata now that we're registered
     setTimeout(() => { forceSync(false); }, 500);
@@ -5289,6 +5341,99 @@ async function fetchLocationsFromBackend() {
 // ============================================================================
 // HIGH-INTEGRITY INITIALIZATION (Fixed Syntax)
 // ============================================================================
+// ============================================================================
+// FIRST-USE VERIFICATION CARD
+// ============================================================================
+
+/** Show the card if the worker hasn't verified their safety chain yet. */
+function showVerificationCard() {
+    if (!state || !state.worker || !state.worker.name) return;
+    if (state.setupVerified) return;
+    const card = document.getElementById('verifyCard');
+    if (card) card.classList.remove('hidden');
+}
+
+/** Permanently dismiss the card and record completion in state. */
+function dismissVerification() {
+    const card = document.getElementById('verifyCard');
+    if (card) card.classList.add('hidden');
+    state.setupVerified = true;
+    saveState();
+}
+
+let _verifyPinVisible = false;
+function toggleVerifyPin() {
+    _verifyPinVisible = !_verifyPinVisible;
+    const display = document.getElementById('verifyPinDisplay');
+    const btn     = document.getElementById('btnVerifyPin');
+    if (!display || !btn) return;
+    display.textContent = _verifyPinVisible ? (state.pins?.std || '—') : '••••';
+    btn.textContent     = _verifyPinVisible ? 'Hide' : 'Show';
+}
+
+/** Send a test alert from the verification card and update the card's inline result. */
+async function verifyTestAlert() {
+    const resultEl = document.getElementById('verifyAlertResult');
+    const btn      = document.getElementById('btnVerifyAlert');
+
+    const w        = state?.worker || {};
+    const contacts = [w.emgEmail, w.escEmail].filter(Boolean);
+
+    if (contacts.length === 0) {
+        if (resultEl) {
+            resultEl.textContent = '⚠️ No email contacts configured — add them in Settings first.';
+            resultEl.className   = 'text-xs font-bold rounded-lg px-3 py-2 mb-2 bg-amber-900/40 text-amber-400';
+            resultEl.classList.remove('hidden');
+        }
+        return;
+    }
+
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Sending…'; }
+    if (resultEl) {
+        resultEl.textContent = '⏳ Sending test alert…';
+        resultEl.className   = 'text-xs font-bold rounded-lg px-3 py-2 mb-2 bg-gray-700 text-gray-300';
+        resultEl.classList.remove('hidden');
+    }
+
+    try {
+        await outboxEnqueue(buildPayload({
+            'Alarm Status':     'TEST_ALERT',
+            'Notes':            'First-use verification — test alert sent to confirm contacts are reachable.',
+            'Last Known GPS':   lastGPS || '0,0',
+            'Location Name':    'Test (no active visit)',
+            'Location Address': 'Sent from verification card'
+        }));
+        if (resultEl) {
+            resultEl.textContent = `✅ Sent to: ${contacts.join(', ')} — ask them to confirm receipt (check spam too).`;
+            resultEl.className   = 'text-xs font-bold rounded-lg px-3 py-2 mb-2 bg-green-900/40 text-green-400';
+        }
+        if (btn) { btn.disabled = false; btn.textContent = '📧 Send Again'; }
+    } catch (e) {
+        if (resultEl) {
+            resultEl.textContent = '⚠️ Failed — check your connection and try again.';
+            resultEl.className   = 'text-xs font-bold rounded-lg px-3 py-2 mb-2 bg-red-900/40 text-red-400';
+        }
+        if (btn) { btn.disabled = false; btn.textContent = '📧 Send Test Alert'; }
+    }
+}
+
+/**
+ * Called when the contact-confirmed checkbox changes.
+ * Promotes the dismiss button to a positive completion action.
+ */
+function updateVerifyProgress() {
+    const confirmed = document.getElementById('verifyContactConfirmed')?.checked;
+    const btn = document.getElementById('btnDismissVerify');
+    if (!btn) return;
+    if (confirmed) {
+        btn.textContent = '✅ Done — Safety Chain Verified';
+        btn.className   = 'w-full rounded-xl bg-green-700 py-3 text-xs font-black uppercase tracking-widest text-white';
+    } else {
+        btn.textContent = "Dismiss — I'll verify later";
+        btn.className   = 'w-full rounded-xl bg-gray-700 py-3 text-xs font-black uppercase tracking-widest text-gray-400';
+    }
+}
+
 // _initApp is called by loadConfig() after config.json has been fetched and
 // applied. It replaces the old window.onload handler. The boot screen hides
 // before this runs so the user sees a fully themed, configured app.
@@ -5317,7 +5462,8 @@ function _initApp() {
         vehicle: { wofExpiry: '', regoExpiry: '', lastVehCheck: null },
         visitDurationMinutes: 0,
         lastVisitedLocationId: null,   // persisted so "Recent" pin survives app restarts
-        travelNoReportDefault: false   // persistent per-worker travel report preference (used when CONFIG.reqTravelReport is false)
+        travelNoReportDefault: false,  // persistent per-worker travel report preference (used when CONFIG.reqTravelReport is false)
+        setupVerified: false           // true once worker has verified their safety chain post-wizard
     };
 
     // 2. Bind high-sensitivity actions to long-press AFTER state load
@@ -5351,6 +5497,7 @@ function _initApp() {
         navigate('setup');
     } else {
         navigate(state.activeVisit ? 'locked' : 'main');
+        showVerificationCard();
         renderLocations(); 
         setupHoldToStart(); 
         checkVehicleStatus();
