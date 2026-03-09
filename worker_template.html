@@ -1817,6 +1817,8 @@ function submitReport() {
     if (currentActiveTemplate === "Update Site Procedures") {
         backendAction = 'uploadEmergencyProcedures';
         alarmStatus = "PROCEDURES_UPDATED";
+        // Always treat as mid-visit when a session is active — must not tear down the visit.
+        if (state.activeVisit) isMidVisitUpdate = true;
     } else if (currentActiveTemplate === "Note to Self") {
         backendAction = 'logNote';
         alarmStatus = "NOTE_LOGGED";
@@ -1834,8 +1836,18 @@ function submitReport() {
     }
     
     // 7. HANDSHAKE: Send to spreadsheet with the correct action key
+    // For emergency procedure uploads, ensure Site Name and Company Name are always
+    // present on the payload. buildPayload() derives location from state.activeVisit or
+    // state.selectedLocationId — neither is set when launched from the site info modal
+    // (no active visit). formExecutionContext is the authoritative source in that case.
+    const procedureContext = (backendAction === 'uploadEmergencyProcedures' && formExecutionContext) ? {
+        'Site Name':    formExecutionContext.siteName    || '',
+        'Company Name': formExecutionContext.companyName || ''
+    } : {};
+
     processUploadQueue(buildPayload({
         ...fd,
+        ...procedureContext,
         "action": backendAction, 
         "Alarm Status": alarmStatus,
         "Notes": d.notes || ""
