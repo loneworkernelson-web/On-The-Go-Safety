@@ -1764,12 +1764,20 @@ function updateSiteEmergencyProcedures(payload) {
   }
 
   // 2. Locate the specific site row
+  // Keys arrive from the worker as 'Site Name' / 'Company Name' (form field names),
+  // not camelCase — support both forms defensively.
+  const siteName   = payload['Site Name']    || payload.siteName    || '';
+  const companyName = payload['Company Name'] || payload.companyName || '';
+
   let targetRow = -1;
   const siteCol = headers.indexOf("Site Name");
   const compCol = headers.indexOf("Company Name");
 
   for (let i = 1; i < data.length; i++) {
-    if (data[i][siteCol] === payload.siteName && data[i][compCol] === payload.companyName) {
+    const siteMatch = (data[i][siteCol] || '').toString().trim() === siteName.trim();
+    // Company is optional — if the payload has no company, match on site name only
+    const compMatch = !companyName || (data[i][compCol] || '').toString().trim() === companyName.trim();
+    if (siteMatch && compMatch) {
       targetRow = i + 1;
       break;
     }
@@ -1778,15 +1786,20 @@ function updateSiteEmergencyProcedures(payload) {
   if (targetRow === -1) return { status: 'error', message: 'Site match failed' };
 
   // 3. Process Photos & Generate Links
+  // Photos arrive as flat keys 'Photo 1', 'Photo 2', ... not as a payload.photos array.
   const photoUrls = [];
   const folder = DriveApp.getFolderById(CONFIG.PHOTOS_FOLDER_ID);
-  
-  (payload.photos || []).forEach((base64, idx) => {
-    const blob = Utilities.newBlob(Utilities.base64Decode(base64.split(",")[1]), "image/jpeg", `EP_${payload.siteName}_${idx}.jpg`);
+
+  let idx = 1;
+  while (payload[`Photo ${idx}`]) {
+    const base64 = payload[`Photo ${idx}`];
+    const raw = base64.includes(',') ? base64.split(',')[1] : base64;
+    const blob = Utilities.newBlob(Utilities.base64Decode(raw), 'image/jpeg', `EP_${siteName}_${idx}.jpg`);
     const file = folder.createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     photoUrls.push(file.getUrl());
-  });
+    idx++;
+  }
 
   // 4. Update the Sites cell
   siteSheet.getRange(targetRow, colIdx + 1).setValue(photoUrls.join(", "));
