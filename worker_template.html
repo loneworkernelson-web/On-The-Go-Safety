@@ -4315,6 +4315,13 @@ async function startVisit(isSkipCheck = false) {
         return showToast('⚠️ Select a destination first');
     }
 
+    // Warn clearly if starting a visit with no connectivity.
+    // Do not block — local alarm will still fire on the device — but the worker
+    // must understand that remote contacts cannot be notified if an alarm fires.
+    if (!navigator.onLine) {
+        showToast('⚠️ No signal — contacts cannot be notified if alarm fires');
+    }
+
     const loc = state.locations.find(l => l.id === locId) || { id: 'travel', name: 'General Travel', address: 'Field Work' };
     const durationMins = state.visitDurationMinutes || 0;
     const isHighRisk = document.getElementById('chkHighRisk')?.checked || false;
@@ -6228,6 +6235,9 @@ function updateOnlineStatus() {
             setTimeout(() => forceSync(false), 1000);
         }
     } else {
+        banner.textContent = (state && state.activeVisit)
+            ? '⚠️ OFFLINE — Contacts CANNOT be notified if alarm fires'
+            : '📡 OFFLINE — Data will send when connected';
         banner.classList.remove('hidden');
     }
 }
@@ -7723,7 +7733,9 @@ function triggerGraceExpiryAlarm() {
     // 1. Notify Backend
     processUploadQueue(buildPayload({
         'Alarm Status': 'OVERDUE ALARM',
-        'Notes': '15-minute grace period expired. Emergency contacts notified.',
+        'Notes': navigator.onLine
+            ? '15-minute grace period expired. Emergency contacts notified.'
+            : '15-minute grace period expired. Device was offline — contacts not yet notified.',
         'Last Known GPS': lastGPS || "0,0"
     }));
 
@@ -7731,7 +7743,9 @@ function triggerGraceExpiryAlarm() {
     document.body.classList.add('bg-red-900', 'panic-mode');
     const _numContacts = [state.worker?.emgName, state.worker?.escName].filter(Boolean).length;
     const _contactWord = _numContacts === 1 ? "contact has" : "contacts have";
-    announce(`Safety Alarm Activated. Your emergency ${_contactWord} been notified.`);
+    announce(navigator.onLine
+        ? `Safety Alarm Activated. Your emergency ${_contactWord} been notified.`
+        : `Safety Alarm Activated. No signal — use the email or call buttons to reach your contacts.`);
     
     const overdueLabel = document.getElementById('overdueLabel');
     if (overdueLabel) {
