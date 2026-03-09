@@ -64,6 +64,10 @@
         .map-icon.amber  { background: #f59e0b; animation: blinker 1.2s linear infinite; }
         .map-icon.green  { background: #10b981; }
         .map-icon.blue   { background: #3b82f6; }
+        /* Journey trail markers */
+        .map-journey-start { width: 0; height: 0; border-left: 9px solid transparent; border-right: 9px solid transparent; border-bottom: 18px solid #10b981; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); display: block; }
+        .map-waypoint { width: 10px; height: 10px; border-radius: 50%; background: #94a3b8; border: 2px solid #1e293b; display: block; }
+        .map-current  { width: 18px; height: 18px; border-radius: 50%; border: 3px solid #1e293b; display: block; animation: blinker 1s ease-in-out infinite; }
 
         /* Audio gate overlay */
         .audio-gate-layout {
@@ -755,11 +759,21 @@ window.onload = () => {
 /**
  * Normalises raw spreadsheet rows into worker objects with both full keys
  * (for rendering) and shorthand aliases (for system logic).
- * Retains GPS history for map trail rendering.
+ *
+ * Journey boundary detection: a new journey starts on ARRIVED or the first
+ * TRAVELLING row after any DEPARTED/COMPLETED/NOTICE_ACK row (or after the
+ * history is empty). When a boundary is found the GPS trail is reset, so the
+ * map never shows waypoints from previous journeys.
  */
+const JOURNEY_START_STATUSES  = ['ARRIVED', 'TRAVELLING'];
+const JOURNEY_CLOSED_STATUSES = ['DEPARTED', 'COMPLETED', 'NOTICE_ACK'];
+
 function processWorkers(rows) {
     const workers = {};
-    const history = {};
+    // journeyHistory[name] = GPS coords for the *current* journey only
+    const journeyHistory = {};
+    // track whether the previous logged status closed the last journey
+    const journeyClosed  = {};
 
     rows.sort((a, b) => new Date(a.Timestamp) - new Date(b.Timestamp));
 
@@ -767,9 +781,33 @@ function processWorkers(rows) {
         const name = r['Worker Name'];
         if (!name) return;
 
-        const timestamp = new Date(r['Timestamp']).getTime();
-        if (!history[name]) history[name] = [];
-        if (r['Last Known GPS']?.includes(',')) history[name].push(r['Last Known GPS']);
+        const timestamp  = new Date(r['Timestamp']).getTime();
+        const statusRaw  = (r['Alarm Status'] || r['Status'] || '').toUpperCase();
+
+        // ── Journey boundary ────────────────────────────────────────────────
+        // Reset trail when we see a journey-start status after either:
+        //   (a) a closed status in the previous row, or
+        //   (b) no history at all yet (first row for this worker)
+        const isClosed = JOURNEY_CLOSED_STATUSES.includes(statusRaw);
+        const isStart  = JOURNEY_START_STATUSES.includes(statusRaw);
+
+        if (!journeyHistory[name]) {
+            journeyHistory[name] = [];
+            journeyClosed[name]  = false;
+        }
+
+        if (isStart && (journeyClosed[name] || journeyHistory[name].length === 0)) {
+            journeyHistory[name] = []; // reset trail for new journey
+        }
+
+        if (isClosed) journeyClosed[name] = true;
+        else if (isStart) journeyClosed[name] = false;
+
+        // Accumulate GPS for the current journey
+        if (r['Last Known GPS']?.includes(',')) {
+            journeyHistory[name].push(r['Last Known GPS']);
+        }
+        // ────────────────────────────────────────────────────────────────────
 
         if (!workers[name] || timestamp > workers[name].timestamp) {
             workers[name] = {
@@ -795,7 +833,9 @@ function processWorkers(rows) {
     });
 
     Object.values(workers).forEach(w => {
-        w.history = (history[w["Worker Name"]] || []).slice(-10);
+        // Slice to last 20 points — enough for a meaningful trail without
+        // overwhelming the map. First element is journey start; last is current.
+        w.history = (journeyHistory[w["Worker Name"]] || []).slice(-20);
     });
 
     return Object.values(workers);
@@ -1135,37 +1175,82 @@ function renderMap() {
     workerData.forEach(w => {
         const statusUp = (w.status || w.Status || "").toUpperCase();
         // Departed and completed workers have left the site — remove from map immediately.
-        // This mirrors the ACTIVE grid filter: departed workers are no longer operationally relevant.
-        if (['DEPARTED', 'COMPLETED', 'NOTICE_ACK'].includes(statusUp)) return;
+        if (JOURNEY_CLOSED_STATUSES.includes(statusUp)) return;
 
         const gps = w.gps || w['Last Known GPS'];
         if (!gps || !gps.includes(',')) return;
-        const [lat, lng] = gps.split(',').map(Number);
-        if (isNaN(lat) || isNaN(lng)) return;
+        const [curLat, curLng] = gps.split(',').map(Number);
+        if (isNaN(curLat) || isNaN(curLng)) return;
 
-        // GPS breadcrumb trail — strip placeholder 0,0 coordinates
-        if (w.history?.length > 1) {
-            const path = w.history
-                .map(h => h.split(',').map(Number))
-                .filter(p => !isNaN(p[0]) && !isNaN(p[1])
-                          && (Math.abs(p[0]) > 0.001 || Math.abs(p[1]) > 0.001));
-            if (path.length > 1) {
-                L.polyline(path, { color: getComputedStyle(document.documentElement).getPropertyValue('--brand-accent').trim() || '#3b82f6', weight: 3, opacity: 0.5 })
-                 .addTo(markersLayer);
-            }
+        const workerName   = escapeHtml(w.name || w['Worker Name']);
+        const workerStatus = escapeHtml(w.status || w.Status);
+        const accentColor  = getComputedStyle(document.documentElement).getPropertyValue('--brand-accent').trim() || '#3b82f6';
+
+        // ── Build clean path from current journey history ──────────────────
+        const validPath = (w.history || [])
+            .map(h => h.split(',').map(Number))
+            .filter(p => !isNaN(p[0]) && !isNaN(p[1])
+                      && (Math.abs(p[0]) > 0.001 || Math.abs(p[1]) > 0.001));
+
+        // ── Polyline ───────────────────────────────────────────────────────
+        if (validPath.length > 1) {
+            L.polyline(validPath, { color: accentColor, weight: 3, opacity: 0.55 })
+             .addTo(markersLayer);
         }
 
+        // ── Journey-start marker (green triangle / flag) ───────────────────
+        // Only drawn when we have at least 2 distinct points so it doesn't
+        // overlap the current-position marker for a single-point journey.
+        if (validPath.length >= 2) {
+            const [sLat, sLng] = validPath[0];
+            const startIcon = L.divIcon({
+                className: '',
+                html: '<div class="map-journey-start"></div>',
+                iconSize:   [18, 18],
+                iconAnchor: [9, 18]   // tip of triangle sits on coordinate
+            });
+            L.marker([sLat, sLng], { icon: startIcon })
+             .bindPopup(`<b>${workerName}</b><br>Journey start`)
+             .addTo(markersLayer);
+        }
+
+        // ── Intermediate waypoint dots ─────────────────────────────────────
+        // Everything between the first and last points in the path.
+        if (validPath.length > 2) {
+            const midPoints = validPath.slice(1, -1);
+            const waypointIcon = L.divIcon({
+                className: '',
+                html: '<div class="map-waypoint"></div>',
+                iconSize:   [10, 10],
+                iconAnchor: [5, 5]
+            });
+            midPoints.forEach(([wLat, wLng]) => {
+                L.marker([wLat, wLng], { icon: waypointIcon })
+                 .addTo(markersLayer);
+            });
+        }
+
+        // ── Current-position marker (colour-coded, blinking) ──────────────
         const color = getMarkerColor(w);
-        const icon  = L.divIcon({
-            className: 'custom-div-icon',
-            html: `<div class="map-icon ${color}"></div>`,
-            iconSize: [24, 24]
+        const currentIcon = L.divIcon({
+            className: '',
+            html: `<div class="map-current" style="background:var(--mc-${color})"></div>`,
+            iconSize:   [18, 18],
+            iconAnchor: [9, 9]
         });
-        L.marker([lat, lng], { icon })
-         .bindPopup(`<b>${escapeHtml(w.name || w['Worker Name'])}</b><br>${escapeHtml(w.status || w.Status)}`)
+        L.marker([curLat, curLng], { icon: currentIcon })
+         .bindPopup(`<b>${workerName}</b><br>${workerStatus}`)
          .addTo(markersLayer);
     });
 }
+
+// Inline colour values for map-current — avoids CSS var look-up inside divIcon html.
+// Mirrors the palette in .map-icon.* above.
+const _MAP_COLORS = { red: '#ef4444', purple: '#d946ef', amber: '#f59e0b', green: '#10b981', blue: '#3b82f6' };
+(function injectMapColorVars() {
+    const root = document.documentElement;
+    Object.entries(_MAP_COLORS).forEach(([k, v]) => root.style.setProperty(`--mc-${k}`, v));
+})();
 
 
 /**
