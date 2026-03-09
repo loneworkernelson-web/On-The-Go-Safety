@@ -372,9 +372,9 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
     <div class="content-area flex flex-col">
         <div id="wizStep1" class="wizard-step active">
             <h2 class="text-lg font-bold mb-4">Your Identity</h2>
-            <input id="wizName" type="text" placeholder="Full Name" class="form-input">
-            <input id="wizPhone" type="tel" placeholder="Phone Number" class="form-input">
-            <input id="wizEmail" type="email" placeholder="Email Address" class="form-input">
+            <input id="wizName" type="text" placeholder="Full Name" class="form-input" aria-label="Full name">
+            <input id="wizPhone" type="tel" placeholder="Phone Number" class="form-input" aria-label="Phone number">
+            <input id="wizEmail" type="email" placeholder="Email Address" class="form-input" aria-label="Email address">
         </div>
         
 <div id="wizStep2" class="wizard-step space-y-6">
@@ -425,8 +425,8 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
                     </div>
 
                     <!-- Validation feedback -->
-                    <div id="pinMatchError" class="hidden bg-red-900/40 border border-red-500/50 rounded-xl px-4 py-3 text-sm font-bold text-red-300"></div>
-                    <div id="pinMatchOk" class="hidden bg-green-900/40 border border-green-500/50 rounded-xl px-4 py-3 text-sm font-bold text-green-300">✅ PINs confirmed — tap Next to continue.</div>
+                    <div id="pinMatchError" role="alert" class="hidden bg-red-900/40 border border-red-500/50 rounded-xl px-4 py-3 text-sm font-bold text-red-300"></div>
+                    <div id="pinMatchOk" role="status" aria-live="polite" class="hidden bg-green-900/40 border border-green-500/50 rounded-xl px-4 py-3 text-sm font-bold text-green-300">✅ PINs confirmed — tap Next to continue.</div>
                 </div>
             </div>
         </div>
@@ -442,22 +442,26 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
                     <div class="space-y-2 mb-6">
                         <input id="wizContactName" type="text" placeholder="Primary Contact Name" 
                                autocomplete="name"
+                               aria-label="Primary contact name"
                                oninput="state.worker.iceName = this.value; saveState()" 
                                class="w-full bg-white/10 border border-white/10 rounded-xl p-4 text-white outline-none focus:border-blue-500 transition-all">
                         
                         <div class="grid grid-cols-2 gap-2">
                             <input id="wizContactPhone" type="tel" placeholder="Phone Number" 
                                    autocomplete="tel"
+                                   aria-label="Primary contact phone number"
                                    oninput="state.worker.icePhone = this.value; saveState()" 
                                    class="bg-white/10 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 transition-all">
                             
                             <input id="wizContactEmail" type="email" placeholder="Email Address" 
                                    autocomplete="email"
+                                   aria-label="Primary contact email address"
                                    oninput="state.worker.iceEmail = this.value; saveState()" 
                                    class="bg-white/10 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 transition-all">
                         </div>
                         <input id="wizContactNtfy" type="text" placeholder="ntfy topic (optional — for push alerts)" 
                                autocomplete="off" autocorrect="off" spellcheck="false"
+                               aria-label="Primary contact ntfy push notification topic (optional)"
                                oninput="state.worker.emgNtfy = this.value; saveState()" 
                                class="w-full bg-white/10 border border-white/10 rounded-xl p-3 text-white text-sm outline-none focus:border-teal-500 transition-all font-mono">
                         <p class="text-xs text-teal-300/70 -mt-1 leading-relaxed">Ask your contact to install the <strong>ntfy app</strong>, create a private topic, and share the topic name with you. They'll get an instant push notification when any alarm fires.</p>
@@ -472,22 +476,26 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
                     <div class="space-y-2 mt-4">
                         <input id="wizEscName" type="text" placeholder="Escalation Name" 
                                autocomplete="name"
+                               aria-label="Escalation contact name"
                                oninput="state.worker.ice2Name = this.value; saveState()" 
                                class="w-full bg-white/10 border border-white/10 rounded-xl p-4 text-white outline-none focus:border-orange-500 transition-all">
                         
                         <div class="grid grid-cols-2 gap-2">
                             <input id="wizEscPhone" type="tel" placeholder="Phone" 
                                    autocomplete="tel"
+                                   aria-label="Escalation contact phone number"
                                    oninput="state.worker.ice2Phone = this.value; saveState()" 
                                    class="bg-white/10 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-orange-500 transition-all">
                             
                             <input id="wizEscEmail" type="email" placeholder="Email" 
                                    autocomplete="email"
+                                   aria-label="Escalation contact email address"
                                    oninput="state.worker.ice2Email = this.value; saveState()" 
                                    class="bg-white/10 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-orange-500 transition-all">
                         </div>
                         <input id="wizEscNtfy" type="text" placeholder="ntfy topic (optional)" 
                                autocomplete="off" autocorrect="off" spellcheck="false"
+                               aria-label="Escalation contact ntfy push notification topic (optional)"
                                oninput="state.worker.escNtfy = this.value; saveState()" 
                                class="w-full bg-white/10 border border-white/10 rounded-xl p-3 text-white text-sm outline-none focus:border-teal-500 transition-all font-mono">
                     </div>
@@ -588,11 +596,11 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
         <span id="welfareIntervalHint" class="text-xs text-gray-500 font-bold italic"></span>
     </div>
     <div class="grid grid-cols-5 gap-1.5">
-        <button onclick="setVisitWelfare(10)"  class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400">10m</button>
-        <button onclick="setVisitWelfare(15)"  class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400">15m</button>
-        <button onclick="setVisitWelfare(30)"  class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400">30m</button>
-        <button onclick="setVisitWelfare(60)"  class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400">1 hr</button>
-        <button onclick="setVisitWelfare(120)" class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400">2 hr</button>
+        <button onclick="setVisitWelfare(10)"  class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="10 minute welfare check">10m</button>
+        <button onclick="setVisitWelfare(15)"  class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="15 minute welfare check">15m</button>
+        <button onclick="setVisitWelfare(30)"  class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="30 minute welfare check">30m</button>
+        <button onclick="setVisitWelfare(60)"  class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="1 hour welfare check">1 hr</button>
+        <button onclick="setVisitWelfare(120)" class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="2 hour welfare check">2 hr</button>
     </div>
 </div>
 
@@ -603,14 +611,14 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
         <span id="durationDue" class="text-blue-400 font-black text-sm"></span>
     </div>
     <div class="grid grid-cols-4 gap-1.5">
-        <button onclick="setQuickDuration(15)"  class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400">15m</button>
-        <button onclick="setQuickDuration(30)"  class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400">30m</button>
-        <button onclick="setQuickDuration(45)"  class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400">45m</button>
-        <button onclick="setQuickDuration(60)"  class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400">1 hr</button>
-        <button onclick="setQuickDuration(90)"  class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400">1½ hr</button>
-        <button onclick="setQuickDuration(120)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400">2 hr</button>
-        <button onclick="setQuickDuration(180)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400">3 hr</button>
-        <button onclick="setQuickDuration(240)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400">4 hr</button>
+        <button onclick="setQuickDuration(15)"  class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="15 minutes">15m</button>
+        <button onclick="setQuickDuration(30)"  class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="30 minutes">30m</button>
+        <button onclick="setQuickDuration(45)"  class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="45 minutes">45m</button>
+        <button onclick="setQuickDuration(60)"  class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="1 hour">1 hr</button>
+        <button onclick="setQuickDuration(90)"  class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="1 hour 30 minutes">1½ hr</button>
+        <button onclick="setQuickDuration(120)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="2 hours">2 hr</button>
+        <button onclick="setQuickDuration(180)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="3 hours">3 hr</button>
+        <button onclick="setQuickDuration(240)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="4 hours">4 hr</button>
     </div>
 </div>
         
@@ -620,9 +628,10 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
             class="w-1/4 bg-indigo-950 text-indigo-300 font-black rounded-2xl border border-indigo-700/50 shadow-lg active:scale-95 transition text-xs uppercase tracking-tighter leading-none">
         Forms
     </button>
-    <div id="btnStart" class="slide-action-pill pill-disabled flex-1 relative bg-gray-800 h-16 rounded-2xl p-1 border border-gray-700 flex items-center overflow-hidden shadow-inner">
+    <div id="btnStart" class="slide-action-pill pill-disabled flex-1 relative bg-gray-800 h-16 rounded-2xl p-1 border border-gray-700 flex items-center overflow-hidden shadow-inner"
+         role="button" tabindex="0" aria-label="Slide to start visit" aria-disabled="true">
         <div id="slideStartThumb" class="w-14 h-14 rounded-xl flex items-center justify-center shadow-2xl z-20 pointer-events-none flex-shrink-0" style="background:var(--accent,#3b82f6)">
-            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
         </div>
         <div class="flex-1 flex items-center justify-center pointer-events-none">
             <span id="slideStartLabel" class="text-xs font-black text-gray-400 uppercase tracking-[0.2em] transition-opacity duration-200">Select a Site</span>
@@ -673,18 +682,19 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 
         <div class="flex flex-col gap-3">
             <div class="flex gap-3 h-16">
-                <button id="btnExtend" onclick="showModal('extend')" class="flex-1 bg-blue-600 text-white font-black rounded-2xl text-lg shadow-lg">
+                <button id="btnExtend" onclick="showModal('extend')" class="flex-1 bg-blue-600 text-white font-black rounded-2xl text-lg shadow-lg" aria-label="Extend visit duration">
                     Extend
                 </button>
-                <button onclick="openFormsLibrary()" class="w-24 bg-violet-950 text-violet-300 font-black rounded-2xl border border-violet-800/50 flex flex-col items-center justify-center">
+                <button onclick="openFormsLibrary()" class="w-24 bg-violet-950 text-violet-300 font-black rounded-2xl border border-violet-800/50 flex flex-col items-center justify-center" aria-label="Open forms library">
                     <span class="text-lg">📋</span>
                     <span class="text-xs uppercase tracking-tighter">Forms</span>
                 </button>
             </div>
 
-            <div id="btnDepart" class="slide-action-pill w-full relative bg-red-700 h-20 rounded-2xl p-1 border border-red-900 flex items-center overflow-hidden shadow-2xl">
+            <div id="btnDepart" class="slide-action-pill w-full relative bg-red-700 h-20 rounded-2xl p-1 border border-red-900 flex items-center overflow-hidden shadow-2xl"
+                 role="button" tabindex="0" aria-label="Slide to end visit">
                 <div id="slideDepartThumb" class="w-16 h-16 rounded-xl bg-white flex items-center justify-center shadow-2xl z-20 pointer-events-none flex-shrink-0">
-                    <svg class="w-7 h-7 text-red-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
+                    <svg class="w-7 h-7 text-red-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
                 </div>
                 <div class="flex-1 flex flex-col items-center justify-center pointer-events-none">
                     <span id="slideDepartLabel" class="text-lg font-black text-white uppercase tracking-widest transition-opacity duration-200">Slide to End Visit</span>
@@ -1009,30 +1019,30 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
         <input type="hidden" id="locId">
         <div class="space-y-4">
             <div>
-                <label class="text-xs text-gray-400 uppercase font-black tracking-widest ml-1">Business Name</label>
+                <label for="locBusiness" class="text-xs text-gray-400 uppercase font-black tracking-widest ml-1">Business Name</label>
                 <input type="text" id="locBusiness" class="form-input" placeholder="Optional">
             </div>
             <div>
-                <label class="text-xs text-gray-400 uppercase font-black tracking-widest ml-1">Site Name</label>
+                <label for="locName" class="text-xs text-gray-400 uppercase font-black tracking-widest ml-1">Site Name</label>
                 <input type="text" id="locName" class="form-input" placeholder="Required">
             </div>
             <div>
-                <label class="text-xs text-gray-400 uppercase font-black tracking-widest ml-1">Physical Address</label>
+                <label for="locAddr" class="text-xs text-gray-400 uppercase font-black tracking-widest ml-1">Physical Address</label>
                 <div class="flex gap-2">
                     <input type="text" id="locAddr" class="form-input mb-0 flex-1">
                     <button onclick="getGpsAddress()" class="bg-blue-600 text-white p-3 rounded-xl font-black text-xs shrink-0">📍 GPS</button>
                 </div>
             </div>
             <div>
-                <label class="text-xs text-gray-400 uppercase font-black tracking-widest ml-1">Contact Name</label>
+                <label for="locContactName" class="text-xs text-gray-400 uppercase font-black tracking-widest ml-1">Contact Name</label>
                 <input type="text" id="locContactName" class="form-input" placeholder="Optional">
             </div>
             <div>
-                <label class="text-xs text-gray-400 uppercase font-black tracking-widest ml-1">Contact Phone</label>
+                <label for="locContactPhone" class="text-xs text-gray-400 uppercase font-black tracking-widest ml-1">Contact Phone</label>
                 <input type="tel" id="locContactPhone" class="form-input" placeholder="Optional">
             </div>
             <div>
-                <label class="text-xs text-gray-400 uppercase font-black tracking-widest ml-1">Contact Email</label>
+                <label for="locContactEmail" class="text-xs text-gray-400 uppercase font-black tracking-widest ml-1">Contact Email</label>
                 <input type="email" id="locContactEmail" class="form-input" placeholder="Optional">
             </div>
             <div class="bg-gray-900 p-3 rounded-xl">
@@ -1057,7 +1067,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
             </div>
             <!-- Custom Template Name -->
             <div>
-                <label class="text-xs text-gray-400 uppercase font-black tracking-widest ml-1">Custom Template Name</label>
+                <label for="locTemplate" class="text-xs text-gray-400 uppercase font-black tracking-widest ml-1">Custom Template Name</label>
                 <input type="text" id="locTemplate" class="form-input" placeholder="Leave blank to use standard template">
             </div>
         </div>
@@ -1072,13 +1082,14 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 
 <div id="noticeModal" class="hidden fixed inset-0 z-[400] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4" role="dialog" aria-modal="true" aria-labelledby="noticeTitle">
     <div id="noticeCard" class="bg-gray-900 rounded-[2.5rem] shadow-2xl w-full max-w-sm p-8 text-center border-t-[12px] border-blue-600">
-        <div id="noticeIcon" class="text-6xl mb-6">📢</div>
+        <div id="noticeIcon" class="text-6xl mb-6" aria-hidden="true">📢</div>
         <h2 id="noticeTitle" class="text-2xl font-black mb-3 uppercase tracking-tight leading-tight" style="color:var(--text-on-primary)"></h2>
         <div id="noticeContent" class="text-gray-400 text-base mb-10 leading-relaxed text-left max-h-56 overflow-y-auto pr-3 scrollbar-hide"></div>
         
-        <div id="btnAckNotice" class="slide-action-pill w-full relative h-20 rounded-2xl p-1 flex items-center overflow-hidden shadow-2xl" style="background:var(--accent,#2563eb);border:1px solid color-mix(in srgb,var(--accent,#2563eb) 60%,black)">
+        <div id="btnAckNotice" class="slide-action-pill w-full relative h-20 rounded-2xl p-1 flex items-center overflow-hidden shadow-2xl" style="background:var(--accent,#2563eb);border:1px solid color-mix(in srgb,var(--accent,#2563eb) 60%,black)"
+             role="button" tabindex="0" aria-label="Slide to acknowledge notice">
             <div id="slideAckThumb" class="w-16 h-16 rounded-xl bg-white flex items-center justify-center shadow-2xl z-20 pointer-events-none flex-shrink-0">
-                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--accent,#2563eb)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
+                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--accent,#2563eb)" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
             </div>
             <div class="flex-1 flex items-center justify-center pointer-events-none">
                 <span id="slideAckLabel" class="text-base font-black text-white uppercase tracking-widest transition-opacity duration-200">Slide to Acknowledge</span>
@@ -1092,7 +1103,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
         <form id="pinEntryForm" onsubmit="return false;">
     <input type="text" name="username" autocomplete="username" value="Worker" class="hidden" style="display:none !important;">
     <h3 id="pinModalTitle" class="text-lg font-bold mb-4">Enter PIN</h3>
-    <input id="pinInput" type="password" autocomplete="current-password" class="form-input mb-4" inputmode="numeric" maxlength="6">
+    <input id="pinInput" type="password" autocomplete="current-password" class="form-input mb-4" inputmode="numeric" maxlength="6" aria-label="Enter PIN">
     <button id="btnPinConfirm" type="button" class="w-full py-3 bg-blue-600 rounded-xl font-bold">Confirm</button>
         </form>
     </div>
@@ -1197,13 +1208,13 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
     <div class="bg-gray-900 rounded-[2.5rem] shadow-2xl w-full max-w-sm h-[80vh] flex flex-col border border-white/10">
         <div class="p-8 pb-4">
             <h2 id="resourceHubTitle" class="text-2xl font-black text-white uppercase tracking-tight">Safety Hub</h2>
-            <div class="flex gap-4 mt-4 border-b border-white/10">
-                <button onclick="switchHubTab('res')" id="tabRes" class="pb-2 text-xs font-black uppercase tracking-widest text-blue-500 border-b-2 border-blue-500">Resources</button>
-                <button onclick="switchHubTab('not')" id="tabNot" class="pb-2 text-xs font-black uppercase tracking-widest text-gray-300">Notice Archive</button>
+            <div class="flex gap-4 mt-4 border-b border-white/10" role="tablist" aria-label="Safety Hub sections">
+                <button onclick="switchHubTab('res')" id="tabRes" role="tab" aria-selected="true" aria-controls="hubContent" class="pb-2 text-xs font-black uppercase tracking-widest text-blue-500 border-b-2 border-blue-500">Resources</button>
+                <button onclick="switchHubTab('not')" id="tabNot" role="tab" aria-selected="false" aria-controls="hubContent" class="pb-2 text-xs font-black uppercase tracking-widest text-gray-300">Notice Archive</button>
             </div>
         </div>
         
-        <div id="hubContent" class="flex-1 overflow-y-auto p-8 pt-2 space-y-4 scrollbar-hide"></div>
+        <div id="hubContent" class="flex-1 overflow-y-auto p-8 pt-2 space-y-4 scrollbar-hide" role="tabpanel" aria-labelledby="tabRes"></div>
         
         <div class="p-8 pt-0">
             <button onclick="closeModal('resourceHub')" class="w-full py-4 bg-gray-800 text-gray-400 font-black rounded-2xl">Close</button>
@@ -2731,9 +2742,12 @@ function loadFormAndShow(templateName, context = null) {
             const pill = document.createElement('div');
             pill.id        = 'slideSubmitPill';
             pill.className = 'slide-action-pill flex-[2] relative bg-green-700 h-14 rounded-xl p-1 border border-green-900 flex items-center overflow-hidden shadow-lg';
+            pill.setAttribute('role', 'button');
+            pill.setAttribute('tabindex', '0');
+            pill.setAttribute('aria-label', 'Slide to submit and end visit');
             pill.innerHTML = `
                 <div id="slideSubmitThumb" class="w-11 h-11 rounded-lg bg-white flex items-center justify-center shadow-xl z-20 pointer-events-none flex-shrink-0">
-                    <svg class="w-5 h-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
+                    <svg class="w-5 h-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
                 </div>
                 <div class="w-full flex flex-col items-center justify-center pointer-events-none">
                     <span id="slideSubmitLabel" class="text-sm font-black text-white uppercase tracking-widest transition-opacity duration-200">Slide to Submit &amp; End Visit</span>
@@ -2746,9 +2760,12 @@ function loadFormAndShow(templateName, context = null) {
             const pill = document.createElement('div');
             pill.id        = 'slideSubmitPill';
             pill.className = 'slide-action-pill flex-[2] relative bg-green-700 h-14 rounded-xl p-1 border border-green-900 flex items-center overflow-hidden shadow-lg';
+            pill.setAttribute('role', 'button');
+            pill.setAttribute('tabindex', '0');
+            pill.setAttribute('aria-label', 'Slide to send update');
             pill.innerHTML = `
                 <div id="slideSubmitThumb" class="w-11 h-11 rounded-lg bg-white flex items-center justify-center shadow-xl z-20 pointer-events-none flex-shrink-0">
-                    <svg class="w-5 h-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
+                    <svg class="w-5 h-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
                 </div>
                 <div class="w-full flex flex-col items-center justify-center pointer-events-none">
                     <span id="slideSubmitLabel" class="text-sm font-black text-white uppercase tracking-widest transition-opacity duration-200">Slide to Send Update</span>
@@ -2761,9 +2778,12 @@ function loadFormAndShow(templateName, context = null) {
             const pill = document.createElement('div');
             pill.id        = 'slideSubmitPill';
             pill.className = 'slide-action-pill flex-[2] relative bg-green-700 h-14 rounded-xl p-1 border border-green-900 flex items-center overflow-hidden shadow-lg';
+            pill.setAttribute('role', 'button');
+            pill.setAttribute('tabindex', '0');
+            pill.setAttribute('aria-label', 'Slide to submit form');
             pill.innerHTML = `
                 <div id="slideSubmitThumb" class="w-11 h-11 rounded-lg bg-white flex items-center justify-center shadow-xl z-20 pointer-events-none flex-shrink-0">
-                    <svg class="w-5 h-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
+                    <svg class="w-5 h-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
                 </div>
                 <div class="w-full flex flex-col items-center justify-center pointer-events-none">
                     <span id="slideSubmitLabel" class="text-sm font-black text-white uppercase tracking-widest transition-opacity duration-200">Slide to Submit Form</span>
@@ -4227,6 +4247,7 @@ function updateArrivedButtonState() {
 
     // Reset state
     pill.classList.remove('pill-disabled');
+    pill.removeAttribute('aria-disabled');
     pill.style.borderColor = '';
 
     // TRAVEL LOGIC: Time is mandatory, Site is optional
@@ -4234,6 +4255,7 @@ function updateArrivedButtonState() {
         if (!hasDuration) {
             label.textContent = 'Select Travel Time';
             pill.classList.add('pill-disabled');
+            pill.setAttribute('aria-disabled', 'true');
         } else {
             const loc = state.locations && state.locations.find(l => l.id === state.selectedLocationId);
             label.textContent = loc ? `Slide to Travel to ${loc.name}` : 'Slide to Start Travel';
@@ -4248,9 +4270,11 @@ function updateArrivedButtonState() {
     } else if (!hasLocation) {
         label.textContent = 'Select a Site First';
         pill.classList.add('pill-disabled');
+        pill.setAttribute('aria-disabled', 'true');
     } else {
         label.textContent = 'Select a Duration';
         pill.classList.add('pill-disabled');
+        pill.setAttribute('aria-disabled', 'true');
     }
 }
 
@@ -6128,6 +6152,7 @@ function openMidVisitMenu() {
         <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-sm space-y-4">
             <h3 class="text-white font-black text-sm uppercase tracking-widest">Mid-Visit Update</h3>
             <textarea id="midVisitNote" rows="4" placeholder="Enter status update…"
+                aria-label="Status update message"
                 class="w-full bg-gray-800 border border-gray-600 rounded-xl p-3 text-white text-sm resize-none outline-none focus:border-blue-500"></textarea>
             <div class="flex gap-3">
                 <button onclick="cancelMidVisit()" class="flex-1 py-3 rounded-xl bg-gray-700 text-white font-bold text-sm">Cancel</button>
@@ -7633,8 +7658,14 @@ function openResourceHub() {
 
 function switchHubTab(tab) {
     const isRes = tab === 'res';
-    document.getElementById('tabRes').className = isRes ? 'pb-2 text-xs font-black uppercase tracking-widest text-blue-500 border-b-2 border-blue-500' : 'pb-2 text-xs font-black uppercase tracking-widest text-gray-300';
-    document.getElementById('tabNot').className = !isRes ? 'pb-2 text-xs font-black uppercase tracking-widest text-blue-500 border-b-2 border-blue-500' : 'pb-2 text-xs font-black uppercase tracking-widest text-gray-300';
+    const tabRes = document.getElementById('tabRes');
+    const tabNot = document.getElementById('tabNot');
+    tabRes.className = isRes ? 'pb-2 text-xs font-black uppercase tracking-widest text-blue-500 border-b-2 border-blue-500' : 'pb-2 text-xs font-black uppercase tracking-widest text-gray-300';
+    tabNot.className = !isRes ? 'pb-2 text-xs font-black uppercase tracking-widest text-blue-500 border-b-2 border-blue-500' : 'pb-2 text-xs font-black uppercase tracking-widest text-gray-300';
+    tabRes.setAttribute('aria-selected', isRes ? 'true' : 'false');
+    tabNot.setAttribute('aria-selected', isRes ? 'false' : 'true');
+    const panel = document.getElementById('hubContent');
+    if (panel) panel.setAttribute('aria-labelledby', isRes ? 'tabRes' : 'tabNot');
     
     if (isRes) renderResources();
     else renderNoticeArchive();
