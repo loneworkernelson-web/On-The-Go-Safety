@@ -3142,6 +3142,10 @@ async function triggerPanic(duress = false) {
 
     // Start continuous GPS monitoring for ongoing location pulses
     if (gpsWatchId === null && typeof startGPSMonitoring === 'function') startGPSMonitoring();
+    // Force minimum poll interval regardless of current adaptive value — the
+    // worker may be stationary (and in distress), so movement-based adaptation
+    // would incorrectly back off. Pin to 2-minute minimum for alarm duration.
+    gpsCurrentIntervalMs = GPS_MIN_INTERVAL_MS;
     
     // 1. DURESS (SILENT) LOGIC
     if (duress) {
@@ -7642,6 +7646,11 @@ function triggerGraceExpiryAlarm() {
     // Acquire wake lock so the alarm screen stays lit — the worker must not
     // be able to miss the SLIDE TO CONFIRM prompt because the phone went dark.
     if (typeof requestWakeLock === 'function') requestWakeLock();
+
+    // Ensure GPS is running and pinned to minimum interval — the worker may be
+    // stationary, so adaptive back-off would reduce resolution at the worst time.
+    if (gpsWatchId === null && typeof startGPSMonitoring === 'function') startGPSMonitoring();
+    gpsCurrentIntervalMs = GPS_MIN_INTERVAL_MS;
 
     // 1. Notify Backend
     processUploadQueue(buildPayload({
