@@ -1817,8 +1817,6 @@ function submitReport() {
     if (currentActiveTemplate === "Update Site Procedures") {
         backendAction = 'uploadEmergencyProcedures';
         alarmStatus = "PROCEDURES_UPDATED";
-        // Always treat as mid-visit when a session is active — must not tear down the visit.
-        if (state.activeVisit) isMidVisitUpdate = true;
     } else if (currentActiveTemplate === "Note to Self") {
         backendAction = 'logNote';
         alarmStatus = "NOTE_LOGGED";
@@ -1836,18 +1834,8 @@ function submitReport() {
     }
     
     // 7. HANDSHAKE: Send to spreadsheet with the correct action key
-    // For emergency procedure uploads, ensure Site Name and Company Name are always
-    // present on the payload. buildPayload() derives location from state.activeVisit or
-    // state.selectedLocationId — neither is set when launched from the site info modal
-    // (no active visit). formExecutionContext is the authoritative source in that case.
-    const procedureContext = (backendAction === 'uploadEmergencyProcedures' && formExecutionContext) ? {
-        'Site Name':    formExecutionContext.siteName    || '',
-        'Company Name': formExecutionContext.companyName || ''
-    } : {};
-
     processUploadQueue(buildPayload({
         ...fd,
-        ...procedureContext,
         "action": backendAction, 
         "Alarm Status": alarmStatus,
         "Notes": d.notes || ""
@@ -6485,6 +6473,21 @@ function cleanGlobalPhone(num) {
 }
 
 // Feature 12: Travel/Mileage Tracking
+/**
+ * Returns true only when a GPS string is a real, usable fix.
+ * Rejects: null/empty, the sentinel "0,0", and any coordinate pair
+ * that parses to exactly (0, 0) — which indicates a failed fix.
+ */
+function _isValidGPS(str) {
+    if (!str || typeof str !== 'string') return false;
+    const parts = str.split(',').map(Number);
+    if (parts.length < 2) return false;
+    const [lat, lng] = parts;
+    if (isNaN(lat) || isNaN(lng)) return false;
+    if (lat === 0 && lng === 0) return false;
+    return true;
+}
+
 function haversine(p1, p2) {
     const [lat1, lon1] = p1.split(',').map(Number);
     const [lat2, lon2] = p2.split(',').map(Number);
@@ -6498,14 +6501,16 @@ function haversine(p1, p2) {
 }
 
 async function getDistance(p1, p2, trail = []) {
-    if (!p1 || !p2) return { km: 0, type: 'none' };
+    if (!_isValidGPS(p1) || !_isValidGPS(p2)) return { km: 0, type: 'none' };
 
     // TIER 1: ORS road routing with breadcrumb waypoints — most accurate.
     // Sends the actual intermediate positions taken during the trip so ORS
     // snaps to the road network along the path the worker really drove.
     if (navigator.onLine && CONFIG.url && trail.length >= 3) {
         try {
-            const trailStr = trail.map(p => `${p.lat},${p.lng}`).join('|');
+            const validTrail = trail.filter(p => _isValidGPS(`${p.lat},${p.lng}`));
+            if (validTrail.length < 3) throw new Error('Insufficient valid trail points after GPS filtering');
+            const trailStr = validTrail.map(p => `${p.lat},${p.lng}`).join('|');
             const url = `${CONFIG.url}?action=getDistanceWithTrail&trail=${encodeURIComponent(trailStr)}&key=${CONFIG.key}`;
             const response = await fetch(url);
             const data = await response.json();
@@ -6519,9 +6524,10 @@ async function getDistance(p1, p2, trail = []) {
         // TIER 2: Sum of Haversine segments along actual breadcrumbs.
         // Less accurate than ORS (crow-flies between each reading) but still
         // far better than a single A→B estimate for indirect journeys.
+        const cleanTrail = trail.filter(p => _isValidGPS(`${p.lat},${p.lng}`));
         let totalM = 0;
-        for (let i = 1; i < trail.length; i++) {
-            totalM += _gpsHaversineMetres(trail[i-1].lat, trail[i-1].lng, trail[i].lat, trail[i].lng);
+        for (let i = 1; i < cleanTrail.length; i++) {
+            totalM += _gpsHaversineMetres(cleanTrail[i-1].lat, cleanTrail[i-1].lng, cleanTrail[i].lat, cleanTrail[i].lng);
         }
         if (totalM > 0) {
             return { km: (totalM / 1000).toFixed(2), type: 'trail-crow' };
