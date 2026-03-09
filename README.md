@@ -46,7 +46,7 @@ This solution is **not** a fit for everyone. Use this checklist to assess suitab
 
 - **No direct link to emergency services.** When an alarm fires, the system notifies your nominated contacts only. Those contacts must make the judgement call about whether to dial 111. There is no automatic escalation to police, ambulance, or a monitored response centre.
 - **The Monitor dashboard requires active supervision.** The audio alarm and full-screen alert only trigger if a supervisor has the Monitor tab open in a browser. If the tab is closed or the computer is locked, the alert is silent on that screen. Ensure your organisation has a clear plan for who monitors the dashboard and when.
-- **Offline connectivity is safety-critical.** The Worker App queues alarms locally and sends them when signal is restored. If a worker has no data connection at the moment a check-in expires, nominated contacts cannot be notified until connectivity returns.
+- **Offline connectivity is safety-critical.** The escalation watchdog runs independently in Google Apps Script — it does not rely on the worker's device being online to send alerts. However, it can only monitor visits it knows about. If a worker starts a visit without a data connection, the visit record is queued locally and will not reach the backend until signal is restored. Until that sync happens, the watchdog has no record of the visit and cannot escalate if the timer expires.
 
 ---
 
