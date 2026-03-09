@@ -498,6 +498,34 @@
     <h3>Editing a Location</h3>
     <p>Tap the small <code>ℹ</code> button on any tile you created, or on the Travelling tile, to edit its settings. You cannot edit organisation-provided locations.</p>
 
+    <h3>Site Safety Information</h3>
+    <p>Tap the <code>ℹ</code> button on any location tile to open the site info panel. If your organisation has uploaded emergency procedures or hazard documentation for that site, a red <strong>🛡️ VIEW SITE SAFETY INFORMATION</strong> button will appear.</p>
+    <p>Tapping it opens a self-contained safety page in your browser — no Google account required. The page includes any photos or documents your organisation has attached to that site.</p>
+    <p>If no procedures have been uploaded yet, the button is replaced with a prompt to submit documentation. Tap it to open the procedures form for that site.</p>
+
+    <div class=\"mock-wrap\">
+        <div class=\"mock-phone\" style=\"width:260px;\">
+            <div class=\"mock-statusbar\"><span>9:41 AM</span><span>▐▐▐ 🔋</span></div>
+            <div class=\"mock-header\">
+                <div class=\"mock-header-left\"><div class=\"mock-logo-dot\"></div><span>%%ORG_NAME%%</span></div>
+            </div>
+            <div class=\"mock-body-pad\">
+                <div style=\"margin-bottom:8px;\">
+                    <div style=\"font-size:8px;color:#60a5fa;font-weight:900;text-transform:uppercase;letter-spacing:0.1em;\">Site Name</div>
+                    <div style=\"font-size:14px;font-weight:800;color:white;\">City Library</div>
+                </div>
+                <div style=\"margin-bottom:8px;\">
+                    <div style=\"font-size:8px;color:#9ca3af;font-weight:900;text-transform:uppercase;letter-spacing:0.1em;\">Address</div>
+                    <div style=\"font-size:11px;color:white;\">123 Main St, Auckland</div>
+                </div>
+                <div style=\"background:#dc2626;border-radius:14px;padding:14px;text-align:center;font-size:11px;font-weight:900;color:white;\">
+                    🛡️ VIEW SITE SAFETY INFORMATION
+                </div>
+            </div>
+        </div>
+    </div>
+    <p class=\"mock-caption\">Site info panel — tap the red button to open emergency procedures</p>
+
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2>4. Starting a Visit</h2>
 
@@ -578,6 +606,49 @@
         </div>
     </div>
     <p class="mock-caption">Locked screen — Extend and Forms buttons are always visible</p>
+
+    <h3>Battery Saver</h3>
+    <p>After 10 seconds without interaction, the app automatically switches to <strong>Battery Saver mode</strong>. The screen goes black and the system navigation bars are hidden — this is normal behaviour. GPS tracking and all safety monitoring continue to run in the background.</p>
+
+    <p>The battery saver screen shows:</p>
+    <ul>
+        <li><strong>Time remaining</strong> in the visit (large display, top centre)</li>
+        <li><strong>Battery level</strong> so you can monitor charge at a glance</li>
+        <li>A <strong>Slide to Wake</strong> pill at the bottom — slide it right to return to the normal locked screen</li>
+        <li>A reminder that <strong>shaking vigorously triggers SOS</strong> — the full SOS function remains active even in battery saver mode</li>
+    </ul>
+
+    <div class="tip">
+        <strong>💡 Keep the app open:</strong> A pulsing banner at the top of the battery saver screen reads <em>"System Active: Keep App Open."</em> Do not close or background the app while a visit is active — doing so may interrupt GPS tracking and alarm monitoring.
+    </div>
+
+    <div class="mock-wrap">
+        <div class="mock-phone" style="width:260px;background:#000;border-color:#111;">
+            <div class="mock-statusbar" style="background:#000;color:#374151;"><span>10:02 AM</span><span>▐▐▐ 🔋</span></div>
+            <div class="mock-body-pad" style="background:#000;display:flex;flex-direction:column;align-items:center;justify-content:space-between;min-height:320px;padding:16px 12px;">
+                <div style="text-align:center;">
+                    <div style="background:rgba(30,58,138,0.3);border:1px solid rgba(59,130,246,0.3);border-radius:999px;padding:4px 14px;margin-bottom:10px;display:inline-block;">
+                        <span style="font-size:8px;font-weight:900;color:#60a5fa;text-transform:uppercase;letter-spacing:0.2em;">⚠️ System Active: Keep App Open</span>
+                    </div>
+                    <div style="font-size:36px;font-weight:900;font-family:monospace;color:#d1d5db;">23<br><span style="font-size:14px;font-weight:400;color:#6b7280;">min remaining</span></div>
+                    <div style="font-size:10px;font-weight:900;color:#9ca3af;margin-top:6px;">78%&nbsp;▐▐▐▐▐▐▐░░░</div>
+                </div>
+                <div style="width:100%;">
+                    <div style="background:rgba(17,24,39,0.6);border:1px solid #374151;border-radius:999px;padding:6px;display:flex;align-items:center;margin-bottom:10px;">
+                        <div style="width:40px;height:40px;background:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;">→</div>
+                        <div style="flex:1;text-align:center;font-size:9px;font-weight:900;color:#9ca3af;text-transform:uppercase;letter-spacing:0.2em;">Slide to Wake</div>
+                    </div>
+                    <div style="text-align:center;">
+                        <div style="display:inline-flex;align-items:center;gap:6px;background:rgba(127,29,29,0.1);border:1px solid rgba(127,29,29,0.3);border-radius:999px;padding:5px 14px;">
+                            <span style="font-size:14px;">🆘</span>
+                            <span style="font-size:8px;font-weight:900;color:#991b1b;text-transform:uppercase;letter-spacing:0.15em;">Shake vigorously for SOS</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <p class="mock-caption">Battery Saver mode — GPS and safety monitoring continue in background</p>
 
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2>6. Ending a Visit</h2>
@@ -843,6 +914,8 @@
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">End a visit</td><td style="padding:10px;border:1px solid #e5e7eb;">Slide the End Visit pill → slide Submit &amp; End if report required</td></tr>
             <tr><td style="padding:10px;border:1px solid #e5e7eb;">Extend visit time</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap <strong>Extend</strong> button on locked screen</td></tr>
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Submit a note or form mid-visit</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap <strong>📋 Forms</strong> button on locked screen</td></tr>
+            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Wake from Battery Saver</td><td style="padding:10px;border:1px solid #e5e7eb;">Slide the <strong>Slide to Wake</strong> pill right</td></tr>
+            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">View site safety information</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap <strong>ℹ</strong> on location tile → <strong>🛡️ VIEW SITE SAFETY INFORMATION</strong></td></tr>
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Welfare check-in</td><td style="padding:10px;border:1px solid #e5e7eb;">Hold green "I Am Safe" button when prompted (within 2 min)</td></tr>
             <tr><td style="padding:10px;border:1px solid #e5e7eb;">Raise emergency alarm</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap red SOS button 3 times rapidly</td></tr>
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Covert duress alert (can't reach SOS)</td><td style="padding:10px;border:1px solid #e5e7eb;">Shake vigorously → shake again to confirm within 5 sec</td></tr>
