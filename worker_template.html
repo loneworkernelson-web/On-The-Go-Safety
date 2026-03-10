@@ -1586,6 +1586,9 @@ let _consecutiveGPSFailures = 0; // Reset on each successful fix; toast shown at
 
 // PHASE 1 ADDITIONS
 let isMidVisitUpdate = false; // Track if we're updating mid-visit vs ending
+let isPreVisitForm = false;      // True while a pre-visit form is being completed
+let isPreVisitFormDone = false;  // Prevents re-triggering when startVisit() resumes
+let pendingVisitStartFn = null;  // Closure to resume startVisit() after pre-visit form
 let currentBatteryLevel = "100%";
 
 // PHASE 2+ ADDITIONS: Covert panic activation methods
@@ -1878,6 +1881,9 @@ function submitReport() {
     } else if (currentActiveTemplate === "Note to Self") {
         backendAction = 'logNote';
         alarmStatus = "NOTE_LOGGED";
+    } else if (isPreVisitForm) {
+        // Pre-visit form submitted — record it, then resume the visit start
+        alarmStatus = "PRE_VISIT";
     } else if (isMidVisitUpdate) {
         // Log movement or status without ending the session
         // Vehicle Safety Check has its own status — avoids wrongly showing worker as ON SITE
@@ -1898,6 +1904,17 @@ function submitReport() {
         "Alarm Status": alarmStatus,
         "Notes": d.notes || ""
     }));
+
+    // PRE-VISIT FORM RESUME: form data is queued — now actually start the visit
+    if (isPreVisitForm) {
+        isPreVisitForm = false;
+        isMidVisitUpdate = false;
+        state.photoStore = {};
+        const fn = pendingVisitStartFn;
+        pendingVisitStartFn = null;
+        if (fn) fn();
+        return;
+    }
 
     // 8. NAG BAR CLEANUP
     if (currentActiveTemplate && currentActiveTemplate.toLowerCase().includes('vehicle')) {
@@ -4377,6 +4394,25 @@ async function startVisit(isSkipCheck = false) {
     const loc = state.locations.find(l => l.id === locId) || { id: 'travel', name: 'General Travel', address: 'Field Work' };
     const durationMins = state.visitDurationMinutes || 0;
     const isHighRisk = document.getElementById('chkHighRisk')?.checked || false;
+
+    // PRE-VISIT FORM: If the site requires one and it hasn't been completed yet,
+    // show it now. The form submit will call pendingVisitStartFn() to resume here.
+    if (!isPreVisitFormDone && loc.preVisitForm) {
+        const preTemplate = (state.globalForms || []).find(f => f.formTiming === 'pre-visit');
+        if (preTemplate) {
+            if (btn) delete btn.dataset.starting;
+            isPreVisitForm = true;
+            isPreVisitFormDone = true; // prevent infinite loop when we resume
+            isMidVisitUpdate = true;   // prevent submitReport() treating it as a departure
+            pendingVisitStartFn = () => startVisit(isSkipCheck);
+            loadFormAndShow(preTemplate.name, {
+                siteName: loc.name,
+                companyName: loc.companyName || ''
+            });
+            return;
+        }
+    }
+    isPreVisitFormDone = false; // reset for next visit
 
     // GPS is only relevant for travel (live tracking) and alarm states (locate worker).
     // For a regular named-site visit the site address is the authoritative location —
