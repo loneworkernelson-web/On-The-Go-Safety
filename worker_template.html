@@ -3562,7 +3562,7 @@ function renderLocations() {
     }
 
     // ── 2. Filter to named sites ─────────────────────────────────────────────
-    const sites = state.locations.filter(loc => loc && loc.id !== 'travel');
+    const sites = state.locations.filter(loc => loc && loc.id !== 'travel' && loc.name !== '_travel');
 
     if (sites.length === 0) {
         if (searchRow) searchRow.classList.add('hidden');
@@ -4392,6 +4392,12 @@ async function startVisit(isSkipCheck = false) {
     }
 
     const loc = state.locations.find(l => l.id === locId) || { id: 'travel', name: 'General Travel', address: 'Field Work' };
+    // For travel mode, check for a sentinel row named '_travel' in the Sites tab.
+    // This allows the pre-visit form gate to apply to travel sessions without a real site row.
+    if (isTravelMode) {
+        const travelSentinel = (state.locations || []).find(l => l.name === '_travel');
+        if (travelSentinel && travelSentinel.preVisitForm) loc.preVisitForm = true;
+    }
     const durationMins = state.visitDurationMinutes || 0;
     const isHighRisk = document.getElementById('chkHighRisk')?.checked || false;
 
@@ -6487,6 +6493,7 @@ function forceSync(showUI) {
                 notes: s.notes,
                 isCritical: s.critical || false,
                 riskLevel: s.riskLevel || '',       // Low / Medium / High / Critical — from Sites sheet col K
+                preVisitForm: s.preVisitForm || false, // TRUE triggers pre-visit form gate — from Sites sheet col L
                 // NEW: Capture the emergency info from the spreadsheet
                 'Emergency Procedures': s.emergencyProcedures || s['Emergency Procedures'] || ''
             }));
