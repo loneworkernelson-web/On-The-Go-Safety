@@ -1674,9 +1674,14 @@ function saveState() {
 // NAVIGATION
 // ============================================================================
 function navigate(page) {
-    // DIAGNOSTIC: show on-screen toast whenever navigate() fires during pre-visit form
-    if (isPreVisitForm) {
-        showToast('[DIAG] navigate → ' + page);
+    // DIAGNOSTIC: alert on any navigation away from report while pre-visit form is active
+    if (isPreVisitForm && page !== 'report') {
+        showToast('[DIAG] rogue navigate → ' + page);
+        // Defensive: clean up stale pre-visit flags so the app isn't permanently stuck
+        isPreVisitForm = false;
+        isPreVisitFormDone = false;
+        pendingVisitStartFn = null;
+        isMidVisitUpdate = false;
     }
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     const targetPage = document.getElementById(page + 'Page');
@@ -1890,8 +1895,19 @@ function submitReport() {
         backendAction = 'logNote';
         alarmStatus = "NOTE_LOGGED";
     } else if (isPreVisitForm) {
-        // Pre-visit form submitted — record it, then resume the visit start
-        alarmStatus = "PRE_VISIT";
+        if (state.activeVisit) {
+            // STALE FLAG: visit already active — pre-visit form was never properly
+            // completed (e.g. it flashed away). Clear all pre-visit flags and treat
+            // this submission as a normal departure.
+            isPreVisitForm = false;
+            isPreVisitFormDone = false;
+            pendingVisitStartFn = null;
+            isMidVisitUpdate = false;
+            alarmStatus = "DEPARTED";
+        } else {
+            // Pre-visit form submitted — record it, then resume the visit start
+            alarmStatus = "PRE_VISIT";
+        }
     } else if (isMidVisitUpdate) {
         // Log movement or status without ending the session
         // Vehicle Safety Check has its own status — avoids wrongly showing worker as ON SITE
