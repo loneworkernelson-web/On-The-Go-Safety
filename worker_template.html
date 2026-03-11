@@ -4386,6 +4386,7 @@ function setupHoldToStart() { /* wired via initAllActionPills */ }
  */
 async function startVisit(isSkipCheck = false) {
     if (state.activeVisit) return;
+    if (isPreVisitForm) return;  // Pre-visit form is on screen — block stray re-entry
     const btn = document.getElementById('btnStart');
     if (btn && btn.dataset.starting) return;
     if (btn) btn.dataset.starting = '1';
