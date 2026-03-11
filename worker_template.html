@@ -1674,6 +1674,10 @@ function saveState() {
 // NAVIGATION
 // ============================================================================
 function navigate(page) {
+    // DIAGNOSTIC: show on-screen toast whenever navigate() fires during pre-visit form
+    if (isPreVisitForm) {
+        showToast('[DIAG] navigate → ' + page);
+    }
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     const targetPage = document.getElementById(page + 'Page');
     if (targetPage) {
