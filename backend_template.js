@@ -503,7 +503,7 @@ function handleWorkerPost(p) {
                 const rowData = data[i];
                 if (rowData[2] === workerName) {
                     const status = String(rowData[10]);
-                    const isClosed = status.includes('DEPARTED') || status.includes('COMPLETED') || status.includes('DATA_ENTRY_ONLY') || status.includes('USER_SAFE') || status.includes('NOTICE_ACK') || status.includes('PRE_VISIT');
+                    const isClosed = status.includes('DEPARTED') || status.includes('COMPLETED') || status.includes('DATA_ENTRY_ONLY') || status.includes('USER_SAFE') || status.includes('NOTICE_ACK');
                     
                     if (!isClosed) {
                         const targetRow = startRow + i;
@@ -515,8 +515,6 @@ function handleWorkerPost(p) {
                              if (!oldNotes.includes(polishedNotes)) sheet.getRange(targetRow, 12).setValue((oldNotes + "\n" + polishedNotes).trim());
                         }
                         if (p['Last Known GPS']) sheet.getRange(targetRow, 15).setValue(p['Last Known GPS']);
-                        const departCol = headers.indexOf("Anticipated Departure Time");
-                        if (p['Anticipated Departure Time'] && departCol > -1) sheet.getRange(targetRow, departCol + 1).setValue(p['Anticipated Departure Time']);
                         if (p['Visit Report Data']) sheet.getRange(targetRow, headers.indexOf("Visit Report Data") + 1).setValue(p['Visit Report Data']);
                         // Write Drive file links for photos and signature
                         const p1Col  = headers.indexOf("Photo 1");
@@ -1662,7 +1660,8 @@ function getSyncData(workerName, deviceId) {
                     address: sData[i][4], contactName: sData[i][5], 
                     contactPhone: sData[i][6], contactEmail: sData[i][7], 
                     notes: sData[i][8], emergencyProcedures: sData[i][9],
-                    riskLevel: sData[i][10] || ''  // Column K — Low / Medium / High / Critical
+                    riskLevel: sData[i][10] || '',  // Column K — Low / Medium / High / Critical
+                    preVisitForm: sData[i][11] === true || sData[i][11] === 'TRUE' || sData[i][11] === 'true'  // Column L
                 });
             }
         }
