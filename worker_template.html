@@ -4412,6 +4412,8 @@ async function startVisit(isSkipCheck = false) {
     // This allows the pre-visit form gate to apply to travel sessions without a real site row.
     if (isTravelMode) {
         const travelSentinel = (state.locations || []).find(l => l.name === '_travel');
+        console.log('[PREVISIT GATE] travelSentinel:', travelSentinel ? JSON.stringify({name:travelSentinel.name, preVisitForm:travelSentinel.preVisitForm, id:travelSentinel.id}) : 'NOT FOUND');
+        console.log('[PREVISIT GATE] all location names:', (state.locations||[]).map(l=>l.name).join(', '));
         if (travelSentinel && travelSentinel.preVisitForm) loc.preVisitForm = true;
     }
     const durationMins = state.visitDurationMinutes || 0;
@@ -8275,7 +8277,7 @@ document.addEventListener("visibilitychange", async () => {
     console.log = function() {
         _origLog.apply(console, arguments);
         var msg = Array.from(arguments).join(' ');
-        if (msg.indexOf('[PREVISIT') !== -1 || msg.indexOf('[GATE') !== -1) {
+        if (true) { // show all logs
             var panel = document.getElementById('dbgPanel');
             var log   = document.getElementById('dbgLog');
             if (panel && log) {
