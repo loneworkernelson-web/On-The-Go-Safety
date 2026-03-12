@@ -1586,7 +1586,6 @@ let _consecutiveGPSFailures = 0; // Reset on each successful fix; toast shown at
 
 // PHASE 1 ADDITIONS
 let isMidVisitUpdate = false; // Track if we're updating mid-visit vs ending
-let isSubmitting = false;        // Guard against double-fire of the submit slide pill
 let isPreVisitForm = false;      // True while a pre-visit form is being completed
 let isPreVisitFormDone = false;  // Prevents re-triggering when startVisit() resumes
 let pendingVisitStartFn = null;  // Closure to resume startVisit() after pre-visit form
@@ -1674,15 +1673,6 @@ function saveState() {
 // NAVIGATION
 // ============================================================================
 function navigate(page) {
-    // DIAGNOSTIC: alert on any navigation away from report while pre-visit form is active
-    if (isPreVisitForm && page !== 'report') {
-        showToast('[DIAG] rogue navigate → ' + page);
-        // Defensive: clean up stale pre-visit flags so the app isn't permanently stuck
-        isPreVisitForm = false;
-        isPreVisitFormDone = false;
-        pendingVisitStartFn = null;
-        isMidVisitUpdate = false;
-    }
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     const targetPage = document.getElementById(page + 'Page');
     if (targetPage) {
@@ -1839,11 +1829,8 @@ async function refreshBatteryLevel() {
  * site emergency procedures integration, and correct media/signature transmission.
  */
 function submitReport() {
-    if (isSubmitting) return;
-    isSubmitting = true;
-
     // REQUIRED FIELD GATE: validate before doing anything else
-    if (!validateRequiredFields()) { isSubmitting = false; return; }
+    if (!validateRequiredFields()) return;
 
     showToast('📤 Processing report...');
     
@@ -1895,19 +1882,8 @@ function submitReport() {
         backendAction = 'logNote';
         alarmStatus = "NOTE_LOGGED";
     } else if (isPreVisitForm) {
-        if (state.activeVisit) {
-            // STALE FLAG: visit already active — pre-visit form was never properly
-            // completed (e.g. it flashed away). Clear all pre-visit flags and treat
-            // this submission as a normal departure.
-            isPreVisitForm = false;
-            isPreVisitFormDone = false;
-            pendingVisitStartFn = null;
-            isMidVisitUpdate = false;
-            alarmStatus = "DEPARTED";
-        } else {
-            // Pre-visit form submitted — record it, then resume the visit start
-            alarmStatus = "PRE_VISIT";
-        }
+        // Pre-visit form submitted — record it, then resume the visit start
+        alarmStatus = "PRE_VISIT";
     } else if (isMidVisitUpdate) {
         // Log movement or status without ending the session
         // Vehicle Safety Check has its own status — avoids wrongly showing worker as ON SITE
@@ -1933,7 +1909,6 @@ function submitReport() {
     if (isPreVisitForm) {
         isPreVisitForm = false;
         isMidVisitUpdate = false;
-        isSubmitting = false;
         state.photoStore = {};
         const fn = pendingVisitStartFn;
         pendingVisitStartFn = null;
@@ -1978,11 +1953,9 @@ function submitReport() {
         }
 
         if (typeof updateArrivedButtonState === 'function') updateArrivedButtonState();
-        isSubmitting = false;
         showToast('✅ Safety Session Completed');
     } else {
         navigate(state.activeVisit ? 'locked' : 'main'); 
-        isSubmitting = false;
         showToast('✅ Update Logged');
         isMidVisitUpdate = false; 
         if (typeof resetInactivityTimer === 'function') resetInactivityTimer();
@@ -2546,10 +2519,7 @@ function buildReportForm(templateName, fieldArea) {
                 group.className = 'input-group';
                 
                 if (cleanLabel.includes('$')) {
-                    const prefix = document.createElement('div');
-                    prefix.className = 'input-addon addon-prefix';
-                    prefix.textContent = '$';
-                    group.appendChild(prefix);
+                    group.innerHTML += `<div class="input-addon addon-prefix">$</div>`;
                     cleanLabel = cleanLabel.replace('$', '').trim();
                 }
 
@@ -2561,10 +2531,7 @@ function buildReportForm(templateName, fieldArea) {
 
                 const unitMatch = cleanLabel.match(/\((km|hrs|%|m|kg)\)$/i);
                 if (unitMatch) {
-                    const suffix = document.createElement('div');
-                    suffix.className = 'input-addon addon-suffix';
-                    suffix.textContent = unitMatch[1];
-                    group.appendChild(suffix);
+                    group.innerHTML += `<div class="input-addon addon-suffix">${unitMatch[1]}</div>`;
                     cleanLabel = cleanLabel.replace(unitMatch[0], '').trim();
                 }
 
@@ -2800,16 +2767,6 @@ function loadFormAndShow(templateName, context = null) {
             distInput.classList.add('bg-green-900/20');
             distInput.dispatchEvent(new Event('input', { bubbles: true })); 
         }
-
-        // Crow-flies advisory — shown when road routing was unavailable
-        if (calculatedDist.type === 'crow' || calculatedDist.type === 'trail-crow') {
-            const crowNote = document.createElement('div');
-            crowNote.className = 'p-4 bg-amber-900/20 border-l-4 border-amber-500 rounded-r-xl text-xs text-amber-100 font-medium italic leading-relaxed mt-2';
-            crowNote.setAttribute('role', 'note');
-            crowNote.textContent = '⚠️ Distance is a straight-line estimate (as the crow flies) — road distance could not be calculated. Check this figure and add a note if needed.';
-            const fc = document.getElementById('reportFields');
-            if (fc) fc.appendChild(crowNote);
-        }
     }
 
     /**
@@ -2927,6 +2884,9 @@ function directDepart() {
     state.selectedLocationId = null;
     state.visitDurationMinutes = 0;
     state.photoStore = {};
+    // Reset per-trip no-report flag now that the trip is over.
+    // Restore org default (mandatory) or worker's saved preference if org allows.
+    state.travelNoReport = CONFIG.reqTravelReport ? false : !!(state.travelNoReportDefault);
     updateDurationDisplay();
     if (typeof travelTargetName !== 'undefined') travelTargetName = '';
     if (tickIntervalId) { clearInterval(tickIntervalId); tickIntervalId = null; }
@@ -4402,7 +4362,6 @@ function setupHoldToStart() { /* wired via initAllActionPills */ }
  */
 async function startVisit(isSkipCheck = false) {
     if (state.activeVisit) return;
-    if (isPreVisitForm) return;  // Pre-visit form is on screen — block stray re-entry
     const btn = document.getElementById('btnStart');
     if (btn && btn.dataset.starting) return;
     if (btn) btn.dataset.starting = '1';
@@ -4440,7 +4399,6 @@ async function startVisit(isSkipCheck = false) {
     // This allows the pre-visit form gate to apply to travel sessions without a real site row.
     if (isTravelMode) {
         const travelSentinel = (state.locations || []).find(l => l.name === '_travel');
-        console.log('[DIAG] travelSentinel:', travelSentinel ? JSON.stringify({name:travelSentinel.name,preVisitForm:travelSentinel.preVisitForm}) : 'NOT FOUND');
         if (travelSentinel && travelSentinel.preVisitForm) loc.preVisitForm = true;
     }
     const durationMins = state.visitDurationMinutes || 0;
@@ -4448,10 +4406,9 @@ async function startVisit(isSkipCheck = false) {
 
     // PRE-VISIT FORM: If the site requires one and it hasn't been completed yet,
     // show it now. The form submit will call pendingVisitStartFn() to resume here.
-    console.log('[DIAG] gate check — loc.preVisitForm:', loc.preVisitForm, '| isPreVisitFormDone:', isPreVisitFormDone);
-    if (!isPreVisitFormDone && loc.preVisitForm) {
+    // Skip entirely if the worker has toggled 'No Report Required' for this trip.
+    if (!isPreVisitFormDone && loc.preVisitForm && !state.travelNoReport) {
         const preTemplate = (state.globalForms || []).find(f => f.formTiming === 'pre-visit');
-        console.log('[DIAG] preTemplate:', preTemplate ? preTemplate.name : 'NULL', '| forms:', (state.globalForms||[]).map(f=>f.name+':'+f.formTiming).join(', '));
         if (preTemplate) {
             if (btn) delete btn.dataset.starting;
             isPreVisitForm = true;
@@ -4537,9 +4494,9 @@ async function startVisit(isSkipCheck = false) {
     };
 
     state.isTravelActive = false;
-    // Reset per-trip no-report flag. When the org mandates reports (CONFIG.reqTravelReport),
-    // always reset to false. When the org leaves it to the worker, restore their saved default.
-    state.travelNoReport = CONFIG.reqTravelReport ? false : !!(state.travelNoReportDefault);
+    // travelNoReport is intentionally NOT reset here — it must remain set throughout
+    // the visit so the departure path (directDepart / preDepart) can read it correctly.
+    // It is reset in directDepart() after departure is logged.
     saveState();
 
     const alarmStatus = isTravelMode ? "TRAVELLING" : "ARRIVED";
@@ -8276,41 +8233,6 @@ document.addEventListener("visibilitychange", async () => {
 });
     
 </script>
-
-
-<!-- ═══════════════════ DEBUG PANEL — REMOVE BEFORE PRODUCTION ═══════════════════ -->
-<div id="dbgPanel" style="position:fixed;bottom:0;left:0;right:0;z-index:99999;
-    background:#0a0a0a;border-top:2px solid #f59e0b;max-height:40vh;overflow-y:auto;
-    font-family:monospace;font-size:11px;color:#fcd34d;padding:6px 8px;display:none;">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-    <strong style="color:#f59e0b;">⬛ DEBUG LOG</strong>
-    <button onclick="document.getElementById('dbgPanel').style.display='none'"
-            style="background:#f59e0b;color:#000;border:none;padding:2px 8px;border-radius:4px;font-weight:bold;cursor:pointer;">✕</button>
-  </div>
-  <div id="dbgLog"></div>
-</div>
-<script>
-(function() {
-    var _orig = console.log.bind(console);
-    console.log = function() {
-        _orig.apply(console, arguments);
-        var msg = Array.from(arguments).join(' ');
-        if (msg.indexOf('[DIAG]') !== -1) {
-            var panel = document.getElementById('dbgPanel');
-            var log   = document.getElementById('dbgLog');
-            if (panel && log) {
-                panel.style.display = 'block';
-                var line = document.createElement('div');
-                line.style.cssText = 'border-bottom:1px solid #292524;padding:3px 0;word-break:break-all;';
-                line.textContent = new Date().toLocaleTimeString() + '  ' + msg;
-                log.appendChild(line);
-                panel.scrollTop = panel.scrollHeight;
-            }
-        }
-    };
-})();
-</script>
-<!-- ═══════════════════════════════════════════════════════════════════════════════ -->
 
 </body>
 </html>
