@@ -4419,8 +4419,10 @@ async function startVisit(isSkipCheck = false) {
 
     // PRE-VISIT FORM: If the site requires one and it hasn't been completed yet,
     // show it now. The form submit will call pendingVisitStartFn() to resume here.
+    console.log('[PREVISIT GATE] isTravelMode:', isTravelMode, '| loc.preVisitForm:', loc.preVisitForm, '| isPreVisitFormDone:', isPreVisitFormDone);
     if (!isPreVisitFormDone && loc.preVisitForm) {
         const preTemplate = (state.globalForms || []).find(f => f.formTiming === 'pre-visit');
+        console.log('[PREVISIT GATE] preTemplate:', preTemplate ? preTemplate.name : 'NULL', '| globalForms count:', (state.globalForms || []).length);
         if (preTemplate) {
             if (btn) delete btn.dataset.starting;
             isPreVisitForm = true;
