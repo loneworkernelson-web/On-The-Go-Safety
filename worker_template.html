@@ -4374,6 +4374,7 @@ function setupHoldToStart() { /* wired via initAllActionPills */ }
  * Logic: Ensures site address is captured for the spreadsheet.
  */
 async function startVisit(isSkipCheck = false) {
+    if (isPreVisitForm) return;  // Pre-visit form on screen — block any stray re-entry
     if (state.activeVisit) return;
     const btn = document.getElementById('btnStart');
     if (btn && btn.dataset.starting) return;
