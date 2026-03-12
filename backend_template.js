@@ -1660,7 +1660,8 @@ function getSyncData(workerName, deviceId) {
                     address: sData[i][4], contactName: sData[i][5], 
                     contactPhone: sData[i][6], contactEmail: sData[i][7], 
                     notes: sData[i][8], emergencyProcedures: sData[i][9],
-                    riskLevel: sData[i][10] || ''  // Column K — Low / Medium / High / Critical
+                    riskLevel: sData[i][10] || '',  // Column K — Low / Medium / High / Critical
+                    preVisitForm: sData[i][11] === true || sData[i][11] === 'TRUE' || sData[i][11] === 'true'  // Column L
                 });
             }
         }
