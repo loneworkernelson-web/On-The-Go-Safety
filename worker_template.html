@@ -4412,8 +4412,6 @@ async function startVisit(isSkipCheck = false) {
     // This allows the pre-visit form gate to apply to travel sessions without a real site row.
     if (isTravelMode) {
         const travelSentinel = (state.locations || []).find(l => l.name === '_travel');
-        console.log('[PREVISIT GATE] travelSentinel:', travelSentinel ? JSON.stringify({name:travelSentinel.name, preVisitForm:travelSentinel.preVisitForm, id:travelSentinel.id}) : 'NOT FOUND');
-        console.log('[PREVISIT GATE] all location names:', (state.locations||[]).map(l=>l.name).join(', '));
         if (travelSentinel && travelSentinel.preVisitForm) loc.preVisitForm = true;
     }
     const durationMins = state.visitDurationMinutes || 0;
@@ -4421,10 +4419,8 @@ async function startVisit(isSkipCheck = false) {
 
     // PRE-VISIT FORM: If the site requires one and it hasn't been completed yet,
     // show it now. The form submit will call pendingVisitStartFn() to resume here.
-    console.log('[PREVISIT GATE] isTravelMode:', isTravelMode, '| loc.preVisitForm:', loc.preVisitForm, '| isPreVisitFormDone:', isPreVisitFormDone);
     if (!isPreVisitFormDone && loc.preVisitForm) {
         const preTemplate = (state.globalForms || []).find(f => f.formTiming === 'pre-visit');
-        console.log('[PREVISIT GATE] preTemplate:', preTemplate ? preTemplate.name : 'NULL', '| globalForms count:', (state.globalForms || []).length);
         if (preTemplate) {
             if (btn) delete btn.dataset.starting;
             isPreVisitForm = true;
@@ -8251,47 +8247,6 @@ document.addEventListener("visibilitychange", async () => {
 </script>
 
 
-<!-- ═══════════════════════════════════════════════════════════ -->
-<!-- DEBUG PANEL — REMOVE BEFORE PRODUCTION                      -->
-<!-- ═══════════════════════════════════════════════════════════ -->
-<div id="dbgPanel" style="
-    position:fixed; bottom:0; left:0; right:0; z-index:99999;
-    background:#0a0a0a; border-top:2px solid #f59e0b;
-    max-height:40vh; overflow-y:auto;
-    font-family:monospace; font-size:11px; color:#fcd34d;
-    padding:6px 8px;
-    display:none;
-">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-    <strong style="color:#f59e0b;">⬛ DEBUG LOG</strong>
-    <button onclick="document.getElementById('dbgPanel').style.display='none'"
-            style="background:#f59e0b;color:#000;border:none;padding:2px 8px;border-radius:4px;font-weight:bold;cursor:pointer;">✕</button>
-  </div>
-  <div id="dbgLog"></div>
-</div>
-
-<script>
-(function() {
-    // Intercept console.log — show [PREVISIT GATE] lines on screen
-    var _origLog = console.log.bind(console);
-    console.log = function() {
-        _origLog.apply(console, arguments);
-        var msg = Array.from(arguments).join(' ');
-        if (true) { // show all logs
-            var panel = document.getElementById('dbgPanel');
-            var log   = document.getElementById('dbgLog');
-            if (panel && log) {
-                panel.style.display = 'block';
-                var line = document.createElement('div');
-                line.style.cssText = 'border-bottom:1px solid #292524;padding:3px 0;word-break:break-all;';
-                line.textContent = new Date().toLocaleTimeString() + '  ' + msg;
-                log.appendChild(line);
-                panel.scrollTop = panel.scrollHeight;
-            }
-        }
-    };
-})();
-</script>
 
 </body>
 
