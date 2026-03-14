@@ -1586,6 +1586,7 @@ let _consecutiveGPSFailures = 0; // Reset on each successful fix; toast shown at
 
 // PHASE 1 ADDITIONS
 let isMidVisitUpdate = false; // Track if we're updating mid-visit vs ending
+let isSubmitting = false;        // Guard against double-fire of the submit slide pill
 let isPreVisitForm = false;      // True while a pre-visit form is being completed
 let isPreVisitFormDone = false;  // Prevents re-triggering when startVisit() resumes
 let pendingVisitStartFn = null;  // Closure to resume startVisit() after pre-visit form
@@ -1673,6 +1674,14 @@ function saveState() {
 // NAVIGATION
 // ============================================================================
 function navigate(page) {
+    // Defensive: if something navigates away from the report page while a pre-visit
+    // form is active, clean up stale flags so the app isn't permanently stuck.
+    if (isPreVisitForm && page !== 'report') {
+        isPreVisitForm = false;
+        isPreVisitFormDone = false;
+        pendingVisitStartFn = null;
+        isMidVisitUpdate = false;
+    }
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     const targetPage = document.getElementById(page + 'Page');
     if (targetPage) {
@@ -1829,8 +1838,11 @@ async function refreshBatteryLevel() {
  * site emergency procedures integration, and correct media/signature transmission.
  */
 function submitReport() {
+    if (isSubmitting) return;
+    isSubmitting = true;
+
     // REQUIRED FIELD GATE: validate before doing anything else
-    if (!validateRequiredFields()) return;
+    if (!validateRequiredFields()) { isSubmitting = false; return; }
 
     showToast('📤 Processing report...');
     
@@ -1882,8 +1894,19 @@ function submitReport() {
         backendAction = 'logNote';
         alarmStatus = "NOTE_LOGGED";
     } else if (isPreVisitForm) {
-        // Pre-visit form submitted — record it, then resume the visit start
-        alarmStatus = "PRE_VISIT";
+        if (state.activeVisit) {
+            // STALE FLAG: visit already active — pre-visit form was never properly
+            // completed (e.g. it flashed away). Clear all pre-visit flags and treat
+            // this submission as a normal departure.
+            isPreVisitForm = false;
+            isPreVisitFormDone = false;
+            pendingVisitStartFn = null;
+            isMidVisitUpdate = false;
+            alarmStatus = "DEPARTED";
+        } else {
+            // Pre-visit form submitted — record it, then resume the visit start
+            alarmStatus = "PRE_VISIT";
+        }
     } else if (isMidVisitUpdate) {
         // Log movement or status without ending the session
         // Vehicle Safety Check has its own status — avoids wrongly showing worker as ON SITE
@@ -1909,6 +1932,7 @@ function submitReport() {
     if (isPreVisitForm) {
         isPreVisitForm = false;
         isMidVisitUpdate = false;
+        isSubmitting = false;
         state.photoStore = {};
         const fn = pendingVisitStartFn;
         pendingVisitStartFn = null;
@@ -1953,9 +1977,11 @@ function submitReport() {
         }
 
         if (typeof updateArrivedButtonState === 'function') updateArrivedButtonState();
+        isSubmitting = false;
         showToast('✅ Safety Session Completed');
     } else {
         navigate(state.activeVisit ? 'locked' : 'main'); 
+        isSubmitting = false;
         showToast('✅ Update Logged');
         isMidVisitUpdate = false; 
         if (typeof resetInactivityTimer === 'function') resetInactivityTimer();
@@ -2519,7 +2545,10 @@ function buildReportForm(templateName, fieldArea) {
                 group.className = 'input-group';
                 
                 if (cleanLabel.includes('$')) {
-                    group.innerHTML += `<div class="input-addon addon-prefix">$</div>`;
+                    const prefix = document.createElement('div');
+                    prefix.className = 'input-addon addon-prefix';
+                    prefix.textContent = '$';
+                    group.appendChild(prefix);
                     cleanLabel = cleanLabel.replace('$', '').trim();
                 }
 
@@ -2531,7 +2560,10 @@ function buildReportForm(templateName, fieldArea) {
 
                 const unitMatch = cleanLabel.match(/\((km|hrs|%|m|kg)\)$/i);
                 if (unitMatch) {
-                    group.innerHTML += `<div class="input-addon addon-suffix">${unitMatch[1]}</div>`;
+                    const suffix = document.createElement('div');
+                    suffix.className = 'input-addon addon-suffix';
+                    suffix.textContent = unitMatch[1];
+                    group.appendChild(suffix);
                     cleanLabel = cleanLabel.replace(unitMatch[0], '').trim();
                 }
 
@@ -2766,6 +2798,16 @@ function loadFormAndShow(templateName, context = null) {
             distInput.style.border = '2px solid #4ade80';
             distInput.classList.add('bg-green-900/20');
             distInput.dispatchEvent(new Event('input', { bubbles: true })); 
+        }
+
+        // Crow-flies advisory — shown when road routing was unavailable
+        if (calculatedDist.type === 'crow' || calculatedDist.type === 'trail-crow') {
+            const crowNote = document.createElement('div');
+            crowNote.className = 'p-4 bg-amber-900/20 border-l-4 border-amber-500 rounded-r-xl text-xs text-amber-100 font-medium italic leading-relaxed mt-2';
+            crowNote.setAttribute('role', 'note');
+            crowNote.textContent = '⚠️ Distance is a straight-line estimate (as the crow flies) — road distance could not be calculated. Check this figure and add a note if needed.';
+            const fc = document.getElementById('reportFields');
+            if (fc) fc.appendChild(crowNote);
         }
     }
 
@@ -4362,6 +4404,7 @@ function setupHoldToStart() { /* wired via initAllActionPills */ }
  */
 async function startVisit(isSkipCheck = false) {
     if (state.activeVisit) return;
+    if (isPreVisitForm) return;  // Pre-visit form is on screen — block stray re-entry
     const btn = document.getElementById('btnStart');
     if (btn && btn.dataset.starting) return;
     if (btn) btn.dataset.starting = '1';
@@ -4494,9 +4537,9 @@ async function startVisit(isSkipCheck = false) {
     };
 
     state.isTravelActive = false;
-    // travelNoReport is intentionally NOT reset here — it must remain set throughout
-    // the visit so the departure path (directDepart / preDepart) can read it correctly.
-    // It is reset in directDepart() after departure is logged.
+    // travelNoReport is intentionally NOT reset here — it must survive through the visit
+    // so the departure path can read it correctly. Reset happens in directDepart() after
+    // the trip ends, or in preDepart() if a form is submitted.
     saveState();
 
     const alarmStatus = isTravelMode ? "TRAVELLING" : "ARRIVED";
