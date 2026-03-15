@@ -1674,6 +1674,8 @@ function saveState() {
 // NAVIGATION
 // ============================================================================
 function navigate(page) {
+    console.log('[DIAG] navigate → ' + page + ' | isPreVisitForm=' + isPreVisitForm + ' isMidVisitUpdate=' + isMidVisitUpdate + ' activeVisit=' + (state.activeVisit ? 'YES' : 'null'));
+    console.trace();
     // Defensive: if something navigates away from the report page while a pre-visit
     // form is active, clean up stale flags so the app isn't permanently stuck.
     if (isPreVisitForm && page !== 'report') {
@@ -8276,5 +8278,56 @@ document.addEventListener("visibilitychange", async () => {
     
 </script>
 
+<!-- ============================================================ -->
+<!-- ON-SCREEN DEBUG PANEL — REMOVE BEFORE PRODUCTION           -->
+<!-- ============================================================ -->
+<div id="diagPanel" style="
+    position:fixed; bottom:0; left:0; right:0; z-index:99999;
+    max-height:40vh; overflow-y:auto;
+    background:rgba(0,0,0,0.85); color:#fbbf24;
+    font:11px/1.4 monospace; padding:6px 8px;
+    border-top:2px solid #fbbf24;
+    pointer-events:none;
+"></div>
+<button onclick="document.getElementById('diagPanel').innerHTML=''" style="
+    position:fixed; bottom:0; right:0; z-index:100000;
+    background:#fbbf24; color:#000; font:bold 11px monospace;
+    padding:2px 8px; border:none; pointer-events:auto;
+">CLR</button>
+<script>
+(function() {
+    const panel = document.getElementById('diagPanel');
+    const _origLog = console.log.bind(console);
+    const _origTrace = console.trace.bind(console);
+    const _origError = console.error.bind(console);
+    function appendDiag(msg) {
+        const line = document.createElement('div');
+        line.textContent = msg;
+        panel.appendChild(line);
+        panel.scrollTop = panel.scrollHeight;
+    }
+    console.log = function() {
+        const msg = Array.from(arguments).join(' ');
+        if (msg.startsWith('[DIAG]')) appendDiag(msg);
+        _origLog.apply(console, arguments);
+    };
+    console.error = function() {
+        const msg = '[ERR] ' + Array.from(arguments).join(' ');
+        appendDiag(msg);
+        _origError.apply(console, arguments);
+    };
+    // Capture stack traces and append after the triggering [DIAG] line
+    const _origTrace2 = console.trace;
+    console.trace = function() {
+        _origTrace.apply(console, arguments);
+        try {
+            throw new Error('trace');
+        } catch(e) {
+            const lines = e.stack.split('\n').slice(2, 7); // 5 frames
+            lines.forEach(l => appendDiag('  ' + l.trim()));
+        }
+    };
+})();
+</script>
 </body>
 </html>
