@@ -1662,7 +1662,8 @@ function getSyncData(workerName, deviceId) {
                     address: sData[i][4], contactName: sData[i][5], 
                     contactPhone: sData[i][6], contactEmail: sData[i][7], 
                     notes: sData[i][8], emergencyProcedures: sData[i][9],
-                    riskLevel: sData[i][10] || ''  // Column K — Low / Medium / High / Critical
+                    riskLevel: sData[i][10] || '',  // Column K — Low / Medium / High / Critical
+                    preVisitForm: sData[i][11] === true || sData[i][11] === 'TRUE' || sData[i][11] === 'true'  // Column L
                 });
             }
         }
@@ -1678,7 +1679,7 @@ function getSyncData(workerName, deviceId) {
             if (isAuthorised(tData[i][2], wNameSafe, workerGroups)) {
                 const questions = [];
                 for (let q = 4; q < 34; q++) { if (tData[i][q]) questions.push(tData[i][q]); }
-                forms.push({name: tData[i][1], type: tData[i][0], questions: questions});
+                forms.push({name: tData[i][1], type: tData[i][0], questions: questions, formTiming: (tData[i][34] || '').toString().trim().toLowerCase()});
                 cachedTemplates[tData[i][1]] = questions;
             }
         }
@@ -2062,4 +2063,3 @@ function getEmergencyProceduresViewer(siteName, companyName) {
 function _escHtml(str) {
     return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
-
