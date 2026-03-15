@@ -442,6 +442,13 @@
         <strong>💡 Choose your PINs carefully:</strong> Your Duress PIN should be something you can remember under pressure but clearly different from your Safety PIN. Write both down and keep them somewhere safe at home.
     </div>
 
+    <h3>First-Use Verification</h3>
+    <p>After completing the setup wizard, the app will display a <strong>verification card</strong> summarising the key details you just entered — your name, emergency contacts, and ntfy topics (if set). Check everything carefully before dismissing it.</p>
+    <p>Once you tap <strong>Confirm &amp; Continue</strong>, the card is dismissed and will not appear again unless you re-run the setup wizard. If you spot a mistake, tap <strong>Edit</strong> to go back and correct it.</p>
+    <div class="tip">
+        <strong>💡 Take a moment here:</strong> This is your last easy chance to catch a typo in your name. Your name must match your organisation's Staff list exactly — a mismatch will prevent the system from recognising you.
+    </div>
+
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2>3. The Location List</h2>
 
@@ -485,6 +492,13 @@
     <h3>Syncing the Location List</h3>
     <p>Tap the <strong>Sync</strong> button to download the latest approved locations from your organisation. This requires an internet connection. Once synced, locations are available offline.</p>
 
+    <h3>Using the App Offline</h3>
+    <p>The app is designed to work without an internet connection. Once your locations are synced, you can start visits, complete forms, and submit reports with no signal — all submissions are queued automatically and delivered as soon as connectivity returns.</p>
+    <div class="highlight">
+        <strong>How the queue works:</strong> Every form submission and visit report is saved to a secure on-device outbox. If your phone is offline when you submit, you will see a brief <em>"Queued"</em> notice rather than <em>"Sent"</em>. The app retries in the background and will deliver the submission automatically once a connection is available — even if you close and reopen the app in the meantime.
+    </div>
+    <p>The only thing that requires connectivity is syncing updated locations from your organisation. If the Sync button fails, your existing locations remain available — the list simply will not reflect any recent changes until you are back online.</p>
+
     <h3>Adding a Manual Location</h3>
     <p>If you're visiting somewhere not on the list (e.g. a new client):</p>
     <ol class="step-list">
@@ -497,6 +511,27 @@
 
     <h3>Editing a Location</h3>
     <p>Tap the small <code>ℹ</code> button on any tile you created, or on the Travelling tile, to edit its settings. You cannot edit organisation-provided locations.</p>
+
+    <h3>Backing Up Your Personal Sites</h3>
+    <p>Personal sites you add manually are stored on your device only — they are not backed up to your organisation's system. If you get a new phone, reinstall the app, or use <strong>Clear All Data</strong>, your personal sites will be lost unless you export them first.</p>
+
+    <h4 style="margin-top:20px;color:#374151;">Exporting (backing up)</h4>
+    <ol class="step-list">
+        <li>Go to <strong>Settings</strong> and tap <strong>Export My Sites</strong>.</li>
+        <li>On mobile, your phone's share sheet will open — send the export code to yourself via Notes, email, or Messages so you have it safely stored.</li>
+        <li>On desktop, the code is copied to your clipboard automatically — paste it somewhere safe.</li>
+    </ol>
+
+    <h4 style="margin-top:20px;color:#374151;">Importing (restoring)</h4>
+    <ol class="step-list">
+        <li>Go to <strong>Settings</strong> and tap <strong>Import Sites</strong>.</li>
+        <li>Paste your export code into the text field.</li>
+        <li>Tap <strong>Import</strong>. Any sites already on the device with the same name will be skipped automatically to avoid duplicates.</li>
+    </ol>
+
+    <div class="tip">
+        <strong>💡 When to export:</strong> Export your sites before getting a new phone, before running <strong>Clear All Data</strong>, or any time you have added a significant number of manual locations and would not want to re-enter them.
+    </div>
 
     <h3>Site Safety Information</h3>
     <p>Tap the <code>ℹ</code> button on any location tile to open the site info panel. If your organisation has uploaded emergency procedures or hazard documentation for that site, a red <strong>🛡️ VIEW SITE SAFETY INFORMATION</strong> button will appear.</p>
@@ -568,6 +603,13 @@
         </div>
     </div>
     <p class="mock-caption">Starting a visit — duration set to 30 minutes, slide pill ready</p>
+
+    <h3>Pre-Visit Forms</h3>
+    <p>Some sites require you to complete a form <em>before</em> the visit begins. A common example is an odometer photo for travel — your organisation may require you to photograph your vehicle's odometer at the start and end of every trip.</p>
+    <p>When a pre-visit form is required, it will appear automatically after you slide the Start pill. Complete and submit the form as normal — the visit will then start immediately afterwards. You cannot skip this step.</p>
+    <div class="highlight">
+        <strong>This is not an error.</strong> If a form appears before your visit screen, it is intentional — your organisation requires this information before the visit can be logged as active. Submit the form and your visit will begin.
+    </div>
 
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2>5. During a Visit</h2>
@@ -813,7 +855,39 @@
     </div>
 
     <!-- ═══════════════════════════════════════════════════════ -->
-    <h2>11. In an Emergency</h2>
+    <h2>11. Settings</h2>
+
+    <p>The <strong>Settings</strong> screen is accessible from the main location list. From here you can update your personal details, contacts, and app configuration without running the full setup wizard again.</p>
+
+    <h3>What you can change in Settings</h3>
+    <ul>
+        <li><strong>Your name</strong> — must match your organisation's Staff list exactly (case-sensitive)</li>
+        <li><strong>Safety PIN and Duress PIN</strong> — change either at any time</li>
+        <li><strong>Emergency and Escalation Contact</strong> — names, phone numbers, and ntfy topics</li>
+        <li><strong>Vehicle information</strong> — registration and warrant/certificate of fitness expiry dates (if applicable)</li>
+        <li><strong>Personal sites</strong> — export and import your manually added locations (see Section 3)</li>
+    </ul>
+
+    <h3>Refresh Locations (Clear Cache &amp; Resync)</h3>
+    <p>If your location list appears out of date or is showing stale site names, tap <strong>Refresh Locations</strong> in Settings. This clears the cached site list and pulls a fresh copy from your organisation's system. Your manually added personal sites are not affected.</p>
+
+    <h3>Force App Update</h3>
+    <p>If your administrator has released a new version of the app and you are still seeing the old version — even after closing and reopening it — use <strong>Force App Update</strong> in Settings.</p>
+    <ol class="step-list">
+        <li>Go to <strong>Settings</strong> and tap <strong>Force App Update</strong>.</li>
+        <li>The app will clear all cached files, unregister its background service, and reload completely from the server.</li>
+        <li>After the reload, the app will be fully up to date.</li>
+    </ol>
+    <div class="highlight">
+        <strong>Your data is safe.</strong> Force App Update only clears the app's cached code and interface files. Your identity, PINs, contacts, personal sites, and any queued submissions are not affected.
+    </div>
+
+    <div class="warning">
+        <strong>⚠️ Clear All Data</strong> is a separate option at the bottom of Settings. This permanently deletes <em>everything</em> — your name, PINs, contacts, personal sites, and any queued submissions that have not yet been sent. Use this only if you are handing the device to a completely different person. There is no undo.
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2>12. In an Emergency</h2>
 
     <div class="warning">
         <h3 style="margin-top:0;">🚨 IMPORTANT — Read Before You Need It</h3>
@@ -922,6 +996,9 @@
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Cancel alarm (you're safe)</td><td style="padding:10px;border:1px solid #e5e7eb;">Hold "I Am Safe" → enter standard PIN</td></tr>
             <tr><td style="padding:10px;border:1px solid #e5e7eb;">Cancel alarm under duress</td><td style="padding:10px;border:1px solid #e5e7eb;">Hold "I Am Safe" → enter Duress PIN (silent DURESS alert sent)</td></tr>
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Sync new locations</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap Sync button on main screen</td></tr>
+            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Back up personal sites</td><td style="padding:10px;border:1px solid #e5e7eb;">Settings → <strong>Export My Sites</strong> → share or save the export code</td></tr>
+            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Restore personal sites to new device</td><td style="padding:10px;border:1px solid #e5e7eb;">Settings → <strong>Import Sites</strong> → paste export code</td></tr>
+            <tr><td style="padding:10px;border:1px solid #e5e7eb;">App showing old version after update</td><td style="padding:10px;border:1px solid #e5e7eb;">Settings → <strong>Force App Update</strong></td></tr>
         </tbody>
     </table>
 
