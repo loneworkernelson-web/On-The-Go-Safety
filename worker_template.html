@@ -3997,10 +3997,9 @@ function setQuickDuration(mins) {
  * Renders the Forms Library in a Two-Column Grid.
  */
 function openFormsLibrary() {
-    // GOLDEN FIX: Only flag as mid-visit if the user ISN'T on the Locked screen
-    // This allows workers to use the Forms button to depart if they choose.
-    const isLocked = document.getElementById('lockedPage').classList.contains('active');
-    isMidVisitUpdate = (state.activeVisit !== null && !isLocked); 
+    // Forms Library always treats an active visit as a mid-visit update.
+    // The depart pill is the only legitimate path to end a visit.
+    isMidVisitUpdate = (state.activeVisit !== null);
     
     const list = document.getElementById('formsLibraryList');
     if (!list) return;
