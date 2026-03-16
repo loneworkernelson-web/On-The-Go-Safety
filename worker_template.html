@@ -2842,7 +2842,7 @@ function loadFormAndShow(templateName, context = null) {
     //   Submit & End Visit  → slide pill (high-stakes, one-way action)
     //   Send Update         → short hold 800ms (deliberate but low-stakes)
     //   Submit Form         → short hold 500ms (standalone, no active visit)
-    const submitBtn = document.getElementById('btnSubmitRep');
+    const submitBtn = document.getElementById('btnSubmitRep') || document.getElementById('slideSubmitPill');
     if (submitBtn) {
         const footer = submitBtn.parentNode;
         console.log('[DIAG] buildReportForm pill: isMidVisitUpdate=' + isMidVisitUpdate + ' activeVisit=' + (state.activeVisit ? 'YES' : 'null') + ' isPreVisitForm=' + isPreVisitForm + ' template=' + templateName);
