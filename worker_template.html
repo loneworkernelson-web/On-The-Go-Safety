@@ -1842,6 +1842,7 @@ async function refreshBatteryLevel() {
 function submitReport() {
     if (isSubmitting) return;
     isSubmitting = true;
+    console.log('[DIAG] submitReport: isMidVisitUpdate=' + isMidVisitUpdate + ' isPreVisitForm=' + isPreVisitForm + ' activeVisit=' + (state.activeVisit ? 'YES' : 'null') + ' template=' + currentActiveTemplate);
 
     // REQUIRED FIELD GATE: validate before doing anything else
     if (!validateRequiredFields()) { isSubmitting = false; return; }
