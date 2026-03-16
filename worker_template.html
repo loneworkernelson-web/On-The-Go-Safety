@@ -1674,8 +1674,6 @@ function saveState() {
 // NAVIGATION
 // ============================================================================
 function navigate(page) {
-    console.log('[DIAG] navigate → ' + page + ' | isPreVisitForm=' + isPreVisitForm + ' isMidVisitUpdate=' + isMidVisitUpdate + ' activeVisit=' + (state.activeVisit ? 'YES' : 'null'));
-    console.trace();
     // Defensive: if something navigates away from the report page while a pre-visit
     // form is active, clean up stale flags so the app isn't permanently stuck.
     if (isPreVisitForm && page !== 'report') {
@@ -1842,7 +1840,6 @@ async function refreshBatteryLevel() {
 function submitReport() {
     if (isSubmitting) return;
     isSubmitting = true;
-    console.log('[DIAG] submitReport: isMidVisitUpdate=' + isMidVisitUpdate + ' isPreVisitForm=' + isPreVisitForm + ' activeVisit=' + (state.activeVisit ? 'YES' : 'null') + ' template=' + currentActiveTemplate);
 
     // REQUIRED FIELD GATE: validate before doing anything else
     if (!validateRequiredFields()) { isSubmitting = false; return; }
@@ -2726,7 +2723,6 @@ function buildReportForm(templateName, fieldArea) {
  * Resolves: Extra syntax braces, 1.8s hold integration, and context-aware population.
  */
 function loadFormAndShow(templateName, context = null) {
-    console.log('[DIAG] loadFormAndShow: template=' + templateName + ' isMidVisitUpdate=' + isMidVisitUpdate + ' isPreVisitForm=' + isPreVisitForm + ' activeVisit=' + (state.activeVisit ? 'YES' : 'null'));
     if (typeof dimTimer !== 'undefined') clearTimeout(dimTimer);
     deactivateBatterySaver();
 
@@ -2846,22 +2842,39 @@ function loadFormAndShow(templateName, context = null) {
     const submitBtn = document.getElementById('btnSubmitRep') || document.getElementById('slideSubmitPill');
     if (submitBtn) {
         const footer = submitBtn.parentNode;
-        console.log('[DIAG] buildReportForm pill: isMidVisitUpdate=' + isMidVisitUpdate + ' activeVisit=' + (state.activeVisit ? 'YES' : 'null') + ' isPreVisitForm=' + isPreVisitForm + ' template=' + templateName);
 
-        if (state.activeVisit && !isMidVisitUpdate) {
+        if (isPreVisitForm) {
+            // ── SLIDE PILL: Submit & Start ──
+            const pill = document.createElement('div');
+            pill.id        = 'slideSubmitPill';
+            pill.className = 'slide-action-pill flex-[2] relative bg-green-700 h-14 rounded-xl p-1 border border-green-900 flex items-center overflow-hidden shadow-lg';
+            pill.setAttribute('role', 'button');
+            pill.setAttribute('tabindex', '0');
+            pill.setAttribute('aria-label', 'Slide to submit and start');
+            pill.innerHTML = `
+                <div id="slideSubmitThumb" class="w-11 h-11 rounded-lg bg-white flex items-center justify-center shadow-xl z-20 pointer-events-none flex-shrink-0">
+                    <svg class="w-5 h-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
+                </div>
+                <div class="w-full flex flex-col items-center justify-center pointer-events-none">
+                    <span id="slideSubmitLabel" class="text-sm font-black text-white uppercase tracking-widest transition-opacity duration-200">Slide to Submit &amp; Start</span>
+                </div>`;
+            footer.replaceChild(pill, submitBtn);
+            setTimeout(() => initSlidePill('slideSubmitPill', 'slideSubmitThumb', 'slideSubmitLabel', submitReport), 50);
+
+        } else if (state.activeVisit && !isMidVisitUpdate) {
             // ── SLIDE PILL: Submit & End Visit ──
             const pill = document.createElement('div');
             pill.id        = 'slideSubmitPill';
             pill.className = 'slide-action-pill flex-[2] relative bg-green-700 h-14 rounded-xl p-1 border border-green-900 flex items-center overflow-hidden shadow-lg';
             pill.setAttribute('role', 'button');
             pill.setAttribute('tabindex', '0');
-            pill.setAttribute('aria-label', 'Slide to submit and end visit');
+            pill.setAttribute('aria-label', 'Slide to submit and end');
             pill.innerHTML = `
                 <div id="slideSubmitThumb" class="w-11 h-11 rounded-lg bg-white flex items-center justify-center shadow-xl z-20 pointer-events-none flex-shrink-0">
                     <svg class="w-5 h-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
                 </div>
                 <div class="w-full flex flex-col items-center justify-center pointer-events-none">
-                    <span id="slideSubmitLabel" class="text-sm font-black text-white uppercase tracking-widest transition-opacity duration-200">Slide to Submit &amp; End Visit</span>
+                    <span id="slideSubmitLabel" class="text-sm font-black text-white uppercase tracking-widest transition-opacity duration-200">Slide to Submit &amp; End</span>
                 </div>`;
             footer.replaceChild(pill, submitBtn);
             setTimeout(() => initSlidePill('slideSubmitPill', 'slideSubmitThumb', 'slideSubmitLabel', submitReport), 50);
@@ -4446,10 +4459,8 @@ async function startVisit(isSkipCheck = false) {
     // This allows the pre-visit form gate to apply to travel sessions without a real site row.
     if (isTravelMode) {
         const travelSentinel = (state.locations || []).find(l => l.name === '_travel');
-        console.log('[DIAG] travelSentinel=' + (travelSentinel ? JSON.stringify({name:travelSentinel.name,preVisitForm:travelSentinel.preVisitForm}) : 'NOT FOUND'));
         if (travelSentinel && travelSentinel.preVisitForm) loc.preVisitForm = true;
     }
-    console.log('[DIAG] pre-visit gate: isPreVisitFormDone=' + isPreVisitFormDone + ' loc.preVisitForm=' + loc.preVisitForm + ' travelNoReport=' + state.travelNoReport);
     const durationMins = state.visitDurationMinutes || 0;
     const isHighRisk = document.getElementById('chkHighRisk')?.checked || false;
 
@@ -4458,7 +4469,6 @@ async function startVisit(isSkipCheck = false) {
     // Skip entirely if the worker has toggled 'No Report Required' for this trip.
     if (!isPreVisitFormDone && loc.preVisitForm && !state.travelNoReport) {
         const preTemplate = (state.globalForms || []).find(f => f.formTiming === 'pre-visit');
-        console.log('[DIAG] preTemplate=' + (preTemplate ? preTemplate.name : 'NOT FOUND') + ' globalForms count=' + (state.globalForms||[]).length);
         if (preTemplate) {
             if (btn) delete btn.dataset.starting;
             isPreVisitForm = true;
@@ -8284,56 +8294,5 @@ document.addEventListener("visibilitychange", async () => {
     
 </script>
 
-<!-- ============================================================ -->
-<!-- ON-SCREEN DEBUG PANEL — REMOVE BEFORE PRODUCTION           -->
-<!-- ============================================================ -->
-<div id="diagPanel" style="
-    position:fixed; bottom:0; left:0; right:0; z-index:99999;
-    max-height:40vh; overflow-y:auto;
-    background:rgba(0,0,0,0.85); color:#fbbf24;
-    font:11px/1.4 monospace; padding:6px 8px;
-    border-top:2px solid #fbbf24;
-    pointer-events:none;
-"></div>
-<button onclick="document.getElementById('diagPanel').innerHTML=''" style="
-    position:fixed; bottom:0; right:0; z-index:100000;
-    background:#fbbf24; color:#000; font:bold 11px monospace;
-    padding:2px 8px; border:none; pointer-events:auto;
-">CLR</button>
-<script>
-(function() {
-    const panel = document.getElementById('diagPanel');
-    const _origLog = console.log.bind(console);
-    const _origTrace = console.trace.bind(console);
-    const _origError = console.error.bind(console);
-    function appendDiag(msg) {
-        const line = document.createElement('div');
-        line.textContent = msg;
-        panel.appendChild(line);
-        panel.scrollTop = panel.scrollHeight;
-    }
-    console.log = function() {
-        const msg = Array.from(arguments).join(' ');
-        if (msg.startsWith('[DIAG]')) appendDiag(msg);
-        _origLog.apply(console, arguments);
-    };
-    console.error = function() {
-        const msg = '[ERR] ' + Array.from(arguments).join(' ');
-        appendDiag(msg);
-        _origError.apply(console, arguments);
-    };
-    // Capture stack traces and append after the triggering [DIAG] line
-    const _origTrace2 = console.trace;
-    console.trace = function() {
-        _origTrace.apply(console, arguments);
-        try {
-            throw new Error('trace');
-        } catch(e) {
-            const lines = e.stack.split('\n').slice(2, 7); // 5 frames
-            lines.forEach(l => appendDiag('  ' + l.trim()));
-        }
-    };
-})();
-</script>
 </body>
 </html>
