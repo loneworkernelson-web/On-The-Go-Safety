@@ -2844,6 +2844,7 @@ function loadFormAndShow(templateName, context = null) {
     const submitBtn = document.getElementById('btnSubmitRep');
     if (submitBtn) {
         const footer = submitBtn.parentNode;
+        console.log('[DIAG] buildReportForm pill: isMidVisitUpdate=' + isMidVisitUpdate + ' activeVisit=' + (state.activeVisit ? 'YES' : 'null') + ' isPreVisitForm=' + isPreVisitForm + ' template=' + templateName);
 
         if (state.activeVisit && !isMidVisitUpdate) {
             // ── SLIDE PILL: Submit & End Visit ──
