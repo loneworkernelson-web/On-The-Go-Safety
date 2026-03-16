@@ -2567,6 +2567,15 @@ function buildReportForm(templateName, fieldArea) {
  cleanLabel = cleanLabel.replace(unitMatch[0], '').trim();
  }
 
+ // Set identifying attributes here — the outer post-switch block skips
+ // NUMBER inputs because wrapper.contains(input) is already true by then.
+ input.id = fieldId;
+ input.setAttribute('data-key', cleanLabel);
+ if (isRequired) {
+   input.setAttribute('data-required', 'true');
+   input.setAttribute('data-label', cleanLabel);
+ }
+
  wrapper.appendChild(group);
  break;
 
