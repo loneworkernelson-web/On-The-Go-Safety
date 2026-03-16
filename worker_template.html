@@ -2725,6 +2725,7 @@ function buildReportForm(templateName, fieldArea) {
  * Resolves: Extra syntax braces, 1.8s hold integration, and context-aware population.
  */
 function loadFormAndShow(templateName, context = null) {
+    console.log('[DIAG] loadFormAndShow: template=' + templateName + ' isMidVisitUpdate=' + isMidVisitUpdate + ' isPreVisitForm=' + isPreVisitForm + ' activeVisit=' + (state.activeVisit ? 'YES' : 'null'));
     if (typeof dimTimer !== 'undefined') clearTimeout(dimTimer);
     deactivateBatterySaver();
 
