@@ -498,36 +498,119 @@
     <h3>Editing a Location</h3>
     <p>Tap the small <code>ℹ</code> button on any tile you created, or on the Travelling tile, to edit its settings. You cannot edit organisation-provided locations.</p>
 
-    <h3>Site Safety Information</h3>
-    <p>Tap the <code>ℹ</code> button on any location tile to open the site info panel. If your organisation has uploaded emergency procedures or hazard documentation for that site, a red <strong>🛡️ VIEW SITE SAFETY INFORMATION</strong> button will appear.</p>
-    <p>Tapping it opens a self-contained safety page in your browser — no Google account required. The page includes any photos or documents your organisation has attached to that site.</p>
-    <p>If no procedures have been uploaded yet, the button is replaced with a prompt to submit documentation. Tap it to open the procedures form for that site.</p>
+    <h3>The Site Info Panel</h3>
+    <p>Tap the <code>ℹ</code> button on any location tile to open the site info panel. This shows everything your organisation has recorded about that site and gives you quick access to contact the site and get directions.</p>
 
-    <div class=\"mock-wrap\">
-        <div class=\"mock-phone\" style=\"width:260px;\">
-            <div class=\"mock-statusbar\"><span>9:41 AM</span><span>▐▐▐ 🔋</span></div>
-            <div class=\"mock-header\">
-                <div class=\"mock-header-left\"><div class=\"mock-logo-dot\"></div><span>%%ORG_NAME%%</span></div>
-            </div>
-            <div class=\"mock-body-pad\">
-                <div style=\"margin-bottom:8px;\">
-                    <div style=\"font-size:8px;color:#60a5fa;font-weight:900;text-transform:uppercase;letter-spacing:0.1em;\">Site Name</div>
-                    <div style=\"font-size:14px;font-weight:800;color:white;\">City Library</div>
+    <div class="mock-with-text">
+        <div>
+            <h4 style="margin-top:0;color:#374151;">What you'll see</h4>
+            <ul>
+                <li><strong>Site Name, Company &amp; Address</strong> — as recorded by your organisation.</li>
+                <li><strong>📞 Call</strong> — dials the site contact directly. Only appears if a contact phone number has been set.</li>
+                <li><strong>✉️ Email</strong> — opens an email to the site contact. Only appears if a contact email has been set.</li>
+                <li><strong>🗺️ Navigate</strong> — opens Google Maps with the site address pre-filled, ready for turn-by-turn directions.</li>
+                <li><strong>Contact</strong> — the contact name and phone number for the site, if provided.</li>
+                <li><strong>Notes</strong> — any site-specific notes your organisation has added (e.g. access instructions, parking details).</li>
+                <li><strong>📄 Report Required toggle</strong> — your personal setting for this site. When on, a departure report is requested at the end of every visit. You can change this at any time without affecting other workers.</li>
+            </ul>
+        </div>
+        <div class="mock-wrap">
+            <div class="mock-phone" style="width:260px;">
+                <div class="mock-statusbar"><span>9:41 AM</span><span>▐▐▐ 🔋</span></div>
+                <div class="mock-header">
+                    <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
                 </div>
-                <div style=\"margin-bottom:8px;\">
-                    <div style=\"font-size:8px;color:#9ca3af;font-weight:900;text-transform:uppercase;letter-spacing:0.1em;\">Address</div>
-                    <div style=\"font-size:11px;color:white;\">123 Main St, Auckland</div>
-                </div>
-                <div style=\"background:#dc2626;border-radius:14px;padding:14px;text-align:center;font-size:11px;font-weight:900;color:white;\">
-                    🛡️ VIEW SITE SAFETY INFORMATION
+                <div class="mock-body-pad">
+                    <div style="margin-bottom:6px;">
+                        <div style="font-size:8px;color:#60a5fa;font-weight:900;text-transform:uppercase;letter-spacing:0.1em;">Site Name</div>
+                        <div style="font-size:13px;font-weight:800;color:white;">City Library</div>
+                        <div style="font-size:9px;color:#9ca3af;">123 Main St, Auckland</div>
+                    </div>
+                    <div style="display:flex;gap:6px;margin-bottom:6px;">
+                        <div style="flex:1;background:#15803d;border-radius:8px;padding:8px;text-align:center;font-size:9px;font-weight:900;color:white;">📞 Call</div>
+                        <div style="flex:1;background:#1d4ed8;border-radius:8px;padding:8px;text-align:center;font-size:9px;font-weight:900;color:white;">✉️ Email</div>
+                    </div>
+                    <div style="background:#1e40af;border-radius:8px;padding:8px;text-align:center;font-size:9px;font-weight:900;color:white;margin-bottom:6px;">🗺️ Navigate</div>
+                    <div style="background:#dc2626;border-radius:8px;padding:10px;text-align:center;font-size:9px;font-weight:900;color:white;margin-bottom:6px;">🛡️ VIEW SITE SAFETY INFORMATION</div>
+                    <div style="background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px;font-size:9px;color:#d1d5db;">
+                        <span style="color:#9ca3af;">📄 Report Required</span>
+                        <span style="float:right;color:#3b82f6;font-weight:900;">ON</span>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    <p class=\"mock-caption\">Site info panel — tap the red button to open emergency procedures</p>
+    <p class="mock-caption">Site info panel — contact buttons, navigate, safety info, and report toggle</p>
+
+    <h3>Site Safety Information</h3>
+    <p>The site info panel includes a dedicated safety information section:</p>
+    <ul>
+        <li>If your organisation has uploaded emergency procedures or hazard documentation, a red <strong>🛡️ VIEW SITE SAFETY INFORMATION</strong> button appears. Tap it to open the safety page in your browser — no Google account required. The page includes any photos or documents attached to that site.</li>
+        <li>If no procedures have been uploaded yet, the button is replaced with a greyed-out prompt: <em>No Site Safety Information found — Click to submit documentation.</em> Tap it to open the site procedures form, fill in the details, and submit. Your organisation's safety monitor will receive it immediately.</li>
+    </ul>
+    <div class="tip">
+        <strong>💡 Check before you visit:</strong> Get into the habit of opening the site info panel and reviewing safety information before starting any visit to an unfamiliar site. It takes seconds and may tell you about hazards, access codes, or emergency assembly points.
+    </div>
 
     <!-- ═══════════════════════════════════════════════════════ -->
-    <h2>4. Starting a Visit</h2>
+    <h2>4. The Safety Hub</h2>
+
+    <p>The <strong>Safety Hub</strong> is accessible at any time from the toolbar button (📚) at the top right of the main screen. It gives you quick access to shared resources and the notice archive — you do not need to be in an active visit to use it.</p>
+
+    <div class="mock-with-text">
+        <div>
+            <h3 style="margin-top:0;">Resources tab</h3>
+            <p>The Resources tab lists files and documents that your organisation has shared with all staff. This may include:</p>
+            <ul>
+                <li>Policy documents</li>
+                <li>Safety procedures</li>
+                <li>Forms or reference guides</li>
+                <li>Any other files your organisation has made available</li>
+            </ul>
+            <p>The <strong>Worker User Guide</strong> (this document) is always listed here as a built-in resource — tap it to open the guide in your browser at any time.</p>
+            <p>Each resource card shows the category, title, and file type. Tap any card to open it. Files open in your browser; if your phone prompts to download, tap Open or Allow.</p>
+        </div>
+        <div class="mock-wrap">
+            <div class="mock-phone" style="width:260px;">
+                <div class="mock-statusbar"><span>9:41 AM</span><span>▐▐▐ 🔋</span></div>
+                <div class="mock-header">
+                    <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
+                </div>
+                <div class="mock-body-pad">
+                    <div style="font-size:13px;font-weight:900;color:white;margin-bottom:8px;">Safety Hub</div>
+                    <div style="display:flex;gap:12px;border-bottom:1px solid #374151;margin-bottom:10px;padding-bottom:6px;">
+                        <span style="font-size:9px;font-weight:900;color:#3b82f6;border-bottom:2px solid #3b82f6;padding-bottom:4px;letter-spacing:0.08em;">RESOURCES</span>
+                        <span style="font-size:9px;font-weight:900;color:#6b7280;letter-spacing:0.08em;">NOTICE ARCHIVE</span>
+                    </div>
+                    <div style="background:#1e3a5f;border:1px solid #1d4ed8;border-radius:8px;padding:8px;margin-bottom:6px;">
+                        <div style="font-size:8px;color:#60a5fa;font-weight:900;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:2px;">📘 Built-in</div>
+                        <div style="font-size:10px;font-weight:800;color:white;">Worker User Guide</div>
+                        <div style="font-size:9px;color:#93c5fd;margin-top:4px;font-weight:900;">Open Guide ↗</div>
+                    </div>
+                    <div style="background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px;margin-bottom:6px;">
+                        <div style="font-size:8px;color:#60a5fa;font-weight:900;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:2px;">Health &amp; Safety</div>
+                        <div style="font-size:10px;font-weight:800;color:white;">Site Entry Procedures</div>
+                        <div style="font-size:9px;color:#93c5fd;margin-top:4px;font-weight:900;">Open PDF ↗</div>
+                    </div>
+                    <div style="background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px;">
+                        <div style="font-size:8px;color:#60a5fa;font-weight:900;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:2px;">Policy</div>
+                        <div style="font-size:10px;font-weight:800;color:white;">Lone Worker Policy 2026</div>
+                        <div style="font-size:9px;color:#93c5fd;margin-top:4px;font-weight:900;">Open Document ↗</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <p class="mock-caption">Safety Hub — Resources tab showing built-in guide and org-shared files</p>
+
+    <h3>Notice Archive tab</h3>
+    <p>The Notice Archive stores historical notices that your organisation has sent through the app. These may include policy updates, safety alerts, or general announcements. Notices are shown in reverse date order — most recent first.</p>
+    <div class="tip">
+        <strong>💡 Resources are synced:</strong> Tap the <strong>Sync</strong> button on the main screen to download the latest resources and notices. Once synced, resources are available offline.
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2>5. Starting a Visit</h2>
 
     <div class="mock-with-text">
         <div>
@@ -570,7 +653,7 @@
     <p class="mock-caption">Starting a visit — duration set to 30 minutes, slide pill ready</p>
 
     <!-- ═══════════════════════════════════════════════════════ -->
-    <h2>5. During a Visit</h2>
+    <h2>6. During a Visit</h2>
 
     <p>Once a visit is active, the app moves to a <strong>locked screen</strong> — this is intentional. It conserves your battery and keeps the GPS running in the background.</p>
 
@@ -651,7 +734,7 @@
     <p class="mock-caption">Battery Saver mode — GPS and safety monitoring continue in background</p>
 
     <!-- ═══════════════════════════════════════════════════════ -->
-    <h2>6. Ending a Visit</h2>
+    <h2>7. Ending a Visit</h2>
 
     <ol class="step-list">
         <li>Open the app — the locked screen shows the <strong>"End Visit" pill</strong> at the bottom. Slide it from left to right to begin the departure process.</li>
@@ -704,7 +787,7 @@
     <p class="mock-caption">Visit complete — green toast confirms the report was sent</p>
 
     <!-- ═══════════════════════════════════════════════════════ -->
-    <h2>7. Travel Mode</h2>
+    <h2>8. Travel Mode</h2>
 
     <p>Use the <strong>Travelling</strong> tile for time spent in transit between locations.</p>
 
@@ -719,7 +802,7 @@
     </div>
 
     <!-- ═══════════════════════════════════════════════════════ -->
-    <h2>8. Settings &amp; Preferences</h2>
+    <h2>9. Settings &amp; Preferences</h2>
 
     <p>Tap the <strong>Settings</strong> icon (⚙) from the main screen to access your personal configuration, visit history, and diagnostic tools.</p>
 
@@ -769,7 +852,7 @@
     <p>The <strong>Diagnostics</strong> section (tap to expand) shows technical information about the app's current state — GPS accuracy, sync status, outbox queue, and more. You will not normally need to use this, but your manager or IT support may ask you to open it if they are troubleshooting an issue.</p>
 
     <!-- ═══════════════════════════════════════════════════════ -->
-    <h2>9. Safety Check-ins</h2>
+    <h2>10. Safety Check-ins</h2>
 
     <p>If your organisation has enabled periodic welfare check-ins, the app will chime and display a prompt at regular intervals while a visit is active.</p>
 
@@ -800,16 +883,76 @@
     </ul>
 
     <!-- ═══════════════════════════════════════════════════════ -->
-    <h2>10. Vehicle Safety Checks</h2>
+    <h2>11. Vehicle Safety Checks</h2>
 
-    <p>Your organisation tracks vehicle safety through the app.</p>
+    <p>If your organisation uses vehicle tracking, the app monitors your vehicle's %%VEHICLE_TERM%% expiry date and ensures periodic safety checks are completed. There are three levels of alert, depending on your vehicle's status.</p>
+
+    <h3>The orange nag bar</h3>
+    <p>An orange bar appears at the top of the main screen when a vehicle safety check is overdue or has not yet been recorded. It shows one of two messages:</p>
     <ul>
-        <li><strong>%%VEHICLE_TERM%% Expiry:</strong> If your vehicle's %%VEHICLE_TERM%% is expired or approaching its expiry date, the app will display a warning. You may be blocked from starting travel until it is renewed.</li>
-        <li><strong>Periodic Checks:</strong> You must complete a vehicle safety check at the interval set by your organisation. To complete one, tap <strong>"Quick Notes" → "Vehicle Safety Check"</strong> and fill in the required fields.</li>
+        <li><strong>⚠️ Vehicle Check Required</strong> — no vehicle safety check has ever been submitted from this device.</li>
+        <li><strong>⚠️ Vehicle Check Overdue — Tap to Complete</strong> — it has been more than the required interval since your last check.</li>
     </ul>
+    <p>Tap the bar to open the Vehicle Safety Check form immediately. Once submitted, the bar disappears until the next interval is due.</p>
+
+    <div class="mock-wrap">
+        <div class="mock-phone" style="width:260px;">
+            <div class="mock-statusbar"><span>9:41 AM</span><span>▐▐▐ 🔋</span></div>
+            <div style="background:#ea580c;color:white;font-size:9px;font-weight:900;padding:7px 14px;text-align:center;letter-spacing:0.04em;">⚠️ Vehicle Check Overdue — Tap to Complete</div>
+            <div class="mock-header">
+                <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
+            </div>
+            <div class="mock-body">
+                <div class="mock-location-tile">
+                    <div><div class="mock-tile-name">📍 City Library</div><div class="mock-tile-sub">123 Main St, Auckland</div></div>
+                    <div class="mock-tile-info">ℹ</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <p class="mock-caption">Orange nag bar — tap to open the Vehicle Safety Check form</p>
+
+    <h3>%%VEHICLE_TERM%% expiry warning (14 days)</h3>
+    <p>If your vehicle's %%VEHICLE_TERM%% is due to expire within 14 days, a warning is shown <strong>every time you open the app</strong> (it won't be suppressed between sessions — the reminder is intentional). The warning shows how many days remain.</p>
+    <p>When you attempt to start a Travel trip with fewer than 14 days remaining, the same warning appears as a <strong>travel gate</strong>. You must tick the acknowledgment checkbox confirming the %%VEHICLE_TERM%% is still valid for this trip, then tap <strong>Continue</strong> to proceed.</p>
+    <div class="tip">
+        <strong>💡 Book your renewal early:</strong> Once you've renewed your %%VEHICLE_TERM%%, submit a Vehicle Safety Check form to update the app's records. The warning will stop appearing once the new expiry date is recorded.
+    </div>
+
+    <h3>%%VEHICLE_TERM%% expired — Vehicle Grounded</h3>
+    <p>If your %%VEHICLE_TERM%% expiry date has passed, the app shows a <strong>Vehicle Grounded</strong> screen and <strong>blocks you from starting any Travel trip</strong> until the situation is resolved. You cannot override or dismiss this block.</p>
+
+    <div class="mock-wrap">
+        <div class="mock-phone" style="width:260px;">
+            <div class="mock-statusbar"><span>9:41 AM</span><span>▐▐▐ 🔋</span></div>
+            <div class="mock-header">
+                <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
+            </div>
+            <div class="mock-body">
+                <div class="mock-modal-overlay">
+                    <div class="mock-modal-card" style="text-align:center;">
+                        <div style="font-size:22px;margin-bottom:4px;">🚫</div>
+                        <div style="font-size:14px;font-weight:900;color:#f87171;margin-bottom:6px;">Vehicle Grounded</div>
+                        <div style="font-size:9px;color:#d1d5db;margin-bottom:8px;">Your %%VEHICLE_TERM%% has expired. You must not use your vehicle for work travel until it is renewed.</div>
+                        <div style="font-size:8px;color:#f59e0b;line-height:1.4;">Once renewed, submit a <strong>Vehicle Safety Check</strong> form to restore travel access.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <p class="mock-caption">Vehicle Grounded modal — travel is blocked until %%VEHICLE_TERM%% is renewed and a Vehicle Safety Check is submitted</p>
+
+    <h3>Completing a Vehicle Safety Check</h3>
+    <p>A Vehicle Safety Check is a standard form in the app. To complete one:</p>
+    <ol class="step-list">
+        <li>Tap the orange nag bar if it is showing, <strong>or</strong> tap <strong>📋 Forms</strong> (during a visit) and select <strong>Vehicle Safety Check</strong>.</li>
+        <li>Fill in all required fields — this typically includes the vehicle registration, odometer reading, and %%VEHICLE_TERM%% expiry date.</li>
+        <li>Slide the <strong>Submit</strong> pill to send the form.</li>
+    </ol>
+    <p>Once submitted, the app records the new %%VEHICLE_TERM%% expiry date and clears any warnings or blocks. If you are offline when you submit, the form is queued and sent automatically when connectivity is restored.</p>
 
     <!-- ═══════════════════════════════════════════════════════ -->
-    <h2>11. Instant Push Notifications (ntfy)</h2>
+    <h2>12. Instant Push Notifications (ntfy)</h2>
 
     <h3>Why this exists</h3>
     <p>When an alarm fires, your contacts are notified by email. Email is reliable, but it has a problem: most people don't have email open on their phone during the day, and notifications can be delayed by minutes or silenced entirely.</p>
@@ -864,7 +1007,7 @@
     </div>
 
     <!-- ═══════════════════════════════════════════════════════ -->
-    <h2>12. In an Emergency</h2>
+    <h2>13. In an Emergency</h2>
 
     <div class="warning">
         <h3 style="margin-top:0;">🚨 IMPORTANT — Read Before You Need It</h3>
