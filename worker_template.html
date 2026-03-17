@@ -2087,20 +2087,12 @@ function activateBatterySaver() {
  if (main) main.style.display = 'none';
 
   // requestFullscreen() from a setTimeout is rejected by Android Chrome (no user
-  // gesture). We attempt it immediately as best-effort, then register a one-time
-  // touchstart on the overlay itself — the first finger contact IS a valid user
-  // gesture, so the second attempt will be accepted and the system nav bar hides.
+  // gesture). Attempt immediately as best-effort; the lockedPage touchstart listener
+  // (wired in enterLockedScreen) will have pre-armed fullscreen from a real gesture
+  // before the saver activates in most cases.
   const el = document.documentElement;
   const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
   if (rfs) rfs.call(el).catch(() => {});
-  if (rfs && !document.fullscreenElement) {
-    const _fsOnTouch = () => {
-      if (isBatterySaverActive && !document.fullscreenElement) {
-        rfs.call(el).catch(() => {});
-      }
-    };
-    saver.addEventListener('touchstart', _fsOnTouch, { once: true, passive: true });
-  }
 
  // Black out the Android status bar by setting theme-color to #000.
  // Works without a user gesture — blends the status bar with the black overlay
@@ -3292,6 +3284,21 @@ function enterLockedScreen() {
  // Note: WakeLock is automatically released when the page is hidden; the
  // visibilitychange handler re-acquires it when the page returns to the foreground.
  if (typeof requestWakeLock === 'function') requestWakeLock();
+
+  // Pre-arm fullscreen from a user gesture on the locked screen so that when
+  // activateBatterySaver() fires from its setTimeout, fullscreen is already
+  // active and the system nav bar is hidden before the overlay appears.
+  // { once: true } — re-armed each time enterLockedScreen() is called.
+  const _lockedEl = document.getElementById('lockedPage');
+  const _docEl = document.documentElement;
+  const _rfsArm = _docEl.requestFullscreen || _docEl.webkitRequestFullscreen || _docEl.mozRequestFullScreen;
+  if (_lockedEl && _rfsArm) {
+    _lockedEl.addEventListener('touchstart', function _armFs() {
+      if (!document.fullscreenElement) {
+        _rfsArm.call(_docEl).catch(() => {});
+      }
+    }, { once: true, passive: true });
+  }
 
  startWelfareChecks(); // Only fires if CONFIG.checkinEnabled — no-op otherwise
  
