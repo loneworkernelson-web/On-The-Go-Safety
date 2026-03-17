@@ -805,14 +805,12 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <button onclick="navigate('main')" aria-label="Close settings" class="text-3xl text-gray-400 hover:text-white px-2">×</button>
  </div>
  <div class="content-area pb-24">
- <!-- Restart Wizard Prompt -->
- <div class="bg-blue-900/30 border border-blue-500/30 p-3 rounded mb-4">
- <p class="text-xs text-blue-200 font-bold">Re-run the setup wizard to change details?</p>
- <button onclick="startWizard()" class="mt-2 text-xs bg-blue-600 px-2 py-1 rounded font-bold">Restart Wizard</button>
- </div>
- 
+
  <div class="mb-6">
- <h2 class="text-xl font-bold text-blue-400 mb-4">Worker Profile</h2>
+ <div class="flex items-baseline justify-between mb-4">
+ <h2 class="text-xl font-bold text-blue-400">Worker Profile</h2>
+ <button onclick="startWizard()" class="text-xs text-blue-400 hover:text-blue-300 underline underline-offset-2">Restart setup wizard →</button>
+ </div>
  <label class="setting-label lbl-blue">Full Name</label>
  <input id="setName" type="text" class="form-input">
  <label class="setting-label lbl-blue">Mobile Number</label>
@@ -834,7 +832,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <input id="setEscNtfy" type="text" placeholder="ntfy topic (optional push alerts)" autocomplete="off" autocorrect="off" spellcheck="false" class="form-input font-mono text-sm">
  </div>
  <div class="mb-6">
- <h2 class="text-xl font-bold text-purple-400 mb-4">Advanced</h2>
+ <h2 class="text-xl font-bold text-purple-400 mb-4">Preferences</h2>
  <div class="bg-gray-900 p-4 rounded-xl mb-4">
  <label class="flex items-center gap-3 cursor-pointer">
  <input type="checkbox" id="setAdvanced" onchange="toggleAdvancedGPS(this.checked)" class="w-6 h-6 rounded text-blue-600">
@@ -863,9 +861,26 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  </div>
  </div>
 
- <!-- System Info Section -->
+ <!-- Visit History Section -->
  <div class="mb-6">
- <h2 class="text-xl font-bold text-gray-400 mb-4">System Info</h2>
+ <h2 class="text-xl font-bold text-yellow-400 mb-4">Visit History</h2>
+ <div id="visitHistoryList" class="setting-card border-gray-600">
+ <p class="text-xs text-gray-500 italic text-center py-2">No visits recorded yet.</p>
+ </div>
+ </div>
+
+ <!-- Diagnostics Accordion -->
+ <div class="mb-6">
+ <button onclick="toggleDiagnostics()" id="diagnosticsToggle"
+ class="w-full flex items-center justify-between text-xl font-bold text-gray-400 mb-2 focus:outline-none">
+ <span>Diagnostics</span>
+ <span id="diagnosticsChevron" class="text-base transition-transform duration-200">▼</span>
+ </button>
+ <div id="diagnosticsPanel" class="hidden space-y-6">
+
+ <!-- System Info -->
+ <div>
+ <h3 class="text-sm font-bold text-gray-500 uppercase tracking-widest mb-3">System Info</h3>
  <div class="setting-card border-gray-600">
  <label class="setting-label lbl-gray">Backend Connection</label>
  <input id="setBackendUrl" disabled class="form-input-card text-xs font-mono text-gray-400 mb-2" value="">
@@ -883,23 +898,19 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div id="syncStatus" class="text-sm font-mono text-gray-400">Checking...</div>
  </div>
  </div>
- <div class="flex gap-2">
- <button onclick="forceSync(true)" class="flex-1 bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs font-bold text-white ">Force Sync</button>
- <button onclick="clearFormsCache()" class="flex-1 bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs font-bold text-white ">Clear Cache</button>
- </div>
+ <button onclick="forceSync(true)" class="w-full bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs font-bold text-white mb-2">Force Sync</button>
  <button onclick="forceAppUpdate()"
- class="w-full mt-2 bg-orange-900/40 hover:bg-orange-900/60 border border-orange-700/50 py-2 rounded text-xs font-bold text-orange-300 tracking-widest">
+ class="w-full bg-orange-900/40 hover:bg-orange-900/60 border border-orange-700/50 py-2 rounded text-xs font-bold text-orange-300 tracking-widest">
  🔄 Force App Update
  </button>
  <p class="text-xs text-gray-500 mt-1.5 italic">Clears all cached app files and reloads from the server. Use if the app looks wrong after an update. Your settings and registration are preserved.</p>
  </div>
  </div>
- 
- <!-- Outbox Diagnostic Panel -->
- <div class="mb-6">
- <h2 class="text-xl font-bold text-gray-400 mb-4">Event Outbox</h2>
+
+ <!-- Event Outbox -->
+ <div>
+ <h3 class="text-sm font-bold text-gray-500 uppercase tracking-widest mb-3">Event Outbox</h3>
  <div class="setting-card border-gray-600">
- <!-- Summary row -->
  <div class="flex gap-2 mb-3">
  <div class="flex-1 text-center">
  <div class="text-xs text-gray-400 font-bold mb-1">Pending</div>
@@ -914,20 +925,19 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div id="outboxLastSent" class="text-xs font-mono text-gray-300">–</div>
  </div>
  </div>
- <!-- Recent events list -->
  <div id="outboxHistory" class="text-xs font-mono text-gray-400 max-h-36 overflow-y-auto space-y-1 mb-3 bg-gray-900/50 rounded-lg p-2">
  <div class="text-gray-600 text-center py-2">Loading…</div>
  </div>
  <button onclick="outboxProcess(); showToast('🔄 Flushing outbox…')"
- class="w-full bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs font-bold text-white ">
+ class="w-full bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs font-bold text-white">
  Flush Outbox Now
  </button>
  </div>
  </div>
 
- <!-- Contact Test Alert -->
- <div class="mb-6">
- <h2 class="text-xl font-bold text-gray-400 mb-4">Contact Verification</h2>
+ <!-- Contact Verification -->
+ <div>
+ <h3 class="text-sm font-bold text-gray-500 uppercase tracking-widest mb-3">Contact Verification</h3>
  <div class="setting-card border-gray-600">
  <p class="text-xs text-gray-300 mb-3 leading-relaxed">Send a real test alert to your configured emergency contacts to verify their email addresses are correct and alerts are being delivered.</p>
  <div id="testAlertResult" class="hidden text-xs font-bold rounded-lg px-3 py-2 mb-3"></div>
@@ -936,6 +946,9 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  📧 Send Test Alert to Contacts
  </button>
  </div>
+ </div>
+
+ </div><!-- end diagnosticsPanel -->
  </div>
 
  <div class="space-y-3">
@@ -5689,6 +5702,15 @@ function _initApp() {
 // ============================================================================
 // PHASE 1: SETTINGS PAGE FUNCTIONS
 // ============================================================================
+function toggleDiagnostics() {
+ const panel = document.getElementById('diagnosticsPanel');
+ const chevron = document.getElementById('diagnosticsChevron');
+ if (!panel) return;
+ const isOpen = !panel.classList.contains('hidden');
+ panel.classList.toggle('hidden', isOpen);
+ if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(180deg)';
+}
+
 function populateSettingsForm() {
  if (!state || !state.worker) return;
  const s = state.worker;
