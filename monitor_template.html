@@ -691,12 +691,11 @@ function fetchData() {
         script.remove();
         delete window[cbName];
         failureCount++;
-        if (failureCount >= MAX_FAILURES) { stopPollingAndLock(); return; }
         if (statusLabel) {
             statusLabel.textContent = "● RECONNECTING...";
             statusLabel.className   = "text-orange-500 animate-pulse font-black text-xs";
         }
-    }, 15000);
+    }, 25000);
 
     window[cbName] = function(data) {
         clearTimeout(timeout);
@@ -729,7 +728,6 @@ function fetchData() {
         script.remove();
         delete window[cbName];
         failureCount++;
-        if (failureCount >= MAX_FAILURES) { stopPollingAndLock(); return; }
         if (statusLabel) {
             statusLabel.textContent = "● RECONNECTING...";
             statusLabel.className   = "text-orange-500 animate-pulse font-black text-xs";
@@ -1054,7 +1052,7 @@ function renderGrid() {
                         <h3 class="font-bold text-white truncate max-w-[150px] cursor-pointer hover:text-blue-400 transition"
                             onclick="focusWorkerOrMap('${gps}','${escapeHtml(address)}',${statusIsGps && hasRealGps})">${safeName}</h3>
                     </div>
-                    <div class="text-sm text-slate-300 font-bold flex-shrink-0 ml-2">🔋 ${escapeHtml(String(bat))}</div>
+                    <div class="text-sm text-slate-300 font-bold flex-shrink-0 ml-2">🔋 ${formatBattery(bat)}</div>
                 </div>
 
                 <div class="space-y-1 mb-4">
@@ -1195,7 +1193,8 @@ function renderMap() {
         if (JOURNEY_CLOSED_STATUSES.includes(statusUp)) return;
 
         const gps = w.gps || w['Last Known GPS'];
-        const hasValidGps = gps && gps.includes(',') && (() => { const [a,b] = gps.split(',').map(Number); return !isNaN(a) && !isNaN(b); })();
+        const hasValidGps = gps && gps !== '0,0' && gps !== '0.0,0.0' && gps.includes(',')
+                            && (() => { const [a,b] = gps.split(',').map(Number); return !isNaN(a) && !isNaN(b); })();
 
         if (!hasValidGps) {
             // Geocoding fallback — ARRIVED workers only, never TRAVELLING.
@@ -1641,6 +1640,35 @@ async function secureStoreKey(key) {
         console.warn("secureStoreKey failed (non-fatal):", e);
     }
 }
+// ============================================================================
+// VISIBILITY / RECONNECT
+// Resets the failure counter when the tab returns to the foreground.
+// Failures accumulated while backgrounded (throttled timers, GAS cold-start)
+// should not count toward any lockout — the connection overlay is sufficient
+// user feedback while the backend warms back up.
+// ============================================================================
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        failureCount = 0;
+        // Kick an immediate fetch so the dashboard refreshes as soon as the
+        // supervisor returns to the tab, rather than waiting up to 10s.
+        if (isPollingActive) fetchData();
+    }
+});
+
+// ============================================================================
+// BATTERY FORMATTER
+// The Battery Status API returns a value between 0 and 1. Some older payloads
+// may already be a whole-number percentage. Either way, render as "XX%".
+// ============================================================================
+function formatBattery(val) {
+    if (val === null || val === undefined || val === '') return '--';
+    const n = parseFloat(val);
+    if (isNaN(n)) return '--';
+    const pct = n <= 1 ? Math.round(n * 100) : Math.round(n);
+    return pct + '%';
+}
+
 // ============================================================================
 // OFFLINE BANNER
 // Shows a slim amber banner when navigator.onLine is false.
