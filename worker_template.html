@@ -1964,6 +1964,7 @@ function submitReport() {
  if (!isMidVisitUpdate) {
  if (typeof stopGPSMonitoring === 'function') stopGPSMonitoring();
 
+ const _concludedIsTravel = state.activeVisit && (state.activeVisit.isTravel || state.activeVisit.locationId === 'travel');
  state.activeVisit = null;
  state.selectedLocationId = null;
  state.visitDurationMinutes = 0;
@@ -1992,6 +1993,7 @@ function submitReport() {
 
  if (typeof updateArrivedButtonState === 'function') updateArrivedButtonState();
  isSubmitting = false;
+ announce(_concludedIsTravel ? 'Travel concluded.' : 'Visit concluded.');
  showToast('✅ Safety Session Completed');
  } else {
  navigate(state.activeVisit ? 'locked' : 'main'); 
@@ -2952,6 +2954,7 @@ function loadFormAndShow(templateName, context = null) {
 function directDepart() {
  if (!state || !state.activeVisit) return;
  isMidVisitUpdate = false;
+ const _concludedIsTravel = state.activeVisit.isTravel || state.activeVisit.locationId === 'travel';
 
  processUploadQueue(buildPayload({
  'action': 'logVisit',
@@ -2981,6 +2984,7 @@ function directDepart() {
  saveState();
  navigate('main');
  renderLocations();
+ announce(_concludedIsTravel ? 'Travel concluded.' : 'Visit concluded.');
  showToast('✅ Visit ended — departure recorded.');
 }
 
