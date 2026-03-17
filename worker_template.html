@@ -2,7 +2,7 @@
 <html lang="en" class="h-full">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>OTG Safety</title>
 <meta name="apple-mobile-web-app-title" content="OTG Safety">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -2086,14 +2086,21 @@ function activateBatterySaver() {
  // Hide locked page to save GPU
  if (main) main.style.display = 'none';
 
- // Fullscreen: suppress Android nav/status bars.
- // NOTE: requestFullscreen() requires a user gesture on Android Chrome. Since
- // activateBatterySaver() fires from a setTimeout (dimTimer), this request is
- // likely to be rejected. Retained as best-effort for contexts where it may
- // succeed. Do NOT rely on this to suppress the nav bar — see theme-color below.
- const el = document.documentElement;
- const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
- if (rfs) rfs.call(el).catch(() => {});
+  // requestFullscreen() from a setTimeout is rejected by Android Chrome (no user
+  // gesture). We attempt it immediately as best-effort, then register a one-time
+  // touchstart on the overlay itself — the first finger contact IS a valid user
+  // gesture, so the second attempt will be accepted and the system nav bar hides.
+  const el = document.documentElement;
+  const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+  if (rfs) rfs.call(el).catch(() => {});
+  if (rfs && !document.fullscreenElement) {
+    const _fsOnTouch = () => {
+      if (isBatterySaverActive && !document.fullscreenElement) {
+        rfs.call(el).catch(() => {});
+      }
+    };
+    saver.addEventListener('touchstart', _fsOnTouch, { once: true, passive: true });
+  }
 
  // Black out the Android status bar by setting theme-color to #000.
  // Works without a user gesture — blends the status bar with the black overlay
