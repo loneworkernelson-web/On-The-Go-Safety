@@ -442,13 +442,6 @@
         <strong>💡 Choose your PINs carefully:</strong> Your Duress PIN should be something you can remember under pressure but clearly different from your Safety PIN. Write both down and keep them somewhere safe at home.
     </div>
 
-    <h3>First-Use Verification</h3>
-    <p>After completing the setup wizard, the app will display a <strong>verification card</strong> summarising the key details you just entered — your name, emergency contacts, and ntfy topics (if set). Check everything carefully before dismissing it.</p>
-    <p>Once you tap <strong>Confirm &amp; Continue</strong>, the card is dismissed and will not appear again unless you re-run the setup wizard. If you spot a mistake, tap <strong>Edit</strong> to go back and correct it.</p>
-    <div class="tip">
-        <strong>💡 Take a moment here:</strong> This is your last easy chance to catch a typo in your name. Your name must match your organisation's Staff list exactly — a mismatch will prevent the system from recognising you.
-    </div>
-
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2>3. The Location List</h2>
 
@@ -492,13 +485,6 @@
     <h3>Syncing the Location List</h3>
     <p>Tap the <strong>Sync</strong> button to download the latest approved locations from your organisation. This requires an internet connection. Once synced, locations are available offline.</p>
 
-    <h3>Using the App Offline</h3>
-    <p>The app is designed to work without an internet connection. Once your locations are synced, you can start visits, complete forms, and submit reports with no signal — all submissions are queued automatically and delivered as soon as connectivity returns.</p>
-    <div class="highlight">
-        <strong>How the queue works:</strong> Every form submission and visit report is saved to a secure on-device outbox. If your phone is offline when you submit, you will see a brief <em>"Queued"</em> notice rather than <em>"Sent"</em>. The app retries in the background and will deliver the submission automatically once a connection is available — even if you close and reopen the app in the meantime.
-    </div>
-    <p>The only thing that requires connectivity is syncing updated locations from your organisation. If the Sync button fails, your existing locations remain available — the list simply will not reflect any recent changes until you are back online.</p>
-
     <h3>Adding a Manual Location</h3>
     <p>If you're visiting somewhere not on the list (e.g. a new client):</p>
     <ol class="step-list">
@@ -511,27 +497,6 @@
 
     <h3>Editing a Location</h3>
     <p>Tap the small <code>ℹ</code> button on any tile you created, or on the Travelling tile, to edit its settings. You cannot edit organisation-provided locations.</p>
-
-    <h3>Backing Up Your Personal Sites</h3>
-    <p>Personal sites you add manually are stored on your device only — they are not backed up to your organisation's system. If you get a new phone, reinstall the app, or use <strong>Clear All Data</strong>, your personal sites will be lost unless you export them first.</p>
-
-    <h4 style="margin-top:20px;color:#374151;">Exporting (backing up)</h4>
-    <ol class="step-list">
-        <li>Go to <strong>Settings</strong> and tap <strong>Export My Sites</strong>.</li>
-        <li>On mobile, your phone's share sheet will open — send the export code to yourself via Notes, email, or Messages so you have it safely stored.</li>
-        <li>On desktop, the code is copied to your clipboard automatically — paste it somewhere safe.</li>
-    </ol>
-
-    <h4 style="margin-top:20px;color:#374151;">Importing (restoring)</h4>
-    <ol class="step-list">
-        <li>Go to <strong>Settings</strong> and tap <strong>Import Sites</strong>.</li>
-        <li>Paste your export code into the text field.</li>
-        <li>Tap <strong>Import</strong>. Any sites already on the device with the same name will be skipped automatically to avoid duplicates.</li>
-    </ol>
-
-    <div class="tip">
-        <strong>💡 When to export:</strong> Export your sites before getting a new phone, before running <strong>Clear All Data</strong>, or any time you have added a significant number of manual locations and would not want to re-enter them.
-    </div>
 
     <h3>Site Safety Information</h3>
     <p>Tap the <code>ℹ</code> button on any location tile to open the site info panel. If your organisation has uploaded emergency procedures or hazard documentation for that site, a red <strong>🛡️ VIEW SITE SAFETY INFORMATION</strong> button will appear.</p>
@@ -596,20 +561,13 @@
                     <div style="text-align:center;color:#9ca3af;font-size:9px;margin-bottom:10px;">30 minutes selected</div>
                     <div class="mock-slide-pill">
                         <div class="mock-pill-thumb">▶</div>
-                        Slide to Begin — City Library
+                        Begin — City Library
                     </div>
                 </div>
             </div>
         </div>
     </div>
     <p class="mock-caption">Starting a visit — duration set to 30 minutes, slide pill ready</p>
-
-    <h3>Pre-Visit Forms</h3>
-    <p>Some sites require you to complete a form <em>before</em> the visit begins. A common example is an odometer photo for travel — your organisation may require you to photograph your vehicle's odometer at the start and end of every trip.</p>
-    <p>When a pre-visit form is required, it will appear automatically after you slide the Start pill. Complete and submit the form as normal — the visit will then start immediately afterwards. You cannot skip this step.</p>
-    <div class="highlight">
-        <strong>This is not an error.</strong> If a form appears before your visit screen, it is intentional — your organisation requires this information before the visit can be logged as active. Submit the form and your visit will begin.
-    </div>
 
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2>5. During a Visit</h2>
@@ -642,7 +600,7 @@
                 </div>
                 <div class="mock-slide-pill danger" style="margin-top:10px;">
                     <div class="mock-pill-thumb">→</div>
-                    Slide to End Visit
+                    End Visit
                 </div>
             </div>
         </div>
@@ -656,7 +614,7 @@
     <ul>
         <li><strong>Time remaining</strong> in the visit (large display, top centre)</li>
         <li><strong>Battery level</strong> so you can monitor charge at a glance</li>
-        <li>A <strong>Slide to Wake</strong> pill at the bottom — slide it right to return to the normal locked screen</li>
+        <li>A <strong>Wake</strong> pill at the bottom — slide it right to return to the normal locked screen</li>
         <li>A reminder that <strong>shaking vigorously triggers SOS</strong> — the full SOS function remains active even in battery saver mode</li>
     </ul>
 
@@ -676,10 +634,10 @@
                     <div style="font-size:10px;font-weight:900;color:#9ca3af;margin-top:6px;">78%&nbsp;▐▐▐▐▐▐▐░░░</div>
                 </div>
                 <div style="width:100%;">
-                    <div style="background:rgba(17,24,39,0.6);border:1px solid #374151;border-radius:999px;padding:6px;display:flex;align-items:center;margin-bottom:10px;">
-                        <div style="width:40px;height:40px;background:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;">→</div>
-                        <div style="flex:1;text-align:center;font-size:9px;font-weight:900;color:#9ca3af;text-transform:uppercase;letter-spacing:0.2em;">Slide to Wake</div>
-                    </div>
+                        <div style="background:rgba(17,24,39,0.6);border:1px solid #374151;border-radius:999px;padding:6px;display:flex;align-items:center;margin-bottom:10px;">
+                                <div style="width:40px;height:40px;background:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;">→</div>
+                                <div style="flex:1;text-align:center;font-size:9px;font-weight:900;color:#9ca3af;text-transform:uppercase;letter-spacing:0.2em;">Wake</div>
+                            </div>
                     <div style="text-align:center;">
                         <div style="display:inline-flex;align-items:center;gap:6px;background:rgba(127,29,29,0.1);border:1px solid rgba(127,29,29,0.3);border-radius:999px;padding:5px 14px;">
                             <span style="font-size:14px;">🆘</span>
@@ -698,8 +656,9 @@
     <ol class="step-list">
         <li>Open the app — the locked screen shows the <strong>"End Visit" pill</strong> at the bottom. Slide it from left to right to begin the departure process.</li>
         <li>If a report form is required for this location, fill it in — notes, photos, signature as prompted.</li>
-        <li><strong>Slide the "Submit &amp; End Visit" pill</strong> from left to right to send your report and close the visit.</li>
+        <li><strong>Slide the "Submit &amp; End" pill</strong> from left to right to send your report and close the visit.</li>
         <li>A green <strong>toast notification</strong> (✅ Report Sent) will appear at the top of the screen. No "OK" button needed — this is intentional.</li>
+        <li>The app will announce <strong>"Visit concluded."</strong> (or <strong>"Travel concluded."</strong> for a travel trip) aloud via your phone's text-to-speech. Make sure your phone volume is not muted during visits.</li>
     </ol>
 
     <div class="mock-wrap">
@@ -717,7 +676,7 @@
                 <div class="mock-progress-bar"><div class="mock-progress-fill" style="width:40%;background:#22c55e;"></div></div>
                 <div class="mock-slide-pill danger" style="margin-top:16px;">
                     <div class="mock-pill-thumb">→</div>
-                    Slide to Proceed to Report
+                    Proceed to Report
                 </div>
                 <div style="text-align:center;font-size:8px;color:#fca5a5;margin-top:5px;">📋 Complete your visit report next</div>
             </div>
@@ -760,7 +719,57 @@
     </div>
 
     <!-- ═══════════════════════════════════════════════════════ -->
-    <h2>8. Safety Check-ins</h2>
+    <h2>8. Settings &amp; Preferences</h2>
+
+    <p>Tap the <strong>Settings</strong> icon (⚙) from the main screen to access your personal configuration, visit history, and diagnostic tools.</p>
+
+    <h3>Visit History</h3>
+    <p>The top of the Settings screen shows a read-only log of your recent visits, grouped by date. It covers both completed and pending (not yet synced) check-ins, and is capped at the 30 most recent entries. Use it to confirm a visit was recorded or to check departure times.</p>
+
+    <div class="mock-wrap">
+        <div class="mock-phone" style="width:260px;">
+            <div class="mock-statusbar"><span>9:41 AM</span><span>▐▐▐ 🔋</span></div>
+            <div class="mock-header">
+                <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
+                <span style="color:#94a3b8;font-size:9px;font-weight:900;">SETTINGS</span>
+            </div>
+            <div class="mock-body-pad">
+                <div class="mock-label">Visit History</div>
+                <div style="background:var(--app-surface);border:1px solid var(--app-border);border-radius:8px;padding:8px;font-size:9px;margin-bottom:6px;">
+                    <div style="color:#60a5fa;font-weight:900;font-size:8px;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Mon 17 Mar 2026</div>
+                    <div style="display:flex;justify-content:space-between;color:var(--app-text);margin-bottom:3px;"><span>📍 City Library</span><span style="color:#22c55e;">✔ Sent</span></div>
+                    <div style="display:flex;justify-content:space-between;color:#9ca3af;font-size:8px;margin-bottom:6px;"><span>Arrived 9:02 AM · Departed 9:48 AM</span></div>
+                    <div style="display:flex;justify-content:space-between;color:var(--app-text);margin-bottom:3px;"><span>🚗 Travelling</span><span style="color:#22c55e;">✔ Sent</span></div>
+                    <div style="display:flex;justify-content:space-between;color:#9ca3af;font-size:8px;"><span>Started 10:02 AM · Ended 10:31 AM</span></div>
+                </div>
+                <div style="background:var(--app-surface);border:1px solid var(--app-border);border-radius:8px;padding:8px;font-size:9px;">
+                    <div style="color:#60a5fa;font-weight:900;font-size:8px;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Fri 14 Mar 2026</div>
+                    <div style="display:flex;justify-content:space-between;color:var(--app-text);margin-bottom:3px;"><span>🏢 Head Office</span><span style="color:#f59e0b;">⏳ Pending</span></div>
+                    <div style="color:#9ca3af;font-size:8px;">Arrived 2:15 PM · Departed 3:00 PM</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <p class="mock-caption">Visit History — grouped by date, ✔ Sent or ⏳ Pending sync status shown</p>
+
+    <h3>Preferences</h3>
+    <p>The <strong>Preferences</strong> tab lets you adjust personal settings:</p>
+    <ul>
+        <li><strong>Emergency &amp; Escalation Contact details</strong> — update names, phone numbers, and ntfy topic names at any time without re-running the wizard.</li>
+        <li><strong>Change PIN</strong> — update your Safety PIN or Duress PIN.</li>
+        <li><strong>%%VEHICLE_TERM%% details</strong> — update your vehicle's %%VEHICLE_TERM%% expiry date.</li>
+        <li><strong>Force Sync</strong> — manually re-download the latest locations and form templates from your organisation. Use this if your manager has updated the site list and you need the changes immediately.</li>
+    </ul>
+
+    <div class="tip">
+        <strong>💡 Restart Setup Wizard:</strong> If you need to re-run the initial setup from scratch (for example, if you change phones), tap the <strong>"Restart Setup Wizard"</strong> link in Preferences. This clears your local configuration and starts the wizard again from step one.
+    </div>
+
+    <h3>Diagnostics</h3>
+    <p>The <strong>Diagnostics</strong> section (tap to expand) shows technical information about the app's current state — GPS accuracy, sync status, outbox queue, and more. You will not normally need to use this, but your manager or IT support may ask you to open it if they are troubleshooting an issue.</p>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2>9. Safety Check-ins</h2>
 
     <p>If your organisation has enabled periodic welfare check-ins, the app will chime and display a prompt at regular intervals while a visit is active.</p>
 
@@ -791,7 +800,7 @@
     </ul>
 
     <!-- ═══════════════════════════════════════════════════════ -->
-    <h2>9. Vehicle Safety Checks</h2>
+    <h2>10. Vehicle Safety Checks</h2>
 
     <p>Your organisation tracks vehicle safety through the app.</p>
     <ul>
@@ -800,7 +809,7 @@
     </ul>
 
     <!-- ═══════════════════════════════════════════════════════ -->
-    <h2>10. Instant Push Notifications (ntfy)</h2>
+    <h2>11. Instant Push Notifications (ntfy)</h2>
 
     <h3>Why this exists</h3>
     <p>When an alarm fires, your contacts are notified by email. Email is reliable, but it has a problem: most people don't have email open on their phone during the day, and notifications can be delayed by minutes or silenced entirely.</p>
@@ -852,38 +861,6 @@
 
     <div class="highlight">
         <strong>ntfy is free and open source.</strong> Your organisation may run its own private ntfy server for additional privacy — if so, your administrator will have configured this and nothing changes from your perspective. If no custom server is configured, the free public service at ntfy.sh is used.
-    </div>
-
-    <!-- ═══════════════════════════════════════════════════════ -->
-    <h2>11. Settings</h2>
-
-    <p>The <strong>Settings</strong> screen is accessible from the main location list. From here you can update your personal details, contacts, and app configuration without running the full setup wizard again.</p>
-
-    <h3>What you can change in Settings</h3>
-    <ul>
-        <li><strong>Your name</strong> — must match your organisation's Staff list exactly (case-sensitive)</li>
-        <li><strong>Safety PIN and Duress PIN</strong> — change either at any time</li>
-        <li><strong>Emergency and Escalation Contact</strong> — names, phone numbers, and ntfy topics</li>
-        <li><strong>Vehicle information</strong> — registration and warrant/certificate of fitness expiry dates (if applicable)</li>
-        <li><strong>Personal sites</strong> — export and import your manually added locations (see Section 3)</li>
-    </ul>
-
-    <h3>Refresh Locations (Clear Cache &amp; Resync)</h3>
-    <p>If your location list appears out of date or is showing stale site names, tap <strong>Refresh Locations</strong> in Settings. This clears the cached site list and pulls a fresh copy from your organisation's system. Your manually added personal sites are not affected.</p>
-
-    <h3>Force App Update</h3>
-    <p>If your administrator has released a new version of the app and you are still seeing the old version — even after closing and reopening it — use <strong>Force App Update</strong> in Settings.</p>
-    <ol class="step-list">
-        <li>Go to <strong>Settings</strong> and tap <strong>Force App Update</strong>.</li>
-        <li>The app will clear all cached files, unregister its background service, and reload completely from the server.</li>
-        <li>After the reload, the app will be fully up to date.</li>
-    </ol>
-    <div class="highlight">
-        <strong>Your data is safe.</strong> Force App Update only clears the app's cached code and interface files. Your identity, PINs, contacts, personal sites, and any queued submissions are not affected.
-    </div>
-
-    <div class="warning">
-        <strong>⚠️ Clear All Data</strong> is a separate option at the bottom of Settings. This permanently deletes <em>everything</em> — your name, PINs, contacts, personal sites, and any queued submissions that have not yet been sent. Use this only if you are handing the device to a completely different person. There is no undo.
     </div>
 
     <!-- ═══════════════════════════════════════════════════════ -->
@@ -984,11 +961,11 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Start a visit</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap location tile → set duration → slide the Start pill</td></tr>
+            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Start a visit</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap location tile → set duration → slide the Begin pill</td></tr>
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">End a visit</td><td style="padding:10px;border:1px solid #e5e7eb;">Slide the End Visit pill → slide Submit &amp; End if report required</td></tr>
             <tr><td style="padding:10px;border:1px solid #e5e7eb;">Extend visit time</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap <strong>Extend</strong> button on locked screen</td></tr>
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Submit a note or form mid-visit</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap <strong>📋 Forms</strong> button on locked screen</td></tr>
-            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Wake from Battery Saver</td><td style="padding:10px;border:1px solid #e5e7eb;">Slide the <strong>Slide to Wake</strong> pill right</td></tr>
+            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Wake from Battery Saver</td><td style="padding:10px;border:1px solid #e5e7eb;">Slide the <strong>Wake</strong> pill right</td></tr>
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">View site safety information</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap <strong>ℹ</strong> on location tile → <strong>🛡️ VIEW SITE SAFETY INFORMATION</strong></td></tr>
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Welfare check-in</td><td style="padding:10px;border:1px solid #e5e7eb;">Hold green "I Am Safe" button when prompted (within 2 min)</td></tr>
             <tr><td style="padding:10px;border:1px solid #e5e7eb;">Raise emergency alarm</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap red SOS button 3 times rapidly</td></tr>
@@ -996,9 +973,6 @@
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Cancel alarm (you're safe)</td><td style="padding:10px;border:1px solid #e5e7eb;">Hold "I Am Safe" → enter standard PIN</td></tr>
             <tr><td style="padding:10px;border:1px solid #e5e7eb;">Cancel alarm under duress</td><td style="padding:10px;border:1px solid #e5e7eb;">Hold "I Am Safe" → enter Duress PIN (silent DURESS alert sent)</td></tr>
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Sync new locations</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap Sync button on main screen</td></tr>
-            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Back up personal sites</td><td style="padding:10px;border:1px solid #e5e7eb;">Settings → <strong>Export My Sites</strong> → share or save the export code</td></tr>
-            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Restore personal sites to new device</td><td style="padding:10px;border:1px solid #e5e7eb;">Settings → <strong>Import Sites</strong> → paste export code</td></tr>
-            <tr><td style="padding:10px;border:1px solid #e5e7eb;">App showing old version after update</td><td style="padding:10px;border:1px solid #e5e7eb;">Settings → <strong>Force App Update</strong></td></tr>
         </tbody>
     </table>
 
