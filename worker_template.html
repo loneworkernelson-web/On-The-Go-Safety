@@ -1585,6 +1585,7 @@ let lastWakeTime = 0;
 let welfareIntervalId = null; // Drives the periodic welfare check schedule
 let welfareCountdownId = null; // Drives the 2-minute countdown within the modal
 let travellingInterval;
+let arrivedPulseInterval = null; // Repeating 5-min GPS pulse during overdue named-site visits
 // timerInt retired: tickIntervalId is the sole interval handle for tick().
 let deferredPrompt;
 let lastAlertTime = 0;
@@ -1978,6 +1979,7 @@ function submitReport() {
  if (typeof travelTargetName !== 'undefined') travelTargetName = ""; 
  if (tickIntervalId) { clearInterval(tickIntervalId); tickIntervalId = null; }
  if (travellingInterval) { clearInterval(travellingInterval); travellingInterval = null; }
+ if (arrivedPulseInterval) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; }
  stopWelfareChecks(); // dismiss any pending welfare modal and clear the schedule
  if (typeof exitLockedScreen === 'function') exitLockedScreen(); 
  
@@ -2483,6 +2485,7 @@ function _clearWelfareCountdown() {
 // ============================================================================
 function startTravellingPulse() {
  if (travellingInterval) clearInterval(travellingInterval);
+ if (arrivedPulseInterval) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; }
  travellingInterval = setInterval(() => {
  // FIX: was checking activeVisit.status === 'TRAVELLING' which is never set
  // on the visit object (it's only sent as payload field). Correct flag is .isTravel.
@@ -2980,6 +2983,7 @@ function directDepart() {
  if (tickIntervalId) { clearInterval(tickIntervalId); tickIntervalId = null; }
  if (typeof travellingInterval !== 'undefined' && travellingInterval) {
  clearInterval(travellingInterval); travellingInterval = null;
+ if (arrivedPulseInterval) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; }
  }
  stopWelfareChecks(); // dismiss any pending welfare modal and clear the schedule
  if (typeof exitLockedScreen === 'function') exitLockedScreen();
@@ -3537,11 +3541,33 @@ function tick() {
 
  if (isBatterySaverActive) {
  updateBatterySaverHUD();
+ if (remaining <= 0) {
+ // GPS PUSH: fires at grace period start and every 5 minutes — runs behind battery saver.
+ if (!state.activeVisit.overdueGpsSent) {
+ if (typeof startGPSMonitoring === 'function') startGPSMonitoring();
+ processUploadQueue(buildPayload({
+ 'Alarm Status': 'OVERDUE',
+ 'Notes': 'Worker is overdue. GPS tracking active.',
+ 'Last Known GPS': typeof lastGPS !== 'undefined' ? lastGPS : "0,0"
+ }));
+ state.activeVisit.overdueGpsSent = true;
+ saveState();
+ if (!arrivedPulseInterval) {
+ arrivedPulseInterval = setInterval(() => {
+ if (!state || !state.activeVisit) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; return; }
+ processUploadQueue(buildPayload({
+ 'Alarm Status': 'OVERDUE',
+ 'Last Known GPS': typeof lastGPS !== 'undefined' ? lastGPS : "0,0"
+ }));
+ }, 5 * 60 * 1000);
+ }
+ }
  // Still check for 15m expiry in background.
  // isSafeConfirmed guard prevents re-triggering after worker clears the alarm.
- if (remaining <= 0 && Math.abs(diffMins) >= 15 &&
+ if (Math.abs(diffMins) >= 15 &&
  !state.activeVisit.criticalSent && !state.activeVisit.isSafeConfirmed) {
  triggerGraceExpiryAlarm();
+ }
  }
  return; 
  }
@@ -3559,18 +3585,6 @@ function tick() {
 
  if (remaining <= 0) {
  const isAlarmed = state.activeVisit.criticalSent;
-
- // GPS PUSH: Overdue trigger
- if (!state.activeVisit.overdueGpsSent) {
- if (typeof startGPSMonitoring === 'function') startGPSMonitoring();
- processUploadQueue(buildPayload({
- 'Alarm Status': 'OVERDUE',
- 'Notes': 'Worker is overdue. GPS tracking active.',
- 'Last Known GPS': typeof lastGPS !== 'undefined' ? lastGPS : "0,0"
- }));
- state.activeVisit.overdueGpsSent = true;
- saveState();
- }
 
  if (overdueLabel) overdueLabel.classList.remove('hidden');
  if (timerEl) {
@@ -3995,6 +4009,7 @@ window.addEventListener('beforeunload', () => {
  stopGPSMonitoring();
  stopWelfareChecks();
  if (travellingInterval) clearInterval(travellingInterval);
+ if (arrivedPulseInterval) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; }
  if (tickIntervalId) clearInterval(tickIntervalId);
 });
 
