@@ -332,7 +332,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div id="wakeSlidePill"
  class="relative bg-gray-900/40 h-16 rounded-full p-1 border border-gray-800 flex items-center overflow-hidden shadow-inner"
  role="group"
- aria-label="Slide to wake screen">
+ aria-label="Wake screen">
  <input type="range" id="wakeSlider" min="0" max="100" value="0" 
  aria-label="Drag right to wake screen"
  class="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10">
@@ -344,7 +344,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  </div>
  
  <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
- <span class="text-sm font-black text-gray-400 tracking-[0.3em] transition-opacity duration-200" id="slideLabel">Slide to Wake</span>
+ <span class="text-sm font-black text-gray-400 tracking-[0.3em] transition-opacity duration-200 text-center leading-tight" id="slideLabel">Wake</span>
  </div>
  </div>
 
@@ -676,12 +676,12 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  Forms
  </button>
  <div id="btnStart" class="slide-action-pill pill-disabled flex-1 relative bg-gray-800 h-16 rounded-2xl p-1 border border-gray-700 flex items-center overflow-hidden shadow-inner"
- role="button" tabindex="0" aria-label="Slide to start visit" aria-disabled="true">
+ role="button" tabindex="0" aria-label="Start visit" aria-disabled="true">
  <div id="slideStartThumb" class="relative w-14 h-14 rounded-xl flex items-center justify-center shadow-2xl z-20 pointer-events-none flex-shrink-0" style="background:var(--accent,#3b82f6)">
  <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
  </div>
  <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
- <span id="slideStartLabel" class="text-xs font-black text-gray-400 tracking-[0.2em] transition-opacity duration-200">Select a Site</span>
+ <span id="slideStartLabel" class="text-xs font-black text-gray-400 tracking-[0.2em] transition-opacity duration-200 text-center leading-tight">Select a Site</span>
  </div>
  </div>
 </div>
@@ -739,12 +739,12 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  </div>
 
  <div id="btnDepart" class="slide-action-pill w-full relative bg-red-700 h-20 rounded-2xl p-1 border border-red-900 flex items-center overflow-hidden shadow-2xl"
- role="button" tabindex="0" aria-label="Slide to end visit">
+ role="button" tabindex="0" aria-label="End visit">
  <div id="slideDepartThumb" class="relative w-16 h-16 rounded-xl bg-white flex items-center justify-center shadow-2xl z-20 pointer-events-none flex-shrink-0">
  <svg class="w-7 h-7 text-red-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
  </div>
  <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
- <span id="slideDepartLabel" class="text-lg font-black text-white tracking-widest transition-opacity duration-200">Slide to End Visit</span>
+ <span id="slideDepartLabel" class="text-lg font-black text-white tracking-widest transition-opacity duration-200 text-center leading-tight">End Visit</span>
  <span id="slideDepartSub" class="text-xs font-bold text-red-200 opacity-80 tracking-widest mt-0.5"></span>
  </div>
  </div>
@@ -1147,12 +1147,12 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div id="noticeContent" class="text-gray-400 text-base mb-10 leading-relaxed text-left max-h-56 overflow-y-auto pr-3 scrollbar-hide"></div>
  
  <div id="btnAckNotice" class="slide-action-pill w-full relative h-20 rounded-2xl p-1 flex items-center overflow-hidden shadow-2xl" style="background:var(--accent,#2563eb);border:1px solid color-mix(in srgb,var(--accent,#2563eb) 60%,black)"
- role="button" tabindex="0" aria-label="Slide to acknowledge notice">
+ role="button" tabindex="0" aria-label="Acknowledge notice">
  <div id="slideAckThumb" class="relative w-16 h-16 rounded-xl bg-white flex items-center justify-center shadow-2xl z-20 pointer-events-none flex-shrink-0">
  <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--accent,#2563eb)" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
  </div>
  <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
- <span id="slideAckLabel" class="text-base font-black text-white tracking-widest transition-opacity duration-200">Slide to Acknowledge</span>
+ <span id="slideAckLabel" class="text-base font-black text-white tracking-widest transition-opacity duration-200 text-center leading-tight">Acknowledge</span>
  </div>
  </div>
  </div>
@@ -1782,13 +1782,15 @@ function announce(text) {
  speechSynthesis.addEventListener('voiceschanged', () => {
  announce._voicesListenerAdded = false;
  if (announce._pendingUtter) {
- speechSynthesis.speak(announce._pendingUtter);
+ speechSynthesis.cancel();
+                    speechSynthesis.speak(announce._pendingUtter);
  announce._pendingUtter = null;
  }
  }, { once: true });
  }
  } else {
- speechSynthesis.speak(utter);
+ speechSynthesis.cancel();
+            speechSynthesis.speak(utter);
  }
  } catch (e) {
  console.warn('Speech synthesis failed:', e);
@@ -2875,13 +2877,13 @@ function loadFormAndShow(templateName, context = null) {
  pill.className = 'slide-action-pill flex-[2] relative bg-green-700 h-14 rounded-xl p-1 border border-green-900 flex items-center overflow-hidden shadow-lg';
  pill.setAttribute('role', 'button');
  pill.setAttribute('tabindex', '0');
- pill.setAttribute('aria-label', 'Slide to submit and start');
+ pill.setAttribute('aria-label', 'Submit and start');
  pill.innerHTML = `
  <div id="slideSubmitThumb" class="relative w-11 h-11 rounded-lg bg-white flex items-center justify-center shadow-xl z-20 pointer-events-none flex-shrink-0">
  <svg class="w-5 h-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
  </div>
  <div class="absolute inset-y-0 left-12 right-0 flex flex-col items-center justify-center pointer-events-none">
- <span id="slideSubmitLabel" class="text-sm font-black text-white tracking-widest transition-opacity duration-200">Slide to Submit &amp; Start</span>
+ <span id="slideSubmitLabel" class="text-sm font-black text-white tracking-widest transition-opacity duration-200 text-center leading-tight">Submit &amp; Start</span>
  </div>`;
  footer.replaceChild(pill, submitBtn);
  setTimeout(() => initSlidePill('slideSubmitPill', 'slideSubmitThumb', 'slideSubmitLabel', submitReport), 50);
@@ -2893,13 +2895,13 @@ function loadFormAndShow(templateName, context = null) {
  pill.className = 'slide-action-pill flex-[2] relative bg-green-700 h-14 rounded-xl p-1 border border-green-900 flex items-center overflow-hidden shadow-lg';
  pill.setAttribute('role', 'button');
  pill.setAttribute('tabindex', '0');
- pill.setAttribute('aria-label', 'Slide to submit and end');
+ pill.setAttribute('aria-label', 'Submit and end');
  pill.innerHTML = `
  <div id="slideSubmitThumb" class="relative w-11 h-11 rounded-lg bg-white flex items-center justify-center shadow-xl z-20 pointer-events-none flex-shrink-0">
  <svg class="w-5 h-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
  </div>
  <div class="absolute inset-y-0 left-12 right-0 flex flex-col items-center justify-center pointer-events-none">
- <span id="slideSubmitLabel" class="text-sm font-black text-white tracking-widest transition-opacity duration-200">Slide to Submit &amp; End</span>
+ <span id="slideSubmitLabel" class="text-sm font-black text-white tracking-widest transition-opacity duration-200 text-center leading-tight">Submit &amp; End</span>
  </div>`;
  footer.replaceChild(pill, submitBtn);
  setTimeout(() => initSlidePill('slideSubmitPill', 'slideSubmitThumb', 'slideSubmitLabel', submitReport), 50);
@@ -2911,13 +2913,13 @@ function loadFormAndShow(templateName, context = null) {
  pill.className = 'slide-action-pill flex-[2] relative bg-green-700 h-14 rounded-xl p-1 border border-green-900 flex items-center overflow-hidden shadow-lg';
  pill.setAttribute('role', 'button');
  pill.setAttribute('tabindex', '0');
- pill.setAttribute('aria-label', 'Slide to send update');
+ pill.setAttribute('aria-label', 'Send update');
  pill.innerHTML = `
  <div id="slideSubmitThumb" class="relative w-11 h-11 rounded-lg bg-white flex items-center justify-center shadow-xl z-20 pointer-events-none flex-shrink-0">
  <svg class="w-5 h-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
  </div>
  <div class="absolute inset-y-0 left-12 right-0 flex flex-col items-center justify-center pointer-events-none">
- <span id="slideSubmitLabel" class="text-sm font-black text-white tracking-widest transition-opacity duration-200">Slide to Send Update</span>
+ <span id="slideSubmitLabel" class="text-sm font-black text-white tracking-widest transition-opacity duration-200 text-center leading-tight">Send Update</span>
  </div>`;
  footer.replaceChild(pill, submitBtn);
  setTimeout(() => initSlidePill('slideSubmitPill', 'slideSubmitThumb', 'slideSubmitLabel', submitReport), 50);
@@ -2929,13 +2931,13 @@ function loadFormAndShow(templateName, context = null) {
  pill.className = 'slide-action-pill flex-[2] relative bg-green-700 h-14 rounded-xl p-1 border border-green-900 flex items-center overflow-hidden shadow-lg';
  pill.setAttribute('role', 'button');
  pill.setAttribute('tabindex', '0');
- pill.setAttribute('aria-label', 'Slide to submit form');
+ pill.setAttribute('aria-label', 'Submit form');
  pill.innerHTML = `
  <div id="slideSubmitThumb" class="relative w-11 h-11 rounded-lg bg-white flex items-center justify-center shadow-xl z-20 pointer-events-none flex-shrink-0">
  <svg class="w-5 h-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
  </div>
  <div class="absolute inset-y-0 left-12 right-0 flex flex-col items-center justify-center pointer-events-none">
- <span id="slideSubmitLabel" class="text-sm font-black text-white tracking-widest transition-opacity duration-200">Slide to Submit Form</span>
+ <span id="slideSubmitLabel" class="text-sm font-black text-white tracking-widest transition-opacity duration-200 text-center leading-tight">Submit Form</span>
  </div>`;
  footer.replaceChild(pill, submitBtn);
  setTimeout(() => initSlidePill('slideSubmitPill', 'slideSubmitThumb', 'slideSubmitLabel', submitReport), 50);
@@ -3212,10 +3214,10 @@ function updateDepartLabel() {
  }
 
  if (noReport) {
- label.textContent = 'Slide to End Visit';
+ label.textContent = 'End Visit';
  if (sub) sub.textContent = 'No report — direct exit';
  } else {
- label.textContent = 'Slide to Proceed to Report';
+ label.textContent = 'Proceed to Report';
  if (sub) sub.textContent = '📋 Complete your visit report next';
  }
 }
@@ -4416,14 +4418,14 @@ function updateArrivedButtonState() {
  pill.setAttribute('aria-disabled', 'true');
  } else {
  const loc = state.locations && state.locations.find(l => l.id === state.selectedLocationId);
- label.textContent = loc ? `Slide to Travel to ${loc.name}` : 'Slide to Start Travel';
+ label.textContent = loc ? `Travel to ${loc.name}` : 'Start Travel';
  pill.style.borderColor = 'var(--accent, #3b82f6)';
  }
  }
  // STANDARD LOGIC: Both Time and Site mandatory
  else if (hasLocation && hasDuration) {
  const loc = state.locations && state.locations.find(l => l.id === state.selectedLocationId);
- label.textContent = loc ? `Slide to Begin — ${loc.name}` : 'Slide to Begin Visit';
+ label.textContent = loc ? `Begin — ${loc.name}` : 'Begin Visit';
  pill.style.borderColor = 'var(--accent, #3b82f6)';
  } else if (!hasLocation) {
  label.textContent = 'Select a Site First';
