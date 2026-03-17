@@ -68,6 +68,7 @@
         .map-journey-start { width: 0; height: 0; border-left: 9px solid transparent; border-right: 9px solid transparent; border-bottom: 18px solid #10b981; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); display: block; }
         .map-waypoint { width: 10px; height: 10px; border-radius: 50%; background: #94a3b8; border: 2px solid #1e293b; display: block; }
         .map-current  { width: 18px; height: 18px; border-radius: 50%; border: 3px solid #1e293b; display: block; animation: blinker 1s ease-in-out infinite; }
+        .map-estimated-pin { display: block; opacity: 0.85; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.45)); }
 
         /* Audio gate overlay */
         .audio-gate-layout {
@@ -76,6 +77,13 @@
         }
 
         /* Toast */
+        /* Offline banner */
+        #offlineBanner { position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+                         background: #d97706; color: #000; font-size: 0.7rem; font-weight: 800;
+                         text-align: center; padding: 5px 12px; letter-spacing: 0.08em;
+                         text-transform: uppercase; pointer-events: none; }
+        #offlineBanner.hidden { display: none; }
+
         #toast { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
                  background: #1e293b; color: #f8fafc; border: 1px solid #334155;
                  padding: 0.6rem 1.4rem; border-radius: 9999px; font-size: 0.75rem;
@@ -86,15 +94,20 @@
 </head>
 <body>
 
+<!-- Offline banner — shown when navigator.onLine is false -->
+<div id="offlineBanner" class="hidden" role="status" aria-live="polite">
+    ⚠ No network connection — monitoring paused
+</div>
+
 <!-- ═══════════════════════════════════════════════════════════════════
      MODALS
 ═══════════════════════════════════════════════════════════════════════ -->
 
 <!-- Audio Gate / Login -->
-<div id="audioGate" class="audio-gate-layout bg-black/90 backdrop-blur-md">
+<div id="audioGate" class="audio-gate-layout bg-black/90 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
     <div class="bg-gray-800 border-2 border-blue-500 rounded-[2.5rem] shadow-2xl max-w-md w-full p-10 text-center">
-        <div class="text-7xl mb-6">🛡️</div>
-        <h1 class="text-3xl font-black text-white mb-2 uppercase tracking-tight">Monitor Dashboard</h1>
+        <div class="text-7xl mb-6" aria-hidden="true">🛡️</div>
+        <h1 id="loginTitle" class="text-3xl font-black text-white mb-2 uppercase tracking-tight">Monitor Dashboard</h1>
         <form onsubmit="unlockMonitor(event)" class="space-y-6">
             <input type="text" name="username" value="MonitorAdmin" autocomplete="username" class="hidden" aria-hidden="true">
             <label class="block text-left">
@@ -109,22 +122,22 @@
                 Unlock Dashboard
             </button>
         </form>
-        <p id="loginError" class="text-red-500 text-xs font-bold mt-4 uppercase hidden">Access Denied: Invalid Key</p>
+        <p id="loginError" class="text-red-500 text-xs font-bold mt-4 uppercase hidden" role="alert">Access Denied: Invalid Key</p>
     </div>
 </div>
 
 <!-- Connection Lost overlay -->
-<div id="connectionOverlay" class="hidden fixed inset-0 z-[95] bg-gray-900/90 flex items-center justify-center backdrop-blur-md">
+<div id="connectionOverlay" class="hidden fixed inset-0 z-[95] bg-gray-900/90 flex items-center justify-center backdrop-blur-md" role="alertdialog" aria-modal="true" aria-labelledby="connOverlayTitle" aria-live="assertive">
     <div class="bg-gray-800 border-2 border-red-600 p-8 rounded-xl shadow-2xl text-center max-w-sm">
-        <div class="text-5xl mb-6 animate-pulse">📡</div>
-        <h2 class="text-3xl font-bold text-white mb-2">Connection Lost</h2>
+        <div class="text-5xl mb-6 animate-pulse" aria-hidden="true">📡</div>
+        <h2 id="connOverlayTitle" class="text-3xl font-bold text-white mb-2">Connection Lost</h2>
         <p class="text-red-400 font-mono text-sm uppercase">System Offline</p>
     </div>
 </div>
 
 <!-- Full-screen emergency alert -->
-<div id="fullScreenAlert" class="hidden fixed inset-0 flex flex-col items-center justify-center text-center p-8 backdrop-blur-sm z-[500]">
-    <div class="text-9xl mb-4" id="alertIcon">🚨</div>
+<div id="fullScreenAlert" class="hidden fixed inset-0 flex flex-col items-center justify-center text-center p-8 backdrop-blur-sm z-[500]" role="alertdialog" aria-modal="true" aria-labelledby="alertTitle" aria-live="assertive">
+    <div class="text-9xl mb-4" id="alertIcon" aria-hidden="true">🚨</div>
     <h1 class="text-6xl font-black text-white mb-4 drop-shadow-md" id="alertTitle">EMERGENCY ALERT</h1>
     <h2 id="alertNames" class="text-4xl font-bold text-white bg-black/30 px-6 py-2 rounded mb-8">Worker</h2>
     <button onclick="acknowledgeAlert()" class="bg-white text-gray-900 font-black text-2xl py-6 px-12 rounded-full shadow-2xl border-4 border-gray-900">
@@ -133,9 +146,9 @@
 </div>
 
 <!-- Resolve Emergency modal -->
-<div id="resolveModal" class="hidden fixed inset-0 z-40 bg-black/90 flex items-center justify-center p-4">
+<div id="resolveModal" class="hidden fixed inset-0 z-40 bg-black/90 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="resolveModalTitle">
     <div class="bg-gray-800 border-2 border-green-600 rounded-xl shadow-2xl max-w-md w-full p-6">
-        <h2 class="text-2xl font-bold text-white mb-2">Resolve Emergency</h2>
+        <h2 id="resolveModalTitle" class="text-2xl font-bold text-white mb-2">Resolve Emergency</h2>
         <p class="text-gray-400 text-sm mb-4">Manual clear for: <span id="resWorkerNameDisplay" class="font-bold text-white"></span></p>
         <div class="space-y-4">
             <div>
@@ -157,10 +170,10 @@
 </div>
 
 <!-- Sign-out confirmation modal -->
-<div id="signOutModal" class="hidden fixed inset-0 z-[500] flex items-center justify-center bg-black/90 backdrop-blur-sm">
+<div id="signOutModal" class="hidden fixed inset-0 z-[500] flex items-center justify-center bg-black/90 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="signOutModalTitle">
     <div class="bg-gray-900 rounded-2xl border-2 border-red-600 p-8 max-w-sm w-[90%] text-center shadow-2xl">
-        <div class="text-5xl mb-4">⚠️</div>
-        <h2 class="text-xl font-black text-white mb-3">Sign Out of Monitor?</h2>
+        <div class="text-5xl mb-4" aria-hidden="true">⚠️</div>
+        <h2 id="signOutModalTitle" class="text-xl font-black text-white mb-3">Sign Out of Monitor?</h2>
         <p class="text-gray-300 text-sm font-bold mb-2">You will need the <span class="text-yellow-400">Master Key</span> to log back in.</p>
         <p class="text-red-400 text-xs font-black uppercase tracking-wider mb-8">Do not proceed unless you have access to this key.</p>
         <div class="flex gap-3">
@@ -180,9 +193,9 @@
 <div id="toast" class="hidden"></div>
 
 <!-- Broadcast modal -->
-<div id="broadcastModal" class="hidden fixed inset-0 z-40 bg-black/90 flex items-center justify-center p-4">
+<div id="broadcastModal" class="hidden fixed inset-0 z-40 bg-black/90 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="broadcastModalTitle">
     <div class="bg-gray-800 border-2 border-yellow-500 rounded-xl shadow-2xl max-w-lg w-full p-6">
-        <h2 class="text-2xl font-bold text-white mb-1">📢 Broadcast to All Workers</h2>
+        <h2 id="broadcastModalTitle" class="text-2xl font-bold text-white mb-1">📢 Broadcast to All Workers</h2>
         <p class="text-gray-400 text-xs mb-5">Message will appear on all active Worker App devices at next sync (≤30s).</p>
 
         <!-- Priority selector -->
@@ -256,15 +269,15 @@
             <span class="text-sm" style="color:var(--text-on-primary);opacity:0.85">Stale:</span>
             <span id="staleCount" class="font-black text-amber-400">0</span>
         </div>
-        <span id="connectionStatus" class="text-xs font-black hidden"></span>
-        <span id="lastUpdate" class="text-xs whitespace-nowrap" style="color:var(--text-on-primary);opacity:0.6"></span>
+        <span id="connectionStatus" class="text-xs font-black hidden" role="status" aria-live="polite"></span>
+        <span id="lastUpdate" class="text-xs whitespace-nowrap" style="color:var(--text-on-primary);opacity:0.6" aria-live="polite"></span>
     </div>
 
     <!-- Right: controls -->
     <div class="flex items-center gap-2 flex-wrap">
 
         <!-- Audio arm button -->
-        <button id="btnAudioToggle" onclick="toggleAudioInit()"
+        <button id="btnAudioToggle" onclick="toggleAudioInit()" aria-label="Toggle audio alerts"
                 class="flex items-center gap-1.5 bg-gray-800 px-3 py-1.5 rounded border border-gray-600 text-xs font-black uppercase tracking-widest text-gray-300 hover:bg-gray-700 transition shadow">
             <span id="audioIcon">🔈</span> Audio: <span id="audioStatus" class="text-red-500">Locked</span>
         </button>
@@ -292,18 +305,18 @@
         </div>
 
         <!-- Search -->
-        <input type="text" id="searchBox" placeholder="Filter…"
+        <input type="text" id="searchBox" placeholder="Filter…" aria-label="Filter workers"
                class="bg-gray-800 text-white text-sm border border-gray-600 rounded-lg pl-3 pr-2 py-1.5 w-28"
                onkeyup="renderGrid()">
 
         <!-- Export -->
-        <button onclick="exportSystemLog()"
+        <button onclick="exportSystemLog()" aria-label="Export system log"
                 class="text-xs text-blue-400 bg-gray-800 border border-gray-700 px-3 py-1.5 rounded hover:bg-gray-700 transition font-bold">
             📊 Export
         </button>
 
         <!-- Broadcast -->
-        <button onclick="openBroadcast()"
+        <button onclick="openBroadcast()" aria-label="Open broadcast panel"
                 class="text-xs text-yellow-400 bg-gray-800 border border-yellow-700 px-3 py-1.5 rounded hover:bg-yellow-900/40 transition font-bold">
             📢 Broadcast
         </button>
@@ -319,16 +332,16 @@
 <!-- ═══════════════════════════════════════════════════════════════════
      MAIN LAYOUT
 ═══════════════════════════════════════════════════════════════════════ -->
-<div class="main-layout">
+<main class="main-layout" aria-label="Worker monitoring dashboard">
     <div class="grid-area">
-        <div id="workerGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
-        <div id="mapView" class="hidden h-full w-full rounded-xl overflow-hidden shadow-inner border border-gray-700 bg-gray-900"></div>
+        <div id="workerGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" role="list" aria-label="Active workers"></div>
+        <div id="mapView" class="hidden h-full w-full rounded-xl overflow-hidden shadow-inner border border-gray-700 bg-gray-900" aria-label="Worker location map"></div>
     </div>
-    <div class="log-area">
-        <div class="p-2 bg-gray-800 border-b border-gray-700 font-bold text-sm text-gray-400 uppercase tracking-wider sticky top-0">
+    <aside class="log-area" aria-label="Activity log">
+        <div class="p-2 bg-gray-800 border-b border-gray-700 font-bold text-sm text-gray-400 uppercase tracking-wider sticky top-0" aria-hidden="true">
             Activity Log
         </div>
-        <div id="eventLogList" class="flex-1 overflow-y-auto px-2 py-2 space-y-1"></div>
+        <div id="eventLogList" class="flex-1 overflow-y-auto px-2 py-2 space-y-1" role="log" aria-label="Event log" aria-live="polite"></div>
         <!-- Broadcast history (session only) -->
         <div class="border-t border-gray-700 flex-shrink-0">
             <button onclick="toggleBroadcastHistory()"
@@ -338,8 +351,8 @@
             </button>
             <div id="broadcastHistoryList" class="hidden px-2 py-1 space-y-1 max-h-40 overflow-y-auto bg-gray-900/50"></div>
         </div>
-    </div>
-</div>
+    </aside>
+</main>
 
 <!-- Build version footer -->
 <div style="position:fixed;bottom:0;left:0;right:0;z-index:5;background:#0f172a;border-top:1px solid #1e293b;padding:3px 12px;text-align:right;">
@@ -1178,9 +1191,42 @@ function renderMap() {
         if (JOURNEY_CLOSED_STATUSES.includes(statusUp)) return;
 
         const gps = w.gps || w['Last Known GPS'];
-        if (!gps || !gps.includes(',')) return;
+        const hasValidGps = gps && gps.includes(',') && (() => { const [a,b] = gps.split(',').map(Number); return !isNaN(a) && !isNaN(b); })();
+
+        if (!hasValidGps) {
+            // Geocoding fallback — ARRIVED workers only, never TRAVELLING.
+            if (statusUp !== 'ARRIVED') return;
+            const address = w['Location Address'] || w['Location Name'] || '';
+            if (!address) return;
+
+            const cached = geocodeCache.get(address);
+            if (!cached) {
+                geocodeAddress(address); // async — will re-render on resolve
+                return;
+            }
+            if (cached === 'pending' || cached === 'failed') return;
+
+            // Place estimated-position pin marker.
+            const workerName   = escapeHtml(w.name || w['Worker Name']);
+            const workerStatus = escapeHtml(w.status || w.Status);
+            const locationLabel = escapeHtml(w['Location Name'] || address);
+            const pinSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="27" viewBox="0 0 20 27">
+                <path d="M10 0C4.477 0 0 4.477 0 10c0 7.5 10 17 10 17s10-9.5 10-17C20 4.477 15.523 0 10 0z" fill="#f59e0b"/>
+                <circle cx="10" cy="10" r="4" fill="#1e293b"/>
+            </svg>`;
+            const estimatedIcon = L.divIcon({
+                className: '',
+                html: `<span class="map-estimated-pin">${pinSvg}</span>`,
+                iconSize:   [20, 27],
+                iconAnchor: [10, 27]
+            });
+            L.marker([cached.lat, cached.lng], { icon: estimatedIcon })
+             .bindPopup(`<b>${workerName}</b><br>${workerStatus}<br>📍 ${locationLabel}<br><em>Estimated — no GPS yet</em>`)
+             .addTo(markersLayer);
+            return;
+        }
+
         const [curLat, curLng] = gps.split(',').map(Number);
-        if (isNaN(curLat) || isNaN(curLng)) return;
 
         const workerName   = escapeHtml(w.name || w['Worker Name']);
         const workerStatus = escapeHtml(w.status || w.Status);
@@ -1252,6 +1298,32 @@ const _MAP_COLORS = { red: '#ef4444', purple: '#d946ef', amber: '#f59e0b', green
     Object.entries(_MAP_COLORS).forEach(([k, v]) => root.style.setProperty(`--mc-${k}`, v));
 })();
 
+
+// ── Geocoding cache & helper ───────────────────────────────────────────────
+// Values: {lat, lng} on success | 'pending' while in-flight | 'failed' on error.
+// Keyed by address string; session-persistent (cleared on page reload only).
+const geocodeCache = new Map();
+
+async function geocodeAddress(address) {
+    if (!address) { geocodeCache.set(address, 'failed'); return; }
+    geocodeCache.set(address, 'pending');
+    try {
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1`;
+        const res = await fetch(url, { headers: { 'Accept': 'application/json', 'User-Agent': 'OTG-AppSuite-Monitor/1.0' } });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data && data.length > 0) {
+            geocodeCache.set(address, { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) });
+        } else {
+            geocodeCache.set(address, 'failed');
+        }
+    } catch (e) {
+        console.warn('[OTG] Geocode failed for:', address, e);
+        geocodeCache.set(address, 'failed');
+    }
+    // Re-render map now that result is available.
+    if (currentView === 'MAP' && mapInstance) renderMap();
+}
 
 /**
  * Universal map handler — never opens Google Maps.
@@ -1565,6 +1637,26 @@ async function secureStoreKey(key) {
         console.warn("secureStoreKey failed (non-fatal):", e);
     }
 }
+// ============================================================================
+// OFFLINE BANNER
+// Shows a slim amber banner when navigator.onLine is false.
+// Distinct from the heartbeat-based connectionOverlay (which fires after 60s
+// without a backend response). This fires immediately on network loss.
+// ============================================================================
+(function initOfflineBanner() {
+    const banner = document.getElementById('offlineBanner');
+    if (!banner) return;
+    function update() {
+        if (navigator.onLine) {
+            banner.classList.add('hidden');
+        } else {
+            banner.classList.remove('hidden');
+        }
+    }
+    window.addEventListener('online',  update);
+    window.addEventListener('offline', update);
+    update(); // initialise on load
+}());
 
 
 </script>
