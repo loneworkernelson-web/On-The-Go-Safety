@@ -865,7 +865,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="mb-6">
  <h2 class="text-xl font-bold text-yellow-400 mb-4">Visit History</h2>
  <div id="visitHistoryList" class="setting-card border-gray-600">
- <p class="text-xs text-gray-500 italic text-center py-2">No visits recorded yet.</p>
+ <p class="text-xs text-gray-500 italic text-center py-2">Loading…</p>
  </div>
  </div>
 
@@ -1705,6 +1705,7 @@ function navigate(page) {
  populateSettingsForm();
  updateSystemInfo(); // Update backend connection status
  updateMySitesSummary(); // Refresh personal sites count
+ populateVisitHistory(); // Refresh visit history log
  }
  
  resetInactivityTimer();
@@ -6201,6 +6202,75 @@ async function updateOutboxStatus() {
  <span class="text-gray-500">${ts}</span>
  </div>`;
  }).join('');
+}
+
+/**
+ * Reads the IndexedDB outbox for sent ARRIVED / TRAVELLING records and renders
+ * a read-only visit history log in the Settings page.
+ * Groups entries by calendar date, newest first, capped at 30 entries.
+ */
+async function populateVisitHistory() {
+ const container = document.getElementById('visitHistoryList');
+ if (!container) return;
+
+ let db;
+ try { db = await _outboxDB(); } catch (e) {
+ container.innerHTML = '<p class="text-xs text-red-400 text-center py-2">Unable to load history.</p>';
+ return;
+ }
+
+ const allRecords = await new Promise(resolve => {
+ const tx = db.transaction('events', 'readonly');
+ const req = tx.objectStore('events').getAll();
+ req.onsuccess = e => resolve(e.target.result || []);
+ req.onerror = () => resolve([]);
+ });
+
+ const VISIT_START_STATUSES = ['ARRIVED', 'TRAVELLING'];
+ const visits = allRecords
+ .filter(r => VISIT_START_STATUSES.includes(r.payload?.['Alarm Status']))
+ .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+ .slice(0, 30);
+
+ if (visits.length === 0) {
+ container.innerHTML = '<p class="text-xs text-gray-500 italic text-center py-2">No visits recorded yet.</p>';
+ return;
+ }
+
+ // Group by local calendar date
+ const groups = {};
+ for (const v of visits) {
+ const d = new Date(v.createdAt);
+ const key = d.toLocaleDateString('en-NZ', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+ if (!groups[key]) groups[key] = [];
+ groups[key].push(v);
+ }
+
+ const rows = Object.entries(groups).map(([dateLabel, records]) => {
+ const items = records.map(r => {
+ const status = r.payload?.['Alarm Status'];
+ const locName = r.payload?.['Location Name'] || 'Unknown location';
+ const isTravel = status === 'TRAVELLING';
+ const icon = isTravel ? '🚗' : '📍';
+ const typeLabel = isTravel ? '<span class="text-indigo-400">Travel</span>' : '<span class="text-green-400">Site visit</span>';
+ const pending = r.status !== 'sent';
+ const time = new Date(r.createdAt).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' });
+ return `<div class="flex items-center gap-3 py-2 border-b border-gray-700/50 last:border-0">
+ <span class="text-lg leading-none">${icon}</span>
+ <div class="flex-1 min-w-0">
+ <div class="text-sm font-bold text-white truncate">${locName}</div>
+ <div class="text-xs text-gray-400">${typeLabel} &middot; ${time}${pending ? ' <span class="text-yellow-400">⏳</span>' : ''}</div>
+ </div>
+ </div>`;
+ }).join('');
+
+ return `<div class="mb-1">
+ <div class="text-xs font-bold text-gray-500 uppercase tracking-widest px-1 pt-2 pb-1">${dateLabel}</div>
+ ${items}
+ </div>`;
+ }).join('');
+
+ container.innerHTML = rows;
 }
 
 // ============================================================================
