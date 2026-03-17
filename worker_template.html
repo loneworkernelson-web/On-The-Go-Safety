@@ -8273,7 +8273,16 @@ function updateBatterySaverHUD() {
  const label = minsUp === 1 ? 'min remaining' : 'mins remaining';
  timeHUD.innerHTML = `<span class="text-5xl font-mono font-bold text-gray-300">${minsUp}</span><br><span class="text-sm font-bold text-gray-400 tracking-widest">${label}</span>`;
  } else {
- timeHUD.innerHTML = `<span class="text-3xl font-bold text-gray-400">Time up</span>`;
+ const isAlarmed = state.activeVisit.criticalSent;
+ if (isAlarmed) {
+ timeHUD.innerHTML = `<span class="text-3xl font-bold text-red-500 animate-pulse">ALARM ACTIVATED</span>`;
+ } else {
+ const minsUntil = Math.max(0, Math.ceil(15 - Math.abs(remainingSecs) / 60));
+ const contactLine = minsUntil > 0
+ ? `Notifying contacts in ${minsUntil} min${minsUntil === 1 ? '' : 's'}`
+ : 'Notifying contacts now';
+ timeHUD.innerHTML = `<span class="text-3xl font-bold text-red-500 animate-pulse">OVERDUE</span><br><span class="text-sm font-bold text-red-400 tracking-wide">${contactLine}</span>`;
+ }
  }
  } else {
  timeHUD.innerText = '--';
