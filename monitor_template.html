@@ -593,22 +593,34 @@ function playSound(type) {
 // 8. AUTHENTICATION
 // ============================================================================
 
+let _isLoggingIn = false; // Guard against concurrent unlockMonitor() calls
+
 async function unlockMonitor(e) {
     if (e) e.preventDefault();
+    if (_isLoggingIn) return;        // Prevent auto-login + manual submit racing each other
+    _isLoggingIn = true;
+
     const inputEl  = document.getElementById('masterKeyInput');
     const activeKey = (inputEl && inputEl.value) ? inputEl.value : API_KEY;
-    if (!activeKey) return;
+    if (!activeKey) { _isLoggingIn = false; return; }
 
     try {
-        // Unlock Tone.js audio context on this user gesture
-        if (typeof Tone !== 'undefined') {
-            await Tone.start();
-            synth = new Tone.Synth().toDestination();
+        // Unlock Tone.js + arm audio — in its own nested try-catch so that
+        // audio policy errors (e.g. no user gesture on auto-login) never
+        // propagate to the auth error handler below.
+        try {
+            if (typeof Tone !== 'undefined') {
+                await Tone.start();
+                synth = new Tone.Synth().toDestination();
+            }
+            // Must be called before any await so the browser's autoplay policy
+            // permits audio.play() while the submit gesture is still live.
+            toggleAudioInit();
+        } catch(audioErr) {
+            // Audio init failed (common on auto-login with no user gesture) —
+            // non-fatal, continue with key validation.
+            console.warn('[OTG] Audio init skipped (non-fatal):', audioErr);
         }
-
-        // Arm siren audio while the user gesture is still live — must happen
-        // before any await so the browser's autoplay policy permits audio.play().
-        toggleAudioInit();
 
         // Validate key against the backend using JSONP (avoids CORS when hosted cross-origin)
         await new Promise((resolve, reject) => {
@@ -617,7 +629,7 @@ async function unlockMonitor(e) {
             const timeout = setTimeout(() => {
                 script.remove(); delete window[cbName];
                 reject(new Error("Timeout"));
-            }, 15000);
+            }, 25000);
 
             window[cbName] = function(data) {
                 clearTimeout(timeout); script.remove(); delete window[cbName];
@@ -638,11 +650,21 @@ async function unlockMonitor(e) {
         // Also keep an encrypted copy in sessionStorage
         await secureStoreKey(activeKey);
 
+        // Clear any previous error message before opening the dashboard
+        const errLabel = document.getElementById('loginError');
+        if (errLabel) { errLabel.textContent = 'Access Denied: Invalid Key'; errLabel.classList.add('hidden'); }
+
         document.getElementById('audioGate').classList.add('hidden');
         startPolling();
     } catch(err) {
-        const errLabel = document.getElementById('loginError');
-        if (errLabel) errLabel.classList.remove('hidden');
+        // Only surface "Access Denied" for a genuine invalid key response.
+        // Timeout / network errors during auto-login should not show a false error.
+        if (err.message === 'Invalid Key') {
+            const errLabel = document.getElementById('loginError');
+            if (errLabel) { errLabel.textContent = 'Access Denied: Invalid Key'; errLabel.classList.remove('hidden'); }
+        }
+    } finally {
+        _isLoggingIn = false;
     }
 }
 
@@ -701,10 +723,6 @@ function fetchData() {
         clearTimeout(timeout);
         script.remove();
         delete window[cbName];
-
-        if (data.status === "error" && data.message?.includes("Key")) {
-            return stopPollingAndLock();
-        }
 
         if (data.status === "success" || data.workers) {
             lastHeartbeat = Date.now();
