@@ -606,6 +606,10 @@ async function unlockMonitor(e) {
             synth = new Tone.Synth().toDestination();
         }
 
+        // Arm siren audio while the user gesture is still live — must happen
+        // before any await so the browser's autoplay policy permits audio.play().
+        toggleAudioInit();
+
         // Validate key against the backend using JSONP (avoids CORS when hosted cross-origin)
         await new Promise((resolve, reject) => {
             const cbName = '_gasLogin_' + Date.now();
