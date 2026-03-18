@@ -4634,7 +4634,7 @@ async function startVisit(isSkipCheck = false) {
  }
  processUploadQueue(buildPayload(arrivalPayload));
 
- announce(isTravelMode ? `Travelling to ${loc.name}.` : `${loc.name} started.`);
+ announce(isTravelMode ? `Travelling to ${loc.name}.` : `${loc.name} started.${isHighRisk ? ' Critical timing mode active.' : ''}`);
  
  // Wake lock is NOT held at visit start — phone should sleep normally between
  // interactions. It is acquired only when the alarm fires so the slide-to-
