@@ -762,6 +762,13 @@ function updateStaffStatus(p) {
                     if(expKey && rData[expKey]) { sheet.getRange(i+1, 7).setValue(rData[expKey]); }
                 } catch(e){}
             }
+            // Persist ntfy topics to Staff sheet columns H (8) and I (9) so that
+            // server-triggered escalations can push notifications without needing
+            // the topics in the Visits row. Only written when present — never blanked.
+            const emgNtfy = (p['Emergency Contact Ntfy'] || '').toString().trim();
+            const escNtfy = (p['Escalation Contact Ntfy'] || '').toString().trim();
+            if (emgNtfy) sheet.getRange(i+1, 8).setValue(emgNtfy);
+            if (escNtfy) sheet.getRange(i+1, 9).setValue(escNtfy);
             break;
         }
     }
@@ -1639,6 +1646,9 @@ function getSyncData(workerName, deviceId) {
     // 2. Identify Worker & Their Groups
     for (let i = 1; i < stData.length; i++) {
         if ((stData[i][0] || "").toString().toLowerCase().trim() === wNameSafe) {
+            // Column C (index 2) is 'Status' — block Inactive workers at the gate.
+            const staffStatus = (stData[i][2] || '').toString().trim().toLowerCase();
+            if (staffStatus === 'inactive') return {status: "error", message: "Access Denied."};
             workerFound = true;
             // Column D (Index 3) is 'Group Membership'
             workerGroups = (stData[i][3] || "").toString().toLowerCase(); 
@@ -1840,15 +1850,34 @@ function triggerEscalation(sheet, entry, newStatus, isDual) {
     newRow[11] = entry[11] + ` [AUTO-${newStatus}]`;
     sheet.appendRow(newRow);
 
+    // Look up ntfy topics from the Staff sheet — they are not stored in Visits rows.
+    // Silently degrades to empty strings if the sheet is missing or the row isn't found.
+    let emgNtfy = '', escNtfy = '';
+    try {
+        const staffSheet = sheet.getParent().getSheetByName('Staff');
+        if (staffSheet) {
+            const staffData = staffSheet.getDataRange().getValues();
+            for (let j = 1; j < staffData.length; j++) {
+                if (staffData[j][0] === entry[2]) {
+                    emgNtfy = (staffData[j][7] || '').toString().trim(); // Column H
+                    escNtfy = (staffData[j][8] || '').toString().trim(); // Column I
+                    break;
+                }
+            }
+        }
+    } catch (e) { console.error('ntfy Staff lookup failed: ' + e.toString()); }
+
     const payload = {
         'Worker Name':               entry[2],
         'Worker Phone Number':       entry[3],
         'Emergency Contact Name':    entry[4],
         'Emergency Contact Number':  entry[5],
         'Emergency Contact Email':   entry[6],
+        'Emergency Contact Ntfy':    emgNtfy,
         'Escalation Contact Name':   entry[7],
         'Escalation Contact Number': isDual ? entry[8] : "",
         'Escalation Contact Email':  isDual ? entry[9] : "",
+        'Escalation Contact Ntfy':   isDual ? escNtfy : "",
         'Alarm Status':              newStatus,
         'Notes':                     `Alert: Worker is ${newStatus}.`,
         'Location Name':             entry[12],
@@ -1952,7 +1981,7 @@ function handleSafetyResolution(p) {
                     'method': 'post',
                     'payload': { 'phone': num, 'message': `${subject}. Alert resolved.`, 'key': CONFIG.TEXTBELT_API_KEY }
                 }); 
-            } catch(e) {}
+            } catch(e) { console.error('All Clear SMS failed: ' + e.toString()); }
         });
     }
 
