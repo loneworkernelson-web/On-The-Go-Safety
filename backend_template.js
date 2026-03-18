@@ -1921,12 +1921,10 @@ function triggerEscalation(sheet, entry, newStatus, isDual) {
  * Logic: Notifies both contacts that the emergency has ended.
  */
 function handleSafetyResolution(p) {
-    // 1. Update the Visit Record for the audit trail
-    handleWorkerPost(p);
-
-    // GUARD: Only send All Clear if an overdue/alarm alert was actually sent.
-    // If the worker resolved quickly before any alert fired, contacts never
-    // received an alert — sending All Clear would be confusing and alarming.
+    // GUARD: Scan the sheet BEFORE handleWorkerPost runs, because handleWorkerPost
+    // will overwrite the open alarm row's status to USER_SAFE_CONFIRMED — after which
+    // the scan would hit the 'SAFE' break condition and incorrectly return alertWasSent=false,
+    // suppressing All Clear every time.
     const workerNameCheck = (p['Worker Name'] || '').toString().trim();
     let alertWasSent = false;
     try {
@@ -1949,6 +1947,9 @@ function handleSafetyResolution(p) {
         console.log('All Clear suppressed — no alarm was sent for ' + workerNameCheck);
         return { status: 'success', allClearSuppressed: true };
     }
+
+    // 1. Update the Visit Record for the audit trail (after the guard, so the scan sees clean data).
+    handleWorkerPost(p);
 
     // 2. Draft the Resolution Messages
     const subject    = `✅ ALL CLEAR — ${p['Worker Name']} is safe`;
