@@ -580,7 +580,7 @@ if (!rowUpdated) {
         } catch(e) { console.error("Email Error: " + e); }
     }
 
-    if(p['Alarm Status'].includes("EMERGENCY") || p['Alarm Status'].includes("PANIC") || p['Alarm Status'].includes("DURESS")) {
+    if(p['Alarm Status'].includes("EMERGENCY") || p['Alarm Status'].includes("PANIC") || p['Alarm Status'].includes("DURESS") || p['Alarm Status'].includes("OVERDUE ALARM")) {
         triggerAlerts(p, "IMMEDIATE");
     }
 }
