@@ -1030,15 +1030,23 @@ function triggerAlerts(p, type) {
             p['Escalation Contact Number'] || p['Escalation Contact Phone']
         ].map(n => _cleanPhone(n)).filter(n => n);
 
+        // [DIAG] Record what numbers were resolved before attempting send.
+        sp.setProperty('DIAG_SMS', `ATTEMPTING: resolvedNumbers=${JSON.stringify(numbers)} | keyLength=${CONFIG.TEXTBELT_API_KEY.length} | timestamp=${new Date().toISOString()}`);
+
         const smsBody = `🚨 ${statusLabel}\nWorker: ${workerName}\nSite: ${locationName}\nPhone: ${workerPhone}\n${gpsSmsTxt}`;
         numbers.forEach(num => {
             try {
-                UrlFetchApp.fetch('https://textbelt.com/text', {
+                const resp = UrlFetchApp.fetch('https://textbelt.com/text', {
                     method: 'post',
                     payload: { phone: num, message: smsBody, key: CONFIG.TEXTBELT_API_KEY }
                 });
+                const httpCode = resp.getResponseCode();
+                const body = resp.getContentText().substring(0, 300);
+                sp.setProperty('DIAG_SMS', `DONE: number="${num}" | httpCode=${httpCode} | response="${body}" | timestamp=${new Date().toISOString()}`);
             } catch (e) { console.error("SMS Failed: " + e.toString()); }
         });
+    } else {
+        sp.setProperty('DIAG_SMS', `SKIPPED: TEXTBELT_API_KEY not configured or too short (length=${CONFIG.TEXTBELT_API_KEY ? CONFIG.TEXTBELT_API_KEY.length : 0}). Timestamp: ${new Date().toISOString()}`);
     }
 
     // ── NTFY PUSH ROUTING ─────────────────────────────────────────────────
@@ -1079,13 +1087,18 @@ function triggerAlerts(p, type) {
  * All errors are caught — a failed push must never prevent email/SMS from sending.
  */
 function _sendNtfy(topic, title, message, priority, tags) {
-    if (!topic || topic.trim() === '') return;
+    if (!topic || topic.trim() === '') {
+        sp.setProperty('DIAG_NTFY', `SKIPPED: topic was blank or missing. Received: "${topic}". Timestamp: ${new Date().toISOString()}`);
+        return;
+    }
     const server = (CONFIG.NTFY_SERVER && !CONFIG.NTFY_SERVER.includes('%%'))
         ? CONFIG.NTFY_SERVER.replace(/\/$/, '')
         : 'https://ntfy.sh';
     const url = `${server}/${topic.trim()}`;
+    // [DIAG] Record attempt details before fetch so a crash still leaves evidence.
+    sp.setProperty('DIAG_NTFY', `ATTEMPTING: url="${url}" | title="${title}" | priority="${priority}" | timestamp=${new Date().toISOString()}`);
     try {
-        UrlFetchApp.fetch(url, {
+        const resp = UrlFetchApp.fetch(url, {
             method: 'post',
             headers: {
                 'Title':    title,
@@ -1095,10 +1108,25 @@ function _sendNtfy(topic, title, message, priority, tags) {
             payload:            message,
             muteHttpExceptions: true
         });
-        console.log(`ntfy push sent to topic: ${topic}`);
+        const httpCode = resp.getResponseCode();
+        sp.setProperty('DIAG_NTFY', `DONE: url="${url}" | httpCode=${httpCode} | responseBody="${resp.getContentText().substring(0, 200)}" | timestamp=${new Date().toISOString()}`);
+        console.log(`ntfy push sent to topic: ${topic} (HTTP ${httpCode})`);
     } catch (e) {
+        sp.setProperty('DIAG_NTFY', `EXCEPTION: url="${url}" | error="${e.toString()}" | timestamp=${new Date().toISOString()}`);
         console.error(`ntfy push failed for topic "${topic}": ${e.toString()}`);
     }
+}
+
+/**
+ * [DIAG] Run this manually from the Apps Script editor to read the last
+ * ntfy and SMS diagnostic entries. Safe to leave deployed — read-only.
+ * Delete _sendNtfy / SMS instrumentation once diagnosis is complete.
+ */
+function readDiagnostics() {
+    const ntfy = sp.getProperty('DIAG_NTFY') || '(no ntfy diagnostic recorded yet)';
+    const sms  = sp.getProperty('DIAG_SMS')  || '(no SMS diagnostic recorded yet)';
+    Logger.log('── NTFY ──\n' + ntfy);
+    Logger.log('── SMS ──\n'  + sms);
 }
 
 /**
