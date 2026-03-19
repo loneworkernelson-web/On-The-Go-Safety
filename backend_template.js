@@ -44,6 +44,7 @@ function onOpen() {
       .addItem('3. Run Travel Report', 'generateWorkerTravelReport')
       .addSeparator()
       .addItem('Send Health Email Now', 'sendHealthEmail')
+      .addItem('Run System Diagnostics', 'runDiagnostics')
       .addItem('Force Sync Forms', 'getGlobalForms')
       .addToUi();
 }
@@ -580,7 +581,7 @@ if (!rowUpdated) {
         } catch(e) { console.error("Email Error: " + e); }
     }
 
-    if(p['Alarm Status'].includes("EMERGENCY") || p['Alarm Status'].includes("PANIC") || p['Alarm Status'].includes("DURESS")) {
+    if(p['Alarm Status'].includes("EMERGENCY") || p['Alarm Status'].includes("PANIC") || p['Alarm Status'].includes("DURESS") || p['Alarm Status'].includes("OVERDUE ALARM")) {
         triggerAlerts(p, "IMMEDIATE");
     }
 }
@@ -762,6 +763,13 @@ function updateStaffStatus(p) {
                     if(expKey && rData[expKey]) { sheet.getRange(i+1, 7).setValue(rData[expKey]); }
                 } catch(e){}
             }
+            // Persist ntfy topics to Staff sheet columns H (8) and I (9) so that
+            // server-triggered escalations can push notifications without needing
+            // the topics in the Visits row. Only written when present — never blanked.
+            const emgNtfy = (p['Emergency Contact Ntfy'] || '').toString().trim();
+            const escNtfy = (p['Escalation Contact Ntfy'] || '').toString().trim();
+            if (emgNtfy) sheet.getRange(i+1, 8).setValue(emgNtfy);
+            if (escNtfy) sheet.getRange(i+1, 9).setValue(escNtfy);
             break;
         }
     }
@@ -1148,6 +1156,7 @@ function _sendNtfy(topic, title, message, priority, tags) {
     }
 }
 
+
 /**
  * DEAD-MAN'S SWITCH PING
  * Fires a silent HTTP GET to the Healthchecks.io check URL after every
@@ -1397,6 +1406,390 @@ function sendHealthEmail() {
 
     console.log(`Health email sent to ${recipient}. Visits: ${visitCount}, Escalations: ${escalationCount}, Fails: ${failCount}, Stalled: ${stalledVisits.length}`);
 }
+
+/**
+ * SYSTEM DIAGNOSTICS
+ * Checks all integrations, configuration, sheets, and triggers.
+ * Run from: OTG Admin menu → Run System Diagnostics, or manually in the Apps Script editor.
+ * Output: Logger (visible in editor) + HTML email to the configured health email address.
+ *
+ * ntfy test: posts to a derived diagnostics topic — subscribe to it once in the ntfy app
+ * to verify push delivery end-to-end. Topic format: [org-slug]-otg-diag
+ */
+function runDiagnostics() {
+    const results = [];
+    const tz  = CONFIG.TIMEZONE || 'UTC';
+    const now = new Date();
+
+    // ── Helper — record a result and log it immediately ───────────────────
+    const check = (category, name, status, detail) => {
+        results.push({ category, name, status, detail });
+        const icon = { PASS: '✅', WARN: '⚠️', FAIL: '❌', SKIP: '⏭️' }[status] || '?';
+        Logger.log(`${icon} [${category}] ${name}: ${detail}`);
+    };
+
+    // ── 1. CONFIG INJECTION ───────────────────────────────────────────────
+    Logger.log('── CONFIG INJECTION ──');
+    const uninjected = Object.keys(CONFIG).filter(k => String(CONFIG[k]).includes('%%'));
+    if (uninjected.length === 0) {
+        check('Config', 'Variable injection', 'PASS', 'All CONFIG variables are correctly injected.');
+    } else {
+        check('Config', 'Variable injection', 'FAIL',
+            'Un-injected placeholders found: ' + uninjected.join(', ') +
+            '. Re-deploy from the Factory or set these values manually.');
+    }
+
+    // ── 2. REQUIRED SHEETS ────────────────────────────────────────────────
+    Logger.log('── SHEETS ──');
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    ['Staff', 'Visits', 'Sites', 'Templates'].forEach(name => {
+        try {
+            const s = ss.getSheetByName(name);
+            if (s) {
+                check('Sheets', '"' + name + '" exists', 'PASS',
+                    'Found. Rows: ' + Math.max(0, s.getLastRow() - 1) + ' (excluding header).');
+            } else {
+                check('Sheets', '"' + name + '" exists', 'FAIL',
+                    'Sheet not found. ' + (name === 'Visits'
+                        ? 'Will be created automatically on first worker post.'
+                        : 'Must be created manually before workers can use the system.'));
+            }
+        } catch(e) { check('Sheets', '"' + name + '" exists', 'FAIL', e.toString()); }
+    });
+
+    // Staff: at least one active worker
+    try {
+        const staffSheet = ss.getSheetByName('Staff');
+        if (staffSheet && staffSheet.getLastRow() > 1) {
+            const staffData = staffSheet.getDataRange().getValues();
+            const active = staffData.slice(1).filter(r =>
+                (r[0] || '').toString().trim() &&
+                (r[2] || '').toString().trim().toLowerCase() !== 'inactive'
+            );
+            check('Sheets', 'Staff — Active workers', active.length > 0 ? 'PASS' : 'WARN',
+                active.length > 0
+                    ? active.length + ' active worker(s) found.'
+                    : 'No active workers found. Workers with Status = "Inactive" cannot sync.');
+        }
+    } catch(e) { check('Sheets', 'Staff — Active workers', 'FAIL', e.toString()); }
+
+    // ── 3. PHOTOS FOLDER ──────────────────────────────────────────────────
+    Logger.log('── PHOTOS FOLDER ──');
+    const folderId = CONFIG.PHOTOS_FOLDER_ID;
+    if (!folderId || folderId.includes('%%') || folderId.length < 10) {
+        check('Storage', 'Photos folder', 'WARN',
+            'PHOTOS_FOLDER_ID not configured. Visit report photos will not be saved to Drive.');
+    } else {
+        try {
+            const folder = DriveApp.getFolderById(folderId);
+            const testFile = folder.createFile(
+                '_otg_diag_test.txt',
+                'OTG diagnostic write test — safe to delete.',
+                MimeType.PLAIN_TEXT
+            );
+            testFile.setTrashed(true);
+            check('Storage', 'Photos folder', 'PASS',
+                'Accessible and writable. Folder name: "' + folder.getName() + '".');
+        } catch(e) {
+            check('Storage', 'Photos folder', 'FAIL',
+                'Folder inaccessible or not writable: ' + e.toString());
+        }
+    }
+
+    // ── 4. MAILAPP QUOTA ──────────────────────────────────────────────────
+    Logger.log('── EMAIL ──');
+    try {
+        const quota = MailApp.getRemainingDailyQuota();
+        const status = quota > 50 ? 'PASS' : quota > 10 ? 'WARN' : 'FAIL';
+        check('Email', 'Daily send quota', status,
+            quota + ' emails remaining today. ' +
+            '(Free Google accounts: 100/day; Workspace accounts: 1,500/day.) ' +
+            (quota <= 10 ? 'Critically low — alarm emails may not send.' : ''));
+    } catch(e) { check('Email', 'Daily send quota', 'FAIL', e.toString()); }
+
+    // ── 5. TEXTBELT SMS ───────────────────────────────────────────────────
+    Logger.log('── TEXTBELT SMS ──');
+    const textbeltKey = CONFIG.TEXTBELT_API_KEY;
+    if (!textbeltKey || textbeltKey.includes('%%') || textbeltKey.length < 5) {
+        check('SMS', 'Textbelt', 'SKIP',
+            'TEXTBELT_API_KEY not configured. SMS notifications are disabled.');
+    } else {
+        try {
+            const resp = UrlFetchApp.fetch(
+                'https://textbelt.com/quota/' + encodeURIComponent(textbeltKey),
+                { method: 'get', muteHttpExceptions: true }
+            );
+            const code = resp.getResponseCode();
+            const body = JSON.parse(resp.getContentText());
+            if (code === 200 && body.success) {
+                const remaining = body.quotaRemaining;
+                const status = remaining > 10 ? 'PASS' : remaining > 0 ? 'WARN' : 'FAIL';
+                check('SMS', 'Textbelt quota', status,
+                    'Key valid. Credits remaining: ' + remaining + '.' +
+                    (remaining === 0 ? ' Top-up required — SMS will fail until credits are purchased.' : '') +
+                    (remaining <= 10 && remaining > 0 ? ' Running low — consider topping up.' : ''));
+            } else {
+                check('SMS', 'Textbelt quota', 'FAIL',
+                    'Unexpected response (HTTP ' + code + '): ' +
+                    resp.getContentText().substring(0, 200));
+            }
+        } catch(e) { check('SMS', 'Textbelt quota', 'FAIL', 'Request failed: ' + e.toString()); }
+    }
+
+    // ── 6. NTFY PUSH ──────────────────────────────────────────────────────
+    Logger.log('── NTFY PUSH ──');
+    const ntfyServer = (CONFIG.NTFY_SERVER && !CONFIG.NTFY_SERVER.includes('%%'))
+        ? CONFIG.NTFY_SERVER.replace(/\/$/, '')
+        : 'https://ntfy.sh';
+    const orgSlug = (CONFIG.ORG_NAME || 'otg')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+        .substring(0, 24);
+    const diagTopic = orgSlug + '-otg-diag';
+    try {
+        const resp = UrlFetchApp.fetch(ntfyServer + '/' + diagTopic, {
+            method: 'post',
+            headers: { 'Title': '🔧 OTG Diagnostics Test', 'Priority': 'default', 'Tags': 'test_tube' },
+            payload: 'OTG system diagnostic ran at ' +
+                     Utilities.formatDate(now, tz, 'dd MMM yyyy HH:mm z') +
+                     '. If you received this, ntfy push notifications are working correctly.' +
+                     ' Topic: ' + diagTopic,
+            muteHttpExceptions: true
+        });
+        const code = resp.getResponseCode();
+        if (code >= 200 && code < 300) {
+            check('ntfy Push', 'Diagnostic send', 'PASS',
+                'Message posted to topic "' + diagTopic + '" on ' + ntfyServer + ' (HTTP ' + code + '). ' +
+                'Subscribe to this topic in the ntfy app to confirm end-to-end delivery.');
+        } else {
+            check('ntfy Push', 'Diagnostic send', 'FAIL',
+                ntfyServer + ' returned HTTP ' + code + ': ' +
+                resp.getContentText().substring(0, 300));
+        }
+    } catch(e) { check('ntfy Push', 'Diagnostic send', 'FAIL', 'Request failed: ' + e.toString()); }
+
+    // ── 7. HEALTHCHECKS.IO ────────────────────────────────────────────────
+    Logger.log('── HEALTHCHECKS.IO ──');
+    const hcUrl = CONFIG.HEALTHCHECK_URL;
+    if (!hcUrl || hcUrl.includes('%%') || hcUrl.length < 10) {
+        check('Dead-Man Switch', 'Healthchecks.io', 'SKIP',
+            'HEALTHCHECK_URL not configured. Dead-man switch monitoring is disabled. ' +
+            'Register a check at healthchecks.io and paste the ping URL into the Factory.');
+    } else {
+        try {
+            const resp = UrlFetchApp.fetch(hcUrl, { method: 'get', muteHttpExceptions: true });
+            const code = resp.getResponseCode();
+            if (code === 200) {
+                check('Dead-Man Switch', 'Healthchecks.io ping', 'PASS',
+                    'Ping accepted (HTTP 200). Dead-man switch is active.');
+            } else {
+                check('Dead-Man Switch', 'Healthchecks.io ping', 'WARN',
+                    'Unexpected HTTP ' + code + '. Verify the ping URL is correct in CONFIG.');
+            }
+        } catch(e) {
+            check('Dead-Man Switch', 'Healthchecks.io ping', 'FAIL', 'Request failed: ' + e.toString());
+        }
+    }
+
+    // ── 8. GEMINI API ─────────────────────────────────────────────────────
+    Logger.log('── GEMINI API ──');
+    const geminiKey = CONFIG.GEMINI_API_KEY;
+    if (!geminiKey || geminiKey.includes('%%') || geminiKey.length < 10) {
+        check('AI Scribe', 'Gemini API key', 'SKIP',
+            'GEMINI_API_KEY not configured. Smart Scribe (AI visit note polishing) is disabled.');
+    } else {
+        try {
+            const resp = UrlFetchApp.fetch(
+                'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + geminiKey,
+                {
+                    method: 'post',
+                    contentType: 'application/json',
+                    payload: JSON.stringify({ contents: [{ parts: [{ text: 'Reply with the single word: OK' }] }] }),
+                    muteHttpExceptions: true
+                }
+            );
+            const code = resp.getResponseCode();
+            if (code === 200) {
+                check('AI Scribe', 'Gemini API key', 'PASS', 'Key valid — API is responding.');
+            } else if (code === 403) {
+                check('AI Scribe', 'Gemini API key', 'FAIL',
+                    'HTTP 403 — key invalid, or Generative Language API not enabled for this Google Cloud project.');
+            } else if (code === 429) {
+                check('AI Scribe', 'Gemini API key', 'WARN',
+                    'HTTP 429 — rate limit hit during diagnostic. Key is likely valid but quota is exhausted.');
+            } else {
+                check('AI Scribe', 'Gemini API key', 'WARN',
+                    'HTTP ' + code + ': ' + resp.getContentText().substring(0, 200));
+            }
+        } catch(e) { check('AI Scribe', 'Gemini API key', 'FAIL', 'Request failed: ' + e.toString()); }
+    }
+
+    // ── 9. ORS ROUTING API ────────────────────────────────────────────────
+    Logger.log('── ORS ROUTING API ──');
+    const orsKey = CONFIG.ORS_API_KEY;
+    if (!orsKey || orsKey.includes('%%') || orsKey.length < 10) {
+        check('Routing', 'ORS API key', 'SKIP',
+            'ORS_API_KEY not configured. Road-distance calculations are disabled.');
+    } else {
+        try {
+            // Minimal geocode call — no directions quota consumed
+            const resp = UrlFetchApp.fetch(
+                'https://api.openrouteservice.org/geocode/search?api_key=' + orsKey +
+                '&text=Wellington+New+Zealand&size=1',
+                { method: 'get', muteHttpExceptions: true }
+            );
+            const code = resp.getResponseCode();
+            if (code === 200) {
+                check('Routing', 'ORS API key', 'PASS', 'Key valid — API is responding.');
+            } else if (code === 403) {
+                check('Routing', 'ORS API key', 'FAIL',
+                    'HTTP 403 — key invalid or daily quota exhausted.');
+            } else if (code === 429) {
+                check('Routing', 'ORS API key', 'WARN',
+                    'HTTP 429 — rate limited during diagnostic. Key is likely valid.');
+            } else {
+                check('Routing', 'ORS API key', 'WARN',
+                    'HTTP ' + code + ': ' + resp.getContentText().substring(0, 200));
+            }
+        } catch(e) { check('Routing', 'ORS API key', 'FAIL', 'Request failed: ' + e.toString()); }
+    }
+
+    // ── 10. TRIGGERS ──────────────────────────────────────────────────────
+    Logger.log('── TRIGGERS ──');
+    const RECOMMENDED = [
+        {
+            fn:       'checkOverdueVisits',
+            label:    'Escalation engine',
+            required: true,
+            note:     'REQUIRED — must run every 10 minutes or less. ' +
+                      'Workers will NOT be escalated if this trigger is missing.'
+        },
+        {
+            fn:       'sendHealthEmail',
+            label:    'Daily health email',
+            required: false,
+            note:     'Recommended — run once daily for admin visibility of system health.'
+        },
+        {
+            fn:       'archiveOldData',
+            label:    'Visit archiver',
+            required: false,
+            note:     'Recommended — run weekly to keep the Visits sheet performant.'
+        }
+    ];
+
+    try {
+        const triggers    = ScriptApp.getProjectTriggers();
+        const installedFns = triggers.map(t => t.getHandlerFunction());
+
+        if (triggers.length === 0) {
+            check('Triggers', 'Installed triggers', 'FAIL',
+                'No triggers found. The escalation engine will not run automatically — ' +
+                'workers will NOT be monitored for overdue visits.');
+        } else {
+            triggers.forEach(t => {
+                const isTimeBased = t.getTriggerSource() === ScriptApp.TriggerSource.CLOCK;
+                check('Triggers', '"' + t.getHandlerFunction() + '"', 'PASS',
+                    (isTimeBased ? 'Time-based trigger installed.' : 'Trigger installed (source: ' + t.getTriggerSource() + ').'));
+            });
+        }
+
+        // Flag any recommended triggers that are missing
+        RECOMMENDED.forEach(rec => {
+            if (!installedFns.includes(rec.fn)) {
+                check('Triggers', '"' + rec.fn + '" — ' + rec.label,
+                    rec.required ? 'FAIL' : 'WARN',
+                    'Not installed. ' + rec.note);
+            }
+        });
+
+    } catch(e) {
+        check('Triggers', 'Trigger inspection', 'FAIL',
+            'Could not read project triggers: ' + e.toString());
+    }
+
+    // ── SUMMARY ───────────────────────────────────────────────────────────
+    const passCount = results.filter(r => r.status === 'PASS').length;
+    const warnCount = results.filter(r => r.status === 'WARN').length;
+    const failCount = results.filter(r => r.status === 'FAIL').length;
+    const skipCount = results.filter(r => r.status === 'SKIP').length;
+
+    Logger.log('── SUMMARY ──');
+    Logger.log('✅ PASS: ' + passCount + '  ⚠️ WARN: ' + warnCount +
+               '  ❌ FAIL: ' + failCount + '  ⏭️ SKIP (not configured): ' + skipCount);
+
+    // ── BUILD EMAIL ───────────────────────────────────────────────────────
+    const statusIcon  = s => ({ PASS: '✅', WARN: '⚠️', FAIL: '❌', SKIP: '⏭️' }[s] || '?');
+    const statusColor = s => ({ PASS: '#27ae60', WARN: '#e67e22', FAIL: '#c0392b', SKIP: '#888' }[s]);
+    const rowBg       = s => ({ PASS: '#f9fffa', WARN: '#fef9ec', FAIL: '#fdf3f3', SKIP: '#f8f8f8' }[s]);
+
+    const tableRows = results.map(r =>
+        '<tr style="background:' + rowBg(r.status) + ';border-top:1px solid #eee">' +
+        '<td style="padding:8px 12px;font-size:12px;color:#666;white-space:nowrap">' + r.category + '</td>' +
+        '<td style="padding:8px 12px;font-size:12px;font-weight:bold;white-space:nowrap">' + r.name + '</td>' +
+        '<td style="padding:8px 12px;font-size:12px;font-weight:bold;color:' + statusColor(r.status) + ';white-space:nowrap">' + statusIcon(r.status) + ' ' + r.status + '</td>' +
+        '<td style="padding:8px 12px;font-size:12px;color:#333">' + r.detail + '</td>' +
+        '</tr>'
+    ).join('');
+
+    const overallStatus = failCount > 0 ? 'ISSUES FOUND' : warnCount > 0 ? 'WARNINGS' : 'ALL CLEAR';
+    const overallIcon   = failCount > 0 ? '❌' : warnCount > 0 ? '⚠️' : '✅';
+    const headerColour  = failCount > 0 ? '#c0392b' : warnCount > 0 ? '#c07d00' : '#1e3a5f';
+
+    const html =
+'<div style="font-family:Arial,sans-serif;max-width:760px;margin:0 auto;color:#1a1a1a">' +
+'<div style="background:' + headerColour + ';padding:20px 24px;border-radius:6px 6px 0 0">' +
+'<h2 style="margin:0;color:#fff;font-size:18px">🔧 OTG System Diagnostics — ' + CONFIG.ORG_NAME + '</h2>' +
+'<p style="margin:6px 0 0;color:rgba(255,255,255,0.85);font-size:13px">' +
+'Run ' + Utilities.formatDate(now, tz, 'dd MMM yyyy HH:mm z') +
+' &nbsp;·&nbsp; ' + overallIcon + ' ' + overallStatus + '</p>' +
+'</div>' +
+'<div style="background:#f4f6f9;padding:20px 24px">' +
+'<div style="background:#fff;border-radius:4px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)">' +
+'<table style="border-collapse:collapse;width:100%">' +
+'<tr style="background:#e8edf3">' +
+'<th style="text-align:left;padding:10px 12px;font-size:12px;color:#555">Category</th>' +
+'<th style="text-align:left;padding:10px 12px;font-size:12px;color:#555">Check</th>' +
+'<th style="text-align:left;padding:10px 12px;font-size:12px;color:#555">Status</th>' +
+'<th style="text-align:left;padding:10px 12px;font-size:12px;color:#555">Detail</th>' +
+'</tr>' +
+tableRows +
+'<tr style="background:#e8edf3">' +
+'<td colspan="4" style="padding:10px 12px;font-size:12px;color:#555">' +
+'<strong>Summary:</strong> ' + passCount + ' passed &nbsp;·&nbsp; ' +
+warnCount + ' warnings &nbsp;·&nbsp; ' +
+failCount + ' failed &nbsp;·&nbsp; ' +
+skipCount + ' skipped (not configured)' +
+'</td></tr>' +
+'</table></div>' +
+'<p style="margin:14px 0 0;font-size:12px;color:#666">' +
+'ℹ️ An ntfy test notification was posted to topic <strong>' + diagTopic + '</strong> on <strong>' + ntfyServer + '</strong>. ' +
+'Subscribe to this topic in the ntfy app to verify push delivery end-to-end. ' +
+'You only need to subscribe once.' +
+'</p>' +
+'</div>' +
+'<div style="background:#e8edf3;padding:10px 24px;border-radius:0 0 6px 6px;font-size:11px;color:#888">' +
+'OTG AppSuite ' + CONFIG.VERSION + ' — run <em>runDiagnostics()</em> from the OTG Admin menu or Apps Script editor at any time.' +
+'</div></div>';
+
+    const recipient = (CONFIG.HEALTH_EMAIL && CONFIG.HEALTH_EMAIL.includes('@'))
+        ? CONFIG.HEALTH_EMAIL
+        : Session.getEffectiveUser().getEmail();
+
+    try {
+        MailApp.sendEmail({
+            to:       recipient,
+            subject:  overallIcon + ' OTG Diagnostics — ' + overallStatus + ' — ' + CONFIG.ORG_NAME,
+            htmlBody: html
+        });
+        Logger.log('Diagnostic email sent to: ' + recipient);
+    } catch(e) {
+        Logger.log('Could not send diagnostic email: ' + e.toString());
+    }
+}
+
 
 function getDashboardData() {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1693,6 +2086,9 @@ function getSyncData(workerName, deviceId) {
     // 2. Identify Worker & Their Groups
     for (let i = 1; i < stData.length; i++) {
         if ((stData[i][0] || "").toString().toLowerCase().trim() === wNameSafe) {
+            // Column C (index 2) is 'Status' — block Inactive workers at the gate.
+            const staffStatus = (stData[i][2] || '').toString().trim().toLowerCase();
+            if (staffStatus === 'inactive') return {status: "error", message: "Access Denied."};
             workerFound = true;
             // Column D (Index 3) is 'Group Membership'
             workerGroups = (stData[i][3] || "").toString().toLowerCase(); 
@@ -1894,15 +2290,34 @@ function triggerEscalation(sheet, entry, newStatus, isDual) {
     newRow[11] = entry[11] + ` [AUTO-${newStatus}]`;
     sheet.appendRow(newRow);
 
+    // Look up ntfy topics from the Staff sheet — they are not stored in Visits rows.
+    // Silently degrades to empty strings if the sheet is missing or the row isn't found.
+    let emgNtfy = '', escNtfy = '';
+    try {
+        const staffSheet = sheet.getParent().getSheetByName('Staff');
+        if (staffSheet) {
+            const staffData = staffSheet.getDataRange().getValues();
+            for (let j = 1; j < staffData.length; j++) {
+                if (staffData[j][0] === entry[2]) {
+                    emgNtfy = (staffData[j][7] || '').toString().trim(); // Column H
+                    escNtfy = (staffData[j][8] || '').toString().trim(); // Column I
+                    break;
+                }
+            }
+        }
+    } catch (e) { console.error('ntfy Staff lookup failed: ' + e.toString()); }
+
     const payload = {
         'Worker Name':               entry[2],
         'Worker Phone Number':       entry[3],
         'Emergency Contact Name':    entry[4],
         'Emergency Contact Number':  entry[5],
         'Emergency Contact Email':   entry[6],
+        'Emergency Contact Ntfy':    emgNtfy,
         'Escalation Contact Name':   entry[7],
         'Escalation Contact Number': isDual ? entry[8] : "",
         'Escalation Contact Email':  isDual ? entry[9] : "",
+        'Escalation Contact Ntfy':   isDual ? escNtfy : "",
         'Alarm Status':              newStatus,
         'Notes':                     `Alert: Worker is ${newStatus}.`,
         'Location Name':             entry[12],
@@ -1918,12 +2333,10 @@ function triggerEscalation(sheet, entry, newStatus, isDual) {
  * Logic: Notifies both contacts that the emergency has ended.
  */
 function handleSafetyResolution(p) {
-    // 1. Update the Visit Record for the audit trail
-    handleWorkerPost(p);
-
-    // GUARD: Only send All Clear if an overdue/alarm alert was actually sent.
-    // If the worker resolved quickly before any alert fired, contacts never
-    // received an alert — sending All Clear would be confusing and alarming.
+    // GUARD: Scan the sheet BEFORE handleWorkerPost runs, because handleWorkerPost
+    // will overwrite the open alarm row's status to USER_SAFE_CONFIRMED — after which
+    // the scan would hit the 'SAFE' break condition and incorrectly return alertWasSent=false,
+    // suppressing All Clear every time.
     const workerNameCheck = (p['Worker Name'] || '').toString().trim();
     let alertWasSent = false;
     try {
@@ -1946,6 +2359,9 @@ function handleSafetyResolution(p) {
         console.log('All Clear suppressed — no alarm was sent for ' + workerNameCheck);
         return { status: 'success', allClearSuppressed: true };
     }
+
+    // 1. Update the Visit Record for the audit trail (after the guard, so the scan sees clean data).
+    handleWorkerPost(p);
 
     // 2. Draft the Resolution Messages
     const subject    = `✅ ALL CLEAR — ${p['Worker Name']} is safe`;
@@ -2006,7 +2422,7 @@ function handleSafetyResolution(p) {
                     'method': 'post',
                     'payload': { 'phone': num, 'message': `${subject}. Alert resolved.`, 'key': CONFIG.TEXTBELT_API_KEY }
                 }); 
-            } catch(e) {}
+            } catch(e) { console.error('All Clear SMS failed: ' + e.toString()); }
         });
     }
 
@@ -2117,4 +2533,3 @@ function getEmergencyProceduresViewer(siteName, companyName) {
 function _escHtml(str) {
     return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
-
