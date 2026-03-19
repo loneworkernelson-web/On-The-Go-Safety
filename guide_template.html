@@ -957,10 +957,10 @@
     <h3>Why this exists</h3>
     <p>When an alarm fires, your contacts are notified by email. Email is reliable, but it has a problem: most people don't have email open on their phone during the day, and notifications can be delayed by minutes or silenced entirely.</p>
 
-    <p><strong>ntfy solves this.</strong> ntfy is a free, open-source push notification service. When it is set up, your contacts will receive an instant alert on their phone the moment any alarm fires — directly on their lock screen, with no email delay. It works even when the phone is locked and silent. Think of it as a direct line to your contacts' phones, separate from email.</p>
+    <p><strong>ntfy solves this.</strong> ntfy is a free, open-source push notification service. When it is set up, your contacts will receive an instant alert on their phone the moment any alarm fires — directly on their lock screen, with no email delay. Think of it as a direct line to your contacts' phones, separate from email.</p>
 
     <div class="highlight">
-        <strong>ntfy is optional but strongly recommended.</strong> Your safety system works without it — email and SMS will still be sent. But for genuine emergencies, the seconds saved by a push notification versus an email can matter.
+        <strong>ntfy is optional but strongly recommended.</strong> Your safety system works without it — email and SMS will still be sent. But for genuine emergencies, the seconds saved by a push notification versus an email can matter. <strong>The setup steps below are important — skipping them means notifications may be delayed or silent.</strong>
     </div>
 
     <h3>How it works</h3>
@@ -968,28 +968,52 @@
 
     <p>Topics are private by design — they are just text strings, and nobody can find or subscribe to yours unless you share the name with them.</p>
 
-    <h3>What your contact needs to do (they do this once)</h3>
+    <h3>Step 1 — Your contact installs ntfy and subscribes</h3>
     <ol class="step-list">
-        <li>Download the free <strong>ntfy app</strong> on their phone — available from the <a href="https://apps.apple.com/app/ntfy/id1625396347">iOS App Store</a>, <a href="https://play.google.com/store/apps/details?id=io.heckel.ntfy">Google Play</a>, or by visiting <a href="https://ntfy.sh">ntfy.sh</a> in a browser.</li>
+        <li>Download the free <strong>ntfy app</strong> — available from the <a href="https://apps.apple.com/app/ntfy/id1625396347">iOS App Store</a>, <a href="https://play.google.com/store/apps/details?id=io.heckel.ntfy">Google Play</a>, or by visiting <a href="https://ntfy.sh">ntfy.sh</a> in a browser.</li>
         <li>Open the app and tap <strong>"Subscribe to topic"</strong>.</li>
-        <li>Choose a <strong>private topic name</strong> — something memorable but not easily guessed. For example: <code>jane-safety-7x9k2</code> or <code>smithj-alerts-2026</code>. Avoid anything obvious like your full name alone.</li>
+        <li>Choose a <strong>private topic name</strong> — something memorable but not easily guessed. For example: <code>jane-safety-7x9k2</code> or <code>smithj-alerts-2026</code>. Avoid anything obvious like a full name alone.</li>
         <li>Tap <strong>Subscribe</strong>. The app will now listen for notifications on that topic.</li>
-        <li><strong>Tell you the topic name</strong> — you'll need to enter it in your safety app.</li>
+        <li><strong>Share the topic name with you</strong> — you'll need to enter it in your safety app.</li>
     </ol>
 
     <div class="tip">
-        <strong>💡 One topic per contact:</strong> Each contact needs their own topic. Your Emergency Contact and Escalation Contact should each choose a different topic name and give it to you separately.
+        <strong>💡 One topic per contact:</strong> Each contact needs their own unique topic. Your Emergency Contact and Escalation Contact should each choose a different name and share it with you separately.
     </div>
 
-    <h3>What you need to do as the worker</h3>
-    <p>Once your contact has shared their topic name with you, enter it in the safety app. There are two ways to do this:</p>
+    <h3>Step 2 — Critical phone settings (do not skip)</h3>
+
+    <p>By default, Android and iOS aggressively restrict background apps to save battery. Without the settings below, ntfy notifications may arrive late — or not at all — when the phone screen is off. <strong>Each contact must complete the steps for their phone type.</strong></p>
+
+    <h4>Android</h4>
+    <ol class="step-list">
+        <li><strong>Enable Instant Delivery</strong> — open the ntfy app, go to <strong>Settings</strong>, and turn on <strong>Instant Delivery</strong>. This keeps a persistent background connection to the server so notifications arrive immediately even when the phone is in sleep mode. Without this, Android's doze mode can delay messages by many minutes. A small permanent notification will appear in the status bar confirming the service is running — this is normal and expected.</li>
+        <li><strong>Disable battery optimisation for ntfy</strong> — go to phone <strong>Settings → Apps → ntfy → Battery</strong> and select <strong>Unrestricted</strong> (the exact wording varies by phone brand). This prevents Android from killing the ntfy background service. On Samsung: <em>Settings → Apps → ntfy → Battery → Unrestricted</em>. On Xiaomi/MIUI: <em>Settings → Apps → Manage Apps → ntfy → Battery Saver → No restrictions</em>. The ntfy app itself will show a warning banner if this has not been set — tap it to go directly to the correct screen.</li>
+        <li><strong>Set the notification channel to override Do Not Disturb</strong> — in the ntfy app, long-press the subscription you just created and tap <strong>Edit</strong>. Under <strong>Notifications</strong>, tap the channel name, then tap <strong>Override Do Not Disturb</strong> and enable it. This ensures alarms break through DND and silent profiles.</li>
+        <li><strong>Set notification importance to Urgent</strong> — in the same notification channel settings (above), set <strong>Importance</strong> to <strong>Urgent</strong>. This makes the notification sound immediately and appear as a pop-up on the lock screen.</li>
+    </ol>
+
+    <h4>iPhone (iOS)</h4>
+    <ol class="step-list">
+        <li><strong>Allow notifications</strong> — when ntfy first opens, accept the prompt to allow notifications. If you declined it previously, go to phone <strong>Settings → ntfy → Notifications</strong> and turn on <strong>Allow Notifications</strong>. Set <strong>Alert style</strong> to <strong>Banners</strong> and enable <strong>Show on Lock Screen</strong> and <strong>Show in Notification Centre</strong>.</li>
+        <li><strong>Enable Time-Sensitive Notifications</strong> — in <strong>Settings → ntfy → Notifications</strong>, turn on <strong>Time Sensitive Notifications</strong>. This allows ntfy alerts to break through Focus modes and Do Not Disturb.</li>
+        <li><strong>Allow ntfy through your Focus modes</strong> — if you use Focus or Do Not Disturb, go to <strong>Settings → Focus → [your Focus mode] → Apps</strong> and add ntfy to the allowed apps list, <em>or</em> ensure <strong>Time Sensitive</strong> is enabled for that Focus. Otherwise ntfy notifications will be silenced during Focus.</li>
+        <li><strong>Check notification sound is set</strong> — in <strong>Settings → ntfy → Notifications</strong>, ensure a sound is selected (not "None"). Without a sound, the notification will appear silently on the lock screen.</li>
+    </ol>
+
+    <div class="warning">
+        <strong>⚠ iPhone mute switch limitation:</strong> The ntfy app does not currently support iOS Critical Alerts — the notification tier that overrides the physical mute switch. If an iPhone contact has their <strong>mute switch on</strong> (the small toggle on the side of the phone), ntfy notifications will arrive silently. Contacts should be aware of this and consider leaving their mute switch off, or keeping their phone on a surface where a screen flash is visible. This is a known limitation of the ntfy iOS app and is not something that can be configured around.
+    </div>
+
+    <h3>Step 3 — You enter the topic name in your safety app</h3>
+    <p>Once your contact has shared their topic name with you, enter it in the safety app:</p>
 
     <p><strong>During the Setup Wizard (first-time setup):</strong> On the Emergency Contact and Escalation Contact screens, there is an optional field labelled <em>"ntfy topic"</em>. Type in the topic name your contact gave you.</p>
 
-    <p><strong>After setup, via Settings:</strong> Go to the app's <strong>Settings</strong> screen and find the Emergency Contact or Escalation Contact section. There will be an <em>"ntfy topic"</em> field — enter or update the topic name there.</p>
+    <p><strong>After setup, via Settings:</strong> Go to the app's <strong>Settings</strong> screen and find the Emergency Contact or Escalation Contact section. Enter or update the topic name there.</p>
 
     <div class="tip">
-        <strong>💡 Verify it works:</strong> After entering the topic name, send a <strong>Test Alert</strong> from the Settings screen. Your contact should receive a push notification within a few seconds. The test email they receive will also include a one-tap subscribe link for convenience. If they don't receive the push, check the topic name was entered correctly — it must match exactly, including capitalisation.
+        <strong>💡 Verify it works:</strong> After entering the topic name, send a <strong>Test Alert</strong> from the Settings screen. Your contact should receive a push notification within a few seconds. The test email they receive also includes a one-tap subscribe link for convenience. If they don't receive the push notification, work through the checklist in Step 2 — the most common cause is battery optimisation not being set to Unrestricted on Android, or a Focus mode silencing ntfy on iPhone.
     </div>
 
     <h3>What your contacts will receive</h3>
