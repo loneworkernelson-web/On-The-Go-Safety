@@ -1601,27 +1601,33 @@ function runDiagnostics() {
             'GEMINI_API_KEY not configured. Smart Scribe (AI visit note polishing) is disabled.');
     } else {
         try {
-            const resp = UrlFetchApp.fetch(
-                'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + geminiKey,
-                {
-                    method: 'post',
-                    contentType: 'application/json',
-                    payload: JSON.stringify({ contents: [{ parts: [{ text: 'Reply with the single word: OK' }] }] }),
-                    muteHttpExceptions: true
-                }
-            );
-            const code = resp.getResponseCode();
-            if (code === 200) {
-                check('AI Scribe', 'Gemini API key', 'PASS', 'Key valid — API is responding.');
-            } else if (code === 403) {
+            const model = getGeminiModel_(geminiKey);
+            if (!model) {
                 check('AI Scribe', 'Gemini API key', 'FAIL',
-                    'HTTP 403 — key invalid, or Generative Language API not enabled for this Google Cloud project.');
-            } else if (code === 429) {
-                check('AI Scribe', 'Gemini API key', 'WARN',
-                    'HTTP 429 — rate limit hit during diagnostic. Key is likely valid but quota is exhausted.');
+                    'Could not resolve an available Gemini model. Key may be invalid, or the Generative Language API is not enabled for this project.');
             } else {
-                check('AI Scribe', 'Gemini API key', 'WARN',
-                    'HTTP ' + code + ': ' + resp.getContentText().substring(0, 200));
+                const resp = UrlFetchApp.fetch(
+                    'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + geminiKey,
+                    {
+                        method: 'post',
+                        contentType: 'application/json',
+                        payload: JSON.stringify({ contents: [{ parts: [{ text: 'Reply with the single word: OK' }] }] }),
+                        muteHttpExceptions: true
+                    }
+                );
+                const code = resp.getResponseCode();
+                if (code === 200) {
+                    check('AI Scribe', 'Gemini API key', 'PASS', 'Key valid — using model: ' + model + '.');
+                } else if (code === 403) {
+                    check('AI Scribe', 'Gemini API key', 'FAIL',
+                        'HTTP 403 — key invalid, or Generative Language API not enabled for this Google Cloud project.');
+                } else if (code === 429) {
+                    check('AI Scribe', 'Gemini API key', 'WARN',
+                        'HTTP 429 — rate limit hit during diagnostic. Key is likely valid but quota is exhausted. Model resolved: ' + model + '.');
+                } else {
+                    check('AI Scribe', 'Gemini API key', 'WARN',
+                        'HTTP ' + code + ': ' + resp.getContentText().substring(0, 200));
+                }
             }
         } catch(e) { check('AI Scribe', 'Gemini API key', 'FAIL', 'Request failed: ' + e.toString()); }
     }
@@ -1706,8 +1712,14 @@ function runDiagnostics() {
         });
 
     } catch(e) {
-        check('Triggers', 'Trigger inspection', 'FAIL',
-            'Could not read project triggers: ' + e.toString());
+        const msg = e.toString();
+        if (msg.includes('Script') && (msg.includes('permission') || msg.includes('scope') || msg.includes('not have'))) {
+            check('Triggers', 'Trigger inspection', 'WARN',
+                'Permission denied reading project triggers. Run the script once from the Apps Script editor under your own account to grant the required OAuth scope, then re-run diagnostics.');
+        } else {
+            check('Triggers', 'Trigger inspection', 'FAIL',
+                'Could not read project triggers: ' + msg);
+        }
     }
 
     // ── SUMMARY ───────────────────────────────────────────────────────────
@@ -1852,6 +1864,49 @@ function saveImage(b64, workerName, isSignature) {
     } catch(e) { return "Error saving photo: " + e.toString(); }
 }
 
+/**
+ * Resolves the best available Gemini model that supports generateContent.
+ * Calls the ListModels endpoint so the system automatically adapts when
+ * Google retires or adds models — no hardcoded model names to maintain.
+ * Returns a model ID string (e.g. "gemini-2.0-flash") or null on failure.
+ */
+function getGeminiModel_(apiKey) {
+    try {
+        const resp = UrlFetchApp.fetch(
+            'https://generativelanguage.googleapis.com/v1beta/models?key=' + apiKey,
+            { method: 'get', muteHttpExceptions: true }
+        );
+        if (resp.getResponseCode() !== 200) return null;
+        const models = JSON.parse(resp.getContentText()).models || [];
+
+        // Collect models that support generateContent
+        const capable = models
+            .filter(m => m.supportedGenerationMethods &&
+                         m.supportedGenerationMethods.includes('generateContent'))
+            .map(m => m.name.replace('models/', '')); // e.g. "gemini-2.0-flash"
+
+        // Preference order — first match wins
+        const preferred = [
+            'gemini-2.0-flash',
+            'gemini-2.0-flash-lite',
+            'gemini-1.5-flash',
+            'gemini-1.5-flash-8b',
+            'gemini-1.5-pro',
+        ];
+        for (const p of preferred) {
+            if (capable.includes(p)) return p;
+        }
+        // Fall back to any flash model, then any pro model
+        const flash = capable.find(m => m.includes('flash'));
+        if (flash) return flash;
+        const pro = capable.find(m => m.includes('pro'));
+        if (pro) return pro;
+        return capable[0] || null; // Last resort: whatever is available
+    } catch(e) {
+        return null;
+    }
+}
+
 function smartScribe(data, type, notes) {
     if(!CONFIG.GEMINI_API_KEY) return notes;
     let safeNotes = notes || "";
@@ -1879,7 +1934,9 @@ function smartScribe(data, type, notes) {
     Output only the polished, professional report text.`;
     
     try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
+        const model = getGeminiModel_(CONFIG.GEMINI_API_KEY);
+        if (!model) return notes;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
         const payload = { contents: [{ parts: [{ text: prompt }] }] };
         const options = { method: 'post', contentType: 'application/json', payload: JSON.stringify(payload), muteHttpExceptions: true };
         const response = UrlFetchApp.fetch(url, options);
