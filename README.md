@@ -71,7 +71,7 @@ Based on its architecture, the OTG AppSuite is well-suited for:
 
 ## Summary
 
-The OTG AppSuite is a **"build your own"** professional safety platform. It trades the convenience of a sign-up button for the power of **ownership, customisation, and zero running costs**. If you are willing to spend 20 minutes setting it up, you get a safety system that rivals commercial alternatives for free.
+The OTG AppSuite is a **"build your own"** professional safety platform. It trades the convenience of a sign-up button for the power of **ownership, customisation, and zero running costs**. If you are willing to spend a few hours setting it up, you get a safety system that rivals commercial alternatives for free.
 
 ---
 ---
