@@ -1,6 +1,6 @@
-# OTG AppSuite: A "BYO" Safety System for Lean Organisations
+# OTG AppSuite — A "BYO" Safety System for Lean Organisations
 
-I designed the **On-The-Go (OTG) AppSuite** to solve a specific problem: professional Lone Worker safety systems are often too expensive or complex for small charities and community organisations.
+I designed the **On-The-Go (OTG) AppSuite** to solve a specific problem: professional lone worker safety systems are often too expensive or complex for small charities and community organisations.
 
 The OTG AppSuite is not a standard SaaS product. You don't sign up for an account, you don't pay a monthly subscription, and your data doesn't live on our servers. Instead, it is a **self-hosted system engine** that you deploy into your own Google Cloud environment.
 
@@ -12,16 +12,22 @@ Here is a realistic breakdown of what it does and who it is for.
 
 The system is serverless. It uses **Google Sheets** as its database and **Google Apps Script** as its backend.
 
-1. **The Worker App:** Staff install a web app (PWA) on their phones. It handles GPS tracking, check-in timers, and form reporting. It works offline and syncs when connection is restored.
-2. **The Backend:** A script running in your Google Drive receives data, saves photos to your Drive folders, and acts as a watchdog. If a worker misses a check-in, the script triggers an escalation (email/SMS).
-3. **The Dashboard:** Managers view a live status board on their office PC, showing active workers, battery levels, and locations.
+1. **The Worker App:** Staff install a web app (PWA) on their phones. It handles GPS tracking, check-in timers, form reporting, and visit logging. It works offline and syncs when connection is restored.
+2. **The Backend:** A script running in your Google Drive receives data, saves photos to your Drive folders, and acts as a watchdog. If a worker misses a check-in, the script triggers a tiered escalation (email, SMS, and push notification).
+3. **The Monitor Dashboard:** Supervisors view a live status board on their office PC, showing active workers, battery levels, GPS locations, and alarm states.
+
+---
 
 ## Key Capabilities
 
-- **Tiered Escalation:** Sends progressive overdue alerts at 15, 30, and 45 minutes, followed by a full emergency email/SMS to managers if the worker remains unresponsive.
-- **Zero Tolerance:** Workers entering high-risk situations can toggle a mode that skips overdue warnings and escalates to emergency immediately if the timer expires.
-- **Business Intelligence:** It doesn't just log safety; it tracks work. The system generates monthly reports showing visit trends, total hours on-site, and aggregated numeric data (e.g., total mileage).
-- **AI Integration:** Raw data is stored exactly as typed for legal accuracy, but email notifications use AI (Google Gemini) to polish hasty notes into professional English for management updates.
+- **Tiered Escalation:** Sends overdue notification emails at 15, 30, and 45 minutes past the anticipated departure time, followed by a full emergency alert (email + SMS + push notification) at the 60-minute mark if the worker remains unresponsive.
+- **High-Risk (Zero Tolerance) Mode:** Workers entering dangerous situations can toggle a mode that skips all overdue warning tiers and escalates directly to emergency the moment the timer expires.
+- **Battery Saver / Dim Mode:** When the worker's screen dims automatically, the app enters a power-conserving mode while keeping all safety monitoring, alarm logic, and GPS pulsing active. A swipe-to-wake slider returns the worker to full brightness.
+- **Pre-Visit Forms:** Travel visits can require workers to complete a questionnaire before departure, covering vehicle checks, route details, or any other pre-trip requirements your organisation needs.
+- **Visit History:** Workers can review their recent visits on-device, grouped by date, providing an at-a-glance personal record without needing server access.
+- **Precise Location (what3words):** When configured, emergency alerts display a what3words address (e.g. `///filled.count.soap`) alongside GPS coordinates. The three-word address appears in emergency emails, on the monitor worker tile, and on the worker's alarm screen — particularly useful for locations where a street address is absent or imprecise.
+- **Business Intelligence:** It doesn't just log safety; it tracks work. The system generates monthly reports showing visit trends, total hours on-site, and aggregated numeric data (e.g. total mileage driven).
+- **AI Integration:** Raw data is stored exactly as typed for legal accuracy, but email notifications use Google Gemini to polish hasty notes into professional English for management updates. The system dynamically selects the best available Gemini model rather than relying on hardcoded model names.
 
 ---
 
@@ -29,23 +35,25 @@ The system is serverless. It uses **Google Sheets** as its database and **Google
 
 This solution is **not** a fit for everyone. Use this checklist to assess suitability.
 
-### ✅ You are the ideal user if:
-
+**✅ You are the ideal user if:**
 - **Budget is a primary constraint.** You are a charity, non-profit, or small business that cannot justify $20/user/month fees.
 - **You value data sovereignty.** You want to own your data in your own Google Drive, not trust a third-party vendor.
 - **You have "one tech-savvy person."** You don't need a developer, but you need someone comfortable copying and pasting code, generating API keys, and managing a Google Sheet.
 - **Your fleet is small to medium.** The system works best for teams of 5 to ~50 active workers.
 
-### ❌ This is likely NOT for you if:
-
+**❌ This is likely NOT for you if:**
 - **You need an SLA.** Because you host it, you are the support team. There is no 24/7 helpdesk to call if you break your spreadsheet.
 - **You need enterprise integration.** It does not plug into Active Directory, SAP, or complex HR systems out of the box.
-- **You have 500+ staff.** Google Sheets has processing limits (quotas) that very large organisations might hit.
+- **You have 500+ staff.** Google Sheets has processing limits (quotas) that very large organisations may hit.
 
-### ⚠️ Key safety limitations to understand before deploying:
+---
 
-- **No direct link to emergency services.** When an alarm fires, the system notifies your nominated contacts only. Those contacts must make the judgement call about whether to dial 111. There is no automatic escalation to police, ambulance, or a monitored response centre.
-- **The Monitor dashboard requires active supervision.** The audio alarm and full-screen alert only trigger if a supervisor has the Monitor tab open in a browser. If the tab is closed or the computer is locked, the alert is silent on that screen. Ensure your organisation has a clear plan for who monitors the dashboard and when.
+## ⚠️ Key Safety Limitations
+
+Understand these before deploying.
+
+- **No direct link to emergency services.** When an alarm fires, the system notifies your nominated contacts only. Those contacts must make the judgement call about whether to dial 111 (or your local emergency number). There is no automatic escalation to police, ambulance, or a monitored response centre.
+- **The Monitor dashboard requires active supervision.** The audio alarm and full-screen alert only trigger if a supervisor has the Monitor tab open in a browser. If the tab is closed or the computer is locked, that screen is silent. Ensure your organisation has a clear plan for who monitors the dashboard and when.
 - **Offline connectivity is safety-critical.** The escalation watchdog runs independently in Google Apps Script — it does not rely on the worker's device being online to send alerts. However, it can only monitor visits it knows about. If a worker starts a visit without a data connection, the visit record is queued locally and will not reach the backend until signal is restored. Until that sync happens, the watchdog has no record of the visit and cannot escalate if the timer expires.
 
 ---
@@ -70,7 +78,6 @@ The OTG AppSuite is a **"build your own"** professional safety platform. It trad
 
 # OTG AppSuite — Technical Reference
 
-**Version:** v82 (build-stamped at Factory output time)  
 **Architecture:** Serverless / Distributed PWA  
 **Runtime:** Google V8 Engine (backend) / ES6 Browser (frontend)  
 **Licence:** MIT / Open Source "Forever Free"
@@ -92,14 +99,16 @@ The `index.html` (Factory App) acts as a client-side compiler. It does not commu
 
 ### 1.2 The Config Model
 
-The Worker App HTML (`index.html` in the deployment pack) is a **shared, canonical file** that is identical across all deployments. No org-specific data is injected into it at build time. All organisation-specific configuration — org name, backend URL, API keys, theming, and timers — lives solely in `config.json`, which is bundled separately by the Factory and fetched by the app at runtime. Worker identity is established during the in-app setup wizard on first run.
+The Worker App HTML (`index.html` in the deployment pack) is a **shared, canonical file** — it is identical across all deployments. No org-specific data is injected into it at build time. All organisation-specific configuration — org name, backend URL, API keys, theming, and timers — lives solely in `config.json`, which is bundled separately by the Factory and fetched by the app at runtime. Worker identity is established during the in-app setup wizard on first run.
+
+This separation means the Worker App HTML can be updated centrally without requiring a full Factory rebuild for each organisation.
 
 ### 1.3 Data Topology (The "Thick Client" Model)
 
 Logic is pushed to the client to minimise server costs and latency:
 
-- **Worker App:** Handles GPS tracking, form validation, countdown timers, and the offline outbox locally.
-- **Monitor App:** Handles sorting, filtering, and alert rendering locally.
+- **Worker App:** Handles GPS tracking, form validation, countdown timers, battery saver logic, and the offline outbox locally.
+- **Monitor App:** Handles sorting, filtering, geocoding, and alert rendering locally.
 - **Backend:** Acts primarily as a RESTful API endpoint and database interface, only performing heavy lifting for reporting and escalation.
 
 ---
@@ -114,7 +123,7 @@ Google Sheets is not a transactional database. To prevent race conditions (two w
 
 - **Mechanism:** `LockService.getScriptLock()`
 - **Timeout:** 10,000 ms (10 seconds).
-- **Behaviour:** If the lock cannot be acquired within 10 s, the backend returns a `Server Busy` JSON error. The Worker App detects this and keeps the payload in its IndexedDB retry queue.
+- **Behaviour:** If the lock cannot be acquired within 10 s, the backend returns a `Server Busy` JSON error. The Worker App detects this and retains the payload in its IndexedDB retry queue.
 
 ### 2.2 The "Smart Ledger" Algorithm (`handleWorkerPost`)
 
@@ -123,10 +132,12 @@ The system does not simply append every request as a new row. It attempts to mai
 **Logic flow:**
 1. **Receive payload:** Worker sends Worker Name and Alarm Status.
 2. **Scan context:** The script reads the last 50 rows of the `Visits` sheet.
-3. **Match session:** It looks for a row where Column C (Worker Name) matches the incoming payload and Column K (Alarm Status) is **not** a closed state (`DEPARTED`, `USER_SAFE`, `COMPLETED`, `DATA_ENTRY_ONLY`, `NOTICE_ACK`).
+3. **Match session:** It looks for a row where Column C (Worker Name) matches the incoming payload and Column K (Alarm Status) is **not** a closed state (defined by the `CLOSED_VISIT_STATUSES` constant: `DEPARTED`, `USER_SAFE`, `COMPLETED`, `DATA_ENTRY_ONLY`, `NOTICE_ACK`, `PRE_VISIT`).
 4. **Decision:**
    - **Match found:** The script **updates** the existing row (timestamp, battery, GPS, notes). This prevents row spam during long visits with multiple updates.
    - **No match:** The script **appends** a new row to the bottom of the sheet.
+
+`handleSafetyResolution()` **must** run before `handleWorkerPost()` — reversing this order causes All Clear resolutions to be suppressed.
 
 ### 2.3 Tiered Escalation Watchdog (`checkOverdueVisits`)
 
@@ -135,13 +146,15 @@ This function must be triggered by a time-driven trigger (recommended frequency:
 **State machine:**
 - **Input:** Iterates through all active rows in `Visits`.
 - **Calculation:** `Diff = Current_Time − Anticipated_Departure_Time`.
-- **Zero Tolerance check:** If the notes field contains `[ZERO_TOLERANCE]`, escalation jumps directly to emergency at the 0-minute mark, bypassing all overdue tiers.
+- **High-Risk fast path:** If the visit notes contain `[CRITICAL_TIMING]` (written at visit start when the worker activates High-Risk mode), the watchdog skips all overdue tiers and escalates directly to emergency the moment `Diff ≥ 0`.
 
-**Trigger levels:**
+**Standard trigger levels:**
 1. **OVERDUE — 15 min:** Sends an overdue notification email.
 2. **OVERDUE — 30 min:** Sends a follow-up overdue notification.
 3. **OVERDUE — 45 min:** Sends a final overdue notification.
-4. **EMERGENCY — 60 min breach:** Triggers full emergency email + SMS via TextBelt + ntfy push notification.
+4. **EMERGENCY — 60 min breach:** Triggers full emergency email + SMS via TextBelt + ntfy push notification to all nominated contacts.
+
+`OVERDUE ALARM` status (sent when a worker's grace period expires on-device) is treated as an immediate alert trigger — the same path as `EMERGENCY`, `PANIC`, and `DURESS`.
 
 ### 2.4 Photo Handling & Sub-folders
 
@@ -152,6 +165,20 @@ The system prevents the root "Safety Photos" folder from becoming disorganised.
 3. **Naming convention:** Saves file as `YYYY-MM-DD_HH-mm_WorkerName_[Type].jpg` to ensure sortability.
 4. **Return:** Returns the `drive.google.com/open?id=...` URL to be written to the spreadsheet.
 
+### 2.5 Reverse Geocoding & what3words
+
+**Reverse geocoding (`reverseGeocode_`)** — used for SMS alert bodies. Calls the Nominatim API with the worker's GPS coordinates and returns a human-readable `"Road, Suburb"` string. Falls back to raw `"lat, lng"` if the lookup fails. Email and ntfy alerts are unaffected (they retain the full Google Maps URL).
+
+**what3words (`getW3wAddress_`)** — optional. When `CONFIG.W3W_API_KEY` is set, calls `api.what3words.com/v3/convert-to-3wa` and appends a clickable `what3words:` row below the GPS row in emergency email alerts. Returns `"///word.word.word"` or `null` on failure. Fires once per alert at send time; not cached server-side (alert volume is low enough for free tier charity use).
+
+> **Licensing note:** what3words is free for registered charities and NGOs — select the Free plan at `accounts.what3words.com/select-plan` and then contact what3words to request a charity upgrade. Commercial use requires a paid plan. The `convert-to-3wa` endpoint is not available on the standard free tier without this upgrade.
+
+### 2.6 AI Integration (Gemini / `smartScribe`)
+
+Worker notes are stored raw in the `Visits` sheet to preserve evidentiary integrity. When generating email reports, the backend calls Google Gemini to correct spelling and grammar. This polished text is used only in the email HTML — it is never written back to the spreadsheet.
+
+**Model selection (`getGeminiModel_`):** The backend calls the Gemini ListModels endpoint, filters for `generateContent`-capable models, and selects from a preference list. No model names are hardcoded anywhere, which ensures the backend remains functional as Google deprecates or renames model versions.
+
 ---
 
 ## 3. Worker App Specification (PWA)
@@ -160,20 +187,58 @@ The system prevents the root "Safety Photos" folder from becoming disorganised.
 
 - **File:** `sw.js` (generated by Factory; identical across all deployments).
 - **Strategy:** Cache-first for app assets; network-first for `config.json`.
-- **Behaviour:** On first load, the service worker pre-caches `index.html`, `manifest.json`, the icon, and CDN assets. Subsequent loads (even in Airplane Mode) serve these files from the Cache Storage API. Cache invalidation is driven by incrementing the `version` field in `config.json` — no app rebuild is needed.
-- **Outbox queue:** When offline, POST requests are stored in an **IndexedDB outbox** with idempotency keys. A processing loop monitors connectivity and flushes the queue when online.
+- **Behaviour:** On first load, the service worker pre-caches `index.html`, `manifest.json`, the icon, and CDN assets. Subsequent loads (even in Aeroplane Mode) serve these files from the Cache Storage API. Cache invalidation is driven by incrementing the `version` field in `config.json` — no app rebuild is needed.
+- **Outbox queue:** When offline, POST requests are stored in an **IndexedDB outbox** with idempotency keys to prevent duplicate submissions on retry. A processing loop monitors connectivity and flushes the queue when online.
 
-### 3.2 GPS & Battery Watchdogs
+### 3.2 GPS Tracking & Intervals
 
-- **GPS:** Uses `navigator.geolocation.watchPosition` with `enableHighAccuracy: true`.
-  - Accuracy < 20 m: 3 green bars (safe).
-  - Accuracy < 50 m: 2 amber bars (caution).
-  - Accuracy > 50 m: 1 red bar (unsafe/indoors).
-- **Battery:** Uses `navigator.getBattery()` with a `levelchange` event listener. Battery level is appended to every heartbeat sent to the server.
+The app uses `navigator.geolocation.watchPosition` with `enableHighAccuracy: true`.
 
-### 3.3 Form Builder Syntax
+**Signal quality UI:**
+- Accuracy < 20 m: 3 green bars (good).
+- Accuracy < 50 m: 2 amber bars (caution).
+- Accuracy > 50 m: 1 red bar (poor — indoors or obstructed).
 
-The app dynamically builds forms based on headers in the `Templates` sheet using a prefix parser.
+**Polling intervals:**
+- `GPS_MIN_INTERVAL_MS` — 2 minutes (non-travel visits).
+- `GPS_MIN_INTERVAL_TRAVEL_MS` — 1 minute (travel mode).
+- `GPS_DEFAULT_INTERVAL_MS` — 5 minutes.
+- `GPS_MAX_INTERVAL_MS` — 10 minutes.
+
+**Overdue pulse (`arrivedPulseInterval`):** When a worker with `ARRIVED` status becomes overdue, a 5-minute repeating GPS pulse fires to keep the backend's Last Known GPS current even if the worker is not actively using the app.
+
+**Travel distance accuracy:** A speed accumulator (`_speedAccumM`) tracks distance derived from speed readings as a floor value in `getDistance()`. This improves accuracy on routes where GPS crow-flight significantly underestimates actual driving distance. When the floor value wins, the distance type is tagged `+speed-floor`. OpenRouteService (`getOrsVersion_`) is tried first; crow-flight with speed floor is the fallback.
+
+**Battery level** is read via `navigator.getBattery()` and appended to every heartbeat POST.
+
+### 3.3 Battery Saver / Dim Mode
+
+When the device screen dims (after a configurable inactivity period), the app enters battery saver mode. The worker's name, visit timer, and overdue status remain visible on a minimal locked screen.
+
+- **`isBatterySaverActive`** (boolean) is the single source of truth for saver state.
+- **Tick rate in saver mode:** `TICK_SAVER = 30,000 ms` (vs. `TICK_NORMAL = 10,000 ms`). Any time-window logic that must fire in saver mode must span more than 30 seconds.
+- **Safety logic runs first:** Core safety checks (overdue detection, alarm triggers) execute before the early `return` in `tick()`, ensuring they fire even at the reduced tick rate.
+- **Wake:** A swipe-to-wake slider on the locked screen calls `requestFullscreen()` from within the touch event handler (Android Chrome rejects `requestFullscreen()` from `setTimeout` contexts).
+- **`WAKE_GRACE_MS = 0`:** There is no grace period after waking; the inactivity countdown restarts immediately. Any touch resets the 10-second (`DIM_DELAY`) countdown.
+- **WakeLock API** is acquired on visit start and released on departure to prevent the device from sleeping entirely during active monitoring.
+
+### 3.4 Visit Phase State Machine
+
+Active visits progress through a sequence of phases defined in `VISIT_PHASES`. Transitions are managed by `setVisitPhase()`, which validates moves against `VALID_PHASE_TRANSITIONS` and logs a warning (returning `false`) on any illegal transition. `setVisitPhase()` does not call `saveState()` — callers are responsible for persisting state after a phase change.
+
+The current phase is stored in `state.activeVisit.phase` and read via `getVisitPhase()`.
+
+### 3.5 Pre-Visit Forms (Travel Mode)
+
+Travel visits can be configured to require a pre-departure questionnaire. The `_travel` sentinel row in the Sites sheet (a row named `_travel` with `TRUE` in column L) is filtered from the location tile grid but is read by `startVisit()` to overlay `preVisitForm: true` onto travel visits. The form uses the same template-driven builder as all other forms.
+
+### 3.6 Back-Navigation Trap
+
+To prevent workers from accidentally leaving the app mid-visit by pressing the Android back button, `window._armBackTrap()` pushes an `{ otgTrap: true }` history entry as a sentinel. The `popstate` handler re-pushes the sentinel and shows a toast warning if `state.activeVisit` is set. The trap is armed at visit start (`startVisit()`) and on page reload when an active visit is detected (`_initApp()`).
+
+### 3.7 Form Builder Syntax
+
+The app dynamically builds forms based on column headers in the `Templates` sheet using a prefix parser.
 
 **Structure**
 - `# Header Name` or `[HEADING] Name` → Large section heading.
@@ -194,6 +259,16 @@ The app dynamically builds forms based on headers in the `Templates` sheet using
 - `[GPS] Label` → Button to capture current coordinates.
 - `[SIGN] Label` → Touchscreen signature pad.
 
+**Form timing** is controlled by column AI of the Templates sheet. It determines whether the form is presented at visit start, visit end, or both.
+
+### 3.8 Visit History
+
+Workers can view a log of their recent visits from the app's history screen. `populateVisitHistory()` reads the IndexedDB outbox for `ARRIVED` and `TRAVELLING` records, caps results at 30 entries, and groups them by NZ-locale calendar date.
+
+### 3.9 what3words (Panic Screen)
+
+When `CONFIG.w3wApiKey` is set, `fetchW3wForPanic()` fires on panic activation and on overdue alarm expiry. It fetches the what3words address for `lastGPS` (falling back to `startGPS`) and displays it in emerald green in the `#w3wDisplay` element on the locked alarm screen. This gives emergency contacts a precise three-word location they can relay to response teams. The display is cleared and hidden when `iamSafe()` resets the UI.
+
 ---
 
 ## 4. Monitor App Specification
@@ -204,24 +279,38 @@ Because Google Apps Script Web Apps do not support CORS for GET requests from th
 
 - **Request:** `<script src="SCRIPT_URL?callback=cb_12345">`
 - **Response:** The Google Script returns `cb_12345({ ...json_data... })`, which executes immediately as JavaScript in the browser, bypassing CORS restrictions.
+- **Timeout:** 25 seconds per JSONP request.
 
-### 4.2 "Sound of Silence" Watchdog
+### 4.2 Connection Watchdog
 
 Safety dashboards are dangerous if they freeze without the user knowing.
 
 - **Logic:** The app records the timestamp of the last successful JSONP packet (`lastHeartbeat`).
 - **Check:** A local timer runs every 10 seconds.
 - **Trigger:** If `Date.now() − lastHeartbeat > 300,000 ms` (5 minutes), a "Connection Lost" overlay covers the screen and an audio warning plays.
+- **Important:** Connection failures **never** lock the monitor out. `stopPollingAndLock()` is only reachable via the Sign Out button. Automatic session lockout has been deliberately removed — a supervisor losing connectivity should see an overlay, not lose their session.
 
 ### 4.3 Intelligent Sorting
 
 The dashboard grid sorts by urgency score rather than alphabetically:
 
 1. **Score 2000+:** Duress/Panic (always top).
-2. **Score 1000+:** Emergency/overdue.
+2. **Score 1000+:** Emergency/Overdue Alarm.
 3. **Score 500+:** Warning state (overdue but within grace period).
-4. **Score 100:** Active/travelling.
-5. **Score 0:** Departed/safe (filtered out by default).
+4. **Score 100:** Active/Travelling.
+5. **Score 0:** Departed/Safe (filtered out by default).
+
+### 4.4 Geocoding Fallback
+
+When an `ARRIVED` worker's last known GPS is absent or invalid (i.e., `0,0` or `0.0,0.0`), the monitor attempts to resolve their address using the Nominatim reverse geocoding API. Resolved addresses are displayed as amber teardrop-pin map markers. Results are cached in `geocodeCache` (a module-level `Map`) for the duration of the session. `TRAVELLING` workers are never geocoded via this path.
+
+### 4.5 what3words (Worker Tiles)
+
+When `W3W_API_KEY` is configured, each worker tile with a valid GPS fix displays a clickable what3words deep-link after the grid renders. Lookups are performed asynchronously and cached in `w3wCache` (keyed by GPS string) to avoid repeat API calls for the same fix across polling cycles.
+
+### 4.6 Audio Arming
+
+The browser's autoplay policy requires audio to be initialised within a user gesture. `toggleAudioInit()` is called from within the login button's click handler, before any `await`, to satisfy this requirement. This ensures alarm audio fires correctly without any additional user interaction after login.
 
 ---
 
@@ -229,57 +318,81 @@ The dashboard grid sorts by urgency score rather than alphabetically:
 
 ### Tab 1: `Visits` (The Ledger)
 
-The transactional database.
+The transactional database. One row per visit session (updated in-place while the visit is active).
 
-- **Col A (Timestamp):** ISO 8601. System time of entry.
-- **Col B (Date):** YYYY-MM-DD. Used for archiving/partitioning.
+- **Col A (Timestamp):** ISO 8601. System time of last update.
+- **Col B (Date):** YYYY-MM-DD. Used for archiving and monthly reporting.
 - **Col C (Worker Name):** The primary key for session matching.
 - **Col K (Alarm Status):** The state variable.
-  - Active: `ARRIVED`, `ON SITE`, `TRAVELLING`
-  - Closed: `DEPARTED`, `USER_SAFE`, `COMPLETED`, `DATA_ENTRY_ONLY`, `NOTICE_ACK`
-  - Alert: `OVERDUE`, `EMERGENCY`, `PANIC`, `DURESS`
-- **Col O (Last Known GPS):** Format `lat,lon`. Parsed by Monitor map.
-- **Col T (Visit Report Data):** A JSON string containing all form answers.
+  - *Active:* `ARRIVED`, `ON SITE`, `TRAVELLING`, `PRE_VISIT`
+  - *Closed:* `DEPARTED`, `USER_SAFE`, `COMPLETED`, `DATA_ENTRY_ONLY`, `NOTICE_ACK`
+  - *Alert:* `OVERDUE`, `OVERDUE ALARM`, `EMERGENCY`, `PANIC`, `DURESS`
+- **Col L (Pre-Visit Form Data):** JSON string of pre-visit questionnaire answers (travel visits).
+- **Col O (Last Known GPS):** Format `lat,lng`. Parsed by the Monitor map.
+- **Col T (Visit Report Data):** JSON string containing all form answers.
 - **Col U (Anticipated Departure):** ISO 8601. Used by the escalation watchdog.
 
 ### Tab 2: `Staff`
 
-The worker registry. Controls who can log in and what name appears in records.
+The worker registry. Controls who can log in, what name appears in records, and where notifications are sent.
+
+- **Col A (Name):** Worker's full name — used as the primary key across the system.
+- **Col B (Role):** Display role.
+- **Col C (Status):** Current status (maintained by `updateStaffStatus()` on every POST).
+- **Col D (Group Membership):** Used for group-based site access control.
+- **Col E (Device ID):** Registered device identifier.
+- **Col F (Last Vehicle Check):** Date of last vehicle warrant check.
+- **Col G (WoF Expiry):** Warrant of Fitness expiry date.
+- **Col H (Emergency Ntfy Topic):** Written automatically by the system. Read by `triggerEscalation()` for server-side push notifications. Never stored in Visits rows.
+- **Col I (Escalation Ntfy Topic):** As above, for escalation-level contacts.
 
 ### Tab 3: `Sites`
 
-Controls the drop-down location list in the Worker App.
+Controls the location drop-down in the Worker App. Each row is a deployable site.
 
-- **Col A (Assigned To):** Access control list.
-  - `ALL`: Visible to everyone.
-  - `John Doe, Jane Smith`: Visible only to exact matches (case-insensitive).
-- **Col B (Template Name):** Links the site to a specific form layout in the `Templates` tab.
+- **Col A (Assigned To):** Access control. `ALL` = visible to every worker; a comma-separated list of names = visible only to those workers (case-insensitive match).
+- **Col B (Template Name):** Links the site to a form layout in the `Templates` tab.
+- **Col C (Company Name):** Organisation or client name.
+- **Col D (Site Name):** Display name shown in the worker's location list.
+- **Col E (Address):** Physical address.
+- **Col F (Contact Name):** On-site contact.
+- **Col G (Contact Phone):** On-site contact phone.
+- **Col H (Contact Email):** On-site contact email.
+- **Col I (Site Notes):** General notes visible to the worker before starting a visit.
+- **Col J (Emergency Procedures):** Site-specific emergency procedures.
+- **Col K (Risk Level):** Risk classification for this site.
+- **Col L (Pre-Visit Form):** `TRUE` activates the pre-visit questionnaire for this site. The `_travel` sentinel row uses this column to flag travel visits.
+
+> **Site ID prefixes:** Personal sites added by workers use the `loc_` prefix; organisation-configured sites use the `site_` prefix.
 
 ### Tab 4: `Templates` (Form Definitions)
 
-Defines the questions asked at start/end of visit.
+Defines the questions presented at the start or end of a visit, or for pre-visit forms.
 
-- **Col D (Email Recipient):** The specific address that receives the HTML report for this form type.
-- **Col E onwards:** The question/field definitions (see Form Builder Syntax above).
+- **Col A (Type):** Template type.
+- **Col B (Template Name):** Unique name, referenced by Sites col B.
+- **Col C (Assigned To):** Access restriction (same syntax as Sites col A).
+- **Col D (Email Recipient):** The specific address that receives the HTML visit report for this form type.
+- **Cols E–AH (Questions 1–30):** Field definitions using the Form Builder Syntax (see Section 3.7).
+- **Col AI (Form Timing):** Controls whether the form is presented at visit start, visit end, or both.
 
 ### Tab 5: `Reporting` (System Index)
 
-Maintains a registry of client reporting sheets.
-
+- **Purpose:** Maintains a registry of client reporting sheets.
 - **Generated by:** The `setupClientReporting()` admin function.
 - **Structure:** `Client Name | Sheet ID | Last Updated`.
 
 ---
 
-## 6. Business Intelligence (BI) Engine
+## 6. Business Intelligence Engine
 
 The system includes a longitudinal reporting module to analyse trends over time.
 
 ### 6.1 Logic Flow (`runMonthlyStats`)
 
-1. **Input:** Administrator inputs a month (e.g., `2025-11`).
+1. **Input:** Administrator selects a month (e.g. `2025-11`).
 2. **Query:** The script fetches all rows from `Visits` where the timestamp falls within that month.
-3. **Aggregation:** Groups visits by client (based on location name matching). Parses the Visit Report Data JSON column, identifies any `$` (numeric) fields, and sums their values (e.g., total mileage).
+3. **Aggregation:** Groups visits by client (based on location name matching). Parses the Visit Report Data JSON column, identifies any `$` (numeric) fields, and sums their values (e.g. total mileage).
 4. **Output:** Locates the specific `Stats - [ClientName]` sheet via the `Reporting` tab index and appends a summary row: `Month | Total Visits | Hours | Summed Metrics`.
 
 ---
@@ -288,8 +401,8 @@ The system includes a longitudinal reporting module to analyse trends over time.
 
 ### 7.1 Data Privacy
 
-- **Legal source of truth:** The `Visits` sheet contains raw, unaltered text entered by the worker. This ensures evidentiary integrity for health & safety audits.
-- **Presentation layer:** When generating email reports, the system sends the notes to Google Gemini with a prompt to correct spelling and grammar. This polished text is used only in the email HTML — it is never saved back to the database.
+- **Legal source of truth:** The `Visits` sheet contains raw, unaltered text entered by the worker. This ensures evidentiary integrity for health and safety audits.
+- **Presentation layer:** When generating email reports, the system sends notes to Google Gemini with a prompt to correct spelling and grammar. This polished text is used only in the email HTML — it is never written back to the database.
 
 ### 7.2 API Security
 
@@ -302,9 +415,11 @@ The system includes a longitudinal reporting module to analyse trends over time.
 
 | Service | Purpose | Auth Method | Notes |
 | :--- | :--- | :--- | :--- |
-| **OpenRouteService** | Calculates driving distance for travel reports | API Key | Falls back to crow-flies distance if key is invalid |
-| **Google Gemini** | Proofreads worker notes and summarises reports | API Key | Non-destructive — sheet keeps raw data |
-| **TextBelt** | Sends SMS for emergency escalations | API Key | Free tier: 1 SMS/day/IP |
-| **ntfy** | Push notifications for emergency alerts | Topic URL | Supports self-hosted server for higher privacy |
-| **Healthchecks.io** | Dead man's switch — pings after each watchdog run | Ping URL | Optional; alerts you if the watchdog stops running |
-| **Leaflet.js** | Renders maps in the Monitor App | Open source | Uses OpenStreetMap tiles (free) |
+| **OpenRouteService** | Calculates driving distance for travel reports | API Key | Version-probed at runtime (`/v2/`, `/v3/`). Falls back to crow-flight + speed floor if unavailable. |
+| **Google Gemini** | Proofreads worker notes and summarises reports | API Key | Non-destructive — sheet keeps raw data. Model selected dynamically via ListModels API. |
+| **TextBelt** | Sends SMS for emergency escalations | API Key | Free tier: 1 SMS/day/IP. |
+| **ntfy** | Push notifications for emergency alerts | Topic URL | Supports self-hosted server for greater privacy. Topics stored in Staff sheet; written on every worker POST. |
+| **Healthchecks.io** | Dead man's switch — pings after each watchdog run | Ping URL | Optional. Alerts you if the watchdog stops running (e.g. trigger misconfiguration). |
+| **Nominatim** | Reverse geocoding for SMS bodies and monitor map | None (open) | Returns `"Road, Suburb"` for SMS; used as geocoding fallback for ARRIVED workers on monitor. OpenStreetMap data. |
+| **what3words** | Precise three-word location addresses | API Key | Optional. Free for registered charities/NGOs (requires plan upgrade via what3words). Appears in emergency emails, monitor tiles, and worker panic screen. |
+| **Leaflet.js** | Renders maps in the Monitor App | Open source | Uses OpenStreetMap tiles (free). |
