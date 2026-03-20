@@ -2,7 +2,7 @@
 <html lang="en" class="h-full">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>OTG Safety</title>
 <meta name="apple-mobile-web-app-title" content="OTG Safety">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1593,10 +1593,15 @@ let lastGPS = null;
 let lastGPSCoords = null; // Raw {lat, lng} of previous fix — used for Haversine distance calc
 let gpsCurrentIntervalMs = 0; // Live adaptive poll interval — set by startGPSMonitoring()
 let gpsTrail = []; // Breadcrumb trail [{lat, lng}] for the current travel session
+let _speedAccumM = 0;    // Option 2: running speed-derived distance (metres) for travel session
+let _speedAccumLastTs = null; // Timestamp (ms) of the previous fix — for elapsed-time calculation
 let synth; // Tone.js synth - initialized after user interaction
 let audioReady = false;
 let gpsWatchId = null; // Holds setTimeout ID (or -1 sentinel) when GPS monitoring is active; null when stopped
 let _consecutiveGPSFailures = 0; // Reset on each successful fix; toast shown at threshold during a visit
+let gpsWatchPositionId = null;      // watchPosition ID during travel phase; null when inactive
+let _gpsWatchPositionFailed = false; // true if watchPosition errored mid-trip; triggers report warning
+let _lastWatchFixTs = null;          // ms timestamp of last accepted watchPosition fix (debounce)
 
 // PHASE 1 ADDITIONS
 let isMidVisitUpdate = false; // Track if we're updating mid-visit vs ending
@@ -1965,6 +1970,7 @@ function submitReport() {
  
  // 9. VISUAL & LOGIC RESET
  if (!isMidVisitUpdate) {
+ stopTravelWatchPosition(); _gpsWatchPositionFailed = false;
  if (typeof stopGPSMonitoring === 'function') stopGPSMonitoring();
 
  const _concludedIsTravel = state.activeVisit && (state.activeVisit.isTravel || state.activeVisit.locationId === 'travel');
@@ -2086,13 +2092,14 @@ function activateBatterySaver() {
  // Hide locked page to save GPU
  if (main) main.style.display = 'none';
 
-  // requestFullscreen() from a setTimeout is rejected by Android Chrome (no user
-  // gesture). Attempt immediately as best-effort; the lockedPage touchstart listener
-  // (wired in enterLockedScreen) will have pre-armed fullscreen from a real gesture
-  // before the saver activates in most cases.
-  const el = document.documentElement;
-  const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
-  if (rfs) rfs.call(el).catch(() => {});
+ // Fullscreen: suppress Android nav/status bars.
+ // NOTE: requestFullscreen() requires a user gesture on Android Chrome. Since
+ // activateBatterySaver() fires from a setTimeout (dimTimer), this request is
+ // likely to be rejected. Retained as best-effort for contexts where it may
+ // succeed. Do NOT rely on this to suppress the nav bar — see theme-color below.
+ const el = document.documentElement;
+ const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+ if (rfs) rfs.call(el).catch(() => {});
 
  // Black out the Android status bar by setting theme-color to #000.
  // Works without a user gesture — blends the status bar with the black overlay
@@ -2179,7 +2186,8 @@ function resetInactivityTimer() {
 //
 // On the first fix there is no previous position, so the default 5 min is used.
 
-const GPS_MIN_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes — fast movement
+const GPS_MIN_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes — fast movement (non-travel)
+const GPS_MIN_INTERVAL_TRAVEL_MS = 60 * 1000; // 1 minute — fast movement during travel (distance accuracy)
 const GPS_DEFAULT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — default / first fix
 const GPS_MAX_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes — stationary
 
@@ -2223,29 +2231,50 @@ function _takeSingleGPSFix() {
  lastGPS = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
  updateGPSBars(pos);
 
- // --- Adaptive interval logic ---
- if (lastGPSCoords !== null) {
- const dist = _gpsHaversineMetres(lastGPSCoords.lat, lastGPSCoords.lng, lat, lng);
- if (dist < 200) {
- // Stationary or very slow — ease off
- gpsCurrentIntervalMs = Math.min(gpsCurrentIntervalMs * 2, GPS_MAX_INTERVAL_MS);
- } else if (dist > 500) {
- // Actively moving — keep resolution up
- gpsCurrentIntervalMs = Math.max(gpsCurrentIntervalMs / 2, GPS_MIN_INTERVAL_MS);
- }
- // 200–500 m: pace unchanged
- }
+    // --- Adaptive interval logic ---
+    // During travel sessions use a tighter floor (1 min) for breadcrumb density
+    // and reimbursement accuracy. Non-travel sessions keep the standard 2 min floor.
+    const _gpsMinInterval = (state && state.activeVisit && state.activeVisit.isTravel)
+        ? GPS_MIN_INTERVAL_TRAVEL_MS
+        : GPS_MIN_INTERVAL_MS;
+
+    if (lastGPSCoords !== null) {
+      const dist = _gpsHaversineMetres(lastGPSCoords.lat, lastGPSCoords.lng, lat, lng);
+      if (dist < 200) {
+        // Stationary or very slow — ease off
+        gpsCurrentIntervalMs = Math.min(gpsCurrentIntervalMs * 2, GPS_MAX_INTERVAL_MS);
+      } else if (dist > 500) {
+        // Actively moving — keep resolution up
+        gpsCurrentIntervalMs = Math.max(gpsCurrentIntervalMs / 2, _gpsMinInterval);
+      }
+      // 200–500 m: pace unchanged
+    }
  lastGPSCoords = { lat, lng };
  _consecutiveGPSFailures = 0; // Clear failure streak on every good fix
 
- // Record breadcrumb during an active travel session.
- // Skip if within 50 m of the last breadcrumb — avoids inflating the
- // trail with near-duplicate readings while the worker is stationary.
+ // Record breadcrumb and accumulate speed-derived distance during travel.
+ // Speed accumulator: uses pos.coords.speed (m/s, Doppler-derived —
+ // more accurate than position-derived speed) as an independent distance signal.
+ // At trip end, getDistance() takes the higher of ORS-trail and speed-accumulator,
+ // protecting workers against under-reporting on sparse or winding routes.
  if (state && state.activeVisit && state.activeVisit.isTravel) {
- const last = gpsTrail[gpsTrail.length - 1];
- if (!last || _gpsHaversineMetres(last.lat, last.lng, lat, lng) > 50) {
- gpsTrail.push({ lat, lng });
- }
+   const last = gpsTrail[gpsTrail.length - 1];
+   if (!last || _gpsHaversineMetres(last.lat, last.lng, lat, lng) > 50) {
+     gpsTrail.push({ lat, lng });
+   }
+
+   // Speed accumulator — only when speed is a valid positive number
+   const spd = pos.coords.speed; // m/s, or null on unsupported devices
+   const now = Date.now();
+   if (typeof spd === 'number' && spd > 0 && _speedAccumLastTs !== null) {
+     const elapsedS = (now - _speedAccumLastTs) / 1000;
+     // Cap elapsed to 3× GPS_MAX_INTERVAL_MS to discard stale gaps
+     // (e.g. after a long GPS failure) that would inflate the total.
+     if (elapsedS < (GPS_MAX_INTERVAL_MS / 1000) * 3) {
+       _speedAccumM += spd * elapsedS;
+     }
+   }
+   _speedAccumLastTs = now;
  }
 
  // Schedule next poll — only if stopGPSMonitoring() hasn't been called
@@ -2285,6 +2314,82 @@ function stopGPSMonitoring() {
  clearTimeout(gpsWatchId); // clearTimeout(-1) is a no-op; real IDs are cancelled
  gpsWatchId = null;
  }
+}
+
+/**
+ * Travel-phase GPS monitoring via watchPosition.
+ *
+ * Replaces the setTimeout poller during travel visits only. The device's
+ * motion coprocessor triggers fixes on meaningful movement rather than on a
+ * dumb timer — higher fix frequency when moving, lower when stationary,
+ * without the battery cost of always-on polling.
+ *
+ * Debounce: callbacks arriving faster than GPS_MIN_INTERVAL_TRAVEL_MS (1 min)
+ * are discarded to prevent GPS jitter flooding the breadcrumb trail.
+ *
+ * On error: sets _gpsWatchPositionFailed, clears the watch, falls back to
+ * startGPSMonitoring() so tracking continues. The failed flag causes a
+ * warning note to be injected into the first text field of the travel report.
+ */
+function startTravelWatchPosition() {
+  stopTravelWatchPosition(); // clear any stale watch
+  _gpsWatchPositionFailed = false;
+  _lastWatchFixTs = null;
+
+  if (!navigator.geolocation) {
+    console.warn('watchPosition: geolocation not available — falling back to poller');
+    _gpsWatchPositionFailed = true;
+    startGPSMonitoring();
+    return;
+  }
+
+  gpsWatchPositionId = navigator.geolocation.watchPosition(
+    pos => {
+      const now = Date.now();
+      // Debounce — discard callbacks arriving faster than the minimum travel interval
+      if (_lastWatchFixTs !== null && (now - _lastWatchFixTs) < GPS_MIN_INTERVAL_TRAVEL_MS) return;
+      _lastWatchFixTs = now;
+
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      lastGPS = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+      updateGPSBars(pos);
+      _consecutiveGPSFailures = 0;
+
+      // Breadcrumb trail — only append if meaningfully different from last point
+      const last = gpsTrail[gpsTrail.length - 1];
+      if (!last || _gpsHaversineMetres(last.lat, last.lng, lat, lng) > 50) {
+        gpsTrail.push({ lat, lng });
+      }
+
+      // Speed accumulator — Doppler-derived speed as independent distance signal
+      const spd = pos.coords.speed; // m/s, or null on unsupported devices
+      if (typeof spd === 'number' && spd > 0 && _speedAccumLastTs !== null) {
+        const elapsedS = (now - _speedAccumLastTs) / 1000;
+        // Cap elapsed to 3× GPS_MAX_INTERVAL_MS to discard stale gaps after a failure
+        if (elapsedS < (GPS_MAX_INTERVAL_MS / 1000) * 3) {
+          _speedAccumM += spd * elapsedS;
+        }
+      }
+      _speedAccumLastTs = now;
+    },
+    err => {
+      console.warn('watchPosition error during travel:', err.message);
+      _gpsWatchPositionFailed = true;
+      stopTravelWatchPosition();
+      // Fall back to the timer-based poller so GPS monitoring continues for the rest of the trip
+      startGPSMonitoring();
+      showToast('⚠️ GPS tracking issue — distance may need checking', 6000);
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
+  );
+}
+
+function stopTravelWatchPosition() {
+  if (gpsWatchPositionId !== null) {
+    navigator.geolocation.clearWatch(gpsWatchPositionId);
+    gpsWatchPositionId = null;
+  }
 }
 
 function updateGPSBars(pos) {
@@ -2829,14 +2934,30 @@ function loadFormAndShow(templateName, context = null) {
  distInput.dispatchEvent(new Event('input', { bubbles: true })); 
  }
 
- // Crow-flies advisory — shown when road routing was unavailable
- if (calculatedDist.type === 'crow' || calculatedDist.type === 'trail-crow') {
+ // Crow-flies advisory — shown when road routing was unavailable.
+ // Uses .includes() to handle the '+speed-floor' suffix that withFloor() may append.
+ if (calculatedDist.type.includes('crow')) {
  const crowNote = document.createElement('div');
  crowNote.className = 'p-4 bg-amber-900/20 border-l-4 border-amber-500 rounded-r-xl text-xs text-amber-100 font-medium italic leading-relaxed mt-2';
  crowNote.setAttribute('role', 'note');
  crowNote.textContent = '⚠️ Distance is a straight-line estimate (as the crow flies) — road distance could not be calculated. Check this figure and add a note if needed.';
  const fc = document.getElementById('reportFields');
  if (fc) fc.appendChild(crowNote);
+ }
+
+ // GPS watch failure warning — injected into the first editable text/textarea
+ // field in the travel report. The worker may use this field for a trip purpose
+ // note; the pre-filled warning prompts them to verify the distance.
+ if (_gpsWatchPositionFailed) {
+   const allInputs = document.querySelectorAll('#reportFields input[data-key], #reportFields textarea[data-key]');
+   const firstText = Array.from(allInputs).find(el =>
+     el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && el.type === 'text')
+   );
+   if (firstText && !firstText.value) {
+     firstText.value = 'Note: A GPS tracking issue occurred during this trip — distance may be inaccurate. Overwrite distance if incorrect.';
+     firstText.style.border = '2px solid #f59e0b';
+     firstText.dispatchEvent(new Event('input', { bubbles: true }));
+   }
  }
  }
 
@@ -2969,6 +3090,7 @@ function directDepart() {
  }));
 
  // Clean up session
+ stopTravelWatchPosition(); _gpsWatchPositionFailed = false;
  if (typeof stopGPSMonitoring === 'function') stopGPSMonitoring();
  state.activeVisit = null;
  state.selectedLocationId = null;
@@ -3285,21 +3407,6 @@ function enterLockedScreen() {
  // visibilitychange handler re-acquires it when the page returns to the foreground.
  if (typeof requestWakeLock === 'function') requestWakeLock();
 
-  // Pre-arm fullscreen from a user gesture on the locked screen so that when
-  // activateBatterySaver() fires from its setTimeout, fullscreen is already
-  // active and the system nav bar is hidden before the overlay appears.
-  // { once: true } — re-armed each time enterLockedScreen() is called.
-  const _lockedEl = document.getElementById('lockedPage');
-  const _docEl = document.documentElement;
-  const _rfsArm = _docEl.requestFullscreen || _docEl.webkitRequestFullscreen || _docEl.mozRequestFullScreen;
-  if (_lockedEl && _rfsArm) {
-    _lockedEl.addEventListener('touchstart', function _armFs() {
-      if (!document.fullscreenElement) {
-        _rfsArm.call(_docEl).catch(() => {});
-      }
-    }, { once: true, passive: true });
-  }
-
  startWelfareChecks(); // Only fires if CONFIG.checkinEnabled — no-op otherwise
  
  // Update welfare badge on locked screen
@@ -3530,11 +3637,6 @@ function tick() {
  // Pre-arm GPS so a fix is ready when the alarm fires
  if (typeof startGPSMonitoring === 'function') startGPSMonitoring();
  }
- } else {
- // Timer expired — critical timing mode fires immediately with no grace period.
- if (!state.activeVisit.criticalSent && !state.activeVisit.isSafeConfirmed) {
- triggerGraceExpiryAlarm();
- }
  }
  } else {
  // Normal Mode — warn only during grace period, approaching alarm fire time
@@ -3581,11 +3683,9 @@ function tick() {
  }, 5 * 60 * 1000);
  }
  }
- // Grace expiry check — critical timing fires at 0, normal mode at 15 minutes.
+ // Still check for 15m expiry in background.
  // isSafeConfirmed guard prevents re-triggering after worker clears the alarm.
- const _criticalFire = isHighRiskActive && Math.abs(diffMins) >= 0;
- const _normalFire   = !isHighRiskActive && Math.abs(diffMins) >= 15;
- if ((_criticalFire || _normalFire) &&
+ if (Math.abs(diffMins) >= 15 &&
  !state.activeVisit.criticalSent && !state.activeVisit.isSafeConfirmed) {
  triggerGraceExpiryAlarm();
  }
@@ -3613,12 +3713,11 @@ function tick() {
  timerEl.classList.add('text-red-500', 'animate-pulse');
  }
  
- // Grace expiry check — critical timing fires at 0, normal mode at 15 minutes.
+ // 15-MINUTE GRACE EXPIRY CHECK
  // isSafeConfirmed prevents re-triggering on every tick after the worker
  // clears the alarm — without it, resetting criticalSent in iamSafe()
  // causes an immediate re-fire, creating an infinite alarm loop.
- const _shouldFire = isHighRiskActive ? (Math.abs(diffMins) >= 0) : (Math.abs(diffMins) >= 15);
- if (_shouldFire && !isAlarmed && !state.activeVisit.isSafeConfirmed) {
+ if (Math.abs(diffMins) >= 15 && !isAlarmed && !state.activeVisit.isSafeConfirmed) {
  triggerGraceExpiryAlarm();
  }
 
@@ -4028,6 +4127,7 @@ window.addEventListener('beforeinstallprompt', e => {
 // CLEANUP ON UNLOAD
 // ============================================================================
 window.addEventListener('beforeunload', () => {
+ stopTravelWatchPosition();
  stopGPSMonitoring();
  stopWelfareChecks();
  if (travellingInterval) clearInterval(travellingInterval);
@@ -4569,15 +4669,18 @@ async function startVisit(isSkipCheck = false) {
  console.warn('GPS signal lock deferred.');
  }
  if (typeof startGPSMonitoring === 'function') {
- // Reset breadcrumb trail for this trip and seed with the verified start position.
+ // Reset breadcrumb trail and speed accumulator for this trip, then seed
+ // the trail with the verified start position.
  // The trail is built up by _takeSingleGPSFix() during the trip and then consumed
  // by getDistance() at departure for more accurate waypoint-based ORS routing.
  gpsTrail = [];
+ _speedAccumM = 0;
+ _speedAccumLastTs = null;
  if (verifiedStartGPS && verifiedStartGPS !== '0,0') {
  const [sLat, sLng] = verifiedStartGPS.split(',').map(Number);
  if (!isNaN(sLat) && !isNaN(sLng)) gpsTrail.push({ lat: sLat, lng: sLng });
  }
- startGPSMonitoring();
+ startTravelWatchPosition(); // travel phase: OS-driven fixes via watchPosition
  }
  }
  // For regular site visits lastGPS stays as whatever it was from a prior session;
@@ -4633,7 +4736,7 @@ async function startVisit(isSkipCheck = false) {
  'Alarm Status': alarmStatus,
  'Location Name': loc.name,
  'Location Address': loc.address || "",
- 'Notes': `${logNote} Duration: ${durationMins}m${isHighRisk ? ' [CRITICAL_TIMING]' : ''}`,
+ 'Notes': `${logNote} Duration: ${durationMins}m`,
  'Anticipated Departure Time': new Date(anticipatedDeparture).toISOString()
  };
  // Only include GPS in the arrival row for travel — for site visits the address IS the location.
@@ -4642,7 +4745,7 @@ async function startVisit(isSkipCheck = false) {
  }
  processUploadQueue(buildPayload(arrivalPayload));
 
- announce(isTravelMode ? `Travelling to ${loc.name}.` : `${loc.name} started.${isHighRisk ? ' Critical timing mode active.' : ''}`);
+ announce(isTravelMode ? `Travelling to ${loc.name}.` : `${loc.name} started.`);
  
  // Wake lock is NOT held at visit start — phone should sleep normally between
  // interactions. It is acquired only when the alarm fires so the slide-to-
@@ -6953,56 +7056,72 @@ function haversine(p1, p2) {
 }
 
 async function getDistance(p1, p2, trail = []) {
- if (!_isValidGPS(p1) || !_isValidGPS(p2)) return { km: 0, type: 'none' };
+  if (!_isValidGPS(p1) || !_isValidGPS(p2)) return { km: 0, type: 'none' };
 
- // TIER 1: ORS road routing with breadcrumb waypoints — most accurate.
- // Sends the actual intermediate positions taken during the trip so ORS
- // snaps to the road network along the path the worker really drove.
- if (navigator.onLine && CONFIG.url && trail.length >= 3) {
- try {
- const validTrail = trail.filter(p => _isValidGPS(`${p.lat},${p.lng}`));
- if (validTrail.length < 3) throw new Error('Insufficient valid trail points after GPS filtering');
- const trailStr = validTrail.map(p => `${p.lat},${p.lng}`).join('|');
- const url = `${CONFIG.url}?action=getDistanceWithTrail&trail=${encodeURIComponent(trailStr)}&key=${CONFIG.key}`;
- const response = await fetch(url);
- const data = await response.json();
- if (data.status === 'success' && data.km) {
- return { km: data.km, type: 'road-trail' };
- }
- } catch (e) {
- console.warn('Trail ORS failed, falling back:', e);
- }
+  // Speed-accumulator floor (Option 2).
+  // _speedAccumM is maintained by _takeSingleGPSFix() during travel using
+  // pos.coords.speed (Doppler-derived m/s — more accurate than position-derived speed).
+  // If the accumulator has a meaningful value we use it as a floor: whichever of
+  // ORS / Haversine / accumulator is highest wins. This protects workers against
+  // ORS under-reporting on winding or GPS-sparse routes with no battery cost.
+  const speedFloorKm = (_speedAccumM > 0) ? _speedAccumM / 1000 : 0;
 
- // TIER 2: Sum of Haversine segments along actual breadcrumbs.
- // Less accurate than ORS (crow-flies between each reading) but still
- // far better than a single A→B estimate for indirect journeys.
- const cleanTrail = trail.filter(p => _isValidGPS(`${p.lat},${p.lng}`));
- let totalM = 0;
- for (let i = 1; i < cleanTrail.length; i++) {
- totalM += _gpsHaversineMetres(cleanTrail[i-1].lat, cleanTrail[i-1].lng, cleanTrail[i].lat, cleanTrail[i].lng);
- }
- if (totalM > 0) {
- return { km: (totalM / 1000).toFixed(2), type: 'trail-crow' };
- }
- }
+  // Helper: apply floor and return result object
+  const withFloor = (result) => {
+    if (speedFloorKm > 0 && parseFloat(result.km) < speedFloorKm) {
+      return { km: speedFloorKm.toFixed(2), type: result.type + '+speed-floor' };
+    }
+    return result;
+  };
 
- // TIER 3: Standard ORS A→B road routing (no waypoints).
- if (navigator.onLine && CONFIG.url) {
- try {
- const url = `${CONFIG.url}?action=getDistance&start=${p1}&end=${p2}&key=${CONFIG.key}`;
- const response = await fetch(url);
- const data = await response.json();
- if (data.status === 'success' && data.km) {
- return { km: data.km, type: 'road' };
- }
- } catch (e) {
- console.warn('A→B ORS failed, using haversine:', e);
- }
- }
+  // TIER 1: ORS road routing with breadcrumb waypoints — most accurate.
+  // Sends the actual intermediate positions taken during the trip so ORS
+  // snaps to the road network along the path the worker really drove.
+  if (navigator.onLine && CONFIG.url && trail.length >= 3) {
+    try {
+      const validTrail = trail.filter(p => _isValidGPS(`${p.lat},${p.lng}`));
+      if (validTrail.length < 3) throw new Error('Insufficient valid trail points after GPS filtering');
+      const trailStr = validTrail.map(p => `${p.lat},${p.lng}`).join('|');
+      const url = `${CONFIG.url}?action=getDistanceWithTrail&trail=${encodeURIComponent(trailStr)}&key=${CONFIG.key}`;
+      const response = await fetch(url);
+      const data = await response.json();
+      if (data.status === 'success' && data.km) {
+        return withFloor({ km: data.km, type: 'road-trail' });
+      }
+    } catch (e) {
+      console.warn('Trail ORS failed, falling back:', e);
+    }
 
- // TIER 4: Haversine A→B — always available, works offline.
- const dist = haversine(p1, p2);
- return { km: dist.toFixed(2), type: 'crow' };
+    // TIER 2: Sum of Haversine segments along actual breadcrumbs.
+    // Less accurate than ORS (crow-flies between each reading) but still
+    // far better than a single A→B estimate for indirect journeys.
+    const cleanTrail = trail.filter(p => _isValidGPS(`${p.lat},${p.lng}`));
+    let totalM = 0;
+    for (let i = 1; i < cleanTrail.length; i++) {
+      totalM += _gpsHaversineMetres(cleanTrail[i-1].lat, cleanTrail[i-1].lng, cleanTrail[i].lat, cleanTrail[i].lng);
+    }
+    if (totalM > 0) {
+      return withFloor({ km: (totalM / 1000).toFixed(2), type: 'trail-crow' });
+    }
+  }
+
+  // TIER 3: Standard ORS A→B road routing (no waypoints).
+  if (navigator.onLine && CONFIG.url) {
+    try {
+      const url = `${CONFIG.url}?action=getDistance&start=${p1}&end=${p2}&key=${CONFIG.key}`;
+      const response = await fetch(url);
+      const data = await response.json();
+      if (data.status === 'success' && data.km) {
+        return withFloor({ km: data.km, type: 'road' });
+      }
+    } catch (e) {
+      console.warn('A→B ORS failed, using haversine:', e);
+    }
+  }
+
+  // TIER 4: Haversine A→B — always available, works offline.
+  const dist = haversine(p1, p2);
+  return withFloor({ km: dist.toFixed(2), type: 'crow' });
 }
 
 // Feature 16: Advanced GPS Control
@@ -7012,6 +7131,7 @@ function toggleAdvancedGPS(enabled) {
  state.settings.isAdvanced = true;
  showToast('📍 Advanced GPS enabled');
  } else {
+ stopTravelWatchPosition();
  stopGPSMonitoring();
  state.settings.isAdvanced = false;
  const gpsIndicator = document.getElementById('gpsIndicator');
