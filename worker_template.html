@@ -1625,6 +1625,9 @@ let volumeBuffer = [];
 let volumeConfirmationMode = false;
 let volumeConfirmationTimeout = null;
 
+// True while a PANIC or DURESS alarm is active (used as guard when no activeVisit exists)
+let isPanicActive = false;
+
 let wakeLock = null;
 let isSosLocked = false; // Prevent SOS immediately after wake
 
@@ -3434,14 +3437,16 @@ function enterLockedScreen() {
 async function triggerPanic(duress = false) {
  // GUARD: Prevent a second duress/panic from firing while one is already active.
  // This stops repeated shakes (while thinking it failed) from queuing multiple alerts.
- if (duress && state?.activeVisit?.isDuress) {
+ // Falls back to module-level isPanicActive when there is no activeVisit (pre-visit alarm).
+ if (duress && (state?.activeVisit?.isDuress || isPanicActive)) {
  console.log('Duress already active — ignoring repeat trigger.');
  return;
  }
- if (!duress && state?.activeVisit?.isPanic && !state?.activeVisit?.isDuress) {
+ if (!duress && (state?.activeVisit?.isPanic || isPanicActive) && !state?.activeVisit?.isDuress) {
  console.log('Panic already active — ignoring repeat trigger.');
  return;
  }
+ isPanicActive = true;
 
  // GPS PRE-CAPTURE: Get a fresh fix BEFORE calling logSafety.
  // For site visits lastGPS is null (cleared at visit start because the site
@@ -3521,11 +3526,13 @@ async function triggerPanic(duress = false) {
  * Logic: Clears UI alarm state and notifies backend to send "All Clear" alerts.
  */
 function iamSafe() {
- if (!state || !state.activeVisit) return;
+ // Allow iamSafe when an alarm is active regardless of whether a visit is in progress.
+ // isPanicActive covers the case where the alarm was triggered outside a visit.
+ if (!state || (!state.activeVisit && !isPanicActive)) return;
  
  // 1. PIN VERIFICATION: Required to prevent accidental or forced clearance
  withPinVerification(false, () => {
- const alarmWasFired = !!(state.activeVisit && state.activeVisit.isPanic);
+ const alarmWasFired = !!(state?.activeVisit?.isPanic || isPanicActive);
 
  // Voice feedback — only mention contacts if the alarm actually went out
  announce(alarmWasFired ? "Safety confirmed. Notifying contacts." : "Safety confirmed.");
@@ -3545,9 +3552,13 @@ function iamSafe() {
  // 3. AUDIT TRAIL: Standard log entry for the spreadsheet
  logSafety("USER_SAFE", "Worker entered PIN to cancel alarm state.");
  
- // 4. STATE MANAGEMENT: Transition to CLOSED phase (syncs legacy flags)
+ // 4. STATE MANAGEMENT: Clear module-level panic flag.
+ // Only transition visit phase if a visit is actually in progress.
+ isPanicActive = false;
+ if (state.activeVisit) {
  setVisitPhase(VISIT_PHASES.CLOSED);
  saveState();
+ }
  
  // 5. UI VISUAL RESET: Remove high-urgency styling
  const lockedPage = document.getElementById('lockedPage');
@@ -3570,6 +3581,11 @@ function iamSafe() {
  if (w3wDisplay) { w3wDisplay.textContent = ''; w3wDisplay.classList.add('hidden'); }
  
  showToast("✅ Safety status confirmed");
+
+ // 7. NAVIGATION: If no active visit, return to home screen
+ if (!state.activeVisit) {
+ navigate('main');
+ }
  });
 }
 /**
@@ -7277,8 +7293,8 @@ function initShakeDetection() {
 }
 
 function handleShakeMotion(event) {
- // Only active during visits
- if (!state || !state.activeVisit) return;
+ // Active on any screen — worker may need to trigger alarm before a visit starts
+ if (!state) return;
  if (shakeConfirmationMode) return; // Don't detect during confirmation
  
  const accel = event.accelerationIncludingGravity;
@@ -7410,8 +7426,8 @@ function initVolumeDetection() {
 }
 
 function handleVolumePress(event) {
- // Only active during visits
- if (!state || !state.activeVisit) return;
+ // Active on any screen — worker may need to trigger alarm before a visit starts
+ if (!state) return;
  if (volumeConfirmationMode) return;
  
  // Volume up or down
