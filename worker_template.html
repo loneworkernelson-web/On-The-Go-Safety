@@ -301,6 +301,19 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <p id="toastText" class="font-bold text-sm"></p>
 </div>
 
+<!-- PANIC BANNER — shown on all screens when alarm fires outside an active visit.
+     Fixed at bottom, z-[9000] sits above pages but below battery saver and toast. -->
+<div id="panicBanner" class="hidden fixed bottom-0 left-0 right-0 z-[9000] bg-red-700 border-t-4 border-red-500 px-4 pt-3 pb-5 flex flex-col items-center gap-3 shadow-2xl">
+  <div class="flex items-center gap-2 animate-pulse">
+    <span class="text-white text-xl">🚨</span>
+    <span class="text-white font-black text-lg tracking-widest">ALARM ACTIVE</span>
+    <span class="text-white text-xl">🚨</span>
+  </div>
+  <button id="btnBannerSafe" class="long-press-btn w-full py-4 bg-green-600 hover:bg-green-500 text-white font-black rounded-2xl text-lg shadow-2xl animate-pulse">
+    Hold to Confirm Safe
+  </button>
+</div>
+
 <div id="batterySaver" class="fixed inset-0 bg-black z-[9999] hidden flex flex-col items-center justify-between py-16 px-10 text-white select-none"
  role="status"
  aria-label="Screen dimmed — visit in progress. Slide to wake."
@@ -3518,6 +3531,9 @@ async function triggerPanic(duress = false) {
  _showAlarmButtons();
  // Fetch what3words address so worker can relay precise location to emergency services
  fetchW3wForPanic();
+    // If no active visit the worker may navigate away — show persistent banner
+    // on all screens so they can always reach "Hold to Confirm Safe".
+    if (!state?.activeVisit) showPanicBanner();
  }
 }
 
@@ -3565,6 +3581,7 @@ function iamSafe() {
  if (lockedPage) lockedPage.classList.remove('panic-mode');
  document.body.classList.remove('bg-red-900');
  document.body.classList.remove('strobe-active');
+ hidePanicBanner();
  
  // 6. BUTTON INTERFACE RESET: Restore standard visit controls
  const btnSafe = document.getElementById('btnSafe');
@@ -5268,7 +5285,21 @@ function renderPanicState() {
  }
 }
 
-// 5. WARM UP GPS - Pre-warms GPS for faster first capture
+// 5. PANIC BANNER — persistent alarm affordance shown on all screens outside a visit
+function showPanicBanner() {
+  const banner = document.getElementById('panicBanner');
+  if (!banner) return;
+  banner.classList.remove('hidden');
+  const btn = document.getElementById('btnBannerSafe');
+  if (btn) setupLongPress(btn, 1500, iamSafe);
+}
+
+function hidePanicBanner() {
+  const banner = document.getElementById('panicBanner');
+  if (banner) banner.classList.add('hidden');
+}
+
+// 6. WARM UP GPS - Pre-warms GPS for faster first capture
 function warmUpGps() {
  if (gpsWarm) return;
  gpsWarm = true;
