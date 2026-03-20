@@ -22,8 +22,13 @@ const CONFIG = {
   LOCALE: "%%LOCALE%%",
   HEALTH_EMAIL: "%%HEALTH_EMAIL%%",   // Optional: override recipient for daily health email. Leave blank to use script owner.
   HEALTHCHECK_URL: "%%HEALTHCHECK_URL%%",  // Optional: Healthchecks.io ping URL. Pinged after each successful checkOverdueVisits() run.
-  NTFY_SERVER: "%%NTFY_SERVER%%"      // ntfy push notification server. Defaults to https://ntfy.sh (hosted). Replace with self-hosted URL for higher privacy.
+  NTFY_SERVER: "%%NTFY_SERVER%%",      // ntfy push notification server. Defaults to https://ntfy.sh (hosted). Replace with self-hosted URL for higher privacy.
+  W3W_API_KEY: "%%W3W_API_KEY%%"       // Optional: what3words API key. Free for registered charities — see what3words.com/select-plan. Leave blank to disable.
 };
+
+// Cached ORS API version — resolved lazily on first use by getOrsVersion_().
+// Avoids re-probing on every routing call within the same execution.
+let _orsVersion = null;
 
 const sp = PropertiesService.getScriptProperties();
 const tid = sp.getProperty('REPORT_TEMPLATE_ID');
@@ -910,10 +915,16 @@ function triggerAlerts(p, type) {
     const headerEmoji = status.includes('TEST_ALERT') ? '🧪' : '🚨';
 
     // ── BUILD HTML EMAIL ───────────────────────────────────────────────────
+    // what3words — optional. Only looked up when a valid GPS fix exists.
+    const w3wAddress = (hasValidGps && CONFIG.W3W_API_KEY && !CONFIG.W3W_API_KEY.includes('%%'))
+        ? getW3wAddress_(gpsLat, gpsLng)
+        : null;
+
     const locationBlock = [
         `<tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap;vertical-align:top">Site:</td><td style="padding:4px 0"><strong>${locationName}</strong></td></tr>`,
         locationAddr ? `<tr><td style="color:#6b7280;padding:4px 12px 4px 0;vertical-align:top">Address:</td><td style="padding:4px 0">${locationAddr}</td></tr>` : '',
-        `<tr><td style="color:#6b7280;padding:4px 12px 4px 0;vertical-align:top">GPS:</td><td style="padding:4px 0">${gpsText}</td></tr>`
+        `<tr><td style="color:#6b7280;padding:4px 12px 4px 0;vertical-align:top">GPS:</td><td style="padding:4px 0">${gpsText}</td></tr>`,
+        w3wAddress ? `<tr><td style="color:#6b7280;padding:4px 12px 4px 0;vertical-align:top">what3words:</td><td style="padding:4px 0"><a href="https://what3words.com/${w3wAddress.replace('///', '')}" style="color:#2563eb;">${w3wAddress}</a></td></tr>` : ''
     ].filter(Boolean).join('');
 
     // Build a per-recipient email with the correct salutation.
@@ -1078,6 +1089,33 @@ function triggerAlerts(p, type) {
  * Returns a formatted address string on success, or the raw "lat, lng"
  * coordinate string on any failure (network error, no result, missing fields).
  *
+/**
+ * getW3wAddress_ — converts a GPS coordinate pair to a what3words address.
+ *
+ * Requires CONFIG.W3W_API_KEY to be set (Business or charity plan).
+ * The Free plan does not support coordinate conversion — this function
+ * returns null silently if the key is absent or the API call fails.
+ *
+ * @param  {number} lat
+ * @param  {number} lng
+ * @return {string|null}  e.g. "///filled.count.soap", or null on failure/no key
+ */
+function getW3wAddress_(lat, lng) {
+    try {
+        const key = CONFIG.W3W_API_KEY;
+        if (!key || key.includes('%%') || key.length < 8) return null;
+        const url = `https://api.what3words.com/v3/convert-to-3wa?coordinates=${lat},${lng}&key=${encodeURIComponent(key)}`;
+        const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+        if (resp.getResponseCode() !== 200) return null;
+        const json = JSON.parse(resp.getContentText());
+        return json.words ? `///${json.words}` : null;
+    } catch (e) {
+        console.warn('getW3wAddress_ failed: ' + e.message);
+        return null;
+    }
+}
+
+/**
  * Used to produce SMS-safe location text — no URLs, no map links.
  *
  * @param  {string} rawGPS  - Coordinate string in "lat,lng" format
@@ -1648,7 +1686,9 @@ function runDiagnostics() {
             );
             const code = resp.getResponseCode();
             if (code === 200) {
-                check('Routing', 'ORS API key', 'PASS', 'Key valid — API is responding.');
+                const v = getOrsVersion_(orsKey);
+                const vNote = v ? ' Directions API: ' + v + '.' : ' Note: could not resolve directions API version.';
+                check('Routing', 'ORS API key', 'PASS', 'Key valid — API is responding.' + vNote);
             } else if (code === 403) {
                 check('Routing', 'ORS API key', 'FAIL',
                     'HTTP 403 — key invalid or daily quota exhausted.');
@@ -2004,6 +2044,31 @@ function sendResponse(e, data) {
         .setMimeType(ContentService.MimeType.JSON);
 }
 
+/**
+ * Resolves the current ORS API version by trying known versions in order.
+ * Caches the result in _orsVersion for the lifetime of the execution.
+ * Returns a version string (e.g. "v2") or null if no version responds.
+ */
+function getOrsVersion_(apiKey) {
+    if (_orsVersion) return _orsVersion;
+    const versions = ['v2', 'v3'];
+    for (const v of versions) {
+        try {
+            const resp = UrlFetchApp.fetch(
+                `https://api.openrouteservice.org/${v}/directions/driving-car?api_key=${apiKey}&start=174.776,-41.286&end=174.777,-41.287`,
+                { method: 'get', muteHttpExceptions: true }
+            );
+            const code = resp.getResponseCode();
+            // 200 = success; 400 = bad params but endpoint exists; 401/403 = auth issue but endpoint exists
+            if (code !== 404 && code !== 410) {
+                _orsVersion = v;
+                return v;
+            }
+        } catch(e) { /* try next version */ }
+    }
+    return null;
+}
+
 // SECURE ORS PROXY (Fixes API Key Leakage)
 function getRouteDistance(start, end) {
   if (!CONFIG.ORS_API_KEY || CONFIG.ORS_API_KEY.length < 5) return null;
@@ -2012,8 +2077,10 @@ function getRouteDistance(start, end) {
     // Reverse coordinates for ORS requirements (lon,lat)
     const p1 = start.split(',').reverse().join(',');
     const p2 = end.split(',').reverse().join(',');
-    
-    const url = `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${CONFIG.ORS_API_KEY}&start=${p1}&end=${p2}`;
+
+    const v = getOrsVersion_(CONFIG.ORS_API_KEY);
+    if (!v) return null;
+    const url = `https://api.openrouteservice.org/${v}/directions/driving-car?api_key=${CONFIG.ORS_API_KEY}&start=${p1}&end=${p2}`;
     const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
     
     if (response.getResponseCode() === 200) {
@@ -2056,8 +2123,10 @@ function getRouteDistanceWithTrail(trailStr) {
     const coords = _decimateTrail(points, 40); // ORS free tier supports 50; 40 gives accuracy headroom
 
     try {
+        const v = getOrsVersion_(CONFIG.ORS_API_KEY);
+        if (!v) return null;
         const response = UrlFetchApp.fetch(
-            'https://api.openrouteservice.org/v2/directions/driving-car',
+            `https://api.openrouteservice.org/${v}/directions/driving-car`,
             {
                 method: 'post',
                 contentType: 'application/json; charset=utf-8',
