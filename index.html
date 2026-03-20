@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏭</text></svg>">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>On-The-Go App Factory v84.0 — Config Model</title>
+      <title>On-The-Go App Factory v85.0 — Config Model</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap" rel="stylesheet">
@@ -84,7 +84,7 @@
         <button onclick="gotoStep(1)" id="tab1" class="tab-btn active" role="tab" aria-selected="true" aria-controls="step1">1. Config</button>
         <button onclick="gotoStep(2)" id="tab2" class="tab-btn" role="tab" aria-selected="false" aria-controls="step2">2. Database</button>
         <button onclick="gotoStep(3)" id="tab3" class="tab-btn" role="tab" aria-selected="false" aria-controls="step3">3. Cloud System</button>
-        <button onclick="gotoStep(4)" id="tab4" class="tab-btn" role="tab" aria-selected="false" aria-controls="step4">4. Download Config</button>
+        <button onclick="gotoStep(4)" id="tab4" class="tab-btn" role="tab" aria-selected="false" aria-controls="step4">4. Download Apps</button>
         <button onclick="gotoStep(5)" id="tab5" class="tab-btn" role="tab" aria-selected="false" aria-controls="step5">5. Deployment</button>
       </div>
 
@@ -278,6 +278,7 @@
             <div><div class="flex justify-between items-end mb-1"><label for="textbeltKey" class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">Textbelt Key (SMS Alerts)</label><a href="https://textbelt.com/#pricing" target="_blank" class="link">Get Key</a></div><input type="text" id="textbeltKey" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Essential for sending high-priority SMS alerts to contacts if an alarm fires.</p></div>
             <div><div class="flex justify-between items-end mb-1"><label for="geminiKey" class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">Gemini AI Key (Grammar)</label><a href="https://aistudio.google.com/app/apikey" target="_blank" class="link">Get Key</a></div><input type="text" id="geminiKey" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Used to automatically professionalise worker reports and fix spelling.</p></div>
             <div><div class="flex justify-between items-end mb-1"><label for="orsKey" class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">ORS Key (Mileage Tracking)</label><a href="https://openrouteservice.org/dev/#/signup" target="_blank" class="link">Get Key</a></div><input type="text" id="orsKey" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Required for road-accurate mileage tracking. This key is hidden from workers.</p></div>
+            <div><div class="flex justify-between items-end mb-1"><label for="w3wKey" class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">what3words Key (Location Codes)</label><a href="https://accounts.what3words.com/select-plan" target="_blank" class="link">Get Key</a></div><input type="text" id="w3wKey" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Adds a memorable 3-word location code (e.g. ///filled.count.soap) to emergency email alerts, the monitor dashboard, and the worker's panic screen — useful for relaying precise location to emergency services. <strong class="text-emerald-400">Free for registered charities and NGOs</strong> — select the Free plan, then <a href="https://what3words.com/contact-us" target="_blank" class="link">contact what3words</a> to request a charity upgrade. Paid plans required for commercial use.</p></div>
             <div><div class="flex justify-between items-end mb-1"><label for="folderId" class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">Photo Folder ID</label><a onclick="document.getElementById('driveHelpModal').style.display='flex'" class="link">Where is this?</a></div><input type="text" id="folderId" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Organises all report photos into a dedicated Drive folder for the Diocese.</p></div>
             <div class="pt-4 border-t border-gray-700">
                 <label for="healthEmail" class="text-[11px] font-black text-emerald-300 uppercase tracking-widest block mb-1">System Health Report Email</label>
@@ -425,7 +426,7 @@
               </div>
               <div id="testResult" class="hidden mt-4 p-4 rounded-xl text-center font-black uppercase tracking-widest" role="status" aria-live="polite"></div>
           </div>
-          <div class="flex justify-between pt-8"><button onclick="gotoStep(2)" class="text-white font-black uppercase tracking-widest text-xs">Back</button><button id="btnNextDownload" onclick="gotoStep(4);" disabled class="btn btn-primary text-lg opacity-50 cursor-not-allowed shadow-2xl font-black uppercase tracking-widest">Next: Download Config →</button></div>
+          <div class="flex justify-between pt-8"><button onclick="gotoStep(2)" class="text-white font-black uppercase tracking-widest text-xs">Back</button><button id="btnNextDownload" onclick="gotoStep(4);" disabled class="btn btn-primary text-lg opacity-50 cursor-not-allowed shadow-2xl font-black uppercase tracking-widest">Next: Download Apps →</button></div>
         </div>
 
         <div id="step4" class="step-section text-center space-y-12 py-12" role="tabpanel" aria-labelledby="tab4">
@@ -926,7 +927,7 @@ function applyPreset(p, a, el) {
     function copyData(k) { navigator.clipboard.writeText(BLUEPRINTS[k]); alert(k + " Blueprint Copied!"); }
     function openMagicLink() { window.open(MASTER_SHEET_URL, '_blank'); }
     function toggleCheck(el) { el.classList.toggle('checked'); el.querySelector('input').checked = el.classList.contains('checked'); }
-    function loadPersistedData() { ['orgName', 'secretKey', 'workerKey', 'webAppUrl', 'geminiKey', 'orsKey', 'textbeltKey', 'folderId', 'healthEmail', 'healthcheckUrl', 'ntfyServer', 'escalationMins', 'countrySelect', 'appName', 'checkinMins'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v) document.getElementById(id).value = v; }); ['chkRedaction', 'chkVehicle', 'chkCheckin', 'chkTravelReport', 'chkMileage'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v !== null) document.getElementById(id).checked = (v === 'true'); }); }
+    function loadPersistedData() { ['orgName', 'secretKey', 'workerKey', 'webAppUrl', 'geminiKey', 'orsKey', 'w3wKey', 'textbeltKey', 'folderId', 'healthEmail', 'healthcheckUrl', 'ntfyServer', 'escalationMins', 'countrySelect', 'appName', 'checkinMins'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v) document.getElementById(id).value = v; }); ['chkRedaction', 'chkVehicle', 'chkCheckin', 'chkTravelReport', 'chkMileage'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v !== null) document.getElementById(id).checked = (v === 'true'); }); }
     function updateRegionInfo() { const sel = document.getElementById('countrySelect').value; selectedConfig = REGION_DATA[sel] || REGION_DATA["+64"]; document.getElementById('detectedTz').textContent = selectedConfig.tz; document.getElementById('vehTermDisplay').textContent = selectedConfig.term; document.getElementById('voiceLocaleDisplay').textContent = selectedConfig.locale; document.getElementById('phoneFmtDisplay').textContent = sel; document.getElementById('timezoneVal').value = selectedConfig.tz; }
     function closeModal(id) { document.getElementById(id).style.display = 'none'; document.getElementById('mainContent').classList.remove('blur-sm'); }
     function toggleEnterBtn() {
@@ -951,6 +952,7 @@ function applyPreset(p, a, el) {
         document.getElementById('codeDisplay').textContent = TEMPLATES.backend
             .replace(/%%SECRET_KEY%%/g, document.getElementById('secretKey').value).replace(/%%WORKER_KEY%%/g, document.getElementById('workerKey').value)
             .replace(/%%ORS_API_KEY%%/g, document.getElementById('orsKey').value).replace(/%%GEMINI_API_KEY%%/g, document.getElementById('geminiKey').value)
+            .replace(/%%W3W_API_KEY%%/g, document.getElementById('w3wKey').value)
             .replace(/%%TEXTBELT_API_KEY%%/g, document.getElementById('textbeltKey').value).replace(/%%PHOTOS_FOLDER_ID%%/g, document.getElementById('folderId').value)
             .replace(/%%ORGANISATION_NAME%%/g, document.getElementById('orgName').value).replace(/%%ORG_NAME%%/g, document.getElementById('orgName').value).replace(/%%TIMEZONE%%/g, document.getElementById('timezoneVal').value)
             .replace(/%%ESCALATION_MINUTES%%/g, document.getElementById('escalationMins').value).replace(/%%ENABLE_REDACTION%%/g, document.getElementById('chkRedaction').checked)
@@ -1088,6 +1090,7 @@ function testConnection() {
             "appName": appShort,
             "workerKey": workerKey,
             "ntfyServer": ntfyServer,
+            "w3wApiKey": document.getElementById('w3wKey').value.trim() || '',
             "features": {
                 "mileageEnabled":     mileageEnabled,
                 "checkinEnabled":     checkinEnabled,
@@ -1250,7 +1253,8 @@ function testConnection() {
             .replace(/%%TEXT_ON_ACCENT%%/g,   textOnAccent)
             .replace(/%%BUILD_VERSION%%/g,    'v82 · ' + buildTimestampLocal)
             .replace(/%%MAP_LAT%%/g,          String(selectedConfig.mapLat || -40.9))
-            .replace(/%%MAP_LNG%%/g,          String(selectedConfig.mapLng || 174.9));
+            .replace(/%%MAP_LNG%%/g,          String(selectedConfig.mapLng || 174.9))
+            .replace(/%%W3W_API_KEY%%/g,      document.getElementById('w3wKey').value || '');
 
         const blob = new Blob([monHtml], { type: 'text/html' });
         const filename = (org || 'org').replace(/[^a-z0-9_-]/gi, '_') + '_monitor.html';
