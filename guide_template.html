@@ -705,6 +705,12 @@
         <strong>💡 Keep the app open:</strong> A pulsing banner at the top of the battery saver screen reads <em>"System Active: Keep App Open."</em> Do not close or background the app while a visit is active — doing so may interrupt GPS tracking and alarm monitoring.
     </div>
 
+    <div class="tip">
+        <strong>💡 Battery threshold — immediate entry:</strong> If your battery drops below the level your organisation has configured (typically 15–20%), the app enters Battery Saver mode immediately, regardless of how recently you last touched the screen. This is intentional — preserving charge to keep safety monitoring running is the priority. The saver screen will appear even if you were actively using the app moments before.
+    </div>
+
+    <p>After waking from Battery Saver mode, the 10-second inactivity countdown restarts immediately — there is no grace period. Any touch on the screen resets the countdown.</p>
+
     <div class="mock-wrap">
         <div class="mock-phone" style="width:260px;background:#000;border-color:#111;">
             <div class="mock-statusbar" style="background:#000;color:#374151;"><span>10:02 AM</span><span>▐▐▐ 🔋</span></div>
@@ -800,6 +806,10 @@
     <div class="tip">
         <strong>💡 Travel settings persist:</strong> Your preferred setting for the Travelling tile is remembered between sessions unless your organisation mandates reports for all travel, in which case it cannot be changed.
     </div>
+
+    <h3>Pre-Departure Form</h3>
+    <p>Your organisation may require you to complete a short questionnaire <strong>before</strong> a travel visit begins — covering vehicle condition, route details, or a fit-to-drive confirmation. If this is configured, the form will appear automatically after you tap the Travelling tile and before your trip timer starts.</p>
+    <p>You must submit the form to proceed. The answers are sent to your organisation as part of the visit record. If you close the form without completing it, the trip will not start.</p>
 
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2>9. Settings &amp; Preferences</h2>
@@ -1023,6 +1033,7 @@
         <li>Your name and phone number</li>
         <li>The site you were at and its address</li>
         <li>A GPS link (if location was available)</li>
+        <li>A <strong>what3words address</strong> (e.g. <code>///filled.count.soap</code>) in the emergency email — if your organisation has this feature configured</li>
     </ul>
     <p>When you mark yourself safe (the alarm is resolved), your contacts also receive an <strong>✅ All Clear</strong> push notification so they know the situation has been resolved.</p>
 
@@ -1066,7 +1077,9 @@
     </div>
     <p class="mock-caption">SOS active screen — red indicates alarm is broadcasting</p>
 
-    <h3>Cancelling an Alarm (Normal)</h3>
+    <p>If your organisation has the <strong>what3words</strong> feature configured, a three-word location address (e.g. <code>///filled.count.soap</code>) will appear on this screen in green, below the GPS coordinates. This is your precise location expressed as three words — it identifies a 3-metre square anywhere in the world.</p>
+    <p>The what3words address is particularly useful if you need to describe your location verbally to a responder over the phone, or if you're in a place where a street address doesn't exist (a field, a beach, a car park). Read it out exactly as shown, including the three slashes: <em>"filled dot count dot soap"</em>. Your contacts will receive the same address in the emergency email sent to them automatically.</p>
+    <p>If you don't see a what3words address, either the feature isn't configured for your deployment or a GPS fix wasn't available when the alarm fired — your GPS coordinates are still sent to contacts.</p>
     <ol class="step-list">
         <li>When you are safe, hold the green <strong>"I Am Safe"</strong> button.</li>
         <li>Enter your <strong>standard 4-digit PIN</strong>.</li>
