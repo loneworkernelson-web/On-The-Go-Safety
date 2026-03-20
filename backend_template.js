@@ -1,8468 +1,2535 @@
-<!DOCTYPE html>
-<html lang="en" class="h-full">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>OTG Safety</title>
-<meta name="apple-mobile-web-app-title" content="OTG Safety">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" id="metaThemeColor" content="#1e3a8a">
-<link rel="manifest" href="manifest.json" id="manifestLink">
-<link rel="icon" href="./icon.png" id="faviconLink">
+/**
+ * OTG APPSUITE - MASTER BACKEND %%BACKEND_VERSION%%
+ * FIXED: SOS Map URLs, SMS Payloads, and GAS Environment Stability
+ */
 
-<script src="https://cdn.tailwindcss.com"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
-
-<style>
-/* 1. RUNTIME THEME — defaults overridden at boot by applyTheme() from config.json */
-:root {
- --primary: #1e3a8a;
- --accent: #3b82f6;
- --surface: #1e2f6a;
- --accent-glow: rgba(59,130,246,0.25);
- --text-on-primary: #ffffff;
- --text-on-accent: #ffffff;
-}
-
-/* 3. SOPHISTICATED UI BASE */
-body { 
- font-family: 'Inter', sans-serif; 
- -webkit-tap-highlight-color: transparent; 
- user-select: none; 
- overscroll-behavior-y: contain; 
- background-color: var(--primary); 
- color: var(--text-on-primary); 
- height: 100%; 
- width: 100%; 
- overflow: hidden; 
- display: flex; /* Added flex */
- flex-direction: column; /* Stacks banners above pages */
- padding-top: env(safe-area-inset-top); /* Handles notch globally */
-}
-#pageContainer {
- flex: 1; /* Takes all remaining body height after banners */
- position: relative; /* Establishes containing block for absolute pages */
- overflow: hidden; /* Clips any overflowing page content */
- min-height: 0; /* Critical: allows flex child to shrink below content size */
-}
-.page { 
- display: none;
- position: absolute; /* Fill pageContainer exactly — not flex siblings */
- top: 0; left: 0; right: 0; bottom: 0;
- flex-direction: column; 
- background-color: var(--primary);
- overflow: hidden;
-}
-.page.active { display: flex; z-index: 10; }
-
-.header-bar { padding: 0.75rem 1rem; background-color: var(--primary); border-bottom: 1px solid rgba(255,255,255,0.1); flex-shrink: 0; z-index: 20; display: flex; justify-content: space-between; align-items: center; }
-.content-area { 
- flex: 1; 
- padding: 1rem; 
- overflow-y: auto; /* Enables vertical scrolling */
- -webkit-overflow-scrolling: touch; /* Ensures smooth 'momentum' scrolling on iPhones */
- display: flex;
- flex-direction: column;
-}
-.footer-bar {
- flex-shrink: 0; /* Prevents the footer from being squashed by long forms */
-}
-/* 4. LONG-PRESS INTERACTION STYLES */
-.long-press-btn { position: relative; overflow: hidden; transition: all 0.2s; user-select: none; }
-.long-press-btn.pressing::after,
-.long-press-btn.holding::after { 
- width: 100%; 
- transition: width 1.8s linear; 
-}
-/* 3. ANIMATION PATCH: High-visibility blue fill */
-.long-press-btn::after { 
- content: ''; 
- position: absolute; 
- top: 0; 
- left: 0; 
- width: 0; 
- height: 100%; 
- background: rgba(59, 130, 246, 0.5); /* Semi-transparent blue */
- transition: width 0.2s ease-out; 
- z-index: 0;
-}
-/* SLIDE ACTION PILLS */
-.slide-action-pill { position: relative; overflow: hidden; user-select: none; touch-action: pan-y; cursor: pointer; }
-.slide-action-pill.pill-disabled { opacity: 0.45; pointer-events: none; }
-/* 5. GPS SIGNAL BARS */
-.gps-bar { width: 4px; height: 12px; background-color: #374151; border-radius: 1px; transition: background-color 0.3s; }
-.gps-bar.active-red { background-color: #ef4444; box-shadow: 0 0 5px #ef4444; }
-.gps-bar.active-amber { background-color: #f59e0b; box-shadow: 0 0 5px #f59e0b; }
-.gps-bar.active-green { background-color: #22c55e; box-shadow: 0 0 5px #22c55e; }
-
-/* BEST: Combines your custom arrow with high-contrast menu items */
-select.form-input {
- appearance: none;
- background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='white'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
- background-repeat: no-repeat;
- background-position: right 1rem center;
- background-size: 1em;
- background-color: rgba(255, 255, 255, 0.05);
-}
-
-select.form-input option {
- background-color: #ffffff !important;
- color: #000000 !important;
-}
-/* 6. UTILITY CLASSES */
-.form-input { width: 100%; background-color: var(--primary); border: 1px solid rgba(255,255,255,0.2); border-radius: 0.5rem; padding: 0.75rem; color: var(--text-on-primary); font-size: 1rem; outline: none; margin-bottom: 0.75rem; display: block; }
-.form-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3); }
-.spinner { border: 3px solid rgba(255, 255, 255, 0.3); border-radius: 50%; border-top-color: #fff; width: 20px; height: 20px; animation: spin 1s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-canvas { touch-action: none; background: #fff; border-radius: 0.5rem; cursor: crosshair; }
-.wizard-step { display: none; flex-direction: column; }
-.wizard-step.active { display: flex; animation: slideIn 0.3s ease-out; }
-@keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
-
-/* 7. POCKET PROTECTION/BATTERY SAVER VISUALS */
-#batterySaver { 
- background-color: #000;
- padding-top: env(safe-area-inset-top);
- padding-bottom: env(safe-area-inset-bottom);
-}
-#saverProgress { background: rgba(255, 255, 255, 0.2); transition: opacity 1.5s linear; }
-
-/* 8. INSTALL OVERLAYS */
-#toastMsg { z-index: 1000; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); transform: translateY(-150%); }
-#toastMsg.show { transform: translateY(0); }
-
-/* 9. PHASE 1 ADDITIONS */
-#offlineBanner { background: #dc2626; color: white; text-align: center; font-size: 0.75rem; font-weight: 700; padding: 0.25rem; z-index: 50; }
-#vehNagBar { background: #ea580c; color: white; text-align: center; font-size: 0.75rem; font-weight: 700; padding: 0.5rem; cursor: pointer; z-index: 40; border-bottom: 1px solid rgba(255,255,255,0.2); }
-.form-input-card { width: 100%; background-color: var(--surface); border: 1px solid rgba(255,255,255,0.15); border-radius: 0.5rem; padding: 0.75rem; color: white; font-size: 0.9rem; outline: none; margin-bottom: 0.5rem; display: block; }
-/* Theme-aware accent button — used wherever purple was previously hard-coded */
-.btn-accent { background-color: var(--accent) !important; color: white; }
-/* Travel settings toggle: colours with accent when checked */
-input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--accent) !important; }
-.setting-label { display: block; font-size: 0.625rem; font-weight: 800; letter-spacing: 0.1em; margin-bottom: 0.5rem; margin-left: 0.25rem; }
-.lbl-blue { color: #60a5fa; }
-.lbl-red { color: #f87171; }
-.lbl-gray { color: #9ca3af; }
-
-/* Professional Input Groups & Cards */
-.input-group {
- display: flex;
- align-items: center;
- background-color: rgba(255, 255, 255, 0.05);
- border: 1px solid rgba(255, 255, 255, 0.2);
- border-radius: 0.75rem;
- overflow: hidden;
- height: 3.5rem;
-}
-.input-group:focus-within { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3); }
-
-.input-addon {
- padding: 0 1rem;
- background: rgba(255, 255, 255, 0.05);
- color: #60a5fa;
- font-weight: 800;
- font-size: 0.9rem;
- height: 100%;
- display: flex;
- align-items: center;
- 
- flex-shrink: 0;
-}
-.addon-prefix { border-right: 1px solid rgba(255, 255, 255, 0.1); }
-.addon-suffix { border-left: 1px solid rgba(255, 255, 255, 0.1); }
-
-.input-group .form-input { border: none !important; margin-bottom: 0 !important; background: transparent !important; flex: 1; }
-
-.check-card {
- display: flex;
- justify-content: space-between;
- align-items: center;
- padding: 1rem 1.25rem;
- background: var(--surface);
- border: 1px solid rgba(255, 255, 255, 0.1);
- border-radius: 1rem;
-}
- 
-
-/* Panic mode styling */
-.panic-mode {
- background: #991b1b !important;
- animation: panic-pulse 2s infinite;
-}
-
-@keyframes panic-pulse {
- 0%, 100% { background: #991b1b; }
- 50% { background: #dc2626; }
-}
-
-/* Animated GPS pulse for active travel tracking */
-.gps-pulse {
- animation: gps-pulse-anim 1.5s infinite ease-in-out;
-}
-
-@keyframes gps-pulse-anim {
- 0%, 100% { opacity: 1; transform: scale(1); }
- 50% { opacity: 0.4; transform: scale(0.9); }
-}
-
-/* Emergency strobe for rescue visibility */
-.strobe-active {
- animation: strobe-anim 0.4s infinite !important;
-}
-
-@keyframes strobe-anim {
- 0%, 49% { background-color: #991b1b !important; }
- 50%, 100% { background-color: #000000 !important; }
-}
- /* HIGH-CONTRAST WIZARD OVERHAUL */
-#setupPage {
- background-color: #050505 !important; /* True deep black */
-}
-
-#setupPage .form-input, 
-#setupPage .form-input-card {
- background-color: #000000 !important;
- border: 2px solid #ffffff !important; /* Thick white borders for clarity */
- color: #ffffff !important;
- font-weight: 700;
-}
-
-#setupPage .form-input::placeholder {
- color: #9ca3af !important;
- opacity: 1;
-}
-
-#setupPage h2 {
- color: #60a5fa !important; /* High-visibility blue for headers */
- font-weight: 800;
- 
- letter-spacing: 0.05em;
-}
-
-#setupPage .setting-label {
- color: #ffffff !important;
- font-size: 0.75rem;
- background: rgba(255,255,255,0.1);
- padding: 2px 8px;
- border-radius: 4px;
- display: inline-block;
-} 
-</style>
-</head>
-<body class="h-full overflow-hidden select-none">
-
-<!-- =========================================================
- BOOT SCREEN — visible while config.json is being fetched.
- Hidden by applyConfig() on success; replaced by error UI on failure.
- This is the ONLY element visible before CONFIG is populated.
- ========================================================= -->
-<div id="bootScreen" style="
- position: fixed; inset: 0; z-index: 9999;
- background: #1e3a8a;
- display: flex; flex-direction: column;
- align-items: center; justify-content: center;
- gap: 1.5rem; color: white; font-family: 'Inter', sans-serif;
-">
- <div id="bootSpinner" style="
- width: 48px; height: 48px;
- border: 4px solid rgba(255,255,255,0.2);
- border-top-color: #fff;
- border-radius: 50%;
- animation: spin 0.9s linear infinite;
- "></div>
- <div style="text-align:center; max-width: 280px;">
- <div style="font-weight:800; font-size:1.1rem; letter-spacing:0.05em; margin-bottom:0.35rem;">OTG Safety</div>
- <div id="bootStatus" style="font-size:0.78rem; opacity:0.7; font-weight:600;">Loading configuration…</div>
- </div>
- <div id="bootError" style="display:none; text-align:center; max-width:300px; padding:0 1.5rem;">
- <div style="font-size:2rem; margin-bottom:0.75rem;">⚠️</div>
- <div style="font-weight:800; font-size:1rem; margin-bottom:0.5rem;">Configuration Unavailable</div>
- <div id="bootErrorMsg" style="font-size:0.78rem; opacity:0.75; line-height:1.5; margin-bottom:1.25rem;"></div>
- <button onclick="location.reload()" style="
- background:#3b82f6; color:white; border:none;
- padding:0.75rem 1.75rem; border-radius:0.75rem;
- font-weight:700; font-size:0.85rem; cursor:pointer;
- ">Retry</button>
- </div>
-</div>
-
-<div id="offlineBanner" class="hidden bg-red-600 text-white text-center text-xs font-bold py-1">
- 📡 OFFLINE MODE - Data queued for upload
-</div>
-
-<div id="vehNagBar" class="hidden bg-orange-600 text-white text-center text-xs font-bold py-2 cursor-pointer" onclick="startVehicleCheck()">
- ⚠️ Vehicle Check Overdue - Tap to Complete
-</div>
-
-<div id="toastMsg" class="fixed top-4 left-4 right-4 bg-gray-800 border-l-4 border-blue-500 text-white px-4 py-3 rounded shadow-md transform -translate-y-full transition-transform duration-300 z-[10000]" aria-live="polite">
- <p id="toastText" class="font-bold text-sm"></p>
-</div>
-
-<div id="batterySaver" class="fixed inset-0 bg-black z-[9999] hidden flex flex-col items-center justify-between py-16 px-10 text-white select-none"
- role="status"
- aria-label="Screen dimmed — visit in progress. Slide to wake."
- aria-live="polite"
- ontouchstart="event.stopPropagation()" onclick="event.stopPropagation()">
- 
- <div class="text-center space-y-4">
- <div class="bg-blue-900/30 border border-blue-500/30 rounded-full py-1.5 px-5 mb-2 animate-pulse">
- <p class="text-xs font-black text-blue-400 tracking-[0.25em]">
- ⚠️ System Active: Keep App Open
- </p>
- </div>
-
- <!-- Timer display - tap-to-wake removed (8d); timer was never clickable anyway -->
- <div class="space-y-1">
- <p id="saverTimerHUD" class="text-5xl font-mono font-bold text-gray-300"
- aria-live="off" aria-label="Time remaining">--:--</p>
- </div>
- 
- <div class="flex items-center justify-center gap-2 text-gray-300">
- <span id="saverBatteryHUD" class="text-xs font-black">--%</span>
- <div class="w-8 h-4 border border-gray-800 rounded-sm relative">
- <div id="saverBatteryBarHUD" class="absolute inset-y-0 left-0 bg-gray-700" style="width: 0%"></div>
- </div>
- </div>
- </div>
-
- <div class="w-full max-w-xs space-y-8">
- <div id="wakeSlidePill"
- class="relative bg-gray-900/40 h-16 rounded-full p-1 border border-gray-800 flex items-center overflow-hidden shadow-inner"
- role="group"
- aria-label="Wake screen">
- <input type="range" id="wakeSlider" min="0" max="100" value="0" 
- aria-label="Drag right to wake screen"
- class="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10">
- 
- <div id="sliderThumb" class="relative w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-2xl transition-all duration-75 pointer-events-none z-20">
- <svg class="w-6 h-6 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
- <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/>
- </svg>
- </div>
- 
- <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
- <span class="text-sm font-black text-gray-400 tracking-[0.3em] transition-opacity duration-200 text-center leading-tight" id="slideLabel">Wake</span>
- </div>
- </div>
-
- <!-- 8c: Shake message replaces old SOS pill, keeping the red pill styling -->
- <div class="text-center">
- <div class="inline-flex items-center gap-2 bg-red-900/10 border border-red-900/30 rounded-full px-5 py-2">
- <span class="text-red-600 text-lg">🆘</span>
- <span class="text-red-700 text-sm font-black tracking-widest">Shake vigorously for SOS</span>
- </div>
- </div>
- </div>
-</div>
- 
-<div id="pageContainer">
-<div id="setupPage" class="page">
- <div class="header-bar">
- <h1 class="text-xl font-bold text-blue-400">Setup Wizard</h1>
- <div class="flex gap-1">
- <div id="dot1" class="w-2 h-2 rounded-full bg-blue-500"></div>
- <div id="dot2" class="w-2 h-2 rounded-full bg-gray-700"></div>
- <div id="dot3" class="w-2 h-2 rounded-full bg-gray-700"></div>
- </div>
- </div>
- 
- <div class="content-area flex flex-col">
- <div id="wizStep1" class="wizard-step active">
- <h2 class="text-lg font-bold mb-4">Your Identity</h2>
- <input id="wizName" type="text" placeholder="Full Name" class="form-input" aria-label="Full name">
- <input id="wizPhone" type="tel" placeholder="Phone Number" class="form-input" aria-label="Phone number">
- <input id="wizEmail" type="email" placeholder="Email Address" class="form-input" aria-label="Email address">
- </div>
- 
-<div id="wizStep2" class="wizard-step space-y-6">
- <div class="space-y-4">
- <h2 class="text-base font-extrabold text-white tracking-widest">Safety & Duress PINs</h2>
-
- <div class="space-y-5 text-sm text-gray-200 leading-relaxed">
- <p>
- <strong class="text-blue-400 ">Standard Safety PIN:</strong> This code is used exclusively to declare yourself safe <span class="font-black underline text-white">after</span> an alarm has been activated. Entering this PIN is the only way to confirm to the system that you are secure and to stop the alert from escalating.
- </p>
-
- <!-- Safety PIN + Confirm -->
- <div class="grid grid-cols-2 gap-3">
- <div class="flex flex-col gap-1">
- <label class="text-sm text-blue-400 font-black tracking-widest ml-1">Safety PIN</label>
- <input id="wizPin" type="tel" maxlength="4" placeholder="••••"
- oninput="state.pins.std = this.value; saveState(); checkWizPinMatch()"
- class="w-full bg-white/10 border-2 border-white/10 rounded-2xl p-4 text-center text-3xl font-mono text-white tracking-[0.5em] focus:border-blue-500 outline-none transition-all">
- </div>
- <div class="flex flex-col gap-1">
- <label class="text-sm text-blue-400 font-black tracking-widest ml-1">Confirm PIN</label>
- <input id="wizPinConfirm" type="tel" maxlength="4" placeholder="••••"
- oninput="checkWizPinMatch()"
- class="w-full bg-white/10 border-2 border-white/10 rounded-2xl p-4 text-center text-3xl font-mono text-white tracking-[0.5em] focus:border-blue-500 outline-none transition-all">
- </div>
- </div>
-
- <div class="border-t border-white/5 pt-4 mt-2">
- <p>
- <strong class="text-purple-400 ">Silent Duress PIN:</strong> This is used to silently declare yourself <span class="font-black underline text-white ">unsafe</span> when you are required to clear an alarm under threat. The app will appear to clear the alarm normally, but it will <span class="font-black text-purple-300">immediately and silently</span> notify your contacts that you require help.
- </p>
-
- <!-- Duress PIN + Confirm -->
- <div class="grid grid-cols-2 gap-3 mt-4">
- <div class="flex flex-col gap-1">
- <label class="text-sm text-purple-400 font-black tracking-widest ml-1">Duress PIN</label>
- <input id="wizDuress" type="tel" maxlength="4" placeholder="••••"
- oninput="state.pins.duress = this.value; saveState(); checkWizPinMatch()"
- class="w-full bg-white/10 border-2 border-white/10 rounded-2xl p-4 text-center text-3xl font-mono text-purple-400 tracking-[0.5em] focus:border-purple-500 outline-none transition-all">
- </div>
- <div class="flex flex-col gap-1">
- <label class="text-sm text-purple-400 font-black tracking-widest ml-1">Confirm PIN</label>
- <input id="wizDuressConfirm" type="tel" maxlength="4" placeholder="••••"
- oninput="checkWizPinMatch()"
- class="w-full bg-white/10 border-2 border-white/10 rounded-2xl p-4 text-center text-3xl font-mono text-purple-400 tracking-[0.5em] focus:border-purple-500 outline-none transition-all">
- </div>
- </div>
- </div>
-
- <!-- Validation feedback -->
- <div id="pinMatchError" role="alert" class="hidden bg-red-900/40 border border-red-500/50 rounded-xl px-4 py-3 text-sm font-bold text-red-300"></div>
- <div id="pinMatchOk" role="status" aria-live="polite" class="hidden bg-green-900/40 border border-green-500/50 rounded-xl px-4 py-3 text-sm font-bold text-green-300">✅ PINs confirmed — tap Next to continue.</div>
- </div>
- </div>
- </div>
-
-<div id="wizStep3" class="wizard-step space-y-6">
- <div class="space-y-4">
- <h2 class="text-lg font-bold text-white mb-4 tracking-widest">Response Hierarchy</h2>
- 
- <div class="space-y-5 text-sm text-gray-200 leading-relaxed">
- <p>
- <strong class="text-blue-400 text-xs font-black">Primary Contact:</strong> Your first line of support.
- </p>
- <div class="space-y-2 mb-6">
- <input id="wizContactName" type="text" placeholder="Primary Contact Name" 
- autocomplete="name"
- aria-label="Primary contact name"
- oninput="state.worker.iceName = this.value; saveState()" 
- class="w-full bg-white/10 border border-white/10 rounded-xl p-4 text-white outline-none focus:border-blue-500 transition-all">
- 
- <div class="grid grid-cols-2 gap-2">
- <input id="wizContactPhone" type="tel" placeholder="Phone Number" 
- autocomplete="tel"
- aria-label="Primary contact phone number"
- oninput="state.worker.icePhone = this.value; saveState()" 
- class="bg-white/10 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 transition-all">
- 
- <input id="wizContactEmail" type="email" placeholder="Email Address" 
- autocomplete="email"
- aria-label="Primary contact email address"
- oninput="state.worker.iceEmail = this.value; saveState()" 
- class="bg-white/10 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 transition-all">
- </div>
- <input id="wizContactNtfy" type="text" placeholder="ntfy topic (optional — for push alerts)" 
- autocomplete="off" autocorrect="off" spellcheck="false"
- aria-label="Primary contact ntfy push notification topic (optional)"
- oninput="state.worker.emgNtfy = this.value; saveState()" 
- class="w-full bg-white/10 border border-white/10 rounded-xl p-3 text-white text-sm outline-none focus:border-teal-500 transition-all font-mono">
- <p class="text-xs text-teal-300/70 -mt-1 leading-relaxed">Ask your contact to install the <strong>ntfy app</strong>, create a private topic, and share the topic name with you. They'll get an instant push notification when any alarm fires.</p>
- </div>
-
- <div class="bg-blue-900/20 border border-blue-500/20 p-4 rounded-2xl space-y-3">
- <p>
- <strong class="text-orange-400 text-xs font-black">Escalation Contact (Optional):</strong> Alerts this person if the Primary Contact doesn't acknowledge within 1 hour.
- </p>
- </div>
-
- <div class="space-y-2 mt-4">
- <input id="wizEscName" type="text" placeholder="Escalation Name" 
- autocomplete="name"
- aria-label="Escalation contact name"
- oninput="state.worker.ice2Name = this.value; saveState()" 
- class="w-full bg-white/10 border border-white/10 rounded-xl p-4 text-white outline-none focus:border-orange-500 transition-all">
- 
- <div class="grid grid-cols-2 gap-2">
- <input id="wizEscPhone" type="tel" placeholder="Phone" 
- autocomplete="tel"
- aria-label="Escalation contact phone number"
- oninput="state.worker.ice2Phone = this.value; saveState()" 
- class="bg-white/10 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-orange-500 transition-all">
- 
- <input id="wizEscEmail" type="email" placeholder="Email" 
- autocomplete="email"
- aria-label="Escalation contact email address"
- oninput="state.worker.ice2Email = this.value; saveState()" 
- class="bg-white/10 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-orange-500 transition-all">
- </div>
- <input id="wizEscNtfy" type="text" placeholder="ntfy topic (optional)" 
- autocomplete="off" autocorrect="off" spellcheck="false"
- aria-label="Escalation contact ntfy push notification topic (optional)"
- oninput="state.worker.escNtfy = this.value; saveState()" 
- class="w-full bg-white/10 border border-white/10 rounded-xl p-3 text-white text-sm outline-none focus:border-teal-500 transition-all font-mono">
- </div>
- </div>
- </div>
-
- </div> <div class="footer-bar flex justify-between p-6 border-t border-white/10 bg-black/20">
- <button id="btnWizPrev" onclick="prevWiz()" 
- class="hidden px-8 py-4 bg-gray-700 rounded-xl font-bold text-white active:scale-95 transition-all">
- Back
- </button>
- <div class="flex-1"></div>
- <button id="btnWizNext" onclick="nextWiz()" 
- class="px-8 py-4 bg-blue-600 rounded-xl font-bold text-white active:scale-95 transition-all shadow-lg">
- Next Step
- </button>
- </div>
- </div> </div>
-<div id="mainPage" class="page">
-<div class="header-bar">
- <div class="flex items-center gap-3">
- <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
- <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
- <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety App</span>
- </h1>
- </div>
- <div class="flex gap-4 items-center"> 
- <button onclick="openResourceHub()" 
- class="text-2xl opacity-60 hover:opacity-100 transition active:scale-90" 
- title="Resource Library" 
- aria-label="Resource Library">
- 📖
- </button>
- <div class="flex flex-col items-center">
- <div id="gpsIndicator" class="flex gap-1 items-end h-5"> 
- <div class="gps-bar" style="height:6px"></div>
- <div class="gps-bar" style="height:9px"></div>
- <div class="gps-bar" style="height:12px"></div>
- </div>
- <span id="gpsLabel" class="text-sm text-gray-300 font-bold mt-0.5">--</span>
-</div>
- <button onclick="navigate('settings')" 
- class="text-2xl text-gray-400 hover:text-white transition active:rotate-45" 
- aria-label="Settings">
- ⚙️
- </button>
- </div>
-</div>
- 
- <!-- Sync Banner -->
- <div id="uploadBanner" class="hidden mb-2 bg-blue-900/50 text-blue-200 text-xs p-2 rounded flex items-center justify-center gap-2 font-bold tracking-widest mx-4 mt-4">
- <div class="spinner"></div>
- <span>Syncing...</span>
- </div>
- 
- <div class="content-area">
-<div class="flex flex-col gap-1 mb-4">
- <div class="flex gap-2">
- <button onclick="forceSync(true)" id="btnSync" class="w-14 h-14 bg-gray-800 border border-gray-600 rounded-xl flex items-center justify-center text-blue-400 text-2xl shadow-lg active:scale-95 transition" aria-label="Sync database">
- ↻
- </button>
- <button onclick="openAddLocationModal()" class="w-14 h-14 bg-gray-800 border border-gray-600 rounded-xl flex items-center justify-center text-green-400 text-2xl shadow-lg active:scale-95 transition" aria-label="Add destination">
- +
- </button>
- <div id="travelRow" class="flex-1"></div>
- </div>
- <div id="lastSyncLabel" class="text-sm text-gray-300 font-bold tracking-tighter ml-1">
- Last Sync: Never
- </div>
-</div>
- <!-- Site search — shown automatically when site count exceeds 15 -->
- <div id="siteSearchRow" class="hidden mb-3">
- <div class="relative">
- <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none">🔍</span>
- <input id="siteSearch" type="search" placeholder="Search sites…"
- class="w-full bg-gray-800 border border-gray-600 rounded-xl pl-8 pr-3 py-2.5 text-sm text-white font-bold placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors"
- oninput="renderLocations()">
- </div>
- </div>
-
- <!-- FIRST-USE VERIFICATION CARD — shown until dismissed after wizard -->
- <div id="verifyCard" class="hidden mb-4 rounded-2xl border border-amber-600/50 bg-amber-950/60 p-4">
- <div class="flex justify-between items-start mb-3">
- <div>
- <div class="text-amber-400 text-xs font-black tracking-widest mb-0.5">⚠️ Safety Chain Not Yet Verified</div>
- <div class="text-white text-sm font-bold leading-snug">Confirm your setup works before your first real visit</div>
- </div>
- <button onclick="dismissVerification()" class="text-gray-500 text-2xl leading-none ml-3 mt-0.5" aria-label="Dismiss verification prompt">×</button>
- </div>
-
- <!-- Step 1: Test alert -->
- <div class="mb-2 rounded-xl bg-black/20 p-3">
- <div class="text-white text-xs font-black tracking-widest mb-1">1 · Send a test alert</div>
- <p class="text-gray-400 text-xs mb-2 leading-relaxed">Sends a real email to your emergency contact. Ask them to confirm they received it — including checking spam.</p>
- <div id="verifyAlertResult" class="hidden text-xs font-bold rounded-lg px-3 py-2 mb-2"></div>
- <button onclick="verifyTestAlert()" id="btnVerifyAlert"
- class="w-full rounded-lg bg-amber-600 py-2.5 text-xs font-black tracking-widest text-white">
- 📧 Send Test Alert
- </button>
- </div>
-
- <!-- Step 2: Contact confirms -->
- <div class="mb-2 rounded-xl bg-black/20 p-3">
- <div class="text-white text-xs font-black tracking-widest mb-2">2 · Your contact confirms receipt</div>
- <label class="flex cursor-pointer items-center gap-3">
- <input type="checkbox" id="verifyContactConfirmed" onchange="updateVerifyProgress()" class="h-5 w-5 rounded text-amber-600">
- <span class="text-gray-400 text-xs leading-relaxed">My emergency contact confirmed they received the test alert</span>
- </label>
- </div>
-
- <!-- Step 3: PIN reminder -->
- <div class="mb-4 rounded-xl bg-black/20 p-3">
- <div class="text-white text-xs font-black tracking-widest mb-1">3 · Know your Safety PIN</div>
- <p class="text-gray-400 text-xs mb-2 leading-relaxed">You'll need this to confirm you're safe after an alarm fires. Entering the wrong PIN triggers a silent duress alert.</p>
- <div class="flex items-center gap-2">
- <div id="verifyPinDisplay" class="flex-1 rounded-lg bg-gray-800 px-3 py-2 text-center font-mono text-lg font-black tracking-[0.4em] text-white">••••</div>
- <button onclick="toggleVerifyPin()" id="btnVerifyPin"
- class="rounded-lg bg-gray-700 px-3 py-2 text-xs font-bold text-gray-300">Show</button>
- </div>
- </div>
-
- <button id="btnDismissVerify" onclick="dismissVerification()"
- class="w-full rounded-xl bg-gray-700 py-3 text-xs font-black tracking-widest text-gray-400">
- Dismiss — I'll verify later
- </button>
- </div>
-
- <!-- Regular locations — grid (≤6) or compact list (7+) -->
- <div id="locationList" class="grid grid-cols-2 gap-3"></div>
- </div>
- <div class="footer-bar">
- <!-- Critical Timing Mode Toggle -->
- <div class="flex justify-end items-center gap-2 mb-2">
- <span class="text-sm font-bold text-gray-300 tracking-widest" id="lblHighRisk">Critical timing mode</span>
- <label class="relative inline-flex items-center cursor-pointer">
- <input type="checkbox" id="chkHighRisk" class="sr-only peer" onchange="toggleHighRiskUI()" aria-labelledby="lblHighRisk">
- <div class="w-9 h-5 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-600"></div>
- </label>
- </div>
- 
-<!-- Welfare Check Interval Selector — only shown when checkinEnabled is true -->
-<div id="welfareIntervalRow" class="hidden mb-3 bg-gray-800 rounded-lg px-3 py-2 border border-teal-900/50">
- <div class="flex justify-between items-center mb-2">
- <span class="text-teal-400 text-xs font-black tracking-widest">🔔 Welfare Check Interval</span>
- <span id="welfareIntervalHint" class="text-xs text-gray-500 font-bold italic"></span>
- </div>
- <div class="grid grid-cols-5 gap-1.5">
- <button onclick="setVisitWelfare(10)" class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="10 minute welfare check">10m</button>
- <button onclick="setVisitWelfare(15)" class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="15 minute welfare check">15m</button>
- <button onclick="setVisitWelfare(30)" class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="30 minute welfare check">30m</button>
- <button onclick="setVisitWelfare(60)" class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="1 hour welfare check">1 hr</button>
- <button onclick="setVisitWelfare(120)" class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="2 hour welfare check">2 hr</button>
- </div>
-</div>
-
-<!-- Duration Selector -->
-<div class="mb-4 bg-gray-800 rounded-lg p-3 border border-gray-700">
- <div class="flex justify-between items-center mb-2">
- <span class="text-gray-400 text-xs font-black">Expected Duration</span>
- <span id="durationDue" class="text-blue-400 font-black text-sm"></span>
- </div>
- <div class="grid grid-cols-4 gap-1.5">
- <button onclick="setQuickDuration(15)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="15 minutes">15m</button>
- <button onclick="setQuickDuration(30)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="30 minutes">30m</button>
- <button onclick="setQuickDuration(45)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="45 minutes">45m</button>
- <button onclick="setQuickDuration(60)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="1 hour">1 hr</button>
- <button onclick="setQuickDuration(90)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="1 hour 30 minutes">1½ hr</button>
- <button onclick="setQuickDuration(120)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="2 hours">2 hr</button>
- <button onclick="setQuickDuration(180)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="3 hours">3 hr</button>
- <button onclick="setQuickDuration(240)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="4 hours">4 hr</button>
- </div>
-</div>
- 
- <!-- Forms Button + Slide to Begin Visit Pill -->
-<div class="flex gap-3 h-16 items-stretch">
- <button id="btnForms" onclick="openFormsLibrary()" 
- class="w-1/4 bg-indigo-950 text-indigo-300 font-black rounded-2xl border border-indigo-700/50 shadow-lg active:scale-95 transition text-xs tracking-tighter leading-none">
- Forms
- </button>
- <div id="btnStart" class="slide-action-pill pill-disabled flex-1 relative bg-gray-800 h-16 rounded-2xl p-1 border border-gray-700 flex items-center overflow-hidden shadow-inner"
- role="button" tabindex="0" aria-label="Start visit" aria-disabled="true">
- <div id="slideStartThumb" class="relative w-14 h-14 rounded-xl flex items-center justify-center shadow-2xl z-20 pointer-events-none flex-shrink-0" style="background:var(--accent,#3b82f6)">
- <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
- </div>
- <div class="absolute inset-y-0 left-16 right-2 flex items-center justify-center pointer-events-none">
- <span id="slideStartLabel" class="text-xs font-black text-gray-400 tracking-[0.2em] transition-opacity duration-200 text-center leading-tight">Select a Site</span>
- </div>
- </div>
-</div>
- </div>
-</div>
-
-<div id="lockedPage" class="page">
- <div id="lockedContent" class="flex-1 flex flex-col justify-between p-6">
- <div class="flex justify-end items-start">
- <button id="btnPanic" 
- onclick="triggerPanic()"
- class="w-24 h-24 bg-red-600 rounded-full font-black text-white text-2xl border-4 border-red-800 shadow-2xl active:scale-95 transition flex items-center justify-center" 
- aria-label="Emergency panic button">
- SOS
- </button>
-</div>
-
- <div class="text-center">
- <p class="text-gray-400 text-sm font-black tracking-[0.2em]">Currently Active At</p>
- <div class="flex items-center justify-center gap-2 mt-1 mb-2 cursor-pointer hover:bg-gray-800 rounded p-2 transition" onclick="showCurrentSiteInfo()">
- <h2 id="lockedLocationName" class="text-3xl font-bold text-white truncate max-w-[250px]"></h2>
- <span class="text-blue-400 text-xl">ℹ️</span>
- </div>
- <div id="highRiskBadge" class="hidden text-red-500 font-black text-xs tracking-widest border border-red-500 inline-block px-3 py-1 rounded-lg mb-2">
- ⚡ CRITICAL TIMING MODE
- </div>
- <div id="welfareBadge" class="hidden text-teal-400 font-black text-xs tracking-widest border border-teal-700 inline-block px-3 py-1 rounded-lg mb-2">
- 🔔 Welfare every <span id="welfareBadgeMins"></span>
- </div>
- <div id="overdueLabel" class="hidden text-red-500 font-black text-2xl animate-pulse my-2 tracking-[0.2em] border-2 border-red-500 inline-block px-6 py-2 rounded-xl ">
- OVERDUE
- </div>
- <div id="countdownTimer" class="text-8xl font-bold font-mono text-white tracking-tighter">00:00</div>
- <!-- GPS accuracy warning — shown only when accuracy > 100m. Tappable for explanation. -->
- <div id="gpsAccuracyBadge"
- class="hidden mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-900/60 border border-amber-600/60 cursor-pointer"
- onclick="showToast('Poor GPS signal — location may be inaccurate. Try moving closer to a window or outdoors.')">
- <span class="text-amber-400 text-xs">📍</span>
- <span class="text-amber-400 text-xs font-bold tracking-widest">GPS ±<span id="gpsAccuracyValue">?</span>m</span>
- </div>
- <p class="text-gray-400 mt-2 font-bold text-[12px] tracking-widest">
- Scheduled Departure: <span id="lockedAnticipatedTime" class="text-blue-400"></span>
- </p>
- </div>
-
- <div class="flex flex-col gap-3">
- <div class="flex gap-3 h-16">
- <button id="btnExtend" onclick="showModal('extend')" class="flex-1 bg-blue-600 text-white font-black rounded-2xl text-lg shadow-lg" aria-label="Extend visit duration">
- Extend
- </button>
- <button onclick="openFormsLibrary()" class="w-24 bg-violet-950 text-violet-300 font-black rounded-2xl border border-violet-800/50 flex flex-col items-center justify-center" aria-label="Open forms library">
- <span class="text-lg">📋</span>
- <span class="text-xs tracking-tighter">Forms</span>
- </button>
- </div>
-
- <div id="btnDepart" class="slide-action-pill w-full relative bg-red-700 h-20 rounded-2xl p-1 border border-red-900 flex items-center overflow-hidden shadow-2xl"
- role="button" tabindex="0" aria-label="End visit">
- <div id="slideDepartThumb" class="relative w-16 h-16 rounded-xl bg-white flex items-center justify-center shadow-2xl z-20 pointer-events-none flex-shrink-0">
- <svg class="w-7 h-7 text-red-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
- </div>
- <div class="absolute inset-y-0 left-20 right-2 flex flex-col items-center justify-center pointer-events-none">
- <span id="slideDepartLabel" class="text-lg font-black text-white tracking-widest transition-opacity duration-200 text-center leading-tight">End Visit</span>
- <span id="slideDepartSub" class="text-xs font-bold text-red-200 opacity-80 tracking-widest mt-0.5"></span>
- </div>
- </div>
- 
- <button id="btnSafe" class="hidden long-press-btn w-full py-5 bg-green-600 hover:bg-green-500 text-white font-black rounded-2xl text-xl shadow-2xl animate-pulse">
- Hold to Confirm Safe
- </button>
-
- <!-- REDUNDANT ESCALATION: Direct mailto fallback shown when alarm fires.
- Completely independent of the backend — uses the device's native mail
- client. Visible to worker or any bystander. Hidden until alarm fires. -->
- <button id="btnDirectAlert"
- class="hidden w-full py-4 bg-amber-600 hover:bg-amber-500 text-white font-black rounded-2xl shadow-2xl flex flex-col items-center justify-center"
- onclick="sendDirectAlert()">
- <span class="text-base tracking-widest">📧 Send Emergency Email Direct</span>
- <span class="text-xs font-normal opacity-80 mt-0.5">Backup — bypasses app, opens your email</span>
- </button>
-
- <!-- Quick-call to ICE contact — shown alongside direct email on alarm.
- One tap opens native dialler pre-filled. Useful for bystanders. -->
- <button id="btnCallICE"
- class="hidden w-full py-4 bg-blue-700 hover:bg-blue-600 text-white font-black rounded-2xl shadow-2xl flex flex-col items-center justify-center"
- onclick="callICE()">
- <span class="text-base tracking-widest">📞 Call Emergency Contact</span>
- <span id="btnCallICELabel" class="text-xs font-normal opacity-80 mt-0.5"></span>
- </button>
- </div>
- </div>
-</div>
-
-<div id="reportPage" class="page">
- <div class="header-bar">
- <h1 id="reportTitle" class="text-xl font-bold">Visit Report</h1>
- <button onclick="navigate(state.activeVisit ? 'locked' : 'main')" aria-label="Close" class="text-3xl text-gray-400 hover:text-white px-2">×</button>
- </div>
- <div id="formLocationBanner" class="hidden mx-4 mt-1 mb-1 px-4 py-2 bg-blue-900/40 border border-blue-700/50 rounded-xl flex items-center gap-2">
- <span class="text-blue-400 text-sm flex-shrink-0">📍</span>
- <span id="formLocationName" class="text-sm font-bold text-blue-300 truncate"></span>
- </div>
- <div class="content-area">
- <div id="reportFields"></div>
- </div>
- <div class="footer-bar flex gap-3">
- <button onclick="navigate(state.activeVisit ? 'locked' : 'main')" 
- class="flex-1 py-4 bg-gray-700 text-gray-300 rounded-xl font-bold tracking-widest">
- Cancel
- </button>
- <button id="btnSubmitRep" class="flex-[2] py-4 bg-green-600 text-white rounded-xl font-bold shadow-lg">
- Submit Report
- </button>
- </div>
-</div>
-
-<!-- Settings Page -->
-<div id="settingsPage" class="page bg-gray-800">
- <div class="header-bar">
- <h1 class="text-2xl font-bold" style="color: var(--text-on-primary)">Settings</h1>
- <button onclick="navigate('main')" aria-label="Close settings" class="text-3xl text-gray-400 hover:text-white px-2">×</button>
- </div>
- <div class="content-area pb-24">
-
- <div class="mb-6">
- <div class="flex items-baseline justify-between mb-4">
- <h2 class="text-xl font-bold text-blue-400">Worker Profile</h2>
- <button onclick="startWizard()" class="text-xs text-blue-400 hover:text-blue-300 underline underline-offset-2">Restart setup wizard →</button>
- </div>
- <label class="setting-label lbl-blue">Full Name</label>
- <input id="setName" type="text" class="form-input">
- <label class="setting-label lbl-blue">Mobile Number</label>
- <input id="setPhone" type="tel" class="form-input">
- <label class="setting-label lbl-blue">Work Email</label>
- <input id="setEmail" type="email" class="form-input">
- </div>
- <div class="mb-6">
- <h2 class="text-xl font-bold text-red-400 mb-4">Emergency Contacts</h2>
- <label class="setting-label lbl-red">Primary Emergency Contact</label>
- <input id="setEmgName" type="text" class="form-input-card">
- <input id="setEmgPhone" type="tel" class="form-input-card">
- <input id="setEmgEmail" type="email" class="form-input-card">
- <input id="setEmgNtfy" type="text" placeholder="ntfy topic (optional push alerts)" autocomplete="off" autocorrect="off" spellcheck="false" class="form-input mb-4 font-mono text-sm">
- <label class="setting-label lbl-gray">Escalation Contact</label>
- <input id="setEscName" type="text" class="form-input-card">
- <input id="setEscPhone" type="tel" class="form-input-card">
- <input id="setEscEmail" type="email" class="form-input-card">
- <input id="setEscNtfy" type="text" placeholder="ntfy topic (optional push alerts)" autocomplete="off" autocorrect="off" spellcheck="false" class="form-input font-mono text-sm">
- </div>
- <div class="mb-6">
- <h2 class="text-xl font-bold text-purple-400 mb-4">Preferences</h2>
- <div class="bg-gray-900 p-4 rounded-xl mb-4">
- <label class="flex items-center gap-3 cursor-pointer">
- <input type="checkbox" id="setAdvanced" onchange="toggleAdvancedGPS(this.checked)" class="w-6 h-6 rounded text-blue-600">
- <div>
- <div class="text-white font-bold">Advanced GPS Monitoring</div>
- <div class="text-xs text-gray-400">Continuous tracking (higher battery use)</div>
- </div>
- </label>
- </div>
- </div>
- 
- <!-- Personal Sites Transfer -->
- <div class="mb-6">
- <h2 class="text-xl font-bold text-green-400 mb-1">My Sites</h2>
- <p class="text-xs text-gray-300 font-bold mb-4">Transfer personal sites you've added manually to a new device.</p>
- <div id="mySitesSummary" class="text-xs text-gray-400 font-bold mb-3"></div>
- <div class="flex gap-2">
- <button onclick="exportMySites()"
- class="flex-1 bg-green-700 hover:bg-green-600 text-white py-3 rounded-xl text-xs font-black tracking-wide shadow">
- 📤 Export My Sites
- </button>
- <button onclick="showModal('importSites')"
- class="flex-1 bg-blue-700 hover:bg-blue-600 text-white py-3 rounded-xl text-xs font-black tracking-wide shadow">
- 📥 Import Sites
- </button>
- </div>
- </div>
-
- <!-- Visit History Section -->
- <div class="mb-6">
- <h2 class="text-xl font-bold text-yellow-400 mb-4">Visit History</h2>
- <div id="visitHistoryList" class="setting-card border-gray-600">
- <p class="text-xs text-gray-500 italic text-center py-2">Loading…</p>
- </div>
- </div>
-
- <!-- Diagnostics Accordion -->
- <div class="mb-6">
- <button onclick="toggleDiagnostics()" id="diagnosticsToggle"
- class="w-full flex items-center justify-between text-xl font-bold text-gray-400 mb-2 focus:outline-none">
- <span>Diagnostics</span>
- <span id="diagnosticsChevron" class="text-base transition-transform duration-200">▼</span>
- </button>
- <div id="diagnosticsPanel" class="hidden space-y-6">
-
- <!-- System Info -->
- <div>
- <h3 class="text-sm font-bold text-gray-500 uppercase tracking-widest mb-3">System Info</h3>
- <div class="setting-card border-gray-600">
- <label class="setting-label lbl-gray">Backend Connection</label>
- <input id="setBackendUrl" disabled class="form-input-card text-xs font-mono text-gray-400 mb-2" value="">
- <div class="flex gap-2 mb-3">
- <div class="flex-1">
- <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
- <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
- </div>
- <div class="flex-1">
- <div class="text-sm text-gray-300 font-bold mb-1">Backend Version</div>
- <div id="backendVersion" class="text-sm font-mono text-green-400">...</div>
- </div>
- <div class="flex-1">
- <div class="text-sm text-gray-300 font-bold mb-1">Sync Status</div>
- <div id="syncStatus" class="text-sm font-mono text-gray-400">Checking...</div>
- </div>
- </div>
- <button onclick="forceSync(true)" class="w-full bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs font-bold text-white mb-2">Force Sync</button>
- <button onclick="forceAppUpdate()"
- class="w-full bg-orange-900/40 hover:bg-orange-900/60 border border-orange-700/50 py-2 rounded text-xs font-bold text-orange-300 tracking-widest">
- 🔄 Force App Update
- </button>
- <p class="text-xs text-gray-500 mt-1.5 italic">Clears all cached app files and reloads from the server. Use if the app looks wrong after an update. Your settings and registration are preserved.</p>
- </div>
- </div>
-
- <!-- Event Outbox -->
- <div>
- <h3 class="text-sm font-bold text-gray-500 uppercase tracking-widest mb-3">Event Outbox</h3>
- <div class="setting-card border-gray-600">
- <div class="flex gap-2 mb-3">
- <div class="flex-1 text-center">
- <div class="text-xs text-gray-400 font-bold mb-1">Pending</div>
- <div id="outboxPending" class="text-xl font-black text-yellow-400">–</div>
- </div>
- <div class="flex-1 text-center">
- <div class="text-xs text-gray-400 font-bold mb-1">Sent</div>
- <div id="outboxSent" class="text-xl font-black text-green-400">–</div>
- </div>
- <div class="flex-1 text-center">
- <div class="text-xs text-gray-400 font-bold mb-1">Last Sent</div>
- <div id="outboxLastSent" class="text-xs font-mono text-gray-300">–</div>
- </div>
- </div>
- <div id="outboxHistory" class="text-xs font-mono text-gray-400 max-h-36 overflow-y-auto space-y-1 mb-3 bg-gray-900/50 rounded-lg p-2">
- <div class="text-gray-600 text-center py-2">Loading…</div>
- </div>
- <button onclick="outboxProcess(); showToast('🔄 Flushing outbox…')"
- class="w-full bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs font-bold text-white">
- Flush Outbox Now
- </button>
- </div>
- </div>
-
- <!-- Contact Verification -->
- <div>
- <h3 class="text-sm font-bold text-gray-500 uppercase tracking-widest mb-3">Contact Verification</h3>
- <div class="setting-card border-gray-600">
- <p class="text-xs text-gray-300 mb-3 leading-relaxed">Send a real test alert to your configured emergency contacts to verify their email addresses are correct and alerts are being delivered.</p>
- <div id="testAlertResult" class="hidden text-xs font-bold rounded-lg px-3 py-2 mb-3"></div>
- <button onclick="sendTestAlert()"
- class="w-full bg-blue-700 hover:bg-blue-600 py-3 rounded-lg text-sm font-black text-white tracking-widest">
- 📧 Send Test Alert to Contacts
- </button>
- </div>
- </div>
-
- </div><!-- end diagnosticsPanel -->
- </div>
-
- <div class="space-y-3">
- <button onclick="saveSettings()" class="w-full py-4 bg-green-600 hover:bg-green-500 text-white font-bold rounded-xl shadow-lg">
- 💾 Save Settings
- </button>
- <button onclick="clearData()" class="w-full py-4 bg-red-900/50 text-red-400 hover:bg-red-900/70 font-bold rounded-xl shadow-lg">
- Reset App Data
- </button>
- </div>
- </div>
-</div>
-
-<!-- Extend Modal -->
-<div id="extendModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="extendModalTitle">
- <div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center border border-gray-700">
- <h2 id="extendModalTitle" class="text-xl font-black mb-6 text-white tracking-widest">Extend Visit</h2>
- <div class="grid grid-cols-3 gap-3 mb-8">
- <button onclick="confirmExtension(10)" aria-label="Extend by 10 minutes" class="py-5 bg-blue-600 hover:bg-blue-500 rounded-xl font-black text-white shadow-lg">+10</button>
- <button onclick="confirmExtension(15)" aria-label="Extend by 15 minutes" class="py-5 bg-blue-600 hover:bg-blue-500 rounded-xl font-black text-white shadow-lg">+15</button>
- <button onclick="confirmExtension(30)" aria-label="Extend by 30 minutes" class="py-5 bg-blue-600 hover:bg-blue-500 rounded-xl font-black text-white shadow-lg">+30</button>
- </div>
- <button onclick="closeModal('extend')" class="w-full py-4 bg-gray-700 rounded-xl font-black text-gray-400">Cancel</button>
- </div>
-</div>
-</div><!-- /#pageContainer -->
-
-<!-- Vehicle WOF Block Modal -->
-<div id="wofBlockModal" class="hidden fixed inset-0 z-[450] flex items-center justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="wofBlockTitle">
- <div class="bg-gray-900 rounded-3xl shadow-2xl w-full max-w-sm p-10 text-center border-4 border-red-600">
- <div class="text-7xl mb-6">⛔</div>
- <h2 id="wofBlockTitle" class="text-3xl font-black text-red-500 mb-4 ">Vehicle Grounded</h2>
- <p class="text-lg text-white font-bold mb-4">Your WOF has expired. You must not use your vehicle for work travel until it is renewed.</p>
- <p class="text-sm text-gray-400 font-bold mb-8">Once renewed, submit a <span class="text-orange-400">Vehicle Safety Check</span> form to update your records and restore travel access.</p>
- <button onclick="closeWofBlocker()" class="w-full py-5 bg-red-600 text-white font-black rounded-2xl text-xl shadow-2xl">Understood</button>
- </div>
-</div>
-
-<!-- Vehicle WOF Warning Modal -->
-<!-- data-mode="load" = on-open reminder (dismiss only) -->
-<!-- data-mode="visit" = pre-travel gate (checkbox + Continue resumes startVisit) -->
-<div id="wofWarnModal" data-mode="load" class="hidden fixed inset-0 z-[450] flex items-center justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="wofWarnTitle">
- <div class="bg-gray-900 rounded-3xl shadow-2xl w-full max-w-sm p-8 text-center border-4 border-orange-500">
- <div class="text-6xl mb-4">⚠️</div>
- <h2 id="wofWarnTitle" class="text-2xl font-black text-orange-500 mb-3">WOF Expiry Reminder</h2>
- <p class="text-white font-bold mb-2">Your vehicle WOF expires in:</p>
- <p id="wofWarnText" class="text-3xl text-orange-400 font-black mb-4"></p>
- <p class="text-sm text-gray-400 font-bold mb-6">Please book a WOF renewal. Once done, submit a <span class="text-orange-400">Vehicle Safety Check</span> form to update your records.</p>
- <!-- Visit-gate section: shown only when opening from pre-travel check -->
- <div id="wofWarnVisitSection" class="hidden bg-gray-800 p-4 rounded-2xl border border-gray-700 text-left mb-4">
- <label class="flex items-start gap-3 cursor-pointer">
- <input type="checkbox" id="chkWofAck" class="mt-1 w-6 h-6 rounded text-blue-600" onchange="toggleWofContinue()">
- <span class="text-sm text-gray-300 font-bold">I confirm the WOF is still valid for this trip and the vehicle is safe to operate.</span>
- </label>
- </div>
- <button id="btnWofContinue" disabled onclick="closeWofWarn()" class="hidden w-full py-4 bg-gray-700 text-gray-300 font-black rounded-2xl text-lg transition-all mb-3">Continue to Travel</button>
- <button id="btnWofDismiss" onclick="closeWofWarn()" class="w-full py-4 bg-gray-700 text-gray-300 font-black rounded-2xl text-lg">Got it</button>
- </div>
-</div>
-
-<!-- Personal Sites Import Modal -->
-<div id="importSitesModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" role="dialog" aria-modal="true" aria-labelledby="importSitesTitle">
- <div class="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm p-6 border border-gray-700">
- <h2 id="importSitesTitle" class="text-xl font-black text-white mb-1 tracking-widest">Import My Sites</h2>
- <p class="text-xs text-gray-400 font-bold mb-4">Paste the export code from your old device below.</p>
- <textarea id="importSitesPayload"
- class="w-full h-32 bg-gray-800 border border-gray-600 text-white text-xs font-mono rounded-xl p-3 resize-none focus:border-blue-500 focus:outline-none"
- placeholder="Paste your export code here..."></textarea>
- <div id="importSitesError" class="hidden mt-2 text-xs text-red-400 font-bold"></div>
- <div class="flex gap-3 mt-4">
- <button onclick="closeModal('importSites')"
- class="flex-1 bg-gray-700 text-gray-300 font-black py-3 rounded-xl text-sm">Cancel</button>
- <button onclick="importMySites()"
- class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-black py-3 rounded-xl text-sm shadow-lg">Import</button>
- </div>
- </div>
-</div>
-
-<!-- Site Info Modal (Phase 2, Feature 9) -->
-<div id="infoModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="infoModalTitle">
- <div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto border border-gray-700">
- <h2 id="infoModalTitle" class="text-2xl font-black text-white mb-4">Site Safety Information</h2>
- <div id="siteInfoContent" class="text-gray-300 text-sm space-y-3 mb-6"></div>
- <div class="flex gap-3 mb-4">
- <a id="btnSiteCall" href="#" class="hidden flex-1 bg-green-600 text-white py-4 rounded-xl text-center font-black">📞 Call</a>
- <a id="btnSiteEmail" href="#" class="hidden flex-1 bg-blue-600 text-white py-4 rounded-xl text-center font-black">✉️ Email</a>
- </div>
- <a id="btnSiteNav" href="#" target="_blank" class="hidden block w-full py-4 btn-accent font-black rounded-xl text-center mb-4">🗺️ Navigate</a>
- <button onclick="closeModal('info')" class="w-full py-4 bg-gray-700 text-gray-300 font-black rounded-xl">Close</button>
- </div>
-</div>
-
-<!-- Travel Settings Modal -->
-<div id="travelSettingsModal" class="hidden fixed inset-0 z-[460] flex items-center justify-center bg-black/80 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="travelSettingsTitle">
- <div class="bg-gray-900 rounded-3xl shadow-2xl w-full max-w-sm p-8 border-t-[8px] mx-4" style="border-top-color: var(--accent)">
- <div class="flex items-center gap-3 mb-6">
- <span class="text-3xl">🚗</span>
- <div>
- <h2 id="travelSettingsTitle" class="text-xl font-black text-white">Travel Settings</h2>
- <p id="travelSettingsSubtitle" class="text-xs text-gray-300 font-bold">This trip only &mdash; resets after each journey</p>
- </div>
- </div>
- <div class="bg-gray-800 rounded-2xl p-4 mb-6 border border-gray-700">
- <label class="flex items-center justify-between cursor-pointer gap-4">
- <div>
- <div class="text-sm font-black text-white">Personal Travel &ndash; No Report</div>
- <div class="text-xs text-gray-400 font-bold mt-0.5">No travel report will be submitted at the end of this trip.</div>
- </div>
- <!-- Toggle switch -->
- <div class="relative shrink-0">
- <input type="checkbox" id="travelNoReportToggle" class="sr-only peer">
- <div class="w-11 h-6 bg-gray-600 rounded-full transition-colors travel-toggle-bg"></div>
- <div class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform peer-checked:translate-x-5"></div>
- </div>
- </label>
- </div>
- <div class="flex gap-3">
- <button onclick="closeModal('travelSettings')" class="flex-1 py-4 bg-gray-800 text-gray-400 font-black rounded-2xl">Cancel</button>
- <button onclick="saveTravelSettings()" class="flex-1 py-4 btn-accent font-black rounded-2xl shadow-lg">Save</button>
- </div>
- </div>
-</div>
-
-<!-- Location Management Modal (Phase 2, Feature 13) -->
-<div id="locationModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="locationModalTitle">
- <div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm p-6 border border-gray-700 max-h-[90vh] overflow-y-auto">
- <h2 id="locationModalTitle" class="text-xl font-black mb-6 text-white tracking-widest">Edit Location</h2>
- <input type="hidden" id="locId">
- <div class="space-y-4">
- <div>
- <label for="locBusiness" class="text-xs text-gray-400 font-black tracking-widest ml-1">Business Name</label>
- <input type="text" id="locBusiness" class="form-input" placeholder="Optional">
- </div>
- <div>
- <label for="locName" class="text-xs text-gray-400 font-black tracking-widest ml-1">Site Name</label>
- <input type="text" id="locName" class="form-input" placeholder="Required">
- </div>
- <div>
- <label for="locAddr" class="text-xs text-gray-400 font-black tracking-widest ml-1">Physical Address</label>
- <div class="flex gap-2">
- <input type="text" id="locAddr" class="form-input mb-0 flex-1">
- <button onclick="getGpsAddress()" class="bg-blue-600 text-white p-3 rounded-xl font-black text-xs shrink-0">📍 GPS</button>
- </div>
- </div>
- <div>
- <label for="locContactName" class="text-xs text-gray-400 font-black tracking-widest ml-1">Contact Name</label>
- <input type="text" id="locContactName" class="form-input" placeholder="Optional">
- </div>
- <div>
- <label for="locContactPhone" class="text-xs text-gray-400 font-black tracking-widest ml-1">Contact Phone</label>
- <input type="tel" id="locContactPhone" class="form-input" placeholder="Optional">
- </div>
- <div>
- <label for="locContactEmail" class="text-xs text-gray-400 font-black tracking-widest ml-1">Contact Email</label>
- <input type="email" id="locContactEmail" class="form-input" placeholder="Optional">
- </div>
- <div class="bg-gray-900 p-3 rounded-xl">
- <label class="flex items-center gap-2 cursor-pointer">
- <input type="checkbox" id="locCritical" class="w-5 h-5 rounded text-red-600">
- <span class="text-sm text-white font-bold">⚡ Critical Timing Mode (High-Risk Site)</span>
- </label>
- </div>
- <!-- Report Required toggle -->
- <div class="bg-gray-900 p-3 rounded-xl">
- <label class="flex items-center justify-between cursor-pointer gap-3">
- <div>
- <div class="text-sm text-white font-bold">📄 Report Required</div>
- <div class="text-xs text-gray-300 font-bold mt-0.5">Default for this site. Can be overridden per visit.</div>
- </div>
- <div class="relative shrink-0">
- <input type="checkbox" id="locRequiresReport" class="sr-only peer" checked>
- <div class="w-10 h-5 bg-gray-600 peer-checked:bg-blue-600 rounded-full transition-colors"></div>
- <div class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-5"></div>
- </div>
- </label>
- </div>
- <!-- Custom Template Name -->
- <div>
- <label for="locTemplate" class="text-xs text-gray-400 font-black tracking-widest ml-1">Custom Template Name</label>
- <input type="text" id="locTemplate" class="form-input" placeholder="Leave blank to use standard template">
- </div>
- </div>
- <div class="mt-8 flex gap-3">
- <button onclick="deleteLoc()" id="btnDelLoc" class="hidden bg-red-900/50 text-red-400 font-black py-3 px-6 rounded-xl text-sm border border-red-800/30">Delete</button>
- <div class="flex-1"></div>
- <button onclick="closeModal('location')" class="bg-gray-700 text-white font-black py-3 px-6 rounded-xl text-sm">Cancel</button>
- <button onclick="saveLoc()" class="bg-blue-600 text-white font-black py-3 px-8 rounded-xl shadow-xl text-sm">Save</button>
- </div>
- </div>
-</div>
-
-<div id="noticeModal" class="hidden fixed inset-0 z-[400] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4" role="dialog" aria-modal="true" aria-labelledby="noticeTitle">
- <div id="noticeCard" class="bg-gray-900 rounded-[2.5rem] shadow-2xl w-full max-w-sm p-8 text-center border-t-[12px] border-blue-600">
- <div id="noticeIcon" class="text-6xl mb-6" aria-hidden="true">📢</div>
- <h2 id="noticeTitle" class="text-2xl font-black mb-3 tracking-tight leading-tight" style="color:var(--text-on-primary)"></h2>
- <div id="noticeContent" class="text-gray-400 text-base mb-10 leading-relaxed text-left max-h-56 overflow-y-auto pr-3 scrollbar-hide"></div>
- 
- <div id="btnAckNotice" class="slide-action-pill w-full relative h-20 rounded-2xl p-1 flex items-center overflow-hidden shadow-2xl" style="background:var(--accent,#2563eb);border:1px solid color-mix(in srgb,var(--accent,#2563eb) 60%,black)"
- role="button" tabindex="0" aria-label="Acknowledge notice">
- <div id="slideAckThumb" class="relative w-16 h-16 rounded-xl bg-white flex items-center justify-center shadow-2xl z-20 pointer-events-none flex-shrink-0">
- <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--accent,#2563eb)" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
- </div>
- <div class="absolute inset-y-0 left-20 right-2 flex items-center justify-center pointer-events-none">
- <span id="slideAckLabel" class="text-base font-black text-white tracking-widest transition-opacity duration-200 text-center leading-tight">Acknowledge</span>
- </div>
- </div>
- </div>
-</div>
- 
-<div id="pinModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="pinModalTitle">
- <div class="bg-gray-800 p-6 rounded-xl w-80">
- <form id="pinEntryForm" onsubmit="return false;">
- <input type="text" name="username" autocomplete="username" value="Worker" class="hidden" style="display:none !important;">
- <h3 id="pinModalTitle" class="text-lg font-bold mb-4">Enter PIN</h3>
- <input id="pinInput" type="password" autocomplete="current-password" class="form-input mb-4" inputmode="numeric" maxlength="6" aria-label="Enter PIN">
- <button id="btnPinConfirm" type="button" class="w-full py-3 bg-blue-600 rounded-xl font-bold">Confirm</button>
- </form>
- </div>
-</div>
-
-<div id="groundedModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="groundedModalTitle">
- <div class="bg-gray-800 p-6 rounded-xl w-80">
- <h3 id="groundedModalTitle" class="text-lg font-bold mb-4">Vehicle Grounded</h3>
- <p class="text-gray-300 mb-4">WOF or Rego expired. Cannot proceed.</p>
- <button onclick="closeModal('grounded')" class="w-full py-3 bg-red-600 rounded-xl font-bold">OK</button>
- </div>
-</div>
-
-<div id="iosInstallModal" class="hidden fixed bottom-6 left-4 right-4 bg-gray-800 border-2 border-blue-500 rounded-2xl p-6 shadow-2xl z-[150]">
- <div class="flex items-start gap-4">
- <div class="text-4xl">📲</div>
- <div class="flex-1">
- <h3 class="text-lg font-extrabold text-white mb-1">Add to Home Screen</h3>
- <p class="text-gray-300 text-sm mb-4 font-bold">Required for safety background tracking.</p>
- <div class="bg-gray-900 rounded-lg p-4 text-sm text-blue-300 flex items-center gap-3 font-bold tracking-normal">
- <span>1. Tap Share</span><span class="text-2xl">⎋</span><span>2. 'Add to Home Screen'</span><span class="text-2xl">⊕</span>
- </div>
- </div>
- <button onclick="dismissInstall('ios')" class="text-gray-300 font-black p-3 text-xl" aria-label="Dismiss">✕</button>
- </div>
-</div>
-
-<!-- Android Install Banner (Phase 3, Feature 17) -->
-<div id="installBanner" class="hidden fixed top-0 left-0 w-full bg-blue-600 text-white p-5 z-[150] shadow-xl flex items-center justify-between">
- <div class="flex items-center gap-4">
- <span class="text-3xl">📲</span>
- <div>
- <p class="font-bold text-base">Install Safety App</p>
- <p class="text-sm opacity-90">Add to home screen for safety monitoring.</p>
- </div>
- </div>
- <div class="flex gap-3">
- <button onclick="dismissInstall('android')" class="px-5 py-2 text-sm font-bold bg-blue-700 rounded-lg">Later</button>
- <button onclick="triggerInstall()" class="px-6 py-2 text-sm font-black bg-white text-blue-600 rounded-lg shadow-md">Install</button>
- </div>
-</div>
- 
-<!-- Shake-to-Alert Confirmation Modal -->
-<div id="shakeConfirmModal" class="hidden fixed inset-0 z-[500] bg-red-900 flex items-center justify-center" role="alertdialog" aria-modal="true" aria-labelledby="shakeConfirmTitle">
- <div class="text-center text-white px-8">
- <div class="text-8xl mb-4">🤫</div>
- <h1 id="shakeConfirmTitle" class="text-4xl font-black mb-2 tracking-tight">SHAKE DETECTED</h1>
- <p class="text-yellow-300 text-xl font-black mb-2">Shake again to send covert alert</p>
- <p class="text-red-200 text-sm font-bold mb-8">Stop shaking, then shake once more to confirm</p>
- <div class="text-8xl font-mono font-black animate-pulse" id="shakeCountdown">5</div>
- <p class="text-red-300 text-xs mt-4 font-bold tracking-widest">Covert duress alert — silent activation</p>
- </div>
-</div>
-
-<!-- WELFARE CHECK MODAL
- Shown at CONFIG.checkinInterval-minute intervals during active visits when
- CONFIG.checkinEnabled === true. Worker has 2 minutes to tap confirm before
- the safety alarm fires. z-[550] sits above all normal modals but below the
- shake/volume confirmation overlays (z-[500] is theirs — note shake is 500
- but this is 550 so it appears on top; shake is a 5-second self-dismissing
- state that doesn't conflict). -->
-<div id="welfareCheckModal" class="hidden fixed inset-0 z-[550] flex flex-col items-center justify-center text-center px-8"
- role="alertdialog" aria-modal="true" aria-labelledby="welfareCheckTitle"
- style="background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);">
- <div class="text-7xl mb-5">🙋</div>
- <h1 id="welfareCheckTitle" class="text-4xl font-black text-white mb-2 tracking-widest">Are You OK?</h1>
- <p class="text-blue-300 text-base font-bold mb-1">Periodic welfare check-in</p>
- <p class="text-gray-400 text-sm mb-8">Alarm fires if not confirmed within:</p>
- <div class="text-8xl font-mono font-black text-white mb-10" id="welfareCountdown">2:00</div>
- <button onclick="confirmWelfare()"
- class="w-full max-w-xs py-8 bg-green-500 hover:bg-green-400 text-white font-black text-2xl rounded-3xl shadow-2xl active:scale-95 transition tracking-widest border-4 border-green-300">
- ✅ I'm OK
- </button>
- <p class="text-gray-500 text-xs mt-6 max-w-xs leading-relaxed">
- If you're unable to respond, ask someone nearby to tap the button for you.
- </p>
-</div>
-
-<!-- Volume Panic Confirmation Modal -->
-<div id="volumeConfirmModal" class="hidden fixed inset-0 z-[500] bg-orange-900/90 flex items-center justify-center" role="alertdialog" aria-modal="true" aria-labelledby="volumeConfirmTitle">
- <div class="text-center text-white">
- <div class="text-8xl mb-4">🔊</div>
- <h1 id="volumeConfirmTitle" class="text-4xl font-black mb-4">VOLUME PANIC</h1>
- <p class="text-yellow-400 text-lg font-bold mb-6">Press volume buttons again to confirm</p>
- <div class="text-6xl font-mono" id="volumeCountdown">3</div>
- <p class="text-xs mt-4 text-gray-400">Emergency alert activation</p>
- </div>
-</div>
-
-<div id="formsLibraryModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="formsLibraryTitle">
- <div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm p-6 border border-gray-700 max-h-[80vh] flex flex-col">
- <div class="flex justify-between items-center mb-6">
- <h2 id="formsLibraryTitle" class="text-xl font-black text-white tracking-widest text-blue-400">Safety Forms</h2>
- <button onclick="closeModal('formsLibrary')" aria-label="Close forms library" class="text-2xl text-gray-400">×</button>
- </div>
- <div id="formsLibraryList" class="flex-1 overflow-y-auto space-y-3 pr-2"></div>
- <button onclick="closeModal('formsLibrary')" class="mt-6 w-full py-4 bg-gray-700 rounded-xl font-black text-gray-400">Close</button>
- </div>
-</div>
-
-<div id="resourceHubModal" class="hidden fixed inset-0 z-[350] flex items-center justify-center bg-black/90 backdrop-blur-md p-4" role="dialog" aria-modal="true" aria-labelledby="resourceHubTitle">
- <div class="bg-gray-900 rounded-[2.5rem] shadow-2xl w-full max-w-sm h-[80vh] flex flex-col border border-white/10">
- <div class="p-8 pb-4">
- <h2 id="resourceHubTitle" class="text-2xl font-black text-white tracking-tight">Safety Hub</h2>
- <div class="flex gap-4 mt-4 border-b border-white/10" role="tablist" aria-label="Safety Hub sections">
- <button onclick="switchHubTab('res')" id="tabRes" role="tab" aria-selected="true" aria-controls="hubContent" class="pb-2 text-xs font-black tracking-widest text-blue-500 border-b-2 border-blue-500">Resources</button>
- <button onclick="switchHubTab('not')" id="tabNot" role="tab" aria-selected="false" aria-controls="hubContent" class="pb-2 text-xs font-black tracking-widest text-gray-300">Notice Archive</button>
- </div>
- </div>
- 
- <div id="hubContent" class="flex-1 overflow-y-auto p-8 pt-2 space-y-4 scrollbar-hide" role="tabpanel" aria-labelledby="tabRes"></div>
- 
- <div class="p-8 pt-0">
- <button onclick="closeModal('resourceHub')" class="w-full py-4 bg-gray-800 text-gray-400 font-black rounded-2xl">Close</button>
- </div>
- </div>
-</div>
-
-<script data-cfasync="false">
-// ============================================================================
-// GLOBAL ERROR SAFETY NET
-// Catches any unhandled Promise rejection so silent async failures surface
-// as visible toasts rather than vanishing into the console.
-// showToast is defined later in this script; the handler fires at runtime
-// so the reference is always resolved by the time it could trigger.
-// ============================================================================
-window.addEventListener('unhandledrejection', event => {
- const reason = event.reason;
- console.error('[OTG] Unhandled rejection:', reason);
- if (typeof showToast === 'function') {
- showToast('⚠️ Unexpected error — check connection', 5000);
- }
-});
-
-// ============================================================================
-// CONFIGURATION SYSTEM (Phase 2, Feature 11)
-// ============================================================================
-
-// Maps site risk level (set by supervisor in the Sites sheet) to a default
-// welfare check interval in minutes. Used as the starting point for the
-// per-visit selector; workers can adjust up or down before each visit.
-const RISK_WELFARE_MAP = {
- Low: 60, // Low risk — hourly check-in is sufficient
- Medium: 30, // Medium risk — check in every 30 minutes
- High: 15, // High risk — check in every 15 minutes
- Critical: 10 // Critical — check in every 10 minutes
-};
-
-// =============================================================================
-// CONFIG — populated at runtime by loadConfig() from ./config.json
-// Defaults here are safe fallbacks used only if config.json is somehow
-// partially malformed; in normal operation every field is overwritten.
-// =============================================================================
 const CONFIG = {
- url: '',
- org: '',
- appName: '',
- key: '',
- mileageEnabled: false,
- vehEnabled: false,
- checkinEnabled: true,
- vehInterval: 90,
- escalationMinutes: 60,
- checkinInterval: 30,
- countryPrefix: '+64',
- vehicleTerm: 'WOF',
- voiceLocale: 'en-NZ',
- reqTravelReport: true,
- ntfyServer: 'https://ntfy.sh',
- buildVersion: '0.0.0'
+  VERSION: "%%BACKEND_VERSION%%", // Injected by Factory at build time
+  MASTER_KEY: "%%SECRET_KEY%%", 
+  WORKER_KEY: "%%WORKER_KEY%%", 
+  ORS_API_KEY: "%%ORS_API_KEY%%", 
+  GEMINI_API_KEY: "%%GEMINI_API_KEY%%", 
+  TEXTBELT_API_KEY: "%%TEXTBELT_API_KEY%%",
+  PHOTOS_FOLDER_ID: "%%PHOTOS_FOLDER_ID%%", 
+  REPORT_TEMPLATE_ID: "",   
+  ORG_NAME: "%%ORGANISATION_NAME%%",
+  TIMEZONE: "%%TIMEZONE%%", 
+  ARCHIVE_DAYS: 30,
+  ESCALATION_MINUTES: %%ESCALATION_MINUTES%%,
+  ENABLE_REDACTION: %%ENABLE_REDACTION%%,
+  VEHICLE_TERM: "%%VEHICLE_TERM%%",
+  COUNTRY_CODE: "%%COUNTRY_PREFIX%%", 
+  LOCALE: "%%LOCALE%%",
+  HEALTH_EMAIL: "%%HEALTH_EMAIL%%",   // Optional: override recipient for daily health email. Leave blank to use script owner.
+  HEALTHCHECK_URL: "%%HEALTHCHECK_URL%%",  // Optional: Healthchecks.io ping URL. Pinged after each successful checkOverdueVisits() run.
+  NTFY_SERVER: "%%NTFY_SERVER%%"      // ntfy push notification server. Defaults to https://ntfy.sh (hosted). Replace with self-hosted URL for higher privacy.
 };
 
-// =============================================================================
-// CONFIG BOOT — fetch ./config.json, populate CONFIG, apply theme, then init
-// =============================================================================
-
-/**
- * applyTheme — write config theme values to CSS custom properties BEFORE the
- * app renders, preventing a flash of unstyled/default-coloured content.
- * Must be called synchronously during boot, not in a setTimeout.
- */
-function applyTheme(theme) {
- if (!theme) return;
- const root = document.documentElement;
- if (theme.primary) root.style.setProperty('--primary', theme.primary);
- if (theme.accent) root.style.setProperty('--accent', theme.accent);
- if (theme.surface) root.style.setProperty('--surface', theme.surface);
- if (theme.accentGlow) root.style.setProperty('--accent-glow', theme.accentGlow);
- if (theme.textOnPrimary) root.style.setProperty('--text-on-primary', theme.textOnPrimary);
- if (theme.textOnAccent) root.style.setProperty('--text-on-accent', theme.textOnAccent);
- // Keep <meta name="theme-color"> in sync with primary so the browser chrome matches
- const meta = document.getElementById('metaThemeColor');
- if (meta && theme.primary) meta.setAttribute('content', theme.primary);
-}
-
-/**
- * applyConfig — map config.json fields onto the CONFIG object and update DOM
- * elements that need config values set before app initialization.
- */
-function applyConfig(cfg) {
- // Core
- CONFIG.url = cfg.backendUrl || '';
- CONFIG.org = cfg.orgName || '';
- CONFIG.appName = cfg.appName || cfg.orgName || '';
- CONFIG.key = cfg.workerKey || '';
- CONFIG.ntfyServer = cfg.ntfyServer || 'https://ntfy.sh';
- CONFIG.buildVersion = cfg.version || '0.0.0';
-
- // Features
- if (cfg.features) {
- CONFIG.mileageEnabled = !!cfg.features.mileageEnabled;
- CONFIG.vehEnabled = !!cfg.features.vehicleEnabled;
- CONFIG.checkinEnabled = cfg.features.checkinEnabled !== false; // default true
- CONFIG.reqTravelReport = !!cfg.features.requireTravelReport;
- }
-
- // Timing
- if (cfg.timing) {
- CONFIG.checkinInterval = cfg.timing.checkinInterval || 30;
- CONFIG.escalationMinutes = cfg.timing.escalationMinutes || 60;
- CONFIG.vehInterval = cfg.timing.vehicleInterval || 90;
- }
-
- // Locale
- if (cfg.locale) {
- CONFIG.countryPrefix = cfg.locale.countryPrefix || '+64';
- CONFIG.vehicleTerm = cfg.locale.vehicleTerm || 'WOF';
- CONFIG.voiceLocale = cfg.locale.voiceLocale || 'en-NZ';
- }
-
- // Theme — applied to CSS custom properties immediately
- if (cfg.theme) applyTheme(cfg.theme);
-
- // Logo
- const logoUrl = cfg.logoUrl || './icon.png';
- CONFIG.logoUrl = logoUrl;
- const headerLogo = document.getElementById('headerLogo');
- const faviconLink = document.getElementById('faviconLink');
- if (headerLogo) headerLogo.src = logoUrl;
- if (faviconLink) faviconLink.href = logoUrl;
-
- // Org name display elements
- const orgNameEls = document.querySelectorAll('.orgNameDisplay');
- orgNameEls.forEach(el => { el.textContent = CONFIG.org; });
- const headerOrg = document.getElementById('headerOrgName');
- if (headerOrg) headerOrg.textContent = CONFIG.org;
-
- // Page title
- document.title = `${CONFIG.appName || CONFIG.org} Safety`;
-
- // App version display in settings
- const verEl = document.getElementById('appVersion');
- if (verEl) verEl.textContent = CONFIG.buildVersion;
-
- // Check for config version change — if version differs from last known,
- // update localStorage and nudge the SW to refresh on next foreground load.
- const storedVersion = localStorage.getItem('otg_config_version');
- if (storedVersion && storedVersion !== CONFIG.buildVersion) {
- console.log(`[OTG] Config version changed: ${storedVersion} → ${CONFIG.buildVersion}. Flagging for SW update.`);
- if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
- navigator.serviceWorker.getRegistration().then(reg => {
- if (reg) reg.update();
- });
- }
- }
- localStorage.setItem('otg_config_version', CONFIG.buildVersion);
-
- // Inject org-branded manifest for correct PWA install name
- _injectDynamicManifest(cfg);
-}
-
-/**
- * _injectDynamicManifest — gives the installed PWA the org's name rather than
- * the generic "OTG Safety" fallback. Three layers, each covering a different
- * scenario:
- *
- * Layer 1 — Blob URL (current session, Chrome/Android install prompt)
- * The browser reads <link rel="manifest"> when preparing the "Add to Home
- * Screen" prompt. Swapping the href to a Blob URL built from config means the
- * prompt shows the org name even on first load. The Blob URL is created
- * synchronously so it is ready before any user interaction could trigger
- * the prompt.
- *
- * Layer 2 — iOS <meta name="apple-mobile-web-app-title">
- * iOS Safari ignores manifest.json for the home-screen label entirely.
- * The meta tag is the only hook. Updated here with the short app name.
- *
- * Layer 3 — SW cache write (subsequent loads, standalone reloads, offline)
- * Writes the org manifest into the browser cache under the manifest.json
- * URL. The SW's manifest intercept handler reads config.json from cache to
- * build the same manifest, but this write ensures the correct manifest is
- * served even during the brief window between SW install and first activate,
- * and in browsers that don't support the SW manifest intercept path.
- * Uses a dedicated 'otg-manifest' cache that is preserved across SW version
- * bumps (the activate handler only wipes versioned 'otg-safety-*' caches).
- */
-function _injectDynamicManifest(cfg) {
- try {
- const orgName = cfg.orgName || 'OTG';
- const appName = cfg.appName || orgName;
- const primary = (cfg.theme && cfg.theme.primary) ? cfg.theme.primary : '#1e3a8a';
- const logoSrc = cfg.logoUrl || './icon.png';
-
- const manifest = {
- name: `${orgName} Safety`,
- short_name: appName,
- description: 'Lone worker safety monitoring app',
- start_url: './index.html',
- display: 'standalone',
- background_color: primary,
- theme_color: primary,
- orientation: 'portrait',
- icons: [
- { src: logoSrc, sizes: '192x192', type: 'image/png' },
- { src: logoSrc, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
- ]
- };
- const json = JSON.stringify(manifest, null, 2);
-
- // ── Layer 1: Blob URL — current session install prompt ─────────────────
- const blob = new Blob([json], { type: 'application/manifest+json' });
- const blobUrl = URL.createObjectURL(blob);
- const link = document.getElementById('manifestLink');
- if (link) link.href = blobUrl;
-
- // ── Layer 2: iOS home-screen label ─────────────────────────────────────
- const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
- if (appleTitle) appleTitle.setAttribute('content', appName);
-
- // ── Layer 3: SW cache write — subsequent loads and offline ─────────────
- // 'otg-manifest' is a dedicated long-lived cache. The SW activate handler
- // only purges versioned 'otg-safety-*' caches, so this survives SW updates.
- // The SW manifest intercept also rebuilds from config.json, but this write
- // provides a belt-and-suspenders fallback for edge cases.
- if ('caches' in window) {
- caches.open('otg-manifest').then(cache => {
- cache.put('./manifest.json', new Response(json, {
- headers: { 'Content-Type': 'application/manifest+json' }
- }));
- }).catch(() => {});
- }
-
- console.log(`[OTG] Dynamic manifest injected: "${manifest.name}" / "${manifest.short_name}"`);
- } catch (e) {
- // Non-fatal — static manifest.json is the fallback
- console.warn('[OTG] _injectDynamicManifest failed (non-fatal):', e);
- }
-}
-
-/**
- * loadConfig — fetches ./config.json, calls applyConfig(), then kicks off
- * normal window.onload initialization. Called immediately when the script
- * executes (not waiting for DOMContentLoaded) so the theme is applied early.
- *
- * Offline behaviour:
- * - The SW serves a cached config.json if available (network-first strategy).
- * - If the SW returns a 503 stub (first offline load, nothing cached), the
- * boot screen shows a clear error with a Retry button.
- */
-async function loadConfig() {
- const bootStatus = document.getElementById('bootStatus');
- const bootError = document.getElementById('bootError');
- const bootSpinner = document.getElementById('bootSpinner');
- const bootErrMsg = document.getElementById('bootErrorMsg');
-
- try {
- if (bootStatus) bootStatus.textContent = 'Fetching configuration…';
-
- const response = await fetch('./config.json', { cache: 'no-store' });
-
- if (!response.ok) {
- throw new Error(`Server returned ${response.status} for config.json`);
- }
-
- const cfg = await response.json();
-
- // Sanity-check the most critical field
- if (cfg._error === 'config_unavailable_offline') {
- throw new Error('App is offline and config.json has not been cached yet. Please connect to the internet for the first load, then the app will work offline.');
- }
- if (!cfg.backendUrl && !cfg.workerKey) {
- throw new Error('config.json appears to be the example template — please populate your organisation values and re-deploy.');
- }
-
- applyConfig(cfg);
-
- if (bootStatus) bootStatus.textContent = 'Ready.';
-
- // Short pause so "Ready" is visible, then hide boot screen
- await new Promise(r => setTimeout(r, 150));
- const bootScreen = document.getElementById('bootScreen');
- if (bootScreen) bootScreen.style.display = 'none';
-
- // Trigger normal app initialization (equivalent to window.onload body)
- _initApp();
-
- } catch (err) {
- console.error('[OTG] Config load failed:', err);
- if (bootSpinner) bootSpinner.style.display = 'none';
- if (bootErrMsg) bootErrMsg.textContent = err.message || String(err);
- if (bootError) bootError.style.display = 'block';
- if (bootStatus) bootStatus.style.display = 'none';
- }
-}
-
-// Kick off config fetch as soon as the DOM is ready
-document.addEventListener('DOMContentLoaded', loadConfig);
-
-// ============================================================================
-// GLOBALS AND STATE INITIALIZATION
-// ============================================================================
-let state; // Declared but not initialized until onload
-let formExecutionContext = null;
-let dimTimer;
-let isBatterySaverActive = false; // Single source of truth for battery saver state
-const DIM_DELAY = 10000; // 10 seconds
-const WAKE_GRACE_MS = 30000; // 30s after waking, inactivity timer will not re-arm
-let lastWakeTime = 0;
-let welfareIntervalId = null; // Drives the periodic welfare check schedule
-let welfareCountdownId = null; // Drives the 2-minute countdown within the modal
-let travellingInterval;
-let arrivedPulseInterval = null; // Repeating 5-min GPS pulse during overdue named-site visits
-// timerInt retired: tickIntervalId is the sole interval handle for tick().
-let deferredPrompt;
-let lastAlertTime = 0;
-let lastGPS = null;
-let lastGPSCoords = null; // Raw {lat, lng} of previous fix — used for Haversine distance calc
-let gpsCurrentIntervalMs = 0; // Live adaptive poll interval — set by startGPSMonitoring()
-let gpsTrail = []; // Breadcrumb trail [{lat, lng}] for the current travel session
-let _speedAccumM = 0;    // Option 2: running speed-derived distance (metres) for travel session
-let _speedAccumLastTs = null; // Timestamp (ms) of the previous fix — for elapsed-time calculation
-let synth; // Tone.js synth - initialized after user interaction
-let audioReady = false;
-let gpsWatchId = null; // Holds setTimeout ID (or -1 sentinel) when GPS monitoring is active; null when stopped
-let _consecutiveGPSFailures = 0; // Reset on each successful fix; toast shown at threshold during a visit
-
-// PHASE 1 ADDITIONS
-let isMidVisitUpdate = false; // Track if we're updating mid-visit vs ending
-let isSubmitting = false; // Guard against double-fire of the submit slide pill
-let isPreVisitForm = false; // True while a pre-visit form is being completed
-let isPreVisitFormDone = false; // Prevents re-triggering when startVisit() resumes
-let pendingVisitStartFn = null; // Closure to resume startVisit() after pre-visit form
-let currentBatteryLevel = "100%";
-
-// PHASE 2+ ADDITIONS: Covert panic activation methods
-let shakeBuffer = [];
-let lastShakeTime = 0;
-let shakeConfirmationMode = false;
-let shakeConfirmationTimeout = null;
-
-let volumeBuffer = [];
-let volumeConfirmationMode = false;
-let volumeConfirmationTimeout = null;
-
-let wakeLock = null;
-let isSosLocked = false; // Prevent SOS immediately after wake
-
-let tickIntervalId = null; // To manage the heartbeat
-const TICK_NORMAL = 10000; // 10 seconds — sufficient for countdown/warning checks
-const TICK_SAVER = 30000; // 30 seconds
-// ============================================================================
-// AUDIO INITIALIZATION (Must be after user interaction)
-// ============================================================================
-// Note: Tone.js displays a banner in console - this is normal and can be ignored
-// Note: Tailwind CDN warning is expected - this is a PWA, not a traditional build process
-
-async function initAudio() {
- if (!audioReady && typeof Tone !== 'undefined') {
- try {
- // Suppress Tone.js console banner (optional)
- const originalLog = console.log;
- console.log = function() {};
- 
- await Tone.start();
- synth = new Tone.Synth().toDestination();
- audioReady = true;
- 
- // Restore console
- console.log = originalLog;
- console.log('✅ Audio initialized successfully');
- } catch (e) {
- console.warn('Audio initialization failed:', e);
- audioReady = false;
- }
- }
-}
-
-// Initialize audio on first user interaction
-document.addEventListener('click', initAudio, { once: true });
-document.addEventListener('touchstart', initAudio, { once: true });
-['mousedown', 'touchstart', 'scroll', 'keydown'].forEach(evt => {
- document.addEventListener(evt, () => {
- // Guard: do not reset idle clock while battery saver is active.
- if (isBatterySaverActive) return;
- if (state && state.activeVisit) {
- state.idleSeconds = 0; // Activity detected, reset the clock
- }
- }, { passive: true });
-});
-// ============================================================================
-// STATE PERSISTENCE
-// ============================================================================
-function loadState() {
- try {
- const saved = localStorage.getItem('loneWorkerState');
- if (saved) {
- return JSON.parse(saved);
- }
- } catch (e) {
- console.error('Load state failed:', e);
- }
- return null;
-}
-
-function saveState() {
- try {
- localStorage.setItem('loneWorkerState', JSON.stringify(state));
- } catch (e) {
- console.error('Save state failed:', e);
- }
-}
-
-// ============================================================================
-// NAVIGATION
-// ============================================================================
-function navigate(page) {
- // Defensive: if something navigates away from the report page while a pre-visit
- // form is active, clean up stale flags so the app isn't permanently stuck.
- if (isPreVisitForm && page !== 'report') {
- isPreVisitForm = false;
- isPreVisitFormDone = false;
- pendingVisitStartFn = null;
- isMidVisitUpdate = false;
- }
- document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
- const targetPage = document.getElementById(page + 'Page');
- if (targetPage) {
- targetPage.classList.add('active');
- 
- // PHASE 1: Populate settings page when navigating to it
- if (page === 'settings') {
- populateSettingsForm();
- updateSystemInfo(); // Update backend connection status
- updateMySitesSummary(); // Refresh personal sites count
- populateVisitHistory(); // Refresh visit history log
- }
- 
- resetInactivityTimer();
- } else {
- console.error(`Page not found: ${page}Page`);
- }
-}
-
-// ============================================================================
-// ============================================================================
-// SECURITY: HTML ESCAPING
-// ============================================================================
-/**
- * Escapes user/backend-sourced strings before injection into innerHTML.
- * Prevents XSS from malicious spreadsheet content.
- */
-function escapeHtml(str) {
- if (!str) return '';
- return String(str)
- .replace(/&/g, '&amp;')
- .replace(/</g, '&lt;')
- .replace(/>/g, '&gt;')
- .replace(/"/g, '&quot;')
- .replace(/'/g, '&#039;');
-}
-
-// MODALS
-// ============================================================================
-function showModal(id) {
- const modal = document.getElementById(id + 'Modal');
- if (modal) {
- modal.classList.remove('hidden');
- }
-}
-
-function closeModal(id) {
- const modal = document.getElementById(id + 'Modal');
- if (modal) {
- modal.classList.add('hidden');
- // Clear any inline display style: checkActiveNotice sets style.display='flex'
- // directly, which overrides the hidden class and prevents dismissal.
- modal.style.display = '';
- }
-}
-
-// ============================================================================
-// TOAST NOTIFICATIONS
-// ============================================================================
-function showToast(text) {
- const toastText = document.getElementById('toastText');
- const toastMsg = document.getElementById('toastMsg');
- if (toastText && toastMsg) {
- toastText.innerText = text;
- toastMsg.classList.add('show');
- setTimeout(() => toastMsg.classList.remove('show'), 3000);
- }
-}
-
-// ============================================================================
-// VOICE ANNOUNCE (Web Speech with fallback)
-// ============================================================================
-function announce(text) {
- if ('speechSynthesis' in window) {
- try {
- const utter = new SpeechSynthesisUtterance(text);
-
- if (speechSynthesis.getVoices().length === 0) {
- // Voices not yet loaded. Store the utterance and register a single
- // one-shot listener. If announce() is called again before voices
- // load, the stored utterance is replaced so only the latest fires.
- announce._pendingUtter = utter;
- if (!announce._voicesListenerAdded) {
- announce._voicesListenerAdded = true;
- speechSynthesis.addEventListener('voiceschanged', () => {
- announce._voicesListenerAdded = false;
- if (announce._pendingUtter) {
- speechSynthesis.cancel();
-                    speechSynthesis.speak(announce._pendingUtter);
- announce._pendingUtter = null;
- }
- }, { once: true });
- }
- } else {
- speechSynthesis.cancel();
-            speechSynthesis.speak(utter);
- }
- } catch (e) {
- console.warn('Speech synthesis failed:', e);
- showToast(text);
- }
- } else {
- showToast(text);
- }
-}
-
-// ============================================================================
-// UPDATED: MISSION-CRITICAL SAFETY LOGGING
-// ============================================================================
-async function logSafety(type, message) {
- console.log(`[${type}] ${message}`);
- 
- // Construct the precise payload required by the Google Script backend
- const data = {
- 'Alarm Status': type,
- 'Notes': message,
- 'Last Known GPS': lastGPS || "0,0",
- 'GPS Timestamp': new Date().toLocaleString(),
- 'Battery Level': await getBatteryPercent(),
- 'App Version': CONFIG.buildVersion
- };
-
- // Pass this through buildPayload to add worker credentials and action keys
- const fullPayload = buildPayload(data);
- fullPayload['action'] = 'logVisit'; // Ensure action is explicit for ingestion
-
- // await: ensures the IndexedDB write is confirmed durable before this
- // async function returns. triggerPanic() awaits logSafety(), so the alarm
- // event is on disk before any UI change is made.
- await outboxEnqueue(fullPayload);
-}
-
-async function getBatteryPercent() {
- try {
- if ('getBattery' in navigator) {
- const battery = await navigator.getBattery();
- return Math.floor(battery.level * 100) + '%';
- }
- } catch (e) {
- console.info('Battery API not available:', e);
- }
- return 'Unknown';
-}
-
-/**
- * Keeps currentBatteryLevel fresh so all buildPayload calls
- * report accurate battery rather than the initialised "100%".
- */
-async function refreshBatteryLevel() {
- const level = await getBatteryPercent();
- if (level !== 'Unknown') currentBatteryLevel = level;
-}
-
-/**
- * MISSION-CRITICAL: High-Integrity Report Submission
- * Includes action routing for notes, vehicle nag clearing, canvas cleanup,
- * site emergency procedures integration, and correct media/signature transmission.
- */
-function submitReport() {
- if (isSubmitting) return;
- isSubmitting = true;
-
- // REQUIRED FIELD GATE: validate before doing anything else
- if (!validateRequiredFields()) { isSubmitting = false; return; }
-
- showToast('📤 Processing report...');
- 
- // 1. GATHER DATA: Includes the recently patched signature and auto-filled fields
- const d = gatherFormData();
- let photoCount = 0;
- const photoMap = {};
- 
- // 2. PROCESS PHOTOS: Maps photoStore to indexed Photo keys for the spreadsheet
- Object.keys(state.photoStore || {}).forEach((key) => {
- photoCount++;
- const token = `{{PHOTO_${photoCount}}}`;
- // Store actual base64 data for transmission
- photoMap[`Photo ${photoCount}`] = state.photoStore[key];
- 
- if (d.custom[key] !== undefined) {
- d.custom[key] = token;
- d.jsonPayload[key] = token;
- }
- });
- 
- // 3. BUILD PAYLOAD
- const fd = {
- ...d.custom,
- "Visit Report Data": JSON.stringify(d.jsonPayload),
- "Template Name": currentActiveTemplate
- };
- 
- // 4. EXTRACT DISTANCE (For travel logs)
- for (let key in d.custom) {
- if (/km|odo|dist/i.test(key)) {
- const val = parseFloat(d.custom[key]);
- if (!isNaN(val)) fd["Distance"] = val;
- }
- }
- 
- // 5. ATTACH MEDIA: Explicitly adds photos and signature to the flat payload
- Object.entries(photoMap).forEach(([k, v]) => { fd[k] = v; });
- if (d.sig) fd["Signature"] = d.sig; 
- 
- // 6. GOLDEN ROUTING: Determine if this submission closes the session
- let alarmStatus;
- let backendAction = 'logVisit';
-
- if (currentActiveTemplate === "Update Site Procedures") {
- backendAction = 'uploadEmergencyProcedures';
- alarmStatus = "PROCEDURES_UPDATED";
- } else if (currentActiveTemplate === "Note to Self") {
- backendAction = 'logNote';
- alarmStatus = "NOTE_LOGGED";
- } else if (isPreVisitForm) {
- if (state.activeVisit) {
- // STALE FLAG: visit already active — pre-visit form was never properly
- // completed (e.g. it flashed away). Clear all pre-visit flags and treat
- // this submission as a normal departure.
- isPreVisitForm = false;
- isPreVisitFormDone = false;
- pendingVisitStartFn = null;
- isMidVisitUpdate = false;
- alarmStatus = "DEPARTED";
- } else {
- // Pre-visit form submitted — record it, then resume the visit start
- alarmStatus = "PRE_VISIT";
- }
- } else if (isMidVisitUpdate) {
- // Log movement or status without ending the session
- // Vehicle Safety Check has its own status — avoids wrongly showing worker as ON SITE
- if (currentActiveTemplate && currentActiveTemplate.toLowerCase().includes('vehicle')) {
- alarmStatus = "VEHICLE_CHECK_COMPLETED";
- } else {
- alarmStatus = state.activeVisit?.locationId === 'travel' ? "TRAVELLING" : "ON SITE";
- }
- } else {
- // FINAL DEPARTURE: This clears the activeVisit and records completion
- alarmStatus = "DEPARTED"; 
- }
- 
- // 7. HANDSHAKE: Send to spreadsheet with the correct action key
- processUploadQueue(buildPayload({
- ...fd,
- "action": backendAction, 
- "Alarm Status": alarmStatus,
- "Notes": d.notes || ""
- }));
-
- // PRE-VISIT FORM RESUME: form data is queued — now actually start the visit
- if (isPreVisitForm) {
- isPreVisitForm = false;
- isMidVisitUpdate = false;
- isSubmitting = false;
- state.photoStore = {};
- const fn = pendingVisitStartFn;
- pendingVisitStartFn = null;
- if (fn) fn();
- return;
- }
-
- // 8. NAG BAR CLEANUP
- if (currentActiveTemplate && currentActiveTemplate.toLowerCase().includes('vehicle')) {
- state.meta.lastVehCheck = new Date().toISOString();
- if (typeof checkVehicleStatus === 'function') checkVehicleStatus(); 
- }
- 
- // 9. VISUAL & LOGIC RESET
- if (!isMidVisitUpdate) {
- if (typeof stopGPSMonitoring === 'function') stopGPSMonitoring();
-
- const _concludedIsTravel = state.activeVisit && (state.activeVisit.isTravel || state.activeVisit.locationId === 'travel');
- state.activeVisit = null;
- state.selectedLocationId = null;
- state.visitDurationMinutes = 0;
- state.photoStore = {}; 
- 
- // Reset duration selection
- updateDurationDisplay();
-
- if (typeof travelTargetName !== 'undefined') travelTargetName = ""; 
- if (tickIntervalId) { clearInterval(tickIntervalId); tickIntervalId = null; }
- if (travellingInterval) { clearInterval(travellingInterval); travellingInterval = null; }
- if (arrivedPulseInterval) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; }
- stopWelfareChecks(); // dismiss any pending welfare modal and clear the schedule
- if (typeof exitLockedScreen === 'function') exitLockedScreen(); 
- 
- saveState();
- navigate('main'); 
- 
- // FIXED: Trigger forceSync for procedure updates to refresh map UI markers
- if (currentActiveTemplate === "Update Site Procedures") {
- setTimeout(() => {
- if (typeof forceSync === 'function') forceSync(false);
- }, 1500);
- } else {
- renderLocations(); 
- }
-
- if (typeof updateArrivedButtonState === 'function') updateArrivedButtonState();
- isSubmitting = false;
- announce(_concludedIsTravel ? 'Travel concluded.' : 'Visit concluded.');
- showToast('✅ Safety Session Completed');
- } else {
- navigate(state.activeVisit ? 'locked' : 'main'); 
- isSubmitting = false;
- showToast('✅ Update Logged');
- isMidVisitUpdate = false; 
- if (typeof resetInactivityTimer === 'function') resetInactivityTimer();
- }
-
- // 10. CANVAS PURGE: Physically clear the drawing board
- const sigCanvas = document.querySelector('canvas[id^="sig-canvas-"]');
- if (sigCanvas) clearSig(sigCanvas.id.replace('sig-canvas-', ''));
- 
- // FINAL CLEANUP: Clear global context for the next session
- formExecutionContext = null;
-}
-
-// ============================================================================
-// LONG-PRESS INTERACTION
-// ============================================================================
-/**
- * Standardised Long-Press Utility
- * Logic: Simple time-based trigger without movement cancellation.
- */
-function setupLongPress(target, duration, callback) {
- const btn = (typeof target === 'string') ? document.getElementById(target) : target;
- if (!btn) return;
- 
- let timer;
- const start = (e) => {
- if ((target === 'btnPanic' || btn.id === 'btnPanic') && isSosLocked) {
- showToast('⏳ Wait... screen just woke');
- return;
- }
- if (e.type === 'mousedown') e.preventDefault(); 
- 
- btn.classList.add('holding');
- timer = setTimeout(() => {
- btn.classList.remove('holding');
- callback();
- }, duration);
- };
-
- const stop = () => {
- clearTimeout(timer);
- btn.classList.remove('holding');
- };
-
- btn.addEventListener('touchstart', start, { passive: true });
- btn.addEventListener('mousedown', start);
- ['touchend', 'touchcancel', 'mouseup', 'mouseleave'].forEach(ev => {
- btn.addEventListener(ev, stop);
- });
-}
- 
-// ============================================================================
-// BATTERY SAVER — SINGLE UNIFIED SYSTEM
-// One state variable (isBatterySaverActive). One activate path. One deactivate
-// path. No divergence possible.
-// ============================================================================
-
-/**
- * ACTIVATE: Show battery saver overlay.
- * Called ONLY by the inactivity timer (dimTimer).
- * Single path — no ambiguity.
- */
-function activateBatterySaver() {
- if (!state || !state.activeVisit) return;
-
- // Gates: don't dim during report, modal, overdue/panic
- const isReportActive = document.getElementById('reportPage')?.classList.contains('active');
- const activeModal = document.querySelector('[id$="Modal"]:not(.hidden)');
- if (isReportActive || activeModal) return;
- const remaining = state.activeVisit.duration - (Date.now() - state.activeVisit.startTime) / 1000;
- if (remaining <= 0 || state.activeVisit.isPanic) return;
-
- const saver = document.getElementById('batterySaver');
- const main = document.getElementById('lockedPage');
- if (!saver) return;
-
- isBatterySaverActive = true;
-
- // Show overlay
- saver.classList.remove('hidden');
-
- // Hide locked page to save GPU
- if (main) main.style.display = 'none';
-
- // Fullscreen: suppress Android nav/status bars.
- // NOTE: requestFullscreen() requires a user gesture on Android Chrome. Since
- // activateBatterySaver() fires from a setTimeout (dimTimer), this request is
- // likely to be rejected. Retained as best-effort for contexts where it may
- // succeed. Do NOT rely on this to suppress the nav bar — see theme-color below.
- const el = document.documentElement;
- const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
- if (rfs) rfs.call(el).catch(() => {});
-
- // Black out the Android status bar by setting theme-color to #000.
- // Works without a user gesture — blends the status bar with the black overlay
- // even when fullscreen is not active. Restored on deactivate.
- const metaTheme = document.getElementById('metaThemeColor');
- if (metaTheme) metaTheme.setAttribute('content', '#000000');
-
- // Throttle heartbeat
- clearInterval(tickIntervalId);
- tickIntervalId = setInterval(tick, TICK_SAVER);
-
- // Populate HUD immediately
- updateBatterySaverHUD();
- console.log('Battery Saver: active.');
-}
-
-/**
- * DEACTIVATE: Hide battery saver overlay.
- * Called by completeSlide() and any emergency wake paths.
- * Single path — no ambiguity.
- */
-function deactivateBatterySaver() {
- if (!isBatterySaverActive) return; // Idempotent
-
- const saver = document.getElementById('batterySaver');
- const main = document.getElementById('lockedPage');
-
- isBatterySaverActive = false;
-
- // Hide overlay
- if (saver) saver.classList.add('hidden');
-
- // Restore locked page
- if (main) main.style.display = '';
-
- // Exit fullscreen
- const efs = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen;
- if (efs && document.fullscreenElement) efs.call(document).catch(() => {});
-
- // Restore theme-color to the configured primary colour.
- const metaTheme = document.getElementById('metaThemeColor');
- if (metaTheme) metaTheme.setAttribute('content', CONFIG.theme_color || '#1e3a8a');
-
- // Restore normal heartbeat
- clearInterval(tickIntervalId);
- tickIntervalId = setInterval(tick, TICK_NORMAL);
- tick();
-
- // Stamp wake time — grace period starts now
- lastWakeTime = Date.now();
-
- // Cancel any pending saver timer and re-arm outside grace period
- resetInactivityTimer();
-
- console.log('Battery Saver: deactivated.');
-}
-
-/**
- * ARM INACTIVITY TIMER.
- * Always clears any existing timer first.
- * Only re-arms if outside the wake grace period and saver not already active.
- */
-function resetInactivityTimer() {
- clearTimeout(dimTimer); // Always cancel pending timer — must be first
-
- if (isBatterySaverActive) return; // Saver active — slide gesture is the only valid wake path
- if (Date.now() - lastWakeTime < WAKE_GRACE_MS) return; // Grace period — don't re-arm
-
- if (state && state.activeVisit) {
- dimTimer = setTimeout(activateBatterySaver, DIM_DELAY);
- }
-}
-
-// ============================================================================
-// GPS MONITORING
-// ============================================================================
-// Adaptive timed polling replaces watchPosition to let the GPS chip sleep
-// between readings (~70% battery saving).
-//
-// Interval adapts after every successful fix based on movement since the last:
-// < 200 m → worker is stationary/slow → back off (double, max 10 min)
-// > 500 m → worker is moving → poll more (halve, min 2 min)
-// 200–500m → normal travel pace → hold current interval
-//
-// On the first fix there is no previous position, so the default 5 min is used.
-
-const GPS_MIN_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes — fast movement (non-travel)
-const GPS_MIN_INTERVAL_TRAVEL_MS = 60 * 1000; // 1 minute — fast movement during travel (distance accuracy)
-const GPS_DEFAULT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — default / first fix
-const GPS_MAX_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes — stationary
-
-/**
- * Haversine great-circle distance between two WGS-84 coordinates.
- * Returns distance in metres.
- */
-function _gpsHaversineMetres(lat1, lng1, lat2, lng2) {
- const R = 6371000; // Earth radius, metres
- const toRad = d => d * Math.PI / 180;
- const dLat = toRad(lat2 - lat1);
- const dLng = toRad(lng2 - lng1);
- const a = Math.sin(dLat / 2) ** 2
- + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
- return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function startGPSMonitoring() {
- if (gpsWatchId !== null) {
- clearTimeout(gpsWatchId);
- gpsWatchId = null;
- }
- if (!navigator.geolocation) return;
-
- // Reset adaptive state for each new monitoring session
- lastGPSCoords = null;
- gpsCurrentIntervalMs = GPS_DEFAULT_INTERVAL_MS;
-
- // -1 sentinel: non-null (monitoring is active) but not a real timer ID.
- // The first fix is in flight; the callback will overwrite this with a
- // real setTimeout ID. clearTimeout(-1) is a safe no-op in all browsers.
- gpsWatchId = -1;
- _takeSingleGPSFix();
-}
-
-function _takeSingleGPSFix() {
- navigator.geolocation.getCurrentPosition(
- pos => {
- const lat = pos.coords.latitude;
- const lng = pos.coords.longitude;
- lastGPS = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
- updateGPSBars(pos);
-
-    // --- Adaptive interval logic ---
-    // During travel sessions use a tighter floor (1 min) for breadcrumb density
-    // and reimbursement accuracy. Non-travel sessions keep the standard 2 min floor.
-    const _gpsMinInterval = (state && state.activeVisit && state.activeVisit.isTravel)
-        ? GPS_MIN_INTERVAL_TRAVEL_MS
-        : GPS_MIN_INTERVAL_MS;
-
-    if (lastGPSCoords !== null) {
-      const dist = _gpsHaversineMetres(lastGPSCoords.lat, lastGPSCoords.lng, lat, lng);
-      if (dist < 200) {
-        // Stationary or very slow — ease off
-        gpsCurrentIntervalMs = Math.min(gpsCurrentIntervalMs * 2, GPS_MAX_INTERVAL_MS);
-      } else if (dist > 500) {
-        // Actively moving — keep resolution up
-        gpsCurrentIntervalMs = Math.max(gpsCurrentIntervalMs / 2, _gpsMinInterval);
-      }
-      // 200–500 m: pace unchanged
-    }
- lastGPSCoords = { lat, lng };
- _consecutiveGPSFailures = 0; // Clear failure streak on every good fix
-
- // Record breadcrumb and accumulate speed-derived distance during travel.
- // Speed accumulator: uses pos.coords.speed (m/s, Doppler-derived —
- // more accurate than position-derived speed) as an independent distance signal.
- // At trip end, getDistance() takes the higher of ORS-trail and speed-accumulator,
- // protecting workers against under-reporting on sparse or winding routes.
- if (state && state.activeVisit && state.activeVisit.isTravel) {
-   const last = gpsTrail[gpsTrail.length - 1];
-   if (!last || _gpsHaversineMetres(last.lat, last.lng, lat, lng) > 50) {
-     gpsTrail.push({ lat, lng });
-   }
-
-   // Speed accumulator — only when speed is a valid positive number
-   const spd = pos.coords.speed; // m/s, or null on unsupported devices
-   const now = Date.now();
-   if (typeof spd === 'number' && spd > 0 && _speedAccumLastTs !== null) {
-     const elapsedS = (now - _speedAccumLastTs) / 1000;
-     // Cap elapsed to 3× GPS_MAX_INTERVAL_MS to discard stale gaps
-     // (e.g. after a long GPS failure) that would inflate the total.
-     if (elapsedS < (GPS_MAX_INTERVAL_MS / 1000) * 3) {
-       _speedAccumM += spd * elapsedS;
-     }
-   }
-   _speedAccumLastTs = now;
- }
-
- // Schedule next poll — only if stopGPSMonitoring() hasn't been called
- if (gpsWatchId !== null) {
- gpsWatchId = setTimeout(_takeSingleGPSFix, gpsCurrentIntervalMs);
- }
- },
- err => {
- console.warn('GPS fix failed:', err.message);
- _consecutiveGPSFailures++;
- // Surface a warning after 5 consecutive failures during an active visit.
- // Threshold avoids spamming the worker on a brief signal drop; 5 failures
- // at the minimum interval (~30 s each) means ~2.5 minutes without a fix.
- if (_consecutiveGPSFailures === 5 && state && state.activeVisit) {
- showToast('⚠️ GPS signal lost — location tracking paused', 6000);
- }
- document.querySelectorAll('.gps-bar').forEach(b => {
- b.classList.remove('active-red', 'active-amber', 'active-green');
- b.style.backgroundColor = '#374151';
- });
- // Retry at the current interval — same outward behaviour as before
- if (gpsWatchId !== null) {
- gpsWatchId = setTimeout(_takeSingleGPSFix, gpsCurrentIntervalMs);
- }
- },
- {
- enableHighAccuracy: true,
- timeout: 15000,
- maximumAge: 60000 // Accept a cached fix up to 1 min old to avoid
- // waking the GPS chip unnecessarily
- }
- );
-}
-
-function stopGPSMonitoring() {
- if (gpsWatchId !== null) {
- clearTimeout(gpsWatchId); // clearTimeout(-1) is a no-op; real IDs are cancelled
- gpsWatchId = null;
- }
-}
-
-function updateGPSBars(pos) {
- const accuracy = pos.coords.accuracy;
- const bars = document.querySelectorAll('.gps-bar');
- const label = document.getElementById('gpsLabel');
- bars.forEach(b => b.classList.remove('active-red', 'active-amber', 'active-green'));
-
- if (accuracy > 200) {
- // IP-level only — very rough
- bars[0]?.classList.add('active-red');
- if (label) label.textContent = 'IP';
- } else if (accuracy > 50) {
- // WiFi triangulation — usable but moderate accuracy
- bars[0]?.classList.add('active-amber');
- bars[1]?.classList.add('active-amber');
- if (label) label.textContent = 'WiFi';
- } else if (accuracy > 20) {
- // GPS coarse lock
- bars[0]?.classList.add('active-amber');
- bars[1]?.classList.add('active-amber');
- bars[2]?.classList.add('active-amber');
- if (label) label.textContent = 'GPS';
- } else {
- // GPS fine lock
- bars.forEach(b => b.classList.add('active-green'));
- if (label) label.textContent = 'GPS';
- }
-
- // GPS accuracy badge on the locked screen.
- // Shown only when accuracy is poor (>100 m) — a fine lock stays silent.
- // Tapping the badge shows an explanatory toast.
- const badge = document.getElementById('gpsAccuracyBadge');
- const badgeVal = document.getElementById('gpsAccuracyValue');
- if (badge && badgeVal) {
- if (accuracy > 100) {
- badgeVal.textContent = Math.round(accuracy);
- badge.classList.remove('hidden');
- } else {
- badge.classList.add('hidden');
- }
- }
-}
-
-// Capture GPS for forms
-function captureGPS(btn) {
- if (!navigator.geolocation) return showToast("GPS Not Supported");
- btn.innerText = "⌛...";
- navigator.geolocation.getCurrentPosition(
- pos => {
- const coords = `${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`;
- const input = btn.nextElementSibling;
- if (input) input.value = coords;
- showToast("Location Captured");
- btn.innerText = "GPS";
- },
- err => {
- showToast("GPS Error: Enable location");
- btn.innerText = "GPS";
- console.error('GPS capture error:', err);
- },
- { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
- );
-}
-
-// ============================================================================
-// CHECK-IN TIMER
-// ============================================================================
-// ============================================================================
-// WELFARE CHECK ENGINE
-// Only active when CONFIG.checkinEnabled === true (set by Factory at build time).
-// Fires a full-screen "Are You OK?" modal every CONFIG.checkinInterval minutes
-// during an active visit. Worker has 2 minutes to confirm. If the countdown
-// expires without a tap, triggerGraceExpiryAlarm() fires immediately.
-//
-// Suppressed while: alarm already active, no active visit, modal already showing.
-// Cleared on: visit end, preDepart, app unload.
-// ============================================================================
-
-/**
- * Start the welfare check schedule for an active visit.
- * No-op if CONFIG.checkinEnabled is false — the timer simply never starts,
- * so deployments without the feature are completely unaffected.
- */
-function startWelfareChecks() {
- if (!CONFIG.checkinEnabled) return;
- stopWelfareChecks(); // clear any stale interval first
-
- // Priority: per-visit override set at visit start → CONFIG global fallback.
- // The per-visit value is resolved from (in order): worker's manual selector,
- // site's persistent override, site risk level, then CONFIG.checkinInterval.
- // It is already baked into state.activeVisit.checkinIntervalMins by startVisit().
- const intervalMins = (state && state.activeVisit && state.activeVisit.checkinIntervalMins)
- || CONFIG.checkinInterval
- || 60;
- const intervalMs = intervalMins * 60 * 1000;
- welfareIntervalId = setInterval(() => {
- if (!state || !state.activeVisit) return;
- // Don't interrupt if the alarm is already active — the worker has
- // bigger problems than a welfare check.
- if (state.activeVisit.criticalSent || state.activeVisit.isPanic) return;
- // Don't stack if the modal is already visible (shouldn't happen, but guard it).
- const modal = document.getElementById('welfareCheckModal');
- if (modal && !modal.classList.contains('hidden')) return;
-
- _showWelfareModal();
- }, intervalMs);
-}
-
-/** Stop the welfare check schedule and dismiss any in-progress modal. */
-function stopWelfareChecks() {
- if (welfareIntervalId) { clearInterval(welfareIntervalId); welfareIntervalId = null; }
- _clearWelfareCountdown();
- const modal = document.getElementById('welfareCheckModal');
- if (modal) modal.classList.add('hidden');
-}
-
-/**
- * Display the welfare check modal and start the 2-minute countdown.
- * If the countdown reaches zero the alarm fires.
- */
-function _showWelfareModal() {
- const modal = document.getElementById('welfareCheckModal');
- const countEl = document.getElementById('welfareCountdown');
- if (!modal) return;
-
- // Persist the deadline so the iOS suspension catch-up can detect a missed
- // check even if the countdown never ran while the app was backgrounded.
- const deadline = Date.now() + 120_000; // 2 minutes
- if (state && state.activeVisit) {
- state.activeVisit.welfareDeadline = deadline;
- saveState();
- }
-
- modal.classList.remove('hidden');
- if (navigator.vibrate) navigator.vibrate([400, 150, 400, 150, 400]);
- announce('Welfare check. Are you OK? Please tap the confirm button.');
-
- // Countdown — ticks every second, hides modal and fires alarm at zero.
- let remaining = 120;
- if (countEl) countEl.textContent = '2:00';
-
- _clearWelfareCountdown();
- welfareCountdownId = setInterval(() => {
- remaining--;
- if (countEl) {
- const m = Math.floor(remaining / 60);
- const s = remaining % 60;
- countEl.textContent = `${m}:${s.toString().padStart(2, '0')}`;
- }
- // Announce at 30s remaining so a nearby person can help
- if (remaining === 30) announce('Welfare check. 30 seconds remaining.');
-
- if (remaining <= 0) {
- _clearWelfareCountdown();
- modal.classList.add('hidden');
- if (state && state.activeVisit) {
- state.activeVisit.welfareDeadline = null;
- saveState();
- }
- // Missed welfare check — escalate to alarm unless one is already active.
- // NOTE: deliberately does NOT check isSafeConfirmed so the alarm can
- // re-fire after a worker has cleared a prior alarm via PIN but remains
- // in an active overdue visit.
- if (state?.activeVisit && !state.activeVisit.criticalSent) {
- console.warn('Welfare check timed out — triggering alarm');
- triggerGraceExpiryAlarm();
- }
- }
- }, 1000);
-}
-
-/** Worker (or bystander) tapped "I'm OK". Log it and reset. */
-function confirmWelfare() {
- _clearWelfareCountdown();
- const modal = document.getElementById('welfareCheckModal');
- if (modal) modal.classList.add('hidden');
-
- if (state && state.activeVisit) {
- state.activeVisit.lastWelfareCheck = Date.now();
- state.activeVisit.welfareDeadline = null;
- saveState();
- }
-
- logSafety('WELFARE_OK', 'Worker confirmed welfare check-in.');
- showToast('✅ Welfare check-in confirmed');
- if (navigator.vibrate) navigator.vibrate(50);
-}
-
-/** Cancel the in-modal countdown interval. Safe to call even if not running. */
-function _clearWelfareCountdown() {
- if (welfareCountdownId) { clearInterval(welfareCountdownId); welfareCountdownId = null; }
-}
-
-// ============================================================================
-// TRAVELLING PULSE
-// ============================================================================
-function startTravellingPulse() {
- if (travellingInterval) clearInterval(travellingInterval);
- if (arrivedPulseInterval) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; }
- travellingInterval = setInterval(() => {
- // FIX: was checking activeVisit.status === 'TRAVELLING' which is never set
- // on the visit object (it's only sent as payload field). Correct flag is .isTravel.
- if (state && state.activeVisit && state.activeVisit.isTravel) {
- // Send periodic location pulse
- logSafety('TRAVELLING', 'Location pulse');
- }
- }, 120000); // 2 minutes
-}
-
-/**
- * RE-ENGINEERED: Professional Form Builder
- * Resolves: Inline Currency ($), Suffix Units (km/hrs/%), and Card-style Checkboxes.
- */
-function buildReportForm(templateName, fieldArea) {
- if (!fieldArea) return;
- fieldArea.innerHTML = ''; 
-
- const template = state.globalForms.find(f => f.name === templateName) || 
- { name: templateName, questions: ["[NOTE] Site Information", "[TEXT] Notes", "[SIGN] Signature"] };
- 
- const questions = template.questions || [];
-
- questions.forEach((label, index) => {
- // Required field: administrator prefixes the tag with * e.g. *[TEXT] or *[1TEXT]
- const isRequired = /^\*\s*\[/.test(label);
- const normalised = isRequired ? label.replace(/^\*\s*/, '') : label;
- const tagMatch = normalised.match(/^\[(.*?)\]\s*(.*)$/i);
- const rawTag = tagMatch ? tagMatch[1].toUpperCase().trim() : "TEXT";
- let cleanLabel = tagMatch ? tagMatch[2] : normalised;
- 
- let baseType = rawTag;
- let options = [];
- if (rawTag.includes(',')) {
- const parts = rawTag.split(',');
- baseType = parts[0].trim();
- options = parts.slice(1).map(o => o.trim());
- }
- 
- const fieldId = `field_${index}_${cleanLabel.replace(/\s/g, '_')}`;
- const wrapper = document.createElement('div');
- wrapper.className = 'mb-5'; 
-
- if (!['HEADING', 'HEAD', 'NOTE'].includes(baseType)) {
- const labelEl = document.createElement('label');
- labelEl.className = 'block text-xs font-black text-gray-300 tracking-widest mb-2 ml-1';
- if (isRequired) {
- // Red asterisk — universal required-field convention
- labelEl.innerHTML = escapeHtml(cleanLabel) +
- ' <span class="text-red-500 font-black" aria-label="required">*</span>';
- } else {
- labelEl.innerText = cleanLabel;
- }
- wrapper.appendChild(labelEl);
- }
-
- let input;
- switch(baseType) {
- case 'HEADING':
- case 'HEAD':
- const h = document.createElement('h3');
- h.className = 'text-blue-400 font-black text-text-xs tracking-[0.25em] mb-4 border-b border-blue-500/20 pb-2 mt-6';
- h.innerText = cleanLabel;
- wrapper.appendChild(h);
- fieldArea.appendChild(wrapper);
- return;
-
- case 'NOTE':
- const n = document.createElement('div');
- n.className = 'p-4 bg-blue-900/20 border-l-4 border-blue-500 rounded-r-xl text-xs text-blue-100 font-medium italic leading-relaxed';
- n.innerText = cleanLabel;
- wrapper.appendChild(n);
- fieldArea.appendChild(wrapper);
- return;
-
- case 'NUMBER':
- const group = document.createElement('div');
- group.className = 'input-group';
- 
- if (cleanLabel.includes('$')) {
- const prefix = document.createElement('div');
- prefix.className = 'input-addon addon-prefix';
- prefix.textContent = '$';
- group.appendChild(prefix);
- cleanLabel = cleanLabel.replace('$', '').trim();
- }
-
- input = document.createElement('input');
- input.type = 'number';
- input.inputMode = 'decimal';
- input.className = 'form-input';
- group.appendChild(input);
-
- const unitMatch = cleanLabel.match(/\((km|hrs|%|m|kg)\)$/i);
- if (unitMatch) {
- const suffix = document.createElement('div');
- suffix.className = 'input-addon addon-suffix';
- suffix.textContent = unitMatch[1];
- group.appendChild(suffix);
- cleanLabel = cleanLabel.replace(unitMatch[0], '').trim();
- }
-
- // Set identifying attributes here — the outer post-switch block skips
- // NUMBER inputs because wrapper.contains(input) is already true by then.
- input.id = fieldId;
- input.setAttribute('data-key', cleanLabel);
- if (isRequired) {
-   input.setAttribute('data-required', 'true');
-   input.setAttribute('data-label', cleanLabel);
- }
-
- wrapper.appendChild(group);
- break;
-
- case 'CHECK':
- case 'CHECKBOX':
- const card = document.createElement('div');
- card.className = 'check-card active:bg-blue-900/20 transition-all';
- card.innerHTML = `
- <span class="text-sm font-bold text-gray-300">${cleanLabel}${isRequired ? ' <span class="text-red-500 font-black" aria-label="required">*</span>' : ''}</span>
- <input type="checkbox" id="${fieldId}" data-key="${cleanLabel}" class="w-7 h-7 rounded-lg accent-blue-500"${isRequired ? ' data-required="true" data-label="' + cleanLabel + '"' : ''}>
- `;
- wrapper.innerHTML = ''; 
- wrapper.appendChild(card);
- break;
-
- case 'YESNO':
- case 'YES/NO':
- const grid = document.createElement('div');
- grid.className = 'flex gap-2';
- input = document.createElement('input');
- input.type = 'hidden';
- if (isRequired) {
- input.setAttribute('data-required', 'true');
- input.setAttribute('data-label', cleanLabel);
- input.setAttribute('data-yesno', 'true');
- }
- ["Yes", "No"].forEach(val => {
- const b = document.createElement('button');
- b.type = 'button';
- b.className = 'flex-1 py-4 bg-gray-800 border-2 border-gray-700 rounded-xl font-black text-xs tracking-widest text-gray-400';
- b.innerText = val;
- b.onclick = () => {
- grid.querySelectorAll('button').forEach(btn => btn.className = 'flex-1 py-4 bg-gray-800 border-2 border-gray-700 rounded-xl font-black text-xs tracking-widest text-gray-400');
- b.className = val === 'Yes' ? 'flex-1 py-4 bg-blue-600 border-2 border-blue-400 rounded-xl font-black text-xs tracking-widest text-white shadow-lg' : 'flex-1 py-4 bg-red-900/50 border-2 border-red-700 rounded-xl font-black text-xs tracking-widest text-red-200';
- input.value = val;
- };
- grid.appendChild(b);
- });
- wrapper.appendChild(grid);
- break;
-
- case 'PHOTO': 
- const photoBtn = document.createElement('label');
- photoBtn.setAttribute('for', fieldId);
- photoBtn.className = 'flex flex-col items-center justify-center gap-2 w-full py-6 bg-gray-800 border-2 border-dashed border-gray-600 rounded-2xl text-gray-400 font-bold text-sm cursor-pointer active:bg-gray-700 transition-colors';
- photoBtn.innerHTML = `<span class="text-xl">📷</span><span>Take or Attach Photo</span>`;
- input = document.createElement('input');
- input.type = 'file'; 
- input.id = fieldId;
- input.accept = 'image/*'; 
- input.setAttribute('capture', 'environment'); 
- input.className = 'absolute opacity-0 w-0 h-0 pointer-events-none';
- input.onchange = () => handlePhoto(input, cleanLabel);
- photoBtn.appendChild(input);
- wrapper.appendChild(photoBtn);
- const status = document.createElement('div');
- status.id = `lbl_${fieldId}`; 
- status.className = 'text-xs text-blue-400 font-bold mt-2 text-center';
- if (isRequired) {
- status.setAttribute('data-required-photo', fieldId);
- status.setAttribute('data-label', cleanLabel);
- }
- wrapper.appendChild(status);
- fieldArea.appendChild(wrapper);
- return;
-
- case 'SIGN':
- case 'SIGNATURE':
- const canvas = document.createElement('canvas');
- canvas.id = `sig-canvas-${index}`;
- canvas.className = 'border-2 border-gray-600 rounded-2xl bg-white w-full h-32 shadow-inner';
- if (isRequired) {
- canvas.setAttribute('data-required-sig', 'true');
- canvas.setAttribute('data-label', cleanLabel);
- }
- wrapper.appendChild(canvas);
- const clearBtn = document.createElement('button');
- clearBtn.className = 'ttext-xs text-gray-300 font-bold mt-2 ml-1';
- clearBtn.innerText = 'Clear Signature';
- clearBtn.onclick = (e) => clearSig(index, e);
- wrapper.appendChild(clearBtn);
- input = document.createElement('input');
- input.type = 'hidden';
- input.setAttribute('data-signature-id', index);
- break;
-
- case '1TEXT':
- input = document.createElement('input');
- input.type = 'text';
- input.placeholder = 'Type here...';
- break;
-
- case 'TEXT':
- input = document.createElement('textarea');
- input.rows = 4;
- input.placeholder = 'Type extended notes...';
- break;
-
- case 'DATE':
- input = document.createElement('input'); 
- input.type = 'date';
- break;
-
- case 'GPS':
- const gpsBtn = document.createElement('button');
- gpsBtn.className = 'w-full py-4 bg-blue-900/30 border border-blue-500/50 rounded-2xl text-blue-400 font-black text-xs tracking-widest mb-2';
- gpsBtn.innerText = '📍 Capture GPS';
- gpsBtn.onclick = (e) => { e.preventDefault(); captureGPS(gpsBtn); };
- wrapper.appendChild(gpsBtn);
- input = document.createElement('input'); 
- input.readOnly = true; 
- input.className = 'opacity-40';
- break;
-
- case 'DROP':
- input = document.createElement('select');
- ["-- Select --", ...options].forEach(o => {
- const opt = document.createElement('option');
- opt.value = (o === "-- Select --") ? "" : o;
- opt.text = o;
- input.appendChild(opt);
- });
- break;
-
- default:
- input = document.createElement('textarea'); 
- input.rows = 2;
- input.placeholder = 'Type here...';
- }
-
- if (input && !wrapper.contains(input)) {
- input.id = fieldId;
- if (input.type !== 'checkbox' && input.type !== 'hidden') {
- input.className = (input.className || '') + ' form-input';
- }
- input.setAttribute('data-key', cleanLabel);
- if (isRequired) {
- input.setAttribute('data-required', 'true');
- // Store label for error messages
- input.setAttribute('data-label', cleanLabel);
- }
- wrapper.appendChild(input);
- }
- fieldArea.appendChild(wrapper);
- });
-}
- 
-/**
- * PATCHED: Universal Context-Aware Form Display
- * Ensures auto-population works from both Site Info AND during active visits.
- */
-/**
- * RE-ENGINEERED: Universal Context-Aware Form Display
- * Resolves: Extra syntax braces, 1.8s hold integration, and context-aware population.
- */
-function loadFormAndShow(templateName, context = null) {
- if (typeof dimTimer !== 'undefined') clearTimeout(dimTimer);
- deactivateBatterySaver();
-
- // 1. DYNAMIC CONTEXT CAPTURE
- // Priority: 1. Passed context (Map) -> 2. Active Session (Visit) -> 3. Reset
- formExecutionContext = context || (state.activeVisit ? { 
- siteName: state.activeVisit.locationName, 
- companyName: state.activeVisit.companyName || "" 
- } : null);
-
- const sigCanvas = document.querySelector('canvas[id^="sig-canvas-"]');
- if (sigCanvas) {
- clearSig(sigCanvas.id.replace('sig-canvas-', ''));
- }
- 
- navigate('report'); 
- 
- // ── LOCATION BANNER ──────────────────────────────────────────────────────
- // Show the site name at top of form so the worker can confirm context.
- // Source priority: active visit → selected location tile → hidden.
- const banner = document.getElementById('formLocationBanner');
- const bannerName = document.getElementById('formLocationName');
- if (banner && bannerName) {
- let locName = null;
- if (state.activeVisit && state.activeVisit.locationName) {
- locName = state.activeVisit.locationName;
- } else if (state.selectedLocationId && state.locations) {
- const loc = state.locations.find(l => l.id === state.selectedLocationId);
- if (loc) locName = loc.name;
- }
- if (locName) {
- bannerName.textContent = locName;
- banner.classList.remove('hidden');
- } else {
- banner.classList.add('hidden');
- }
- }
-
- const title = templateName === '(Standard)' ? 'Status Update' : templateName;
- const titleEl = document.getElementById('reportTitle');
- if (titleEl) {
- titleEl.textContent = isMidVisitUpdate ? `Update: ${title}` : title;
- }
- 
- currentActiveTemplate = templateName;
- 
- const fieldsContainer = document.getElementById('reportFields');
- if (fieldsContainer) {
- buildReportForm(templateName, fieldsContainer);
- }
- 
- // Signature Pad Initialisation
- setTimeout(() => {
- const canvases = document.querySelectorAll('canvas[id^="sig-canvas-"]');
- canvases.forEach(canvas => {
- resizeCanvas(canvas);
- initSigPad(canvas);
- });
- }, 300); 
- 
- /**
- * ROCKET-LOADER SAFE: Distance Pre-fill
- */
- if (calculatedDist) {
- const allInputs = document.querySelectorAll('input[data-key], textarea[data-key]');
- const distInput = Array.from(allInputs).find(input => {
- const key = (input.getAttribute('data-key') || '').toLowerCase();
- return key.includes('distance') || key.includes('km') || key.includes('odo');
- });
-
- if (distInput) {
- distInput.value = calculatedDist.km;
- distInput.style.border = '2px solid #4ade80';
- distInput.classList.add('bg-green-900/20');
- distInput.dispatchEvent(new Event('input', { bubbles: true })); 
- }
-
- // Crow-flies advisory — shown when road routing was unavailable.
- // Uses .includes() to handle the '+speed-floor' suffix that withFloor() may append.
- if (calculatedDist.type.includes('crow')) {
- const crowNote = document.createElement('div');
- crowNote.className = 'p-4 bg-amber-900/20 border-l-4 border-amber-500 rounded-r-xl text-xs text-amber-100 font-medium italic leading-relaxed mt-2';
- crowNote.setAttribute('role', 'note');
- crowNote.textContent = '⚠️ Distance is a straight-line estimate (as the crow flies) — road distance could not be calculated. Check this figure and add a note if needed.';
- const fc = document.getElementById('reportFields');
- if (fc) fc.appendChild(crowNote);
- }
- }
-
- /**
- * 2. REFINED AUTO-POPULATION LOGIC
- */
- if (formExecutionContext) {
- setTimeout(() => {
- const allFormElements = document.querySelectorAll('[data-key]');
- 
- allFormElements.forEach(el => {
- const key = el.getAttribute('data-key').toLowerCase();
- 
- // Logic: Matches "Site Name", "Site", "Company Name", etc.
- if (key.includes('site') && formExecutionContext.siteName) {
- el.value = formExecutionContext.siteName;
- el.classList.add('bg-blue-900/10'); 
- }
- if (key.includes('company') && formExecutionContext.companyName) {
- el.value = formExecutionContext.companyName;
- el.classList.add('bg-blue-900/10');
- }
- });
- }, 500); 
- }
- 
- // ── SUBMIT BUTTON / PILL ────────────────────────────────────────────────
- // Context determines the interaction:
- // Submit & End Visit → slide pill (high-stakes, one-way action)
- // Send Update → short hold 800ms (deliberate but low-stakes)
- // Submit Form → short hold 500ms (standalone, no active visit)
- const submitBtn = document.getElementById('btnSubmitRep') || document.getElementById('slideSubmitPill');
- if (submitBtn) {
- const footer = submitBtn.parentNode;
-
- if (isPreVisitForm) {
- // ── SLIDE PILL: Submit & Start ──
- const pill = document.createElement('div');
- pill.id = 'slideSubmitPill';
- pill.className = 'slide-action-pill flex-[2] relative bg-green-700 h-14 rounded-xl p-1 border border-green-900 flex items-center overflow-hidden shadow-lg';
- pill.setAttribute('role', 'button');
- pill.setAttribute('tabindex', '0');
- pill.setAttribute('aria-label', 'Submit and start');
- pill.innerHTML = `
- <div id="slideSubmitThumb" class="relative w-11 h-11 rounded-lg bg-white flex items-center justify-center shadow-xl z-20 pointer-events-none flex-shrink-0">
- <svg class="w-5 h-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
- </div>
- <div class="absolute inset-y-0 left-12 right-0 flex flex-col items-center justify-center pointer-events-none">
- <span id="slideSubmitLabel" class="text-sm font-black text-white tracking-widest transition-opacity duration-200 text-center leading-tight">Submit &amp; Start</span>
- </div>`;
- footer.replaceChild(pill, submitBtn);
- setTimeout(() => initSlidePill('slideSubmitPill', 'slideSubmitThumb', 'slideSubmitLabel', submitReport), 50);
-
- } else if (state.activeVisit && !isMidVisitUpdate) {
- // ── SLIDE PILL: Submit & End Visit ──
- const pill = document.createElement('div');
- pill.id = 'slideSubmitPill';
- pill.className = 'slide-action-pill flex-[2] relative bg-green-700 h-14 rounded-xl p-1 border border-green-900 flex items-center overflow-hidden shadow-lg';
- pill.setAttribute('role', 'button');
- pill.setAttribute('tabindex', '0');
- pill.setAttribute('aria-label', 'Submit and end');
- pill.innerHTML = `
- <div id="slideSubmitThumb" class="relative w-11 h-11 rounded-lg bg-white flex items-center justify-center shadow-xl z-20 pointer-events-none flex-shrink-0">
- <svg class="w-5 h-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
- </div>
- <div class="absolute inset-y-0 left-12 right-0 flex flex-col items-center justify-center pointer-events-none">
- <span id="slideSubmitLabel" class="text-sm font-black text-white tracking-widest transition-opacity duration-200 text-center leading-tight">Submit &amp; End</span>
- </div>`;
- footer.replaceChild(pill, submitBtn);
- setTimeout(() => initSlidePill('slideSubmitPill', 'slideSubmitThumb', 'slideSubmitLabel', submitReport), 50);
-
- } else if (isMidVisitUpdate) {
- // ── SLIDE PILL: Send Update ──
- const pill = document.createElement('div');
- pill.id = 'slideSubmitPill';
- pill.className = 'slide-action-pill flex-[2] relative bg-green-700 h-14 rounded-xl p-1 border border-green-900 flex items-center overflow-hidden shadow-lg';
- pill.setAttribute('role', 'button');
- pill.setAttribute('tabindex', '0');
- pill.setAttribute('aria-label', 'Send update');
- pill.innerHTML = `
- <div id="slideSubmitThumb" class="relative w-11 h-11 rounded-lg bg-white flex items-center justify-center shadow-xl z-20 pointer-events-none flex-shrink-0">
- <svg class="w-5 h-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
- </div>
- <div class="absolute inset-y-0 left-12 right-0 flex flex-col items-center justify-center pointer-events-none">
- <span id="slideSubmitLabel" class="text-sm font-black text-white tracking-widest transition-opacity duration-200 text-center leading-tight">Send Update</span>
- </div>`;
- footer.replaceChild(pill, submitBtn);
- setTimeout(() => initSlidePill('slideSubmitPill', 'slideSubmitThumb', 'slideSubmitLabel', submitReport), 50);
-
- } else {
- // ── SLIDE PILL: Submit Form (standalone, no active visit) ──
- const pill = document.createElement('div');
- pill.id = 'slideSubmitPill';
- pill.className = 'slide-action-pill flex-[2] relative bg-green-700 h-14 rounded-xl p-1 border border-green-900 flex items-center overflow-hidden shadow-lg';
- pill.setAttribute('role', 'button');
- pill.setAttribute('tabindex', '0');
- pill.setAttribute('aria-label', 'Submit form');
- pill.innerHTML = `
- <div id="slideSubmitThumb" class="relative w-11 h-11 rounded-lg bg-white flex items-center justify-center shadow-xl z-20 pointer-events-none flex-shrink-0">
- <svg class="w-5 h-5 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
- </div>
- <div class="absolute inset-y-0 left-12 right-0 flex flex-col items-center justify-center pointer-events-none">
- <span id="slideSubmitLabel" class="text-sm font-black text-white tracking-widest transition-opacity duration-200 text-center leading-tight">Submit Form</span>
- </div>`;
- footer.replaceChild(pill, submitBtn);
- setTimeout(() => initSlidePill('slideSubmitPill', 'slideSubmitThumb', 'slideSubmitLabel', submitReport), 50);
- }
- }
-}
- 
-/**
- * HIGH-INTEGRITY DEPARTURE GATE
- * Logic: Checks both ID and isTravel flag to ensure correct form routing.
- */
-/**
- * DIRECT DEPART: Sends a clean DEPARTED record when no report form is required.
- * Bypasses form validation so it always fires reliably.
- */
-function directDepart() {
- if (!state || !state.activeVisit) return;
- isMidVisitUpdate = false;
- const _concludedIsTravel = state.activeVisit.isTravel || state.activeVisit.locationId === 'travel';
-
- processUploadQueue(buildPayload({
- 'action': 'logVisit',
- 'Alarm Status': 'DEPARTED',
- 'Template Name': '',
- 'Notes': 'No report required — direct departure.',
- 'Last Known GPS': lastGPS || '0,0'
- }));
-
- // Clean up session
- if (typeof stopGPSMonitoring === 'function') stopGPSMonitoring();
- state.activeVisit = null;
- state.selectedLocationId = null;
- state.visitDurationMinutes = 0;
- state.photoStore = {};
- // Reset per-trip no-report flag now that the trip is over.
- // Restore org default (mandatory) or worker's saved preference if org allows.
- state.travelNoReport = CONFIG.reqTravelReport ? false : !!(state.travelNoReportDefault);
- updateDurationDisplay();
- if (typeof travelTargetName !== 'undefined') travelTargetName = '';
- if (tickIntervalId) { clearInterval(tickIntervalId); tickIntervalId = null; }
- if (typeof travellingInterval !== 'undefined' && travellingInterval) {
- clearInterval(travellingInterval); travellingInterval = null;
- if (arrivedPulseInterval) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; }
- }
- stopWelfareChecks(); // dismiss any pending welfare modal and clear the schedule
- if (typeof exitLockedScreen === 'function') exitLockedScreen();
- saveState();
- navigate('main');
- renderLocations();
- announce(_concludedIsTravel ? 'Travel concluded.' : 'Visit concluded.');
- showToast('✅ Visit ended — departure recorded.');
-}
-
-function preDepart() {
- if (!state || !state.activeVisit) return;
- 
- // SAFETY GATE 1: Force PIN if an alarm is active
- if (getVisitPhase() === VISIT_PHASES.ALARMING) {
- showToast("⚠️ Clear alarm with PIN first");
- iamSafe(); 
- return;
- }
-
- // SAFETY GATE 2: Once the 2-minute warning has fired, a worker under
- // duress could be 'required' to end their visit before the alarm sounds.
- // Require the I Am Safe PIN from this point forward so a forced departure
- // cannot be made without the PIN being entered.
- if (getVisitPhase() === VISIT_PHASES.WARNING) {
- showToast("⚠️ Safety PIN required — alarm imminent");
- iamSafe();
- return;
- }
- 
- isMidVisitUpdate = false;
- const activeLocId = state.activeVisit.locationId;
- const isTravelSession = state.activeVisit.isTravel || activeLocId === 'travel'; // FIXED: Added isTravel flag check
-
- // 1. TRAVEL ROUTING: Handle travel sessions regardless of specific site selection
- if (isTravelSession) {
- // Per-trip flag lives in state so it auto-resets after each visit
- const noReport = !!(state && state.travelNoReport);
- 
- if (noReport) {
- // No report required for this travel session — depart directly.
- directDepart();
- return;
- }
-
- const btnDepart = document.getElementById('btnDepart');
- const _dLabel = document.getElementById('slideDepartLabel'); if (_dLabel) _dLabel.textContent = 'Please Wait — Getting GPS';
- 
- navigator.geolocation.getCurrentPosition(
- async (pos) => {
- const endGPS = `${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`;
- const startGPS = state.activeVisit.startGPS;
-
- // Seal the breadcrumb trail with the departure position.
- // Only append if it's meaningfully different from the last breadcrumb
- // (50 m threshold — same rule as _takeSingleGPSFix).
- const eLat = pos.coords.latitude, eLng = pos.coords.longitude;
- const trailLast = gpsTrail[gpsTrail.length - 1];
- if (!trailLast || _gpsHaversineMetres(trailLast.lat, trailLast.lng, eLat, eLng) > 50) {
- gpsTrail.push({ lat: eLat, lng: eLng });
- }
-
- if (startGPS && endGPS) {
- try {
- calculatedDist = await getDistance(startGPS, endGPS, gpsTrail);
- } catch (err) {
- const dist = haversine(startGPS, endGPS);
- calculatedDist = { km: dist.toFixed(2), type: 'crow', offline: true };
- }
- }
- updateDepartLabel();
- loadFormAndShow('Travel Report'); // Correctly loads Travel template
- },
- (err) => {
- updateDepartLabel();
- calculatedDist = null;
- loadFormAndShow('Travel Report');
- },
- { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
- );
- return; 
- }
-
- // 2. STANDARD LOOKUP: Only for regular site visits
- const location = state.locations.find(l => l.id === activeLocId);
- 
- if (!location) {
- showToast('⚠️ Location not found. Emergency end triggered.');
- loadFormAndShow('(Standard)');
- return;
- }
-
- if (location.noReport) {
- // No form required — send DEPARTED directly without going through
- // the full submitReport() form-validation pipeline.
- directDepart();
- return;
- } else {
- calculatedDist = null;
- loadFormAndShow(location.templateName || '(Standard)');
- }
-}
-
-// ============================================================================
-// VISIT LIFECYCLE STATE MACHINE
-// ============================================================================
-/**
- * Formal phase model for the visit lifecycle.
- *
- * Phases:
- * ACTIVE — visit running, within scheduled duration
- * WARNING — 2-minute pre-alarm warning has fired, alarm not yet triggered
- * ALARMING — alarm has fired (manual SOS, duress, or grace expiry)
- * CLOSED — worker has confirmed safe via PIN
- *
- * The null state (state.activeVisit === null) represents IDLE — no visit in
- * progress. Phase only exists while activeVisit is non-null.
- *
- * Legacy boolean flags (isPanic, criticalSent, isSafeConfirmed, warn2minSent)
- * are kept in sync by setVisitPhase() so existing code that reads them
- * continues to work without change.
- */
-const VISIT_PHASES = Object.freeze({
- ACTIVE: 'ACTIVE',
- WARNING: 'WARNING',
- ALARMING: 'ALARMING',
- CLOSED: 'CLOSED'
-});
-
-const VALID_PHASE_TRANSITIONS = Object.freeze({
- ACTIVE: ['WARNING', 'ALARMING'],
- WARNING: ['ALARMING', 'CLOSED', 'ACTIVE'], // ACTIVE on extend
- ALARMING: ['CLOSED', 'ACTIVE'], // ACTIVE on extend (PIN-gated)
- CLOSED: ['ACTIVE'] // ACTIVE on extend
-});
-
-/**
- * Transition the visit to a new phase.
- * Validates the transition, updates state.activeVisit.phase, syncs legacy
- * boolean flags, and returns true on success.
- * Does NOT call saveState() — callers are responsible, to allow flag
- * additions (e.g. isDuress) before the single save.
- */
-function setVisitPhase(newPhase) {
- if (!state || !state.activeVisit) {
- console.warn('[Phase] setVisitPhase called with no active visit');
- return false;
- }
-
- const current = state.activeVisit.phase || VISIT_PHASES.ACTIVE;
-
- if (current === newPhase) return true; // no-op
-
- const allowed = VALID_PHASE_TRANSITIONS[current];
- if (!allowed || !allowed.includes(newPhase)) {
- console.warn(`[Phase] Invalid transition: ${current} → ${newPhase} (ignored)`);
- return false;
- }
-
- state.activeVisit.phase = newPhase;
-
- // Keep legacy booleans in sync so existing consumers remain correct.
- switch (newPhase) {
- case VISIT_PHASES.ACTIVE:
- state.activeVisit.isPanic = false;
- state.activeVisit.isSafeConfirmed = false;
- state.activeVisit.criticalSent = false;
- break;
- case VISIT_PHASES.WARNING:
- state.activeVisit.warn2minSent = true;
- state.activeVisit.isPanic = false;
- state.activeVisit.isSafeConfirmed = false;
- break;
- case VISIT_PHASES.ALARMING:
- state.activeVisit.isPanic = true;
- state.activeVisit.criticalSent = true;
- state.activeVisit.isSafeConfirmed = false;
- break;
- case VISIT_PHASES.CLOSED:
- state.activeVisit.isSafeConfirmed = true;
- state.activeVisit.isPanic = false;
- state.activeVisit.isDuress = false;
- state.activeVisit.criticalSent = false;
- break;
- }
-
- console.log(`[Phase] ${current} → ${newPhase}`);
- return true;
-}
-
-/**
- * Returns the current visit phase, or null if no visit is active.
- * Falls back to deriving the phase from legacy flags for visits loaded
- * from state saved before the phase field was introduced.
- */
-function getVisitPhase() {
- if (!state || !state.activeVisit) return null;
-
- if (state.activeVisit.phase) return state.activeVisit.phase;
-
- // Migration: derive phase from legacy flags for pre-phase saved state.
- const v = state.activeVisit;
- if (v.isSafeConfirmed) return VISIT_PHASES.CLOSED;
- if (v.isPanic || v.criticalSent) return VISIT_PHASES.ALARMING;
- if (v.warn2minSent) return VISIT_PHASES.WARNING;
- return VISIT_PHASES.ACTIVE;
-}
-
-// ============================================================================
-// DEPART BUTTON LABEL
-// ============================================================================
-
-/**
- * Sets the depart button label and a small subtitle line to reflect whether
- * a report is required for the current visit. Called when the locked screen
- * opens and whenever noReport status changes (site info toggle, travel settings).
- */
-function updateDepartLabel() {
- const label = document.getElementById('slideDepartLabel');
- const sub = document.getElementById('slideDepartSub');
- if (!label) return;
-
- let noReport = false;
- if (state && state.activeVisit) {
- const isTravelSession = state.activeVisit.isTravel || state.activeVisit.locationId === 'travel';
- if (isTravelSession) {
- noReport = !!(state.travelNoReport);
- } else {
- const loc = state.locations.find(l => l.id === state.activeVisit.locationId);
- noReport = !!(loc && loc.noReport);
- }
- }
-
- if (noReport) {
- label.textContent = 'End Visit';
- if (sub) sub.textContent = 'No report — direct exit';
- } else {
- label.textContent = 'Proceed to Report';
- if (sub) sub.textContent = '📋 Complete your visit report next';
- }
-}
-
-// ============================================================================
-// ENTER LOCKED SCREEN
-// ============================================================================
-function enterLockedScreen() {
- navigate('locked');
-
- // Reset wake grace period so the dim timer always arms fresh for each new visit.
- // Without this, waking near the end of a previous visit suppresses dim for the
- // first 30s of the next visit.
- lastWakeTime = 0;
- 
- // PHASE 1: Initialize warning flags and anticipated departure time
- if (state && state.activeVisit) {
- // anticipatedDepartureTime should already be set by startVisit()
- // but fallback just in case
- if (!state.activeVisit.anticipatedDepartureTime) {
- const durationMs = (state.activeVisit.duration || 3600) * 1000;
- state.activeVisit.anticipatedDepartureTime = state.activeVisit.startTime + durationMs;
- }
- 
- // Initialize all warning flags
- if (state.activeVisit.warn5minSent === undefined) state.activeVisit.warn5minSent = false;
- if (state.activeVisit.warn2minSent === undefined) state.activeVisit.warn2minSent = false;
- if (state.activeVisit.warn90Sent === undefined) state.activeVisit.warn90Sent = false;
- if (state.activeVisit.warningSent === undefined) state.activeVisit.warningSent = false;
- if (state.activeVisit.criticalSent === undefined) state.activeVisit.criticalSent = false;
- 
- // Set location name in header
- const locNameEl = document.getElementById('lockedLocationName');
- if (locNameEl) {
- locNameEl.innerText = state.activeVisit.locationName || 'Unknown';
- }
- 
- saveState();
- }
- 
- // Setup long-press handlers for buttons
- // (Depart pill is wired once at startup via initAllActionPills)
- updateDepartLabel(); // Set label + report/no-report subtitle
- 
- const btnExtend = document.getElementById('btnExtend');
- if (btnExtend) setupLongPress(btnExtend, 1500, () => showModal('extend'));
- 
- const btnSafe = document.getElementById('btnSafe');
- if (btnSafe) setupLongPress(btnSafe, 1500, iamSafe);
- 
- // Start the countdown timer. Always clear first to avoid duplicate intervals,
- // then start fresh. The old timerInt guard caused tick() to never start
- // on the app-restore path where timerInt was already set.
- if (tickIntervalId) clearInterval(tickIntervalId);
- tickIntervalId = setInterval(tick, TICK_NORMAL);
- tick(); // Immediate first tick so the display is right straight away
- 
- // Acquire wake lock for the duration of the visit. This prevents the OS from
- // automatically applying its own lock screen while a visit is active.
- // Released in exitLockedScreen() when the visit ends.
- // Note: WakeLock is automatically released when the page is hidden; the
- // visibilitychange handler re-acquires it when the page returns to the foreground.
- if (typeof requestWakeLock === 'function') requestWakeLock();
-
- startWelfareChecks(); // Only fires if CONFIG.checkinEnabled — no-op otherwise
- 
- // Update welfare badge on locked screen
- if (CONFIG.checkinEnabled && state && state.activeVisit) {
- const mins = state.activeVisit.checkinIntervalMins || CONFIG.checkinInterval || 60;
- const badge = document.getElementById('welfareBadge');
- const minsEl = document.getElementById('welfareBadgeMins');
- if (badge && minsEl) {
- minsEl.textContent = mins >= 60 ? `${mins / 60}hr` : `${mins}m`;
- badge.classList.remove('hidden');
- }
- }
- 
- _lockOrientation(); // Prevent landscape rotation for the duration of the visit
-}
-
-/**
- * MISSION-CRITICAL: Safety Trigger Engine
- * Logic: Distinguishes between audible SOS and stealth Duress.
- */
-async function triggerPanic(duress = false) {
- // GUARD: Prevent a second duress/panic from firing while one is already active.
- // This stops repeated shakes (while thinking it failed) from queuing multiple alerts.
- if (duress && state?.activeVisit?.isDuress) {
- console.log('Duress already active — ignoring repeat trigger.');
- return;
- }
- if (!duress && state?.activeVisit?.isPanic && !state?.activeVisit?.isDuress) {
- console.log('Panic already active — ignoring repeat trigger.');
- return;
- }
-
- // GPS PRE-CAPTURE: Get a fresh fix BEFORE calling logSafety.
- // For site visits lastGPS is null (cleared at visit start because the site
- // address is the authoritative location). The adaptive GPS monitor fires
- // getCurrentPosition asynchronously and may not resolve for several seconds —
- // by which point logSafety has already sent "0,0" to the backend.
- // Awaiting a direct getCurrentPosition here ensures we have real coordinates
- // in the alert. 5-second timeout keeps UX snappy; failure falls through
- // gracefully to whatever lastGPS currently holds.
- await new Promise(resolve => {
- navigator.geolocation.getCurrentPosition(
- pos => {
- lastGPS = `${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`;
- resolve();
- },
- () => resolve(), // timeout / denied — lastGPS unchanged, alert still sends
- { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
- );
- });
-
- // Start continuous GPS monitoring for ongoing location pulses
- if (gpsWatchId === null && typeof startGPSMonitoring === 'function') startGPSMonitoring();
- // Force minimum poll interval regardless of current adaptive value — the
- // worker may be stationary (and in distress), so movement-based adaptation
- // would incorrectly back off. Pin to 2-minute minimum for alarm duration.
- gpsCurrentIntervalMs = GPS_MIN_INTERVAL_MS;
- 
- // 1. DURESS (SILENT) LOGIC
- if (duress) {
- // KILL LOUD ALARMS: Physically stop red flash, strobes, and speech
- document.body.classList.remove('bg-red-900', 'panic-mode', 'strobe-active');
- if (window.speechSynthesis) window.speechSynthesis.cancel();
- 
- // DECEPTION: Show a standard 'Reset' toast for 10 seconds
- showToast("✅ System Reset Successful", 10000); 
- console.log("SILENT DURESS: UI remains normal but backend alerted.");
- } 
- // 2. PANIC (LOUD) LOGIC
- else {
- document.body.classList.add('bg-red-900', 'panic-mode', 'strobe-active');
- announce("Panic alarm activated.");
- 
- // Audio escalation
- await initAudio();
- if (audioReady && synth) {
- try { synth.triggerAttackRelease('C4', '8n'); } catch (e) {}
- }
- }
- 
- // 3. BACKEND LOGGING
- await logSafety(duress ? "DURESS" : "PANIC", duress ? "Silent duress alert — triggered via Shake to Alert." : "Manual SOS");
- 
- if (state && state.activeVisit) {
- setVisitPhase(VISIT_PHASES.ALARMING);
- if (duress) state.activeVisit.isDuress = true;
- saveState();
- }
-
- // 4. UI STACK CLEANUP
- closeModal('pin'); // Ensure the PIN pad is gone
- closeModal('notice'); 
- closeModal('resourceHub');
- 
- // Switch to the Panic UI only for loud mode
- if (!duress) {
- renderPanicState();
- // Show direct email + call buttons — independent of the backend,
- // covers the case where the GAS script fails to dispatch the alert.
- _showAlarmButtons();
- }
-}
-
-/**
- * RE-ENGINEERED: iamSafe with Automated Contact Notification
- * Logic: Clears UI alarm state and notifies backend to send "All Clear" alerts.
- */
-function iamSafe() {
- if (!state || !state.activeVisit) return;
- 
- // 1. PIN VERIFICATION: Required to prevent accidental or forced clearance
- withPinVerification(false, () => {
- const alarmWasFired = !!(state.activeVisit && state.activeVisit.isPanic);
-
- // Voice feedback — only mention contacts if the alarm actually went out
- announce(alarmWasFired ? "Safety confirmed. Notifying contacts." : "Safety confirmed.");
-
- // 2. TRIGGER BACKEND RESOLUTION — only if alarm genuinely fired.
- // If we are in the 2-minute warning window but no alarm has been sent,
- // there is nothing for contacts to be notified about.
- if (alarmWasFired) {
- const payload = buildPayload({
- 'action': 'notifySafety',
- 'Alarm Status': 'USER_SAFE_CONFIRMED',
- 'Notes': 'Worker has manually entered PIN to confirm they are safe.'
- });
- processUploadQueue(payload);
- }
-
- // 3. AUDIT TRAIL: Standard log entry for the spreadsheet
- logSafety("USER_SAFE", "Worker entered PIN to cancel alarm state.");
- 
- // 4. STATE MANAGEMENT: Transition to CLOSED phase (syncs legacy flags)
- setVisitPhase(VISIT_PHASES.CLOSED);
- saveState();
- 
- // 5. UI VISUAL RESET: Remove high-urgency styling
- const lockedPage = document.getElementById('lockedPage');
- if (lockedPage) lockedPage.classList.remove('panic-mode');
- document.body.classList.remove('bg-red-900');
- document.body.classList.remove('strobe-active');
- 
- // 6. BUTTON INTERFACE RESET: Restore standard visit controls
- const btnSafe = document.getElementById('btnSafe');
- const btnDepart = document.getElementById('btnDepart');
- const btnExtend = document.getElementById('btnExtend');
- const btnDirect = document.getElementById('btnDirectAlert');
- const btnCall = document.getElementById('btnCallICE');
- if (btnSafe) btnSafe.classList.add('hidden');
- if (btnDepart) btnDepart.classList.remove('hidden');
- if (btnExtend) btnExtend.classList.remove('hidden');
- if (btnDirect) btnDirect.classList.add('hidden');
- if (btnCall) btnCall.classList.add('hidden');
- 
- showToast("✅ Safety status confirmed");
- });
-}
-/**
- * RE-ENGINEERED: High-Integrity Safety Heartbeat
- * Logic: 5m Vibration, 2m Verbal Alarm, Negative Counter, and 15m Grace Period.
- */
-/**
- * THE MASTER HEARTBEAT: Unified Safety Engine
- * Logic: Manages UI Throttling, Battery Safety, Warning Escalations, and Grace Periods.
- */
-/**
- * Formats a number of seconds into a readable countdown string.
- * Under 60 minutes: MM:SS e.g. "14:32"
- * 60 minutes or more: Xh Ym e.g. "2h 15m"
- * Prepends "-" when overdue.
- */
-function formatCountdown(totalSeconds) {
- const sign = totalSeconds < 0 ? '-' : '';
- const abs = Math.abs(totalSeconds);
- if (abs >= 3600) {
- const h = Math.floor(abs / 3600);
- const m = Math.floor((abs % 3600) / 60);
- return sign + h + 'h ' + m + 'm';
- }
- const m = Math.floor(abs / 60);
- const s = Math.floor(abs % 60);
- return sign + m + ':' + String(s).padStart(2, '0');
-}
-
-function tick() {
- if (!state || !state.activeVisit) return;
-
- // 1. CORE SAFETY TASKS (Always run regardless of UI state)
- checkBatterySafety(); 
- const now = Date.now();
- const remaining = state.activeVisit.duration - (now - state.activeVisit.startTime) / 1000;
- const diffMins = (state.activeVisit.anticipatedDepartureTime - now) / 60000;
- 
- // Capture state for the battery saver HUD
- state.timerDisplay = formatCountdown(remaining);
-
- // 2. UI THROTTLE BRANCH
- // If Battery Saver is active, update the HUD and EXIT early to save GPU/CPU.
- // Use the batterySaver element itself as the state indicator - mainContent
- // does not exist in this build and caused a TypeError that silently killed tick().
- // WARNING ESCALATION (Pre-Expiry)
- // These MUST run before any early-return branches — the battery saver screen
- // is active when the phone goes idle, which is exactly when warnings are most
- // likely to be needed. Vibration and speech work fine behind the saver overlay.
- // ── WARNING TIMING ─────────────────────────────────────────────────────────
- // Critical Timing Mode: warn 5 and 2 minutes BEFORE the timer hits zero
- // (high-stakes visits where every minute counts)
- // Normal Mode: warn 5 and 2 minutes BEFORE THE ALARM fires
- // (i.e. 5 and 2 mins before end of grace period — not before timer hits 0)
- const escMins = CONFIG.escalationMinutes || 15;
- const isHighRiskActive = state.activeVisit.highRisk || false;
-
- // Detection windows are 0.6 min (36s) wide — safely wider than TICK_SAVER (30s)
- // so warnings are never skipped when the battery saver throttles the tick rate.
- if (isHighRiskActive) {
- // Critical Timing Mode — early warnings while timer is still counting down
- if (remaining > 0) {
- if (diffMins <= 5 && diffMins > 4.4 && !state.activeVisit.warn5minSent) {
- if (navigator.vibrate) navigator.vibrate([1000, 200, 1000, 200, 1000, 200, 1000]);
- state.activeVisit.warn5minSent = true;
- saveState();
- }
- if (diffMins <= 2 && diffMins > 1.4 && !state.activeVisit.warn2minSent) {
- if (navigator.vibrate) navigator.vibrate([1000, 200, 1000, 200, 1000, 200, 1000]);
- speakWarning("Warning. Safety alarm will activate in two minutes.");
- setVisitPhase(VISIT_PHASES.WARNING);
- saveState();
- // Pre-arm GPS so a fix is ready when the alarm fires
- if (typeof startGPSMonitoring === 'function') startGPSMonitoring();
- }
- }
- } else {
- // Normal Mode — warn only during grace period, approaching alarm fire time
- // warn5: 5 mins before alarm (= escMins-5 mins into grace period)
- // warn2: 2 mins before alarm (= escMins-2 mins into grace period)
- if (remaining <= 0) {
- const minsOverdue = Math.abs(diffMins); // positive = how far into grace period
- if (minsOverdue >= (escMins - 5) && minsOverdue < (escMins - 4.4) && !state.activeVisit.warn5minSent) {
- if (navigator.vibrate) navigator.vibrate([1000, 200, 1000, 200, 1000, 200, 1000]);
- state.activeVisit.warn5minSent = true;
- saveState();
- }
- if (minsOverdue >= (escMins - 2) && minsOverdue < (escMins - 1.4) && !state.activeVisit.warn2minSent) {
- if (navigator.vibrate) navigator.vibrate([1000, 200, 1000, 200, 1000, 200, 1000]);
- speakWarning("Warning. Safety alarm will activate in two minutes.");
- setVisitPhase(VISIT_PHASES.WARNING);
- saveState();
- // Pre-arm GPS now so a fix is ready when the alarm fires
- if (typeof startGPSMonitoring === 'function') startGPSMonitoring();
- }
- }
- }
-
- if (isBatterySaverActive) {
- updateBatterySaverHUD();
- if (remaining <= 0) {
- // GPS PUSH: fires at grace period start and every 5 minutes — runs behind battery saver.
- if (!state.activeVisit.overdueGpsSent) {
- if (typeof startGPSMonitoring === 'function') startGPSMonitoring();
- processUploadQueue(buildPayload({
- 'Alarm Status': 'OVERDUE',
- 'Notes': 'Worker is overdue. GPS tracking active.',
- 'Last Known GPS': typeof lastGPS !== 'undefined' ? lastGPS : "0,0"
- }));
- state.activeVisit.overdueGpsSent = true;
- saveState();
- if (!arrivedPulseInterval) {
- arrivedPulseInterval = setInterval(() => {
- if (!state || !state.activeVisit) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; return; }
- processUploadQueue(buildPayload({
- 'Alarm Status': 'OVERDUE',
- 'Last Known GPS': typeof lastGPS !== 'undefined' ? lastGPS : "0,0"
- }));
- }, 5 * 60 * 1000);
- }
- }
- // Still check for 15m expiry in background.
- // isSafeConfirmed guard prevents re-triggering after worker clears the alarm.
- if (Math.abs(diffMins) >= 15 &&
- !state.activeVisit.criticalSent && !state.activeVisit.isSafeConfirmed) {
- triggerGraceExpiryAlarm();
- }
- }
- return; 
- }
-
- // 3. FULL UI REFRESH (Standard Mode)
- const gpsIndicator = document.getElementById('gpsIndicator');
- if (gpsIndicator) {
- gpsIndicator.classList.toggle('gps-pulse', state.activeVisit.locationId === 'travel');
- }
-
- // OVERDUE & GRACE PERIOD UI
- const timerEl = document.getElementById('countdownTimer');
- const overdueLabel = document.getElementById('overdueLabel');
- const anticipatedTimeEl = document.getElementById('lockedAnticipatedTime');
-
- if (remaining <= 0) {
- const isAlarmed = state.activeVisit.criticalSent;
-
- if (overdueLabel) overdueLabel.classList.remove('hidden');
- if (timerEl) {
- timerEl.textContent = formatCountdown(remaining);
- timerEl.classList.add('text-red-500', 'animate-pulse');
- }
- 
- // 15-MINUTE GRACE EXPIRY CHECK
- // isSafeConfirmed prevents re-triggering on every tick after the worker
- // clears the alarm — without it, resetting criticalSent in iamSafe()
- // causes an immediate re-fire, creating an infinite alarm loop.
- if (Math.abs(diffMins) >= 15 && !isAlarmed && !state.activeVisit.isSafeConfirmed) {
- triggerGraceExpiryAlarm();
- }
-
- // BUTTON VISIBILITY
- const btnSafe = document.getElementById('btnSafe');
- const btnDepart = document.getElementById('btnDepart');
- const btnExtend = document.getElementById('btnExtend');
-
- if (isAlarmed) {
- if (btnSafe) btnSafe.classList.remove('hidden');
- if (btnDepart) btnDepart.classList.add('hidden');
- } else {
- if (btnSafe) btnSafe.classList.add('hidden');
- if (btnDepart) btnDepart.classList.remove('hidden');
- }
- } else {
- // NORMAL UI STATE
- if (overdueLabel) overdueLabel.classList.add('hidden');
- if (timerEl) {
- timerEl.textContent = formatCountdown(remaining);
- timerEl.classList.remove('text-red-500', 'animate-pulse');
- }
- if (document.getElementById('btnSafe')) document.getElementById('btnSafe').classList.add('hidden');
- if (document.getElementById('btnDepart')) document.getElementById('btnDepart').classList.remove('hidden');
- }
-
- // UPDATE ANTICIPATED TIME
- if (state.activeVisit.anticipatedDepartureTime && anticipatedTimeEl) {
- const antTime = new Date(state.activeVisit.anticipatedDepartureTime);
- anticipatedTimeEl.innerText = antTime.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', hour12: true});
- }
-}
-
-/**
- * Audio context warm-up. Must be called during a user gesture to satisfy
- * browser autoplay policies — particularly important on iOS where the audio
- * context starts suspended and silent beeps result if not pre-unlocked.
- * Safe to call multiple times; Tone ignores subsequent calls if already running.
- */
-function _warmAudio() {
- if (typeof Tone !== 'undefined') {
- return Tone.start().catch(e => console.warn('[Audio] Warm-up deferred:', e.message));
- }
- return Promise.resolve();
-}
-
-// ============================================================================
-// ENHANCED RENDER LOCATIONS (Layout Corrected)
-// ============================================================================
-function renderLocations() {
- const list = document.getElementById('locationList');
- const travelRow = document.getElementById('travelRow');
- const searchRow = document.getElementById('siteSearchRow');
-
- if (!list || !travelRow) {
- console.error('UI Error: Location containers missing.');
- return;
- }
-
- list.innerHTML = '';
- travelRow.innerHTML = '';
-
- // ── 1. Travel tile ───────────────────────────────────────────────────────
- if (CONFIG.mileageEnabled) {
- travelRow.classList.remove('hidden');
- travelRow.appendChild(createTravelTile());
- } else {
- travelRow.classList.add('hidden');
- }
-
- // ── 2. Filter to named sites ─────────────────────────────────────────────
- const sites = state.locations.filter(loc => loc && loc.id !== 'travel' && loc.name !== '_travel');
-
- if (sites.length === 0) {
- if (searchRow) searchRow.classList.add('hidden');
- list.className = 'col-span-2';
- const empty = document.createElement('div');
- empty.className = 'p-12 text-center';
- empty.innerHTML = `
- <div class="text-4xl mb-4 opacity-20">📡</div>
- <p class="text-xs font-bold text-blue-300 tracking-widest mb-4">No Sites Synced</p>
- <button onclick="forceSync(true)" class="px-6 py-3 bg-blue-600 rounded-xl font-bold text-sm shadow-lg">
- Download Sites Now
- </button>
- `;
- list.appendChild(empty);
- updateArrivedButtonState();
- return;
- }
-
- // ── 3. Decide layout ─────────────────────────────────────────────────────
- // ≤6 → 2-col card grid (unchanged)
- // 7–15 → compact list, no search
- // 16+ → compact list + search bar
- const count = sites.length;
- const useList = count > 6;
- const showSearch = count > 15;
-
- if (searchRow) searchRow.classList.toggle('hidden', !showSearch);
-
- // ── 4. Sort: last-visited first, then alphabetical ───────────────────────
- const lastId = state.lastVisitedLocationId;
- const searchTerm = showSearch
- ? (document.getElementById('siteSearch')?.value || '').toLowerCase().trim()
- : '';
-
- const sorted = [...sites].sort((a, b) => {
- if (a.id === lastId && b.id !== lastId) return -1;
- if (b.id === lastId && a.id !== lastId) return 1;
- return (a.name || '').localeCompare(b.name || '');
- });
-
- // ── 5. Apply search filter (only active at 16+) ──────────────────────────
- const visible = searchTerm
- ? sorted.filter(loc =>
- (loc.name || '').toLowerCase().includes(searchTerm) ||
- (loc.companyName || '').toLowerCase().includes(searchTerm) ||
- (loc.address || '').toLowerCase().includes(searchTerm))
- : sorted;
-
- // ── 6. Render ────────────────────────────────────────────────────────────
- if (useList) {
- list.className = 'flex flex-col gap-1.5';
- if (visible.length === 0) {
- const none = document.createElement('div');
- none.className = 'py-8 text-center text-xs font-bold text-gray-500 tracking-widest';
- none.textContent = 'No sites match your search.';
- list.appendChild(none);
- } else {
- visible.forEach(loc => list.appendChild(createLocationRow(loc)));
- }
- } else {
- list.className = 'grid grid-cols-2 gap-3';
- visible.forEach(loc => list.appendChild(createLocationTile(loc)));
- }
-
- updateArrivedButtonState();
-}
-// ============================================================================
-// WIZARD NAVIGATION
-// ============================================================================
-function startWizard() {
- // Show setup page
- const setupPage = document.getElementById('setupPage');
- if (setupPage) setupPage.classList.add('active');
- 
- // Hide all other pages
- document.querySelectorAll('.page').forEach(p => {
- if (p.id !== 'setupPage') p.classList.remove('active');
- });
- 
- // Reset to step 1
- state.currentWizStep = 1;
- 
- // Hide all wizard steps
- document.querySelectorAll('[id^="wizStep"]').forEach(step => {
- step.classList.remove('active');
- });
- 
- // Show step 1
- const step1 = document.getElementById('wizStep1');
- if (step1) step1.classList.add('active');
- 
- // Reset buttons
- const btnPrev = document.getElementById('btnWizPrev');
- const btnNext = document.getElementById('btnWizNext');
- if (btnPrev) btnPrev.classList.add('hidden');
- if (btnNext) btnNext.classList.remove('hidden');
- 
- console.log('Wizard started');
-}
-
-function prevWiz() {
- if (!state || state.currentWizStep <= 1) return;
- 
- document.getElementById(`wizStep${state.currentWizStep}`).classList.remove('active');
- state.currentWizStep--;
- document.getElementById(`wizStep${state.currentWizStep}`).classList.add('active');
- 
- const btnPrev = document.getElementById('btnWizPrev');
- const btnNext = document.getElementById('btnWizNext');
- 
- if (state.currentWizStep === 1 && btnPrev) btnPrev.classList.add('hidden');
- if (btnNext) btnNext.innerText = "Next Step";
- 
- saveState();
-}
-
-function nextWiz() {
- if (!state) return;
- 
- // Step 2: block advancement until both PIN pairs match and are non-identical
- if (state.currentWizStep === 2) {
- const pin = document.getElementById('wizPin').value;
- const pinC = document.getElementById('wizPinConfirm').value;
- const dur = document.getElementById('wizDuress').value;
- const durC = document.getElementById('wizDuressConfirm').value;
- if (pin.length < 4 || dur.length < 4 || pin !== pinC || dur !== durC) {
- checkWizPinMatch(); // Ensure error message is showing
- return;
- }
- }
-
- if (state.currentWizStep < 3) {
- document.getElementById(`wizStep${state.currentWizStep}`).classList.remove('active');
- state.currentWizStep++;
- document.getElementById(`wizStep${state.currentWizStep}`).classList.add('active');
- 
- const btnPrev = document.getElementById('btnWizPrev');
- const btnNext = document.getElementById('btnWizNext');
- 
- if (state.currentWizStep === 2 && btnPrev) btnPrev.classList.remove('hidden');
- if (state.currentWizStep === 3 && btnNext) btnNext.innerText = "Finish Setup";
- 
- saveState();
- } else {
- saveWizard();
- }
-}
-
-/**
- * FULL INTEGRATION: Identity Save + UI Initialization + Backend Registration
- */
-async function saveWizard() {
- const workerData = {
- name: document.getElementById('wizName').value.trim(),
- phone: document.getElementById('wizPhone').value.trim(),
- email: document.getElementById('wizEmail').value.trim(),
- pin: document.getElementById('wizPin').value,
- duress: document.getElementById('wizDuress').value,
- emgName: document.getElementById('wizContactName').value.trim(),
- emgPhone: document.getElementById('wizContactPhone').value.trim(),
- emgEmail: document.getElementById('wizContactEmail').value.trim(),
- emgNtfy: document.getElementById('wizContactNtfy').value.trim(),
- escName: document.getElementById('wizEscName').value.trim(),
- escPhone: document.getElementById('wizEscPhone').value.trim(),
- escEmail: document.getElementById('wizEscEmail').value.trim(),
- escNtfy: document.getElementById('wizEscNtfy').value.trim()
- };
- 
- if (!workerData.name || !workerData.pin || !workerData.duress) {
- return alert("Please complete Name and Security PINs to proceed.");
- }
-
- // 1. Persist identity locally
- state.worker = workerData;
- state.pins.std = workerData.pin;
- state.pins.duress = workerData.duress;
- if (!state.deviceId) state.deviceId = getDeviceID();
- saveState();
-
- // 2. REGISTRATION: Must succeed before the wizard completes.
- // Uses a direct fetch (not the upload queue) so we can read the response.
- // Skips check if CONFIG not yet populated (key too short).
- if (CONFIG.key && CONFIG.key.length >= 3 && CONFIG.url && CONFIG.url.length >= 10) {
- const btnNext = document.getElementById('btnWizNext');
- if (btnNext) { btnNext.disabled = true; btnNext.textContent = 'Registering…'; }
-
- const regPayload = {
- 'action': 'registerDevice',
- 'key': CONFIG.key,
- 'Worker Name': workerData.name,
- 'Worker Phone Number': workerData.phone,
- 'Worker Email': workerData.email,
- 'Emergency Contact Name': workerData.emgName,
- 'Emergency Contact Phone': workerData.emgPhone,
- 'Emergency Contact Email': workerData.emgEmail,
- 'Emergency Contact Ntfy': workerData.emgNtfy,
- 'Escalation Contact Name': workerData.escName,
- 'Escalation Contact Phone': workerData.escPhone,
- 'Escalation Contact Email': workerData.escEmail,
- 'Escalation Contact Ntfy': workerData.escNtfy,
- 'deviceId': state.deviceId,
- 'Timestamp': new Date().toISOString()
- };
-
- try {
- const response = await fetch(CONFIG.url, {
- method: 'POST',
- headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
- body: new URLSearchParams(regPayload).toString()
- });
- const data = await response.json();
-
- if (data.status === 'device_denied') {
- // Hard block: this worker name is bound to a different physical device.
- if (btnNext) { btnNext.disabled = false; btnNext.textContent = 'Finish Setup'; }
- alert(
- '🔒 Device Not Authorised\n\n' +
- (data.message || 'This worker account is already registered on a different device.') +
- '\n\nContact your administrator to release the device binding.'
- );
- return; // Do NOT navigate away — wizard stays open
- }
-
- if (data.status === 'error') {
- // Worker name not in Staff list, or sheet missing
- if (btnNext) { btnNext.disabled = false; btnNext.textContent = 'Finish Setup'; }
- alert('❌ Registration Failed\n\n' + (data.message || 'Unknown error. Check your name matches the staff list exactly.'));
- return;
- }
-
- // status === 'success' — device is now registered
- if (btnNext) { btnNext.disabled = false; btnNext.textContent = 'Finish Setup'; }
-
- } catch (err) {
- // Network failure — warn but allow offline first-time setup
- console.warn('Registration request failed (offline?):', err);
- if (btnNext) { btnNext.disabled = false; btnNext.textContent = 'Finish Setup'; }
- showToast('⚠️ Could not reach server — registration will retry on next sync.');
- }
- }
-
- announce(`Welcome ${workerData.name}. Device registered.`);
-
- // Reset verification flag — wizard re-run means contacts may have changed.
- state.setupVerified = false;
- saveState();
-
- // 3. UI Initialisation
- renderLocations();
- setupHoldToStart();
- updateArrivedButtonState();
-
- // Warm up the audio context on this confirmed user gesture so Tone.js is
- // ready before the first visit — avoids silent beeps on iOS.
- _warmAudio();
-
- navigate('main');
- showVerificationCard();
-
- // 4. Sync metadata now that we're registered
- setTimeout(() => { forceSync(false); }, 500);
-}
-
-// ============================================================================
-// INSTALL PROMPTS
-// ============================================================================
-function checkIosInstall() {
- const isIos = /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase());
- 
- // Use standard display-mode check with iOS fallback
- const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
- window.navigator.standalone === true ||
- document.referrer.includes('android-app://');
- 
- if (isIos && !isStandalone && !localStorage.getItem('otg_install_dismissed')) {
- const modal = document.getElementById('iosInstallModal');
- if (modal) modal.classList.remove('hidden');
- }
-}
-
-// ============================================================================
-// PWA SETUP
-// ============================================================================
-if ('serviceWorker' in navigator) {
- navigator.serviceWorker.register('sw.js')
- .then(registration => {
- console.log('Service Worker registered:', registration.scope);
-
- // Poll for SW updates every 30 minutes — 60s caused ~1,440 background
- // network requests per day for no benefit. Workers are unlikely to need
- // a mid-shift update; 30 min still gives same-day rollout on shift start.
- setInterval(() => registration.update(), 30 * 60 * 1000);
-
- registration.addEventListener('updatefound', () => {
- const newWorker = registration.installing;
- newWorker.addEventListener('statechange', () => {
- // New SW installed and waiting — tell it to activate immediately
- if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
- newWorker.postMessage({ type: 'SKIP_WAITING' });
- }
- });
- });
- })
- .catch(err => {
- console.error('Service Worker registration failed:', err);
- });
-
- // When the new SW takes control, reload once to serve the fresh index.html
- let refreshing = false;
- navigator.serviceWorker.addEventListener('controllerchange', () => {
- if (!refreshing) {
- refreshing = true; // guard against double-reload loop
- window.location.reload();
- }
- });
-}
-
-// ============================================================================
-// INSTALL PROMPTS (PC & Android)
-// ============================================================================
-window.addEventListener('beforeinstallprompt', e => {
- // 1. Prevent the default mini-infobar from appearing
- e.preventDefault();
- 
- // 2. Stash the event so it can be triggered by your button
- deferredPrompt = e;
- 
- // 3. Show your custom banner if the user hasn't dismissed it previously
- if (!localStorage.getItem('install_dismissed')) {
- const banner = document.getElementById('installBanner');
- if (banner) banner.classList.remove('hidden');
- }
-});
-// ============================================================================
-// CLEANUP ON UNLOAD
-// ============================================================================
-window.addEventListener('beforeunload', () => {
- stopGPSMonitoring();
- stopWelfareChecks();
- if (travellingInterval) clearInterval(travellingInterval);
- if (arrivedPulseInterval) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; }
- if (tickIntervalId) clearInterval(tickIntervalId);
-});
-
-// ============================================================================
-// QUICK WINS: DURATION SLIDER, FORMS BUTTON, HOLD TO START, TRAVEL TILE
-// ============================================================================
-
-// Reset duration UI — clears button highlights and Due display.
-// Called wherever duration state is zeroed (visit end, travel tile deselect).
-function updateDurationDisplay() {
- document.querySelectorAll('.dur-btn').forEach(b => {
- b.classList.remove('bg-blue-600', 'text-white', 'border-blue-500');
- b.classList.add('bg-gray-700/50', 'text-gray-400', 'border-gray-600');
- });
- const due = document.getElementById('durationDue');
- if (due) due.textContent = '';
-}
-
-function setQuickDuration(mins) {
- // Store as state source-of-truth
- state.visitDurationMinutes = mins;
-
- // Update Due time display
- const due = document.getElementById('durationDue');
- if (due) {
- const dueTime = new Date(Date.now() + mins * 60000);
- due.textContent = 'Due: ' + dueTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', hour12: true});
- }
-
- // Highlight selected button, clear others
- document.querySelectorAll('.dur-btn').forEach(b => {
- b.classList.remove('bg-blue-600', 'text-white', 'border-blue-500');
- b.classList.add('bg-gray-700/50', 'text-gray-400', 'border-gray-600');
- });
- const match = [...document.querySelectorAll('.dur-btn')].find(b =>
- b.getAttribute('onclick')?.includes(`(${mins})`));
- if (match) {
- match.classList.remove('bg-gray-700/50', 'text-gray-400', 'border-gray-600');
- match.classList.add('bg-blue-600', 'text-white', 'border-blue-500');
- }
-
- updateArrivedButtonState();
- if (navigator.vibrate) navigator.vibrate(15);
-}
- 
-/**
- * Renders the Forms Library in a Two-Column Grid.
- */
-function openFormsLibrary() {
- // Forms Library always treats an active visit as a mid-visit update.
- // The depart pill is the only legitimate path to end a visit.
- isMidVisitUpdate = (state.activeVisit !== null);
- 
- const list = document.getElementById('formsLibraryList');
- if (!list) return;
-
- list.innerHTML = '';
- const forms = state.globalForms || [];
-
- if (forms.length === 0) {
- list.innerHTML = '<div class="p-8 text-center opacity-40 text-xs font-bold tracking-widest">No templates available.</div>';
- } else {
- list.className = "grid grid-cols-2 gap-3 overflow-y-auto pr-2";
- forms.forEach(form => {
- const row = document.createElement('div');
- row.className = 'p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center justify-center text-center active:scale-95 transition-all aspect-square';
- 
- let icon = "📋";
- if (form.name.toLowerCase().includes('vehicle')) icon = "🚗";
- if (form.name.toLowerCase().includes('audit')) icon = "🔍";
- if (form.name.toLowerCase().includes('incident')) icon = "⚠️";
-
- row.innerHTML = `
- <div class="text-3xl mb-2">${icon}</div>
- <div class="text-sm font-extrabold tracking-tight leading-tight" style="color:var(--text-on-primary)">${escapeHtml(form.name)}</div>
- <div class="text-xs text-blue-400 font-bold mt-1">${form.questions.length} Checks</div>
- `;
- 
- // FIXED: Now calls loadFormAndShow to ensure the Submit button is active
- row.onclick = () => {
- closeModal('formsLibrary');
- loadFormAndShow(form.name);
- };
- list.appendChild(row);
- });
- }
- showModal('formsLibrary');
-}
-// Toggle high-risk/critical timing mode
-function toggleHighRiskUI() {
- const checkbox = document.getElementById('chkHighRisk');
- if (!checkbox) return;
- 
- if (checkbox.checked) {
- showToast('⚡ Critical timing mode ON - Zero grace period');
- } else {
- showToast('✅ Critical timing mode OFF');
- }
- 
- // Store preference
- if (state) {
- state.highRiskMode = checkbox.checked;
- saveState();
- }
-}
-
-/**
- * Travel Tile: Toggles Travel Mode.
- * Info button (only visible when tile is selected) opens the travel settings panel.
- */
-function createTravelTile() {
- const isActive = state && state.isTravelActive;
- // Per-trip toggle lives in state so it resets automatically after each visit
- const noReport = !!(state && state.travelNoReport);
-
- const tile = document.createElement('div');
- tile.className = [
- 'w-full h-14 rounded-xl shadow-lg flex items-center justify-between px-4',
- 'cursor-pointer transition-all border-2',
- isActive ? 'border-white scale-[1.02]' : 'border-gray-700 hover:border-white/20'
- ].join(' ');
- // Gradient uses theme vars: surface → accent, so it looks right across all colour schemes
- tile.style.background = `linear-gradient(to right, var(--surface), var(--accent))`;
- if (isActive) tile.style.boxShadow = '0 0 0 2px var(--accent)';
-
- tile.innerHTML = `
- <div class="flex items-center gap-2">
- <div class="text-xl">🚗</div>
- <div>
- <div class="text-sm font-bold text-white tracking-tight leading-none">Travel Mode</div>
- <div class="text-sm text-indigo-100 font-bold mt-0.5">${noReport ? 'Personal travel – no report' : 'Report required'}</div>
- </div>
- </div>
- ${isActive ? `<button class="text-indigo-200 hover:text-white p-1 -mr-1 z-20 text-xl"
- aria-label="Travel settings"
- onclick="openTravelSettings(event)">ℹ️</button>` : ''}
- `;
-
- tile.onclick = (e) => {
- // Don't toggle when the info button is tapped
- if (e.target.closest('button')) return;
- state.isTravelActive = !state.isTravelActive;
- // Reset per-trip no-report flag when deselecting
- if (!state.isTravelActive) state.travelNoReport = false;
- state.visitDurationMinutes = 0;
- updateDurationDisplay();
- renderLocations();
- updateArrivedButtonState();
- };
- return tile;
-}
-
- 
-/**
- * UPDATED: Location Tile with Information Button
- */
-function createLocationTile(loc) {
- const isSel = state && state.selectedLocationId === loc.id;
- const isCritical = loc.isCritical || false;
- 
- const tile = document.createElement('div');
- tile.className = `p-3 rounded-lg border-2 cursor-pointer flex flex-col justify-between h-24 transition-all ${
- isSel ? 'border-blue-500 bg-blue-900/40' : (isCritical ? 'border-red-900/50 bg-red-950/20' : 'border-gray-700 bg-gray-800 hover:bg-gray-750')
- }`;
- 
- let icon = "🏢";
- if (loc.name && loc.name.toLowerCase().includes("home")) icon = "🏠";
- 
- // Check if there is any information to show
- const hasInfo = !!(loc.address || loc.notes || loc.contactName || loc.contactPhone || loc.contactEmail);
- 
- tile.innerHTML = `
- <div class="flex justify-between items-start">
- <span class="text-2xl">${icon}</span>
- ${hasInfo ? `<button class="text-gray-300 hover:text-white p-1 -mt-1 -mr-1 z-20 text-xl" aria-label="Site safety information" onclick="showSiteInfo('${escapeHtml(loc.id)}', event)">ℹ️</button>` : ''}
- </div>
- <div>
- ${loc.companyName ? `<div class="text-xs font-bold text-gray-400 truncate leading-none mb-1">${escapeHtml(loc.companyName)}</div>` : ''}
- <div class="text-[13px] font-black text-white truncate leading-tight">${escapeHtml(loc.name)}</div>
- ${loc.noReport ? `<div class="text-sm text-gray-300 font-bold mt-0.5">No report</div>` : ''}
- </div>
- `;
- 
- tile.onclick = () => {
- state.selectedLocationId = (state.selectedLocationId === loc.id) ? null : loc.id;
- updateWelfareSelector(state.selectedLocationId); // update welfare interval selector for this site
- renderLocations();
- updateArrivedButtonState();
- };
- return tile;
-}
-
-
-/**
- * Opens the travel settings modal for the current trip.
- * Called from the info button on the travel tile.
- */
-// ============================================================================
-// COMPACT LIST ROW — used when site count exceeds 6
-// ============================================================================
-
-/**
- * Creates a single-line list row for the adaptive list view.
- * Shows a risk-level colour bar on the left edge, site name, company,
- * a "Recent" badge for the last-visited site, and the info button.
- * Minimum tap height is 52px — comfortable for thumb use in the field.
- */
-function createLocationRow(loc) {
- const isSel = state && state.selectedLocationId === loc.id;
- const isLast = state && loc.id === state.lastVisitedLocationId;
-
- // Left-edge risk bar colour — matches the colours used in the welfare hint
- const riskBarColour = {
- Low: '#22c55e', // green-500
- Medium: '#eab308', // yellow-500
- High: '#f97316', // orange-500
- Critical: '#ef4444' // red-500
- }[loc.riskLevel] || 'transparent';
-
- const hasInfo = !!(loc.address || loc.notes || loc.contactName || loc.contactPhone || loc.contactEmail);
-
- const row = document.createElement('div');
- row.className = [
- 'flex items-center gap-3 pl-2 pr-3 rounded-xl border-2 cursor-pointer transition-all',
- 'min-h-[52px]',
- isSel
- ? 'border-blue-500 bg-blue-900/40'
- : (loc.isCritical
- ? 'border-red-900/50 bg-red-950/20 hover:bg-red-950/40'
- : 'border-gray-700 bg-gray-800 hover:bg-gray-700/70 active:scale-[0.99]')
- ].join(' ');
-
- row.innerHTML = `
- <div class="w-1 self-stretch rounded-full flex-shrink-0 my-2" style="background:${riskBarColour}"></div>
- <div class="flex-1 min-w-0 py-2.5">
- <div class="flex items-center gap-1.5 flex-wrap">
- <span class="text-[13px] font-black text-white truncate leading-tight">${escapeHtml(loc.name)}</span>
- ${isLast ? `<span class="text-[9px] font-black text-blue-400 tracking-widest bg-blue-950 px-1.5 py-0.5 rounded-full border border-blue-700/50 flex-shrink-0">Recent</span>` : ''}
- </div>
- ${loc.companyName ? `<div class="text-[11px] font-bold text-gray-400 truncate leading-none mt-0.5">${escapeHtml(loc.companyName)}</div>` : ''}
- </div>
- ${hasInfo ? `<button class="text-gray-500 hover:text-gray-300 flex-shrink-0 p-1.5 -mr-1 text-base leading-none z-20" aria-label="Site safety information" onclick="showSiteInfo('${escapeHtml(loc.id)}', event)">ℹ️</button>` : ''}
- `;
-
- row.onclick = (e) => {
- if (e.target.closest('button')) return;
- state.selectedLocationId = (state.selectedLocationId === loc.id) ? null : loc.id;
- updateWelfareSelector(state.selectedLocationId);
- renderLocations();
- updateArrivedButtonState();
- };
- return row;
-}
-
-// ============================================================================
-// WELFARE CHECK INTERVAL — PER-VISIT SELECTOR
-// ============================================================================
-
-/**
- * Called when a tile is selected — pre-selects the welfare interval button
- * that matches the site's effective default, and shows a hint explaining why.
- * Falls back gracefully if checkinEnabled is false (row stays hidden).
- */
-function updateWelfareSelector(locationId) {
- if (!CONFIG.checkinEnabled) return;
-
- const row = document.getElementById('welfareIntervalRow');
- if (!row) return;
- row.classList.remove('hidden');
-
- const loc = locationId ? state.locations.find(l => l.id === locationId) : null;
-
- // Determine the effective default and hint text for this site
- let defaultMins, hint;
- if (loc && loc.welfareIntervalMins) {
- defaultMins = loc.welfareIntervalMins;
- hint = 'Site default';
- } else if (loc && loc.riskLevel && RISK_WELFARE_MAP[loc.riskLevel]) {
- defaultMins = RISK_WELFARE_MAP[loc.riskLevel];
- const colours = { Low: 'text-green-400', Medium: 'text-yellow-400', High: 'text-orange-400', Critical: 'text-red-400' };
- const hintEl = document.getElementById('welfareIntervalHint');
- if (hintEl) {
- hintEl.className = `text-xs font-bold italic ${colours[loc.riskLevel] || 'text-gray-400'}`;
- hintEl.textContent = `${loc.riskLevel} risk`;
- }
- hint = null; // already set via className above
- } else {
- defaultMins = CONFIG.checkinInterval || 60;
- hint = 'Global default';
- }
-
- if (hint) {
- const hintEl = document.getElementById('welfareIntervalHint');
- if (hintEl) { hintEl.className = 'text-xs text-gray-500 font-bold italic'; hintEl.textContent = hint; }
- }
-
- // Pre-select matching button (or nearest) and record in state
- _highlightWelfareBtn(defaultMins);
- state.visitWelfareOverride = defaultMins;
-}
-
-/**
- * Called when a welfare quick-select button is tapped.
- * Overrides the site/risk default for this visit only.
- */
-function setVisitWelfare(mins) {
- state.visitWelfareOverride = mins;
- _highlightWelfareBtn(mins);
- // Update hint to show this is a manual override
- const hintEl = document.getElementById('welfareIntervalHint');
- if (hintEl) { hintEl.className = 'text-xs text-blue-400 font-bold italic'; hintEl.textContent = 'This visit'; }
-}
-
-/** Highlights the welfare button whose value matches mins; clears others. */
-function _highlightWelfareBtn(mins) {
- const map = { 10: 0, 15: 1, 30: 2, 60: 3, 120: 4 };
- const btns = document.querySelectorAll('.welfare-btn');
- btns.forEach((btn, i) => {
- const active = (map[mins] === i);
- btn.classList.toggle('bg-teal-700', active);
- btn.classList.toggle('border-teal-500', active);
- btn.classList.toggle('text-white', active);
- btn.classList.toggle('bg-gray-700/50', !active);
- btn.classList.toggle('border-gray-600', !active);
- btn.classList.toggle('text-gray-400', !active);
- });
-}
-
-/**
- * Saves a persistent welfare interval override on the location object.
- * Called from the site info modal Save button.
- * This value is used as the default pre-selection every time the worker
- * visits this site — until changed or cleared.
- */
-function saveSiteWelfareOverride(locId) {
- const input = document.getElementById('siteWelfareInput');
- if (!input) return;
- const mins = parseInt(input.value, 10);
- if (isNaN(mins) || mins < 5 || mins > 480) {
- return showToast('⚠️ Enter a value between 5 and 480 minutes');
- }
- const idx = state.locations.findIndex(l => l.id === locId);
- if (idx < 0) return;
- state.locations[idx].welfareIntervalMins = mins;
- saveState();
- showToast(`✅ Welfare default set to ${mins}m for this site`);
- // Refresh selector if this site is currently selected
- if (state.selectedLocationId === locId) updateWelfareSelector(locId);
-}
-
-/**
- * Clears the persistent welfare override for a site, reverting to
- * risk level → global config default.
- */
-function clearSiteWelfareOverride(locId) {
- const idx = state.locations.findIndex(l => l.id === locId);
- if (idx < 0) return;
- delete state.locations[idx].welfareIntervalMins;
- saveState();
- showToast('🗑️ Site welfare default cleared');
- if (state.selectedLocationId === locId) updateWelfareSelector(locId);
-}
-
-function openTravelSettings(event) {
- if (event) event.stopPropagation();
-
- const toggle = document.getElementById('travelNoReportToggle');
- const subtitle = document.getElementById('travelSettingsSubtitle');
-
- if (CONFIG.reqTravelReport) {
- // Org mandates reports — toggle is a per-trip override only.
- // Current value = state.travelNoReport (resets after each visit).
- if (toggle) toggle.checked = !!(state && state.travelNoReport);
- if (subtitle) subtitle.textContent = 'This trip only — resets after each journey';
- } else {
- // Org has no requirement — toggle is the worker's persistent default.
- if (toggle) toggle.checked = !!(state && state.travelNoReportDefault);
- if (subtitle) subtitle.textContent = 'Your default — saved across all trips';
- }
- showModal('travelSettings');
-}
-
-function saveTravelSettings() {
- const toggle = document.getElementById('travelNoReportToggle');
- if (state) {
- if (CONFIG.reqTravelReport) {
- // Org mandates reports — save as per-trip flag only.
- state.travelNoReport = !!(toggle && toggle.checked);
- } else {
- // No org requirement — save as persistent default AND apply to current trip.
- state.travelNoReportDefault = !!(toggle && toggle.checked);
- state.travelNoReport = state.travelNoReportDefault;
- }
- saveState();
- }
- closeModal('travelSettings');
- renderLocations();
- updateDepartLabel();
- showToast('✅ Travel settings updated');
-}
-
-function updateArrivedButtonState() {
- const pill = document.getElementById('btnStart');
- const label = document.getElementById('slideStartLabel');
- if (!pill || !label) return;
-
- const hasLocation = !!state.selectedLocationId;
- const durationMins = state.visitDurationMinutes || 0;
- const hasDuration = durationMins > 0;
-
- // Reset state
- pill.classList.remove('pill-disabled');
- pill.removeAttribute('aria-disabled');
- pill.style.borderColor = '';
-
- // TRAVEL LOGIC: Time is mandatory, Site is optional
- if (state.isTravelActive) {
- if (!hasDuration) {
- label.textContent = 'Select Travel Time';
- pill.classList.add('pill-disabled');
- pill.setAttribute('aria-disabled', 'true');
- } else {
- const loc = state.locations && state.locations.find(l => l.id === state.selectedLocationId);
- label.textContent = loc ? `Travel to ${loc.name}` : 'Start Travel';
- pill.style.borderColor = 'var(--accent, #3b82f6)';
- }
- }
- // STANDARD LOGIC: Both Time and Site mandatory
- else if (hasLocation && hasDuration) {
- const loc = state.locations && state.locations.find(l => l.id === state.selectedLocationId);
- label.textContent = loc ? `Begin — ${loc.name}` : 'Begin Visit';
- pill.style.borderColor = 'var(--accent, #3b82f6)';
- } else if (!hasLocation) {
- label.textContent = 'Select a Site First';
- pill.classList.add('pill-disabled');
- pill.setAttribute('aria-disabled', 'true');
- } else {
- label.textContent = 'Select a Duration';
- pill.classList.add('pill-disabled');
- pill.setAttribute('aria-disabled', 'true');
- }
-}
-
-/**
- * setupHoldToStart — retained as no-op for any legacy callers.
- * The Start pill is wired once by initAllActionPills() at startup.
- */
-function setupHoldToStart() { /* wired via initAllActionPills */ }
- 
-/**
- * RE-ENGINEERED: startVisit with Data Integrity
- * Logic: Ensures site address is captured for the spreadsheet.
- */
-async function startVisit(isSkipCheck = false) {
- if (state.activeVisit) return;
- if (isPreVisitForm) return; // Pre-visit form is on screen — block stray re-entry
- const btn = document.getElementById('btnStart');
- if (btn && btn.dataset.starting) return;
- if (btn) btn.dataset.starting = '1';
-
- isMidVisitUpdate = false;
-
- // Determine travel mode early so the WOF check knows whether to apply.
- const isTravelEarly = !!state.isTravelActive;
- if (!isSkipCheck && typeof checkVehicleBeforeVisit === 'function' && checkVehicleBeforeVisit(isTravelEarly)) {
- if (btn) delete btn.dataset.starting;
- return;
- }
-
- try {
- await Promise.race([_warmAudio(), new Promise(r => setTimeout(r, 500))]);
- } catch (e) { console.warn("Audio skipped"); }
-
- const locId = state.selectedLocationId;
- const isTravelMode = !!state.isTravelActive; 
- 
- if (!locId && !isTravelMode) {
- if (btn) delete btn.dataset.starting;
- return showToast('⚠️ Select a destination first');
- }
-
- // Warn clearly if starting a visit with no connectivity.
- // Do not block — local alarm will still fire on the device — but the worker
- // must understand that remote contacts cannot be notified if an alarm fires.
- if (!navigator.onLine) {
- showToast('⚠️ No signal — contacts cannot be notified if alarm fires');
- }
-
- const loc = state.locations.find(l => l.id === locId) || { id: 'travel', name: 'General Travel', address: 'Field Work' };
- // For travel mode, check for a sentinel row named '_travel' in the Sites tab.
- // This allows the pre-visit form gate to apply to travel sessions without a real site row.
- if (isTravelMode) {
- const travelSentinel = (state.locations || []).find(l => l.name === '_travel');
- if (travelSentinel && travelSentinel.preVisitForm) loc.preVisitForm = true;
- }
- const durationMins = state.visitDurationMinutes || 0;
- const isHighRisk = document.getElementById('chkHighRisk')?.checked || false;
-
- // PRE-VISIT FORM: If the site requires one and it hasn't been completed yet,
- // show it now. The form submit will call pendingVisitStartFn() to resume here.
- // Skip entirely if the worker has toggled 'No Report Required' for this trip.
- if (!isPreVisitFormDone && loc.preVisitForm && !state.travelNoReport) {
- const preTemplate = (state.globalForms || []).find(f => f.formTiming === 'pre-visit');
- if (preTemplate) {
- if (btn) delete btn.dataset.starting;
- isPreVisitForm = true;
- isPreVisitFormDone = true; // prevent infinite loop when we resume
- isMidVisitUpdate = true; // prevent submitReport() treating it as a departure
- pendingVisitStartFn = () => startVisit(isSkipCheck);
- loadFormAndShow(preTemplate.name, {
- siteName: loc.name,
- companyName: loc.companyName || ''
- });
- return;
- }
- }
- isPreVisitFormDone = false; // reset for next visit
-
- // GPS is only relevant for travel (live tracking) and alarm states (locate worker).
- // For a regular named-site visit the site address is the authoritative location —
- // capturing the phone's physical position implies a precision that isn't meaningful
- // (worker may be selecting the site from home / office) and misleads the monitor map.
- let verifiedStartGPS = "0,0";
- if (isTravelMode || locId === 'travel') {
- showToast('📍 Locking GPS signal...');
- try {
- const freshPos = await new Promise((resolve, reject) => {
- navigator.geolocation.getCurrentPosition(resolve, reject, { 
- enableHighAccuracy: true, timeout: 3000 
- });
- });
- verifiedStartGPS = `${freshPos.coords.latitude.toFixed(6)},${freshPos.coords.longitude.toFixed(6)}`;
- lastGPS = verifiedStartGPS;
- } catch (e) {
- console.warn('GPS signal lock deferred.');
- }
- if (typeof startGPSMonitoring === 'function') {
- // Reset breadcrumb trail and speed accumulator for this trip, then seed
- // the trail with the verified start position.
- // The trail is built up by _takeSingleGPSFix() during the trip and then consumed
- // by getDistance() at departure for more accurate waypoint-based ORS routing.
- gpsTrail = [];
- _speedAccumM = 0;
- _speedAccumLastTs = null;
- if (verifiedStartGPS && verifiedStartGPS !== '0,0') {
- const [sLat, sLng] = verifiedStartGPS.split(',').map(Number);
- if (!isNaN(sLat) && !isNaN(sLng)) gpsTrail.push({ lat: sLat, lng: sLng });
- }
- startGPSMonitoring();
- }
- }
- // For regular site visits lastGPS stays as whatever it was from a prior session;
- // reset it so any later alarm GPS is clearly fresh rather than stale.
- if (!isTravelMode && locId !== 'travel') lastGPS = null;
-
- const startTime = Date.now();
- const durationSec = durationMins * 60;
- const anticipatedDeparture = startTime + (durationSec * 1000);
-
- // GOLDEN FIX: Storing the address in the session state
- // Resolve the effective welfare check interval for this visit.
- // Hierarchy: worker's manual selector → site's persistent override → risk level → global CONFIG.
- const _resolvedWelfare = (() => {
- if (state.visitWelfareOverride) return state.visitWelfareOverride;
- if (loc.welfareIntervalMins) return loc.welfareIntervalMins;
- if (loc.riskLevel && RISK_WELFARE_MAP[loc.riskLevel]) return RISK_WELFARE_MAP[loc.riskLevel];
- return CONFIG.checkinInterval || 60;
- })();
- state.visitWelfareOverride = null; // consume — reset for next visit
-
- state.activeVisit = {
- locationId: locId || 'travel',
- locationName: loc.name,
- companyName: loc.companyName || "",
- locationAddress: loc.address || "", // ADDED: Critical for spreadsheet recording
- isTravel: isTravelMode, 
- startTime: startTime,
- duration: durationSec,
- anticipatedDepartureTime: anticipatedDeparture,
- startGPS: verifiedStartGPS,
- highRisk: isHighRisk,
- checkinIntervalMins: _resolvedWelfare, // welfare check interval for this visit
- phase: VISIT_PHASES.ACTIVE,
- isPanic: false,
- criticalSent: false,
- warn5minSent: false,
- warn2minSent: false,
- warn90Sent: false
- };
-
- state.isTravelActive = false;
- // travelNoReport is intentionally NOT reset here — it must survive through the visit
- // so the departure path can read it correctly. Reset happens in directDepart() after
- // the trip ends, or in preDepart() if a form is submitted.
- saveState();
-
- const alarmStatus = isTravelMode ? "TRAVELLING" : "ARRIVED";
- const logNote = isTravelMode ? `Travel to ${loc.name} started.` : `${loc.name} visit started.`;
-
- const arrivalPayload = {
- 'action': 'logVisit',
- 'Alarm Status': alarmStatus,
- 'Location Name': loc.name,
- 'Location Address': loc.address || "",
- 'Notes': `${logNote} Duration: ${durationMins}m`,
- 'Anticipated Departure Time': new Date(anticipatedDeparture).toISOString()
- };
- // Only include GPS in the arrival row for travel — for site visits the address IS the location.
- if (isTravelMode || locId === 'travel') {
- arrivalPayload['Last Known GPS'] = verifiedStartGPS;
- }
- processUploadQueue(buildPayload(arrivalPayload));
-
- announce(isTravelMode ? `Travelling to ${loc.name}.` : `${loc.name} started.`);
- 
- // Wake lock is NOT held at visit start — phone should sleep normally between
- // interactions. It is acquired only when the alarm fires so the slide-to-
- // confirm screen stays lit and the worker cannot miss the alert.
- if (isTravelMode || locId === 'travel') if (typeof startTravellingPulse === 'function') startTravellingPulse();
-
- // Persist the last-visited site so the "Recent" pin survives app restarts.
- // Travel sessions are excluded — the pin is only meaningful for named sites.
- if (locId && locId !== 'travel' && !isTravelMode) {
- state.lastVisitedLocationId = locId;
- saveState();
- }
-
- // Clear the wake grace period BEFORE arming the inactivity timer.
- // If the previous visit was woken shortly before departure, lastWakeTime would
- // still be recent and resetInactivityTimer() would refuse to arm — causing the
- // first dim of this new visit to never fire.
- lastWakeTime = 0;
-
- resetInactivityTimer(); 
- renderLocations();
- updateArrivedButtonState(); 
- if (btn) delete btn.dataset.starting; // Clear guard — allows next visit to start
- enterLockedScreen();
-}
- 
-// ============================================================================
-// CRITICAL FUNCTIONS EXTRACTED FROM WS_SAFETY (MISSING IN ORIGINAL BUILD)
-// ============================================================================
-
-// Critical variables needed by these functions (new ones only, avoid duplicates)
-let calculatedDist = null;
-let gpsWarm = false;
-let travelTargetName = "";
-let panicTapCount = 0;
-let panicTapTimer;
-
-// Note: currentBatteryLevel, currentActiveTemplate and isMidVisitUpdate already declared earlier in file
-
-/**
- * HIGH-INTEGRITY PAYLOAD BUILDER
- * Uses active session context to ensure Travel and site names are never lost.
- * Maps ICE details to correct spreadsheet column headers.
- */
-function buildPayload(d) {
- let dt = "";
- let ln = "Unknown Site";
- let la = "No Address Provided";
- 
- // 1. DYNAMIC IDENTITY CAPTURE: Prioritize the active session details
- if (state.activeVisit) {
- if (state.activeVisit.anticipatedDepartureTime) {
- dt = new Date(state.activeVisit.anticipatedDepartureTime).toISOString();
- }
- // Use the name stored at session start (handles 'General Travel' correctly)
- ln = state.activeVisit.locationName || "Unknown Site";
- la = state.activeVisit.locationAddress || "No Address";
- 
- // If it's a specific site, attempt to format with Company Name
- if (state.activeVisit.companyName) {
- ln = `${state.activeVisit.companyName} - ${state.activeVisit.locationName}`;
- }
- } else if (state.selectedLocationId) {
- const l = state.locations.find(x => x.id === state.selectedLocationId);
- if (l) {
- ln = l.companyName ? `${l.companyName} - ${l.name}` : l.name;
- la = l.address || "No Address";
- }
- }
- 
-return {
- 'action': d.action || 'logVisit', 
- 'key': CONFIG.key,
- 'Worker Name': state.worker?.name || "",
- 'Worker Phone Number': state.worker?.phone || "",
- 
- // FIXED: Maps ICE details to the spreadsheet columns
- 'Emergency Contact Name': state.worker?.emgName || state.worker?.iceName || "",
- 'Emergency Contact Phone': state.worker?.emgPhone || state.worker?.icePhone || "",
- 'Emergency Contact Email': state.worker?.emgEmail || state.worker?.iceEmail || "",
- 'Emergency Contact Ntfy': state.worker?.emgNtfy || "",
- 'Escalation Contact Name': state.worker?.escName || state.worker?.ice2Name || "",
- 'Escalation Contact Phone': state.worker?.escPhone || state.worker?.ice2Phone || "",
- 'Escalation Contact Email': state.worker?.escEmail || state.worker?.ice2Email || "",
- 'Escalation Contact Ntfy': state.worker?.escNtfy || "",
- 
- 'Battery Level': currentBatteryLevel || "100%",
- 'Location Name': ln,
- 'Location Address': la,
- 'Anticipated Departure Time': dt,
- 'Timestamp': new Date().toISOString(),
- 'deviceId': state.deviceId || "",
- 'Last Known GPS': d['Last Known GPS'] || (state.activeVisit?.startGPS) || "0,0",
- ...d
- };
-}
-
-// ============================================================================
-// INDEXEDDB OUTBOX ENGINE
-// ============================================================================
-// Every safety event is written to a durable IndexedDB record BEFORE any
-// network operation begins. If the device crashes or loses power mid-flight,
-// the record survives and is retried automatically on next launch.
-//
-// Sent records are permanently retained (never deleted) — the outbox doubles
-// as a device-side audit trail of every event ever dispatched.
-//
-// Each record carries a stable idempotency key that is injected into the
-// backend payload. The backend rejects duplicate rows that carry a key it has
-// already seen, so retry storms can never inflate the Visits sheet.
-// ============================================================================
-
-let _outboxDbInstance = null; // Lazy IndexedDB singleton
-let _outboxProcessing = false;
-let _outboxRetryDelay = 2000;
-
-/** Lazy singleton opener for the 'otg-outbox' IndexedDB database. */
-function _outboxDB() {
- if (_outboxDbInstance) return Promise.resolve(_outboxDbInstance);
- return new Promise((resolve, reject) => {
- const req = indexedDB.open('otg-outbox', 1);
- req.onupgradeneeded = e => {
- const db = e.target.result;
- if (!db.objectStoreNames.contains('events')) {
- const store = db.createObjectStore('events', { keyPath: 'id', autoIncrement: true });
- store.createIndex('status', 'status', { unique: false });
- store.createIndex('idempotencyKey', 'idempotencyKey', { unique: true });
- }
- };
- req.onsuccess = e => { _outboxDbInstance = e.target.result; resolve(_outboxDbInstance); };
- req.onerror = e => reject(e.target.error);
- req.onblocked = () => console.warn('Outbox: IndexedDB open blocked by another tab.');
- });
-}
-
-/**
- * Enqueue a safety event in the durable IndexedDB outbox, then trigger the
- * network processor. Returns a Promise that resolves once the write is confirmed.
- *
- * Safe to await in safety-critical async paths (triggerPanic → logSafety).
- * Safe to fire-and-forget everywhere else — the write still completes before
- * any network delivery attempt regardless of whether the caller awaits.
- */
-async function outboxEnqueue(payload) {
- if (!payload) return;
-
- // Build a stable, unique idempotency key.
- // Stable across retries: key is stored in the record and reused on every attempt.
- // Unique across events: millisecond timestamp + 4-char random suffix prevents
- // collisions even for rapid successive events of the same type.
- const wn = ((payload['Worker Name'] || state?.worker?.name || 'unknown')
- .replace(/[^a-zA-Z0-9]/g, '').slice(0, 20));
- const st = ((payload['Alarm Status'] || 'LOG')
- .replace(/[^A-Z0-9_\- ]/g, '').replace(/\s+/g, '_').slice(0, 30));
- const rand = Math.random().toString(36).slice(2, 6);
- const idempotencyKey = `${wn}:${st}:${Date.now()}:${rand}`;
-
- // ── Queue cap guard ──────────────────────────────────────────────────────
- // Count pending items before writing. Safety events are never dropped, but
- // we warn the worker loudly when the queue is unusually deep — this almost
- // always means a persistent connectivity failure that needs attention.
- try {
- const db = await _outboxDB();
- const pendingCount = await new Promise(resolve => {
- const tx = db.transaction('events', 'readonly');
- const req = tx.objectStore('events').index('status').count(IDBKeyRange.only('pending'));
- req.onsuccess = e => resolve(e.target.result || 0);
- req.onerror = () => resolve(0);
- });
- if (pendingCount >= 50) {
- // Show toast once per session (guard via flag to avoid toast spam)
- if (!outboxEnqueue._capWarnedThisSession) {
- outboxEnqueue._capWarnedThisSession = true;
- showToast('⚠️ 50+ unsent events queued — check your connection. Data is safe and will send when online.');
- }
- console.warn(`Outbox: ${pendingCount} pending items — connectivity issue suspected.`);
- }
- } catch (_) { /* Non-fatal — cap check failure never blocks enqueue */ }
- // ────────────────────────────────────────────────────────────────────────
-
- const record = {
- idempotencyKey,
- payload: { ...payload, idempotencyKey }, // key travels to backend with every attempt
- status: 'pending',
- createdAt: new Date().toISOString(),
- sentAt: null,
- attempts: 0
- };
-
- try {
- const db = await _outboxDB();
- await new Promise((resolve, reject) => {
- const tx = db.transaction('events', 'readwrite');
- const req = tx.objectStore('events').add(record);
- req.onsuccess = resolve;
- req.onerror = e => reject(e.target.error);
- tx.onerror = e => reject(e.target.error);
- });
- } catch (e) {
- // IndexedDB unavailable (private browsing on some browsers, storage quota hit).
- // Fall back to the in-memory legacy queue so no event is silently dropped.
- console.error('Outbox: IndexedDB write failed — falling back to legacy queue:', e);
- _legacyEnqueue(payload);
- return;
- }
-
- outboxProcess();
-}
-
-/** Find the oldest pending outbox record and attempt to deliver it. */
-async function outboxProcess() {
- if (_outboxProcessing || !navigator.onLine) return;
-
- let db;
- try { db = await _outboxDB(); } catch (e) { return; }
-
- // Cursor over the status index to find the oldest pending record.
- const record = await new Promise(resolve => {
- const tx = db.transaction('events', 'readonly');
- const req = tx.objectStore('events')
- .index('status')
- .openCursor(IDBKeyRange.only('pending'));
- req.onsuccess = e => resolve(e.target.result?.value || null);
- req.onerror = () => resolve(null);
- });
-
- if (!record) return; // Nothing pending
-
- _outboxProcessing = true;
-
- const fd = new FormData();
- for (const k in record.payload) fd.append(k, record.payload[k]);
-
- try {
- await fetch(CONFIG.url, { method: 'POST', body: fd, mode: 'no-cors' });
-
- // Mark sent — keep the record permanently for the device-side audit trail.
- await new Promise(resolve => {
- const tx = db.transaction('events', 'readwrite');
- const store = tx.objectStore('events');
- store.get(record.id).onsuccess = e => {
- const row = e.target.result;
- if (row) {
- row.status = 'sent';
- row.sentAt = new Date().toISOString();
- row.attempts = (row.attempts || 0) + 1;
- store.put(row).onsuccess = resolve;
- } else { resolve(); }
- };
- });
-
- _outboxRetryDelay = 2000;
- _outboxProcessing = false;
- setTimeout(outboxProcess, 500); // chain: immediately try the next pending item
-
- } catch (e) {
- // Network failure — increment attempt count and back off.
- await new Promise(resolve => {
- const tx = db.transaction('events', 'readwrite');
- const store = tx.objectStore('events');
- store.get(record.id).onsuccess = e => {
- const row = e.target.result;
- if (row) { row.attempts = (row.attempts || 0) + 1; store.put(row).onsuccess = resolve; }
- else { resolve(); }
- };
- });
-
- console.warn(`Outbox: send failed. Retrying in ${_outboxRetryDelay / 1000}s…`);
- _outboxProcessing = false;
- setTimeout(outboxProcess, _outboxRetryDelay);
- _outboxRetryDelay = Math.min(_outboxRetryDelay * 2, 60000);
- }
-}
-
-/**
- * One-time startup migration: drain any events still in the legacy localStorage
- * pendingUploads queue into the durable IndexedDB outbox.
- * No-op if the queue is empty (fresh installs, already-drained devices).
- */
-async function _outboxDrainLegacy() {
- const legacy = state?.pendingUploads;
- if (!legacy || legacy.length === 0) return;
- console.log(`Outbox: migrating ${legacy.length} legacy event(s) from localStorage → IndexedDB.`);
- const items = [...legacy];
- state.pendingUploads = [];
- saveState();
- for (const item of items) {
- await outboxEnqueue(item); // sequential: preserves original event order
- }
-}
-
-/**
- * Minimal fallback queue for environments where IndexedDB is unavailable
- * (e.g. iOS private browsing, storage quota exceeded).
- * Behaviour is identical to the old processUploadQueue.
- */
-let _legacyRetryDelay = 2000;
-let _legacyProcessing = false;
-function _legacyEnqueue(payload) {
- if (payload) {
- if (state.pendingUploads.length > 100) state.pendingUploads.shift();
- state.pendingUploads.push(payload);
- saveState();
- }
- if (_legacyProcessing || !navigator.onLine || state.pendingUploads.length === 0) return;
- _legacyProcessing = true;
- const item = state.pendingUploads[0];
- const fd = new FormData();
- for (const k in item) fd.append(k, item[k]);
- fetch(CONFIG.url, { method: 'POST', body: fd, mode: 'no-cors' })
- .then(() => {
- state.pendingUploads.shift(); saveState();
- _legacyRetryDelay = 2000; _legacyProcessing = false;
- if (state.pendingUploads.length > 0) setTimeout(_legacyEnqueue, 500);
- })
- .catch(() => {
- _legacyProcessing = false;
- setTimeout(_legacyEnqueue, _legacyRetryDelay);
- _legacyRetryDelay = Math.min(_legacyRetryDelay * 2, 60000);
- });
-}
-
-/**
- * Backward-compatibility shim.
- * All existing processUploadQueue(payload) call sites are automatically
- * routed through the durable outbox. Call with no argument to trigger a
- * flush of any pending items (e.g. from an online event handler).
- */
-function processUploadQueue(payload) {
- if (payload) outboxEnqueue(payload);
- else outboxProcess();
-}
-
-/**
- * PATCHED: High-Integrity Data Gathering Engine
- * Ensures signatures and auto-filled site data are correctly captured for the backend.
- */
-
-/**
- * REQUIRED FIELD VALIDATION
- * Checks all fields marked data-required="true" before form submission.
- * Returns true if all required fields have a value, false otherwise.
- * Highlights empty fields in red and shows a summary toast.
- */
-function validateRequiredFields() {
- const missing = [];
-
- // Standard inputs / textareas / selects / hidden (YESNO, GPS)
- document.querySelectorAll('[data-required="true"]').forEach(el => {
- const label = el.getAttribute('data-label') || el.getAttribute('data-key') || 'Field';
- let empty = false;
-
- if (el.type === 'checkbox') {
- // Required checkbox must be ticked
- empty = !el.checked;
- } else if (el.getAttribute('data-yesno')) {
- // YESNO: hidden input value is set by button click
- empty = !el.value;
- } else {
- empty = !el.value || el.value.trim() === '';
- }
-
- if (empty) {
- missing.push(label);
- // Highlight the closest form-input or card border
- const formInput = el.closest('.mb-5')?.querySelector('.form-input, .check-card');
- if (formInput) {
- formInput.style.borderColor = '#ef4444';
- formInput.style.borderWidth = '2px';
- // Auto-clear highlight when worker starts typing
- const clear = () => {
- formInput.style.borderColor = '';
- formInput.style.borderWidth = '';
- el.removeEventListener('input', clear);
- el.removeEventListener('change', clear);
- };
- el.addEventListener('input', clear, { once: true });
- el.addEventListener('change', clear, { once: true });
- }
- }
- });
-
- // PHOTO fields: check that the status label has been populated
- document.querySelectorAll('[data-required-photo]').forEach(statusEl => {
- const label = statusEl.getAttribute('data-label') || 'Photo';
- const hasPhoto = statusEl.textContent && statusEl.textContent.trim().length > 0;
- if (!hasPhoto) {
- missing.push(label);
- const photoBtn = statusEl.previousElementSibling;
- if (photoBtn) {
- photoBtn.style.borderColor = '#ef4444';
- }
- }
- });
-
- // SIGNATURE fields: check canvas has at least one non-white pixel
- document.querySelectorAll('canvas[data-required-sig]').forEach(canvas => {
- const label = canvas.getAttribute('data-label') || 'Signature';
- let isSigned = false;
- try {
- const ctx = canvas.getContext('2d');
- const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
- // Count drawn pixels — require at least 50 to rule out accidental taps
- let drawnPixels = 0;
- for (let i = 3; i < pixels.length; i += 4) {
- if (pixels[i] > 0) {
- drawnPixels++;
- if (drawnPixels >= 50) { isSigned = true; break; }
- }
- }
- } catch(e) { isSigned = true; } // Cross-origin guard — don't block on error
- if (!isSigned) {
- missing.push(label);
- canvas.style.borderColor = '#ef4444';
- canvas.style.borderWidth = '3px';
- // Clear red border once they start signing
- canvas.addEventListener('pointerdown', () => {
- canvas.style.borderColor = '';
- canvas.style.borderWidth = '';
- }, { once: true });
- }
- });
-
- if (missing.length > 0) {
- const names = missing.slice(0, 3).join(', ') + (missing.length > 3 ? '…' : '');
- showToast(`⚠️ Required: ${names}`, 4000);
- // Scroll to first empty required field
- const firstEmpty = document.querySelector('[data-required="true"]');
- if (firstEmpty) firstEmpty.scrollIntoView({ behavior: 'smooth', block: 'center' });
- return false;
- }
- return true;
-}
-
-function gatherFormData() {
- const d = { custom: {}, notes: '', sig: null, jsonPayload: {} };
- 
- // 1. Capture legacy notes (Standard template)
- const sn = document.getElementById('rep_notes');
- if (sn) d.notes = sn.value;
- 
- // 2. Iterate through all dynamic form elements
- document.querySelectorAll('[data-key]').forEach(el => {
- const k = el.getAttribute('data-key');
- let v = el.value;
- let isMedia = false;
- 
- // Logic: Handle specific input types
- if (el.type === 'checkbox') {
- v = el.checked ? 'Yes' : 'No';
- } else if (el.type === 'radio') {
- if (!el.checked) return; // Skip non-selected options
- v = el.value;
- } else if (el.type === 'hidden' && el.hasAttribute('data-signature-id')) {
- // FIXED: Switched to JPEG (0.5 quality) to ensure spreadsheet ingestion
- const sigId = el.getAttribute('data-signature-id');
- const canvas = document.getElementById(`sig-canvas-${sigId}`);
- if (canvas) {
- // JPEG is ~80% smaller than PNG for signatures
- v = canvas.toDataURL('image/jpeg', 0.5); 
- d.sig = v; 
- isMedia = true; 
- }
- }
- 
- // 3. Populate Payload Objects
- d.custom[k] = v;
- 
- // OPTIMISATION: Replace large media with tokens in the JSON blob to prevent cell overflows
- if (isMedia) {
- d.jsonPayload[k] = "{{SIGNATURE}}"; 
- } else {
- d.jsonPayload[k] = v;
- }
- });
- 
- return d;
-}
- 
-// 4. RENDER PANIC STATE - Changes UI to panic mode
-function renderPanicState() {
- const lockedPage = document.getElementById('lockedPage');
- if (lockedPage) lockedPage.classList.add('panic-mode');
- 
- const btnDepart = document.getElementById('btnDepart');
- if (btnDepart) btnDepart.classList.add('hidden');
- 
- const btnExtend = document.getElementById('btnExtend');
- if (btnExtend) btnExtend.classList.add('hidden');
- 
- const btnSafe = document.getElementById('btnSafe');
- if (btnSafe) {
- btnSafe.classList.remove('hidden');
- setupLongPress(btnSafe, 1500, iamSafe);
- }
-}
-
-// 5. WARM UP GPS - Pre-warms GPS for faster first capture
-function warmUpGps() {
- if (gpsWarm) return;
- gpsWarm = true;
- 
- navigator.geolocation.getCurrentPosition(
- () => {},
- (err) => {
- if (err.code === 1) showToast("📍 GPS Permission Required");
- },
- { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
- );
- 
- setTimeout(() => {
- gpsWarm = false;
- }, 30000);
-}
-
-// 6. PLAY SOUND - Audio feedback for events
-function playSound(t) {
- initAudio().then(() => {
- const n = Tone.now();
- if (t === 'arrive') synth.triggerAttackRelease("C4", "8n", n);
- if (t === 'depart') synth.triggerAttackRelease("G4", "8n", n);
- if (t === 'warning') synth.triggerAttackRelease("E5", "16n", n);
- if (t === 'panic') synth.triggerAttackRelease("G5", "16n", n);
- });
-}
-
-// ============================================================================
-// CRITICAL MISSING FUNCTIONS FROM WS_SAFETY
-// ============================================================================
-
-// 1. TRIGGER AUTO ALERT - Sends alarm when timer expires
-function triggerAutoAlert(status) {
- if (!state || !state.activeVisit) return;
- 
- const location = state.locations.find(l => l.id === state.activeVisit.locationId);
- const locationName = location ? 
- (location.companyName ? `${location.companyName} - ${location.name}` : location.name) : 
- "Unknown Location";
- 
- console.log(`Triggering auto alert: ${status} for ${locationName}`);
- 
- // Try to get current GPS
- navigator.geolocation.getCurrentPosition(
- position => {
- const gps = `${position.coords.latitude},${position.coords.longitude}`;
- console.log(`Auto alert with GPS: ${gps}`);
- 
- processUploadQueue(buildPayload({
- "Alarm Status": status,
- "Notes": "Automated System Alert",
- "Location Name": locationName,
- "Last Known GPS": gps
- }));
- 
- showToast("🚨 Emergency alert sent");
- },
- error => {
- console.warn('GPS failed for auto alert:', error);
- 
- processUploadQueue(buildPayload({
- "Alarm Status": status,
- "Notes": "Automated System Alert (GPS unavailable)",
- "Location Name": locationName,
- "Last Known GPS": lastGPS || "Not available"
- }));
- 
- showToast("🚨 Emergency alert sent (no GPS)");
- },
- { enableHighAccuracy: true, timeout: 5000, maximumAge: 30000 }
- );
-}
-
-// 2. COMPRESS IMAGE - Reduces photo size before upload
-/**
- * PATCHED: High-Integrity Photo Compression
- * Optimised for Google Sheets 50,000 character cell limit.
- */
-function compressImg(file) {
- return new Promise(resolve => {
- const reader = new FileReader();
- reader.onload = e => {
- const img = new Image();
- img.onload = () => {
- const canvas = document.createElement('canvas');
- // FIXED: Reduced from 1200 to 800 to fit cell character limits
- const MAX_WIDTH = 800;
- const MAX_HEIGHT = 800;
- let width = img.width;
- let height = img.height;
- 
- if (width > height) {
- if (width > MAX_WIDTH) {
- height = height * (MAX_WIDTH / width);
- width = MAX_WIDTH;
- }
- } else {
- if (height > MAX_HEIGHT) {
- width = width * (MAX_HEIGHT / height);
- height = MAX_HEIGHT;
- }
- }
- 
- canvas.width = width;
- canvas.height = height;
- const ctx = canvas.getContext('2d');
- ctx.drawImage(img, 0, 0, width, height);
- 
- // FIXED: Quality reduced to 0.6 for optimal Base64 string length
- const compressed = canvas.toDataURL('image/jpeg', 0.6);
- 
- console.log(`Image optimised for Sheets: ${compressed.length} chars`);
- resolve(compressed);
- };
- img.src = e.target.result;
- };
- reader.readAsDataURL(file);
- });
-}
- 
-/**
- * PATCHED: Photo Handler with UI Status Feedback
- */
-function handlePhoto(input, key) {
- if (!input.files || !input.files[0]) return;
- 
- const file = input.files[0];
- const labelId = `lbl_${input.id}`; 
- const statusLabel = document.getElementById(labelId);
- 
- if (statusLabel) {
- statusLabel.innerText = "⏳ Compressing...";
- statusLabel.classList.remove('text-blue-400', 'text-red-400');
- statusLabel.classList.add('text-blue-400');
- }
- 
- compressImg(file).then(base64 => {
- if (!state.photoStore) state.photoStore = {};
- state.photoStore[key] = base64;
- saveState();
- 
- if (statusLabel) {
- statusLabel.innerText = "✅ Photo Saved";
- statusLabel.classList.add('text-green-400');
- }
- console.log(`Photo processed: ${key}`);
- }).catch(err => {
- console.error('Compression Error:', err);
- if (statusLabel) {
- statusLabel.innerText = "❌ Compression Failed";
- statusLabel.classList.add('text-red-400');
- }
- });
-}
-
-/**
- * CONFIRMED BEST: Attachment Handler
- */
-function handleAttachment(input, key) {
- if (!input.files || !input.files[0]) return;
- const file = input.files[0];
- const labelId = `lbl_${input.id}`;
- const label = document.getElementById(labelId);
- 
- if (label) label.innerText = "Attaching...";
- 
- const reader = new FileReader();
- reader.onload = (e) => {
- if (!state.photoStore) state.photoStore = {};
- state.photoStore[key] = e.target.result; 
- saveState();
- if (label) label.innerText = "📎 Attachment Saved";
- };
- // Added safety error handler
- reader.onerror = () => { if (label) label.innerText = "❌ Error"; };
- reader.readAsDataURL(file);
-}
-
-// 4. BEST-IN-CLASS: High-DPI Signature Engine
-// Includes edge-case safety (touchcancel/mouseenter) and coordinate precision.
-
-/**
- * RE-ENGINEERED: High-DPI Signature Engine
- * Logic: Includes smooth re-entry for PC mouse users and prevents broken lines.
- */
-function initSigPad(canvas) {
- if (!canvas) return;
- resizeCanvas(canvas); 
- 
- const ctx = canvas.getContext('2d');
- let isDrawing = false;
- let lastX = 0;
- let lastY = 0;
- 
- const getPos = (e) => {
- const rect = canvas.getBoundingClientRect();
- const touch = e.touches ? e.touches[0] : e;
- return {
- x: touch.clientX - rect.left,
- y: touch.clientY - rect.top
- };
- };
- 
- const startDrawing = (e) => {
- if (e.type === 'mousedown' && e.button !== 0) return; // Only allow left-click
- isDrawing = true;
- const pos = getPos(e);
- lastX = pos.x;
- lastY = pos.y;
- if (e.cancelable) e.preventDefault();
- };
- 
- const draw = (e) => {
- if (!isDrawing) return;
- 
- // Safety: Ensure user is actually still holding the button
- if (e.type === 'mousemove' && e.buttons === 0) {
- isDrawing = false;
- return;
- }
-
- const pos = getPos(e);
- ctx.beginPath();
- ctx.moveTo(lastX, lastY);
- ctx.lineTo(pos.x, pos.y);
- ctx.strokeStyle = '#000000';
- ctx.lineWidth = 2;
- ctx.lineCap = 'round';
- ctx.lineJoin = 'round';
- ctx.stroke();
- 
- lastX = pos.x;
- lastY = pos.y;
- if (e.cancelable) e.preventDefault();
- };
- 
- const stopDrawing = () => { isDrawing = false; };
- 
- // RE-ENTRY LOGIC: Intelligently resumes drawing if the user leaves and returns
- const handleReEntry = (e) => {
- if (e.buttons === 1) { 
- const pos = getPos(e);
- lastX = pos.x;
- lastY = pos.y;
- isDrawing = true;
- }
- };
- 
- canvas.addEventListener('touchstart', startDrawing, { passive: false });
- canvas.addEventListener('touchmove', draw, { passive: false });
- canvas.addEventListener('touchend', stopDrawing);
- canvas.addEventListener('touchcancel', stopDrawing);
- 
- canvas.addEventListener('mousedown', startDrawing);
- canvas.addEventListener('mousemove', draw);
- canvas.addEventListener('mouseup', stopDrawing);
- canvas.addEventListener('mouseenter', handleReEntry); // Replaces 'mouseout'
-}
-
-// 5. RESIZE CANVAS 
-function resizeCanvas(canvasEl) {
- const ratio = window.devicePixelRatio || 1;
- const rect = canvasEl.getBoundingClientRect();
- // Buffer scaling for Retina/High-DPI crispness
- canvasEl.width = rect.width * ratio;
- canvasEl.height = rect.height * ratio;
- const ctx = canvasEl.getContext('2d');
- ctx.scale(ratio, ratio);
- // GOLDEN POLISH: Ensures PNG export has a white background
- ctx.fillStyle = "#ffffff";
- ctx.fillRect(0, 0, rect.width, rect.height);
-}
-
- 
-/**
- * FIXED: Clear Signature Button Logic
- * Logic: Prevents accidental form submission/page refresh on PC browsers.
- */
-function clearSig(id, event) {
- // 1. MISSION CRITICAL: Block the default browser button behavior
- if (event && typeof event.preventDefault === 'function') {
- event.preventDefault();
- }
- 
- const canvasId = id ? `sig-canvas-${id}` : 'sig-canvas';
- const canvas = document.getElementById(canvasId);
- 
- if (canvas) {
- const ctx = canvas.getContext('2d');
- // Correctly resets the canvas to white for a clean re-sign
- ctx.clearRect(0, 0, canvas.width, canvas.height);
- console.log(`Signature cleared: ${canvasId}`);
- }
-}
-
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
-// Helper: Get Device ID
-function getDeviceID() {
- let id = localStorage.getItem('otg_device_id');
- if (!id) {
- id = 'dev_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now().toString(36);
- localStorage.setItem('otg_device_id', id);
- console.log('New device ID generated:', id);
- }
- return id;
-}
-
-// Fetch locations from backend
-async function fetchLocationsFromBackend() {
- if (!CONFIG.url || !state || !state.worker || !state.worker.name) {
- console.warn('Cannot fetch locations: missing config or worker data');
- renderLocations(); // Render with empty list
- return;
- }
- 
- try {
- showToast('📡 Fetching locations...');
- 
- const url = `${CONFIG.url}?action=getLocations&worker=${encodeURIComponent(state.worker.name)}&deviceId=${state.deviceId}&key=${CONFIG.key}`;
- 
- console.log('Fetching from:', url);
- 
- const response = await fetch(url, {
- method: 'GET',
- headers: {
- 'Accept': 'application/json'
- }
- });
- 
- if (!response.ok) {
- throw new Error(`HTTP ${response.status}`);
- }
- 
- const data = await response.json();
- 
- console.log('Location fetch response:', data);
- 
- if (data.status === 'success' && data.locations && Array.isArray(data.locations)) {
- // Merge with existing locations (don't overwrite travel tile)
- const existingTravel = state.locations.find(l => l.id === 'travel');
- 
- state.locations = data.locations.filter(l => l.id !== 'travel');
- 
- // Re-add travel if it existed
- if (existingTravel) {
- state.locations.unshift(existingTravel);
- }
- 
- saveState();
- renderLocations();
- showToast(`✅ ${data.locations.length} locations loaded`);
- 
- console.log('Locations updated:', state.locations.length);
- } else {
- console.warn('Invalid response format:', data);
- renderLocations(); // Render with what we have
- showToast('⚠️ No locations from backend');
- }
- } catch (err) {
- console.error('Location fetch failed:', err);
- renderLocations(); // Render with what we have (at least travel tile)
- showToast('⚠️ Offline - using cached locations');
- }
-}
-
-// ============================================================================
-// HIGH-INTEGRITY INITIALIZATION (Fixed Syntax)
-// ============================================================================
-// ============================================================================
-// FIRST-USE VERIFICATION CARD
-// ============================================================================
-
-/** Show the card if the worker hasn't verified their safety chain yet. */
-function showVerificationCard() {
- if (!state || !state.worker || !state.worker.name) return;
- if (state.setupVerified) return;
- const card = document.getElementById('verifyCard');
- if (card) card.classList.remove('hidden');
-}
-
-/** Permanently dismiss the card and record completion in state. */
-function dismissVerification() {
- const card = document.getElementById('verifyCard');
- if (card) card.classList.add('hidden');
- state.setupVerified = true;
- saveState();
-}
-
-let _verifyPinVisible = false;
-function toggleVerifyPin() {
- _verifyPinVisible = !_verifyPinVisible;
- const display = document.getElementById('verifyPinDisplay');
- const btn = document.getElementById('btnVerifyPin');
- if (!display || !btn) return;
- display.textContent = _verifyPinVisible ? (state.pins?.std || '—') : '••••';
- btn.textContent = _verifyPinVisible ? 'Hide' : 'Show';
-}
-
-/** Send a test alert from the verification card and update the card's inline result. */
-async function verifyTestAlert() {
- const resultEl = document.getElementById('verifyAlertResult');
- const btn = document.getElementById('btnVerifyAlert');
-
- const w = state?.worker || {};
- const contacts = [w.emgEmail, w.escEmail].filter(Boolean);
-
- if (contacts.length === 0) {
- if (resultEl) {
- resultEl.textContent = '⚠️ No email contacts configured — add them in Settings first.';
- resultEl.className = 'text-xs font-bold rounded-lg px-3 py-2 mb-2 bg-amber-900/40 text-amber-400';
- resultEl.classList.remove('hidden');
- }
- return;
- }
-
- if (btn) { btn.disabled = true; btn.textContent = '⏳ Sending…'; }
- if (resultEl) {
- resultEl.textContent = '⏳ Sending test alert…';
- resultEl.className = 'text-xs font-bold rounded-lg px-3 py-2 mb-2 bg-gray-700 text-gray-300';
- resultEl.classList.remove('hidden');
- }
-
- try {
- await outboxEnqueue(buildPayload({
- 'Alarm Status': 'TEST_ALERT',
- 'Notes': 'First-use verification — test alert sent to confirm contacts are reachable.',
- 'Last Known GPS': lastGPS || '0,0',
- 'Location Name': 'Test (no active visit)',
- 'Location Address': 'Sent from verification card'
- }));
- if (resultEl) {
- resultEl.textContent = `✅ Sent to: ${contacts.join(', ')} — ask them to confirm receipt (check spam too).`;
- resultEl.className = 'text-xs font-bold rounded-lg px-3 py-2 mb-2 bg-green-900/40 text-green-400';
- }
- if (btn) { btn.disabled = false; btn.textContent = '📧 Send Again'; }
- } catch (e) {
- if (resultEl) {
- resultEl.textContent = '⚠️ Failed — check your connection and try again.';
- resultEl.className = 'text-xs font-bold rounded-lg px-3 py-2 mb-2 bg-red-900/40 text-red-400';
- }
- if (btn) { btn.disabled = false; btn.textContent = '📧 Send Test Alert'; }
- }
-}
-
-/**
- * Called when the contact-confirmed checkbox changes.
- * Promotes the dismiss button to a positive completion action.
- */
-function updateVerifyProgress() {
- const confirmed = document.getElementById('verifyContactConfirmed')?.checked;
- const btn = document.getElementById('btnDismissVerify');
- if (!btn) return;
- if (confirmed) {
- btn.textContent = '✅ Done — Safety Chain Verified';
- btn.className = 'w-full rounded-xl bg-green-700 py-3 text-xs font-black tracking-widest text-white';
- } else {
- btn.textContent = "Dismiss — I'll verify later";
- btn.className = 'w-full rounded-xl bg-gray-700 py-3 text-xs font-black tracking-widest text-gray-400';
- }
-}
-
-// _initApp is called by loadConfig() after config.json has been fetched and
-// applied. It replaces the old window.onload handler. The boot screen hides
-// before this runs so the user sees a fully themed, configured app.
-function _initApp() {
- // navigator.storage.persist() is the standardised W3C Storage API.
- // Note: if the browser console shows a ".persistent" deprecation, it refers
- // to the old webkitPersistentStorage API — not this call — and can be ignored.
- if (navigator.storage && navigator.storage.persist) {
- navigator.storage.persist().then(granted => {
- if (granted) console.log("✅ Persistent storage granted");
- else console.warn("⚠️ Storage persistence denied by browser.");
- });
- }
- // 1. Establish State Integrity
- state = loadState() || {
- currentWizStep: 1,
- worker: {},
- settings: { isAdvanced: false },
- pins: { std: '', duress: '' },
- activeVisit: null,
- pendingUploads: [],
- locations: [],
- visitWelfareOverride: null, // per-visit welfare interval (mins) — null = use site/risk default
- photoStore: {},
- meta: { lastVehCheck: null, wofExpiry: null },
- vehicle: { wofExpiry: '', regoExpiry: '', lastVehCheck: null },
- visitDurationMinutes: 0,
- lastVisitedLocationId: null, // persisted so "Recent" pin survives app restarts
- travelNoReportDefault: false, // persistent per-worker travel report preference (used when CONFIG.reqTravelReport is false)
- setupVerified: false // true once worker has verified their safety chain post-wizard
- };
-
- // 2. Bind high-sensitivity actions to long-press AFTER state load
- setupLongPress('btnResetData', 1500, clearData);
- setupLongPress('btnMainClearCache', 1500, clearFormsCache);
- setupLongPress('btnDelLoc', 1500, deleteLoc);
-
- // 2a. Phase migration: if a visit was loaded from state saved before the
- // phase field was introduced, derive and write phase from legacy flags
- // so getVisitPhase() returns the correct value for the rest of the session.
- if (state.activeVisit && !state.activeVisit.phase) {
- state.activeVisit.phase = getVisitPhase(); // getVisitPhase() derives from flags when phase is absent
- saveState();
- }
-
- // 3. Ensure nested objects exist
- if (!state.meta) state.meta = {};
- if (!state.settings) state.settings = {};
- if (!state.worker) state.worker = {};
-
- if (!state.deviceId) {
- state.deviceId = getDeviceID();
- saveState();
- }
-
- // 4. System Initialization
- updateOnlineStatus();
- checkIosInstall();
- 
- if (!state.worker || !state.worker.name) {
- navigate('setup');
- } else {
- navigate(state.activeVisit ? 'locked' : 'main');
- showVerificationCard();
- renderLocations(); 
- setupHoldToStart(); 
- checkVehicleStatus();
- checkWofOnLoad(); // Show WOF reminder if expiring within 14 days
- checkActiveNotice();
- 
- if (state.activeVisit) {
- enterLockedScreen();
- // enterLockedScreen() starts tickIntervalId - no duplicate needed here
- }
-
- const isTemplate = !CONFIG.key || CONFIG.key.length < 3;
- if (!isTemplate && navigator.onLine) {
- forceSync(false); 
- }
- }
-
- initShakeDetection();
- initVolumeDetection();
- initSlideToWake();
- initAllActionPills();
- 
- // 5. User Interaction Bindings
- const btnPanic = document.getElementById('btnPanic');
- if (btnPanic) {
- btnPanic.onclick = () => {
- panicTapCount++;
- clearTimeout(panicTapTimer);
- if (panicTapCount === 3) {
- panicTapCount = 0;
- triggerPanic(false);
- } else {
- panicTapTimer = setTimeout(() => { panicTapCount = 0; }, 2000);
- }
- };
- }
-
- // 6. Global Inactivity Monitoring
- // Debounced so that sliders and other controls generating rapid touchmove/mousemove
- // events don't hammer resetInactivityTimer() and accidentally re-arm the timer
- // mid-interaction. 300ms is imperceptible to the user but collapses bursts into
- // a single call.
- function _debounce(fn, delay) {
- let t;
- return function(...args) { clearTimeout(t); t = setTimeout(() => fn.apply(this, args), delay); };
- }
- const _debouncedResetInactivity = _debounce(resetInactivityTimer, 300);
- ['mousedown', 'touchstart', 'mousemove', 'keydown'].forEach(evt => {
- window.addEventListener(evt, _debouncedResetInactivity, { passive: true });
- });
-
- console.log("OTG Safety Engine: Robust Initialization Complete.");
- updateLastSyncUI();
-
- // Keep currentBatteryLevel accurate for all buildPayload calls.
- // 3-minute interval is sufficient — battery drains slowly and the 15% low-battery
- // threshold gives ample warning time. 60s was unnecessarily frequent.
- refreshBatteryLevel();
- setInterval(refreshBatteryLevel, 180000);
-
- // OUTBOX: Migrate any events still in the localStorage legacy queue to
- // the durable IndexedDB store. No-op if the queue is already empty.
- _outboxDrainLegacy();
-
- // OUTBOX: Resume delivery of any pending events as soon as connectivity
- // is (re)established — covers app-launch-while-offline then going online,
- // and mid-session reconnects after a tunnel / building / dead-zone drop.
- window.addEventListener('online', () => {
- console.log('Network restored — flushing outbox.');
- setTimeout(outboxProcess, 1000); // 1 s settling delay for routing to stabilise
- });
-};
-
-// ============================================================================
-// PHASE 1: SETTINGS PAGE FUNCTIONS
-// ============================================================================
-function toggleDiagnostics() {
- const panel = document.getElementById('diagnosticsPanel');
- const chevron = document.getElementById('diagnosticsChevron');
- if (!panel) return;
- const isOpen = !panel.classList.contains('hidden');
- panel.classList.toggle('hidden', isOpen);
- if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(180deg)';
-}
-
-function populateSettingsForm() {
- if (!state || !state.worker) return;
- const s = state.worker;
- document.getElementById('setName').value = s.name || '';
- document.getElementById('setPhone').value = s.phone || '';
- document.getElementById('setEmail').value = s.email || '';
- document.getElementById('setEmgName').value = s.emgName || '';
- document.getElementById('setEmgPhone').value = s.emgPhone || '';
- document.getElementById('setEmgEmail').value = s.emgEmail || '';
- document.getElementById('setEmgNtfy').value = s.emgNtfy || '';
- document.getElementById('setEscName').value = s.escName || '';
- document.getElementById('setEscPhone').value = s.escPhone || '';
- document.getElementById('setEscEmail').value = s.escEmail || '';
- document.getElementById('setEscNtfy').value = s.escNtfy || '';
-}
-
-function saveSettings() {
- if (!state || !state.worker) return;
- 
- state.worker.name = document.getElementById('setName').value.trim();
- state.worker.phone = document.getElementById('setPhone').value.trim();
- state.worker.email = document.getElementById('setEmail').value.trim();
- state.worker.emgName = document.getElementById('setEmgName').value.trim();
- state.worker.emgPhone = document.getElementById('setEmgPhone').value.trim();
- state.worker.emgEmail = document.getElementById('setEmgEmail').value.trim();
- state.worker.emgNtfy = document.getElementById('setEmgNtfy').value.trim();
- state.worker.escName = document.getElementById('setEscName').value.trim();
- state.worker.escPhone = document.getElementById('setEscPhone').value.trim();
- state.worker.escEmail = document.getElementById('setEscEmail').value.trim();
- state.worker.escNtfy = document.getElementById('setEscNtfy').value.trim();
- 
- saveState();
- 
- showToast('✅ Settings Saved');
- _warmAudio(); // Secondary warm-up opportunity on confirmed user gesture
- navigate('main');
-}
-
-function exportUserData() {
- if (!state) return;
- 
- const data = {
- exportDate: new Date().toISOString(),
- worker: state.worker,
- safetyLog: state.pendingUploads || [],
- settings: state.settings
- };
- 
- const blob = new Blob([JSON.stringify(data, null, 2)], {
- type: 'application/json'
- });
- const url = URL.createObjectURL(blob);
- const a = document.createElement('a');
- a.href = url;
- a.download = `worker-data-${Date.now()}.json`;
- a.click();
- URL.revokeObjectURL(url);
- 
- showToast('📤 Data Exported');
-}
-
-// ============================================================================
-// UPDATED: LOCATION MANAGEMENT
-// ============================================================================
-function openAddLocationModal() {
- // Reset modal fields for a fresh entry
- document.getElementById('locId').value = '';
- document.getElementById('locBusiness').value = '';
- document.getElementById('locName').value = '';
- document.getElementById('locAddr').value = '';
- document.getElementById('locContactName').value = '';
- document.getElementById('locContactPhone').value = '';
- document.getElementById('locContactEmail').value = '';
- document.getElementById('locCritical').checked = false;
- const reqReport = document.getElementById('locRequiresReport');
- if (reqReport) reqReport.checked = true; // Default: report required
- const tmpl = document.getElementById('locTemplate');
- if (tmpl) tmpl.value = '';
- 
- const btnDel = document.getElementById('btnDelLoc');
- if (btnDel) btnDel.classList.add('hidden');
-
- const titleEl = document.querySelector('#locationModal h2');
- if (titleEl) titleEl.textContent = 'Add Location';
-
- showModal('location');
-}
-
-// Edit manual location - opens modal pre-filled
-function editManualLocation(id) {
- const location = state.locations.find(x => x.id === id);
- if (!location) return;
- 
- const titleEl = document.querySelector('#locationModal h2');
- if (titleEl) titleEl.textContent = 'Edit Location';
- 
- document.getElementById('locId').value = id;
- document.getElementById('locBusiness').value = location.companyName || '';
- document.getElementById('locName').value = location.name || '';
- document.getElementById('locAddr').value = location.address || '';
- 
- const contactName = document.getElementById('locContactName');
- const contactPhone = document.getElementById('locContactPhone');
- const contactEmail = document.getElementById('locContactEmail');
- if (contactName) contactName.value = location.contactName || '';
- if (contactPhone) contactPhone.value = location.contactPhone || '';
- if (contactEmail) contactEmail.value = location.contactEmail || '';
- 
- const criticalCheckbox = document.getElementById('locCritical');
- if (criticalCheckbox) criticalCheckbox.checked = location.isCritical || false;
-
- const reqReport = document.getElementById('locRequiresReport');
- // noReport=true means report NOT required, so toggle is checked when noReport=false
- if (reqReport) reqReport.checked = !location.noReport;
-
- const tmpl = document.getElementById('locTemplate');
- if (tmpl) tmpl.value = location.templateName || '';
-
- const btnDel = document.getElementById('btnDelLoc');
- if (btnDel) btnDel.classList.remove('hidden');
-
- showModal('location');
-}
-
-// Clear forms cache and resync
-// ============================================================================
-// PERSONAL SITES EXPORT / IMPORT
-// ============================================================================
-
-/**
- * Export all manually-added sites (loc_ prefix) as a compact signed JSON string.
- * Uses the Web Share API on mobile (native share sheet) and falls back to
- * copying to clipboard on desktop.
- */
-function exportMySites() {
- const manual = (state.locations || []).filter(l => l && l.id && l.id.startsWith('loc_'));
-
- if (manual.length === 0) {
- showToast('⚠️ No personal sites to export');
- return;
- }
-
- // Strip the id field — it will be regenerated on import so there's no collision risk
- // if the worker imports back to the same device or imports multiple times.
- const exportData = {
- v: 1,
- worker: state.worker?.name || '',
- exported: new Date().toISOString().slice(0, 10),
- sites: manual.map(({ id, ...rest }) => rest)
- };
-
- const payload = btoa(JSON.stringify(exportData));
- const msg = `OTG Sites Export — ${manual.length} site${manual.length !== 1 ? 's' : ''}\n\n${payload}`;
-
- if (navigator.share) {
- navigator.share({ title: 'My Safety App Sites', text: msg })
- .catch(err => { if (err.name !== 'AbortError') showToast('⚠️ Share failed'); });
- } else if (navigator.clipboard) {
- navigator.clipboard.writeText(payload)
- .then(() => showToast(`✅ ${manual.length} site${manual.length !== 1 ? 's' : ''} copied to clipboard`))
- .catch(() => showToast('⚠️ Copy failed — try long-pressing the code'));
- } else {
- showToast('⚠️ Sharing not supported on this browser');
- }
-}
-
-/**
- * Import personal sites from a pasted export payload.
- * Skips any site whose name already exists (case-insensitive) to prevent duplicates.
- * Always generates fresh loc_ IDs so there are no collisions.
- */
-function importMySites() {
- const textarea = document.getElementById('importSitesPayload');
- const errorEl = document.getElementById('importSitesError');
-
- const raw = (textarea?.value || '').trim();
- if (!raw) {
- if (errorEl) { errorEl.textContent = 'Please paste your export code first.'; errorEl.classList.remove('hidden'); }
- return;
- }
-
- let exportData;
- try {
- exportData = JSON.parse(atob(raw));
- } catch (e) {
- if (errorEl) { errorEl.textContent = 'Invalid code — make sure you pasted the full export text.'; errorEl.classList.remove('hidden'); }
- return;
- }
-
- if (!exportData || exportData.v !== 1 || !Array.isArray(exportData.sites)) {
- if (errorEl) { errorEl.textContent = 'Unrecognised format. Export again from your old device.'; errorEl.classList.remove('hidden'); }
- return;
- }
-
- const existingNames = new Set(
- (state.locations || []).map(l => (l.name || '').toLowerCase().trim())
- );
-
- let added = 0, skipped = 0;
- exportData.sites.forEach(site => {
- const nameLower = (site.name || '').toLowerCase().trim();
- if (!nameLower) return;
- if (existingNames.has(nameLower)) { skipped++; return; }
- state.locations.push({ ...site, id: 'loc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6) });
- existingNames.add(nameLower);
- added++;
- });
-
- saveState();
- renderLocations();
- closeModal('importSites');
-
- if (textarea) textarea.value = '';
- if (errorEl) errorEl.classList.add('hidden');
-
- const msg = skipped > 0
- ? `✅ ${added} imported, ${skipped} already existed`
- : `✅ ${added} site${added !== 1 ? 's' : ''} imported`;
- showToast(msg);
-}
-
-/**
- * Updates the "X personal sites" summary label shown on the Settings page.
- * Called each time the Settings page is opened.
- */
-function updateMySitesSummary() {
- const el = document.getElementById('mySitesSummary');
- if (!el) return;
- const count = (state.locations || []).filter(l => l && l.id && l.id.startsWith('loc_')).length;
- el.textContent = count === 0
- ? 'No personal sites saved on this device.'
- : `${count} personal site${count !== 1 ? 's' : ''} saved on this device.`;
-}
-
-function clearFormsCache() {
- if (!state) return;
- state.cachedForms = {};
- state.globalForms = [];
- // Also clear backend-sourced locations so stale site names don't survive a failed sync.
- // Manual locations (loc_ prefix) are preserved — only backend sites (site_ prefix) are dropped.
- const existingManual = state.locations ? state.locations.filter(x => x && x.id && x.id.startsWith('loc_')) : [];
- state.locations = existingManual;
- saveState();
- renderLocations(); // Show "No Sites Synced" immediately so worker knows a refresh is in progress
- showToast('🔄 Clearing cache and resyncing...');
- setTimeout(() => forceSync(true), 500);
-}
-
-// Clear all app data
-function clearData() {
- if (confirm('⚠️ WARNING: This will erase ALL app data including settings, locations, and queued uploads.\n\nAre you absolutely sure?')) {
- if (confirm('⚠️ FINAL WARNING: There is NO UNDO. All data will be permanently deleted.\n\nContinue?')) {
- localStorage.clear();
- showToast('🗑️ All data cleared - Reloading...');
- setTimeout(() => location.reload(), 1000);
- }
- }
-}
-
-/**
- * FORCE APP UPDATE — Hard cache wipe + SW unregister + reload.
- *
- * Solves the problem where a redeployed app (new colours, new HTML) still shows
- * stale content because the Service Worker is serving files from its Cache API.
- * The normal SW update path (updatefound → SKIP_WAITING → reload) only replaces
- * the SW itself; it does not guarantee that newly-cached assets are fetched if
- * the cache key logic doesn't invalidate the old entries.
- *
- * This function does a full nuclear reset of the browser-side app layer:
- * 1. Deletes ALL Cache API entries (every cache the SW has created)
- * 2. Unregisters the SW so there is no stale controller on next load
- * 3. Hard-reloads — everything is fetched fresh from the server
- *
- * What is intentionally NOT touched:
- * - IndexedDB (outbox queue — safety-critical, must survive)
- * - localStorage (worker identity, registration, settings — would require re-registration)
- *
- * After reload the SW re-registers, fetches all assets from the server, and
- * caches the fresh versions. The app will be fully up to date.
- */
-async function forceAppUpdate() {
- if (!confirm('This will clear all cached app files and reload from the server.\n\nYour registration and settings will be preserved. Use this if the app looks wrong after an update.\n\nContinue?')) return;
-
- showToast('🔄 Clearing app cache…');
-
- try {
- // 1. Nuke all Cache API entries
- if ('caches' in window) {
- const keys = await caches.keys();
- await Promise.all(keys.map(k => caches.delete(k)));
- console.log(`[UPDATE] Deleted ${keys.length} cache(s):`, keys);
- }
-
- // 2. Unregister the SW — removes the stale controller entirely
- if ('serviceWorker' in navigator) {
- const regs = await navigator.serviceWorker.getRegistrations();
- await Promise.all(regs.map(r => r.unregister()));
- console.log(`[UPDATE] Unregistered ${regs.length} service worker(s).`);
- }
- } catch (err) {
- console.warn('[UPDATE] Cleanup error (non-fatal):', err);
- }
-
- // 3. Navigate to a cache-busted URL — forces a genuine fresh fetch from the server.
- // reload(true) is non-standard and ignored by Chrome/Android; a new URL bypasses
- // the HTTP disk cache entirely. replace() avoids polluting browser history.
- window.location.replace(window.location.pathname + '?_bust=' + Date.now());
-}
-
-
-// Update system info on settings page 
-/**
- * CONTACT VERIFICATION — SEND TEST ALERT
- * Dispatches a real test email to all configured emergency contacts via the
- * normal backend pipeline. Lets workers verify addresses are correct and that
- * alert emails actually land in inboxes (and don't go to spam) before an
- * emergency. The backend sends a clearly-marked "this is a test" email.
- */
-async function sendTestAlert() {
- const resultEl = document.getElementById('testAlertResult');
-
- const w = state?.worker || {};
- const contacts = [
- w.emgEmail || w.iceEmail,
- w.escEmail || w.ice2Email
- ].filter(Boolean);
-
- if (contacts.length === 0) {
- if (resultEl) {
- resultEl.textContent = '⚠️ No email contacts configured. Add emergency contacts in Settings first.';
- resultEl.className = 'text-xs font-bold rounded-lg px-3 py-2 mb-3 bg-amber-900/40 text-amber-400';
- resultEl.classList.remove('hidden');
- }
- return;
- }
-
- if (resultEl) {
- resultEl.textContent = '⏳ Sending test alert…';
- resultEl.className = 'text-xs font-bold rounded-lg px-3 py-2 mb-3 bg-gray-700 text-gray-300';
- resultEl.classList.remove('hidden');
- }
-
- try {
- await outboxEnqueue(buildPayload({
- 'Alarm Status': 'TEST_ALERT',
- 'Notes': 'Manual test alert sent from Settings page to verify contact configuration.',
- 'Last Known GPS': lastGPS || '0,0',
- // Override location with honest description — there is no active visit,
- // so buildPayload() would otherwise fall back to "Unknown Site".
- 'Location Name': 'Test (no active visit)',
- 'Location Address': 'Sent from Settings page'
- }));
-
- if (resultEl) {
- resultEl.textContent = `✅ Test alert sent to: ${contacts.join(', ')} — ask them to check their inbox (and spam folder).`;
- resultEl.className = 'text-xs font-bold rounded-lg px-3 py-2 mb-3 bg-green-900/40 text-green-400';
- }
- } catch (e) {
- if (resultEl) {
- resultEl.textContent = '⚠️ Failed to queue test alert. Check your connection and try again.';
- resultEl.className = 'text-xs font-bold rounded-lg px-3 py-2 mb-3 bg-red-900/40 text-red-400';
- }
- }
-}
-
-function updateSystemInfo() {
- const backendUrl = document.getElementById('setBackendUrl');
- if (backendUrl) {
- backendUrl.value = CONFIG.url || 'Not configured';
- }
- 
- const backendVersion = document.getElementById('backendVersion');
- const syncStatus = document.getElementById('syncStatus');
- 
- // Skip ping if key hasn't been injected by factory yet
- if (!CONFIG.key || CONFIG.key.length < 3) {
- if (backendVersion) {
- backendVersion.textContent = 'Pending factory injection';
- backendVersion.className = 'text-sm font-mono text-yellow-400';
- }
- if (syncStatus) {
- syncStatus.textContent = 'Template mode (needs deployment)';
- syncStatus.className = 'text-sm font-mono text-yellow-400';
- }
- return;
- }
- 
- // Try to ping backend for version
- if (CONFIG.url && navigator.onLine) {
- fetch(`${CONFIG.url}?action=ping&key=${CONFIG.key}`, { 
- method: 'GET',
- headers: { 'Accept': 'application/json' }
- })
- .then(r => r.json())
- .then(data => {
- if (backendVersion) {
- backendVersion.textContent = data.version || 'v1.0';
- backendVersion.className = 'text-sm font-mono text-green-400';
- }
- if (syncStatus) {
- syncStatus.textContent = 'Connected ✓';
- syncStatus.className = 'text-sm font-mono text-green-400';
- }
- })
- .catch(e => {
- if (backendVersion) {
- backendVersion.textContent = 'Unknown';
- backendVersion.className = 'text-sm font-mono text-yellow-400';
- }
- if (syncStatus) {
- syncStatus.textContent = 'Offline';
- syncStatus.className = 'text-sm font-mono text-red-400';
- }
- });
- } else {
- if (syncStatus) {
- syncStatus.textContent = 'No network';
- syncStatus.className = 'text-sm font-mono text-gray-400';
- }
- }
-
- // Always refresh the outbox panel when settings page opens
- updateOutboxStatus();
-}
-
-// ============================================================================
-// OUTBOX DIAGNOSTIC PANEL RENDERER
-// ============================================================================
-/**
- * Reads the IndexedDB outbox and populates the Event Outbox panel in Settings.
- * Called every time the settings page is opened via updateSystemInfo().
- */
-async function updateOutboxStatus() {
- const pendingEl = document.getElementById('outboxPending');
- const sentEl = document.getElementById('outboxSent');
- const lastSentEl = document.getElementById('outboxLastSent');
- const historyEl = document.getElementById('outboxHistory');
- if (!pendingEl || !sentEl || !lastSentEl || !historyEl) return;
-
- let db;
- try { db = await _outboxDB(); } catch (e) {
- historyEl.innerHTML = '<div class="text-red-400 text-center py-2">IndexedDB unavailable</div>';
- return;
- }
-
- // Read all records — most deployments will have fewer than a few hundred.
- const allRecords = await new Promise(resolve => {
- const tx = db.transaction('events', 'readonly');
- const req = tx.objectStore('events').getAll();
- req.onsuccess = e => resolve(e.target.result || []);
- req.onerror = () => resolve([]);
- });
-
- const pending = allRecords.filter(r => r.status === 'pending');
- const sent = allRecords.filter(r => r.status === 'sent');
-
- pendingEl.textContent = pending.length;
- pendingEl.className = `text-xl font-black ${pending.length > 0 ? 'text-yellow-400' : 'text-green-400'}`;
- sentEl.textContent = sent.length;
-
- // Most recent sent record
- const lastSent = sent.sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt))[0];
- if (lastSent?.sentAt) {
- const d = new Date(lastSent.sentAt);
- lastSentEl.textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
- + ' ' + d.toLocaleDateString([], { day: 'numeric', month: 'short' });
- } else {
- lastSentEl.textContent = 'Never';
- }
-
- // Build history list — show newest 15 records across both statuses
- const recent = [...allRecords]
- .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
- .slice(0, 15);
-
- if (recent.length === 0) {
- historyEl.innerHTML = '<div class="text-gray-600 text-center py-2">No events recorded yet</div>';
- return;
- }
-
- historyEl.innerHTML = recent.map(r => {
- const alarmStatus = r.payload?.['Alarm Status'] || 'LOG';
- const ts = r.createdAt ? new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '?';
- const dot = r.status === 'sent' ? '🟢' : '🟡';
- const attempts = r.attempts > 0 ? ` ×${r.attempts}` : '';
- return `<div class="flex justify-between items-center py-0.5">
- <span>${dot} <span class="text-white">${alarmStatus}</span>${attempts}</span>
- <span class="text-gray-500">${ts}</span>
- </div>`;
- }).join('');
-}
-
-/**
- * Reads the IndexedDB outbox for sent ARRIVED / TRAVELLING records and renders
- * a read-only visit history log in the Settings page.
- * Groups entries by calendar date, newest first, capped at 30 entries.
- */
-async function populateVisitHistory() {
- const container = document.getElementById('visitHistoryList');
- if (!container) return;
-
- let db;
- try { db = await _outboxDB(); } catch (e) {
- container.innerHTML = '<p class="text-xs text-red-400 text-center py-2">Unable to load history.</p>';
- return;
- }
-
- const allRecords = await new Promise(resolve => {
- const tx = db.transaction('events', 'readonly');
- const req = tx.objectStore('events').getAll();
- req.onsuccess = e => resolve(e.target.result || []);
- req.onerror = () => resolve([]);
- });
-
- const VISIT_START_STATUSES = ['ARRIVED', 'TRAVELLING'];
- const visits = allRecords
- .filter(r => VISIT_START_STATUSES.includes(r.payload?.['Alarm Status']))
- .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
- .slice(0, 30);
-
- if (visits.length === 0) {
- container.innerHTML = '<p class="text-xs text-gray-500 italic text-center py-2">No visits recorded yet.</p>';
- return;
- }
-
- // Group by local calendar date
- const groups = {};
- for (const v of visits) {
- const d = new Date(v.createdAt);
- const key = d.toLocaleDateString('en-NZ', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
- if (!groups[key]) groups[key] = [];
- groups[key].push(v);
- }
-
- const rows = Object.entries(groups).map(([dateLabel, records]) => {
- const items = records.map(r => {
- const status = r.payload?.['Alarm Status'];
- const locName = r.payload?.['Location Name'] || 'Unknown location';
- const isTravel = status === 'TRAVELLING';
- const icon = isTravel ? '🚗' : '📍';
- const typeLabel = isTravel ? '<span class="text-indigo-400">Travel</span>' : '<span class="text-green-400">Site visit</span>';
- const pending = r.status !== 'sent';
- const time = new Date(r.createdAt).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' });
- return `<div class="flex items-center gap-3 py-2 border-b border-gray-700/50 last:border-0">
- <span class="text-lg leading-none">${icon}</span>
- <div class="flex-1 min-w-0">
- <div class="text-sm font-bold text-white truncate">${locName}</div>
- <div class="text-xs text-gray-400">${typeLabel} &middot; ${time}${pending ? ' <span class="text-yellow-400">⏳</span>' : ''}</div>
- </div>
- </div>`;
- }).join('');
-
- return `<div class="mb-1">
- <div class="text-xs font-bold text-gray-500 uppercase tracking-widest px-1 pt-2 pb-1">${dateLabel}</div>
- ${items}
- </div>`;
- }).join('');
-
- container.innerHTML = rows;
-}
-
-// ============================================================================
-// PHASE 1: VEHICLE WOF COMPLIANCE SYSTEM
-// ============================================================================
-function checkVehicleStatus() {
- if (!state || !state.meta) return;
- 
- const nagBar = document.getElementById('vehNagBar');
- if (!nagBar) return;
- 
- let showNag = false;
- 
- // Check last vehicle check date
- if (state.meta.lastVehCheck) {
- const lastCheck = new Date(state.meta.lastVehCheck);
- const daysSince = (Date.now() - lastCheck.getTime()) / (1000 * 60 * 60 * 24);
- if (daysSince > 120) { // 120 days
- showNag = true;
- nagBar.innerText = '⚠️ Vehicle Check Overdue - Tap to Complete';
- }
- } else {
- showNag = true;
- nagBar.innerText = '⚠️ Vehicle Check Required';
- }
- 
- // Check WOF expiry
- if (state.meta.wofExpiry) {
- const wofDate = new Date(state.meta.wofExpiry);
- const daysUntil = (wofDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
- 
- if (daysUntil < 0) {
- // EXPIRED - block usage
- showNag = true;
- nagBar.innerText = '⛔ WOF EXPIRED - Vehicle Use Prohibited';
- nagBar.classList.add('animate-pulse');
- } else if (daysUntil < 14) {
- // Expiring soon - warn
- showNag = true;
- nagBar.innerText = `⚠️ Vehicle Check: WOF Due in ${Math.ceil(daysUntil)} Days`;
- }
- }
- 
- if (showNag) {
- nagBar.classList.remove('hidden');
- } else {
- nagBar.classList.add('hidden');
- }
-}
-
-function startVehicleCheck() {
- isMidVisitUpdate = true; // Prevents the form from ending a visit session
- // Ensure this matches the EXACT name in your spreadsheet 'Templates' tab
- loadFormAndShow('Vehicle Safety Check'); 
-}
-function checkVehicleBeforeVisit(isTravelMode) {
- if (!state || !state.meta) return false;
- // WOF checks only apply to vehicle travel - site visits are unaffected.
- if (!isTravelMode) return false;
-
- if (state.meta.wofExpiry) {
- const wofDate = new Date(state.meta.wofExpiry);
- if (wofDate < new Date()) {
- // Expired - hard block on travel
- showModal('wofBlock');
- return true;
- }
- 
- // Expiring within 14 days - warn but allow with acknowledgment
- const daysUntil = (wofDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
- if (daysUntil > 0 && daysUntil < 14) {
- openWofWarnAsVisitGate(Math.ceil(daysUntil));
- return true;
- }
- }
-
- return false;
-}
-
-function closeWofBlocker() {
- closeModal('wofBlock');
-}
-
-/**
- * Called once on every app open. Shows a reminder if WOF expires within 14 days.
- * No localStorage suppression - intentionally shows every session so workers
- * are reminded until they renew and submit a Vehicle Safety Check.
- */
-function checkWofOnLoad() {
- if (!state || !state.meta || !state.meta.wofExpiry) return;
- const wofDate = new Date(state.meta.wofExpiry);
- const daysUntil = (wofDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
- if (daysUntil >= 0 && daysUntil < 14) {
- openWofWarnAsReminder(Math.ceil(daysUntil));
- }
-}
-
-/**
- * Opens the WOF warning modal in visit-gate mode.
- * Shows the acknowledgment checkbox and Continue button;
- * on Continue the visit resumes via startVisit(true).
- */
-function openWofWarnAsVisitGate(daysUntil) {
- const modal = document.getElementById('wofWarnModal');
- const warnText = document.getElementById('wofWarnText');
- const visitSection = document.getElementById('wofWarnVisitSection');
- const continueBtn = document.getElementById('btnWofContinue');
- const dismissBtn = document.getElementById('btnWofDismiss');
- const checkbox = document.getElementById('chkWofAck');
-
- if (warnText) warnText.innerText = daysUntil + ' day' + (daysUntil === 1 ? '' : 's');
- if (modal) modal.setAttribute('data-mode', 'visit');
- if (visitSection) visitSection.classList.remove('hidden');
- if (continueBtn) { continueBtn.classList.remove('hidden'); continueBtn.disabled = true;
- continueBtn.classList.add('bg-gray-700', 'text-gray-500');
- continueBtn.classList.remove('bg-blue-600', 'text-white'); }
- if (dismissBtn) dismissBtn.classList.add('hidden');
- if (checkbox) checkbox.checked = false;
- showModal('wofWarn');
-}
-
-/**
- * Opens the WOF warning modal in load-reminder mode.
- * Shows only the dismissal button - no visit gating.
- */
-function openWofWarnAsReminder(daysUntil) {
- const modal = document.getElementById('wofWarnModal');
- const warnText = document.getElementById('wofWarnText');
- const visitSection = document.getElementById('wofWarnVisitSection');
- const continueBtn = document.getElementById('btnWofContinue');
- const dismissBtn = document.getElementById('btnWofDismiss');
-
- if (warnText) warnText.innerText = daysUntil + ' day' + (daysUntil === 1 ? '' : 's');
- if (modal) modal.setAttribute('data-mode', 'load');
- if (visitSection) visitSection.classList.add('hidden');
- if (continueBtn) continueBtn.classList.add('hidden');
- if (dismissBtn) dismissBtn.classList.remove('hidden');
- showModal('wofWarn');
-}
-
-function toggleWofContinue() {
- const checkbox = document.getElementById('chkWofAck');
- const button = document.getElementById('btnWofContinue');
- if (checkbox && button) {
- if (checkbox.checked) {
- button.disabled = false;
- button.classList.remove('bg-gray-700', 'text-gray-500');
- button.classList.add('bg-blue-600', 'text-white');
- } else {
- button.disabled = true;
- button.classList.add('bg-gray-700', 'text-gray-500');
- button.classList.remove('bg-blue-600', 'text-white');
- }
- }
-}
-
-/**
- * Dismisses the WOF warning modal.
- * If in visit-gate mode, resumes startVisit(true).
- * If in load-reminder mode, just closes.
- */
-function closeWofWarn() {
- const modal = document.getElementById('wofWarnModal');
- const isVisitGate = modal && modal.getAttribute('data-mode') === 'visit';
- const checkbox = document.getElementById('chkWofAck');
- if (checkbox) checkbox.checked = false;
- closeModal('wofWarn');
- if (isVisitGate) startVisit(true);
-}
-
-/**
- * RE-ENGINEERED: confirmExtension
- * Logic: Increments duration and resets all safety flags.
- */
-function confirmExtension(minutes) {
- const updateTime = () => {
- const currentDue = state.activeVisit.anticipatedDepartureTime;
- const newDue = currentDue + (minutes * 60000);
- 
- state.activeVisit.anticipatedDepartureTime = newDue;
- 
- // GOLDEN FIX: Increase the total duration budget so timer % stays correct
- state.activeVisit.duration += (minutes * 60);
- 
- // Reset visit phase and safety flags
- setVisitPhase(VISIT_PHASES.ACTIVE);
- state.activeVisit.overdueGpsSent = false;
- 
- // Reset warnings so they fire again
- state.activeVisit.warn5minSent = false;
- state.activeVisit.warn2minSent = false;
- state.activeVisit.warn90Sent = false;
- 
- // UI Clean-up
- document.body.classList.remove('bg-red-900', 'panic-mode');
- const timerEl = document.getElementById('countdownTimer');
- if (timerEl) timerEl.classList.remove('text-red-500', 'animate-pulse');
- const overdueLabel = document.getElementById('overdueLabel');
- if (overdueLabel) {
- overdueLabel.classList.add('hidden');
- overdueLabel.innerText = "OVERDUE"; // Reset label text
- }
-
- saveState();
- 
- // Sync with Backend
- processUploadQueue(buildPayload({
- 'Alarm Status': 'EXTENDED',
- 'Notes': `Extended ${minutes}m`,
- 'Anticipated Departure Time': new Date(newDue).toISOString()
- }));
- 
- showToast(`✅ Visit extended by ${minutes} minutes`);
- closeModal('extend');
- };
- 
- const now = Date.now();
- const dueTime = state.activeVisit.anticipatedDepartureTime;
- 
- // Require PIN if already in Alarmed mode
- if (state.activeVisit.criticalSent || state.activeVisit.isPanic) {
- withPinVerification(false, updateTime);
- } else {
- updateTime();
- }
-}
-
- 
-// ============================================================================
-// PHASE 1: MID-VISIT UPDATES
-// ============================================================================
-function openMidVisitMenu() {
- isMidVisitUpdate = true;
- // confirm() and prompt() are blocked in iOS Safari standalone (PWA) mode.
- // Build a lightweight modal overlay dynamically so no pre-built HTML is required.
- const overlay = document.createElement('div');
- overlay.id = 'midVisitOverlay';
- overlay.className = 'fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4';
- overlay.innerHTML = `
- <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-sm space-y-4">
- <h3 class="text-white font-black text-sm tracking-widest">Mid-Visit Update</h3>
- <textarea id="midVisitNote" rows="4" placeholder="Enter status update…"
- aria-label="Status update message"
- class="w-full bg-gray-800 border border-gray-600 rounded-xl p-3 text-white text-sm resize-none outline-none focus:border-blue-500"></textarea>
- <div class="flex gap-3">
- <button onclick="cancelMidVisit()" class="flex-1 py-3 rounded-xl bg-gray-700 text-white font-bold text-sm">Cancel</button>
- <button onclick="sendMidVisitUpdate()" class="flex-1 py-3 rounded-xl bg-blue-600 text-white font-bold text-sm">Send Update</button>
- </div>
- </div>`;
- document.body.appendChild(overlay);
- setTimeout(() => document.getElementById('midVisitNote')?.focus(), 100);
-}
-
-function cancelMidVisit() {
- isMidVisitUpdate = false;
- const overlay = document.getElementById('midVisitOverlay');
- if (overlay) overlay.remove();
-}
-
-function sendMidVisitUpdate() {
- const noteEl = document.getElementById('midVisitNote');
- const note = noteEl ? noteEl.value.trim() : '';
- const overlay = document.getElementById('midVisitOverlay');
- if (overlay) overlay.remove();
- if (note) {
- logSafety('MID_VISIT_UPDATE', note);
- showToast('📝 Update sent');
- }
- isMidVisitUpdate = false;
-}
-
-// ============================================================================
-// PHASE 1: MULTIPLE WARNING LEVELS (5min, 2min, 90sec)
-// ============================================================================
-function playWarningSound(type) {
- if (audioReady && synth) {
- try {
- if (type === 'warning') {
- synth.triggerAttackRelease('A4', '4n');
- } else if (type === 'critical') {
- synth.triggerAttackRelease('C5', '4n');
- }
- } catch (e) {
- console.warn('Audio playback failed:', e);
- }
- }
-}
-
-function speakWarning(message) {
- if ('speechSynthesis' in window) {
- try {
- window.speechSynthesis.cancel(); // Cancel any ongoing speech
- const utterance = new SpeechSynthesisUtterance(message);
- utterance.rate = 0.9;
- utterance.volume = 1.0;
- window.speechSynthesis.speak(utterance);
- } catch (e) {
- console.warn('Speech failed:', e);
- }
- }
-}
-
-// ============================================================================
-// PHASE 1: OFFLINE BANNER
-// ============================================================================
-function updateOnlineStatus() {
- const banner = document.getElementById('offlineBanner');
- if (!banner) return;
- 
- if (navigator.onLine) {
- banner.classList.add('hidden');
- // Resume outbox delivery — catches any events queued while offline
- setTimeout(outboxProcess, 500);
- // Sync location/forms data if the legacy queue also has items
- if (state && state.pendingUploads && state.pendingUploads.length > 0) {
- setTimeout(() => forceSync(false), 1000);
- }
- } else {
- banner.textContent = (state && state.activeVisit)
- ? '⚠️ OFFLINE — Contacts CANNOT be notified if alarm fires'
- : '📡 OFFLINE — Data will send when connected';
- banner.classList.remove('hidden');
- }
-}
-
-// Enhanced forceSync with online check
-function forceSync(showUI) {
- // 1. GATEKEEPER: Prevent sync in template mode or if identity is missing
- if (!CONFIG.key || CONFIG.key.length < 3) {
- if (showUI) showToast('⚠️ Template mode - awaiting deployment');
- return;
- }
- 
- if (!state || !state.worker || !state.worker.name) return;
- 
- if (showUI) {
- const banner = document.getElementById('uploadBanner');
- if (banner) banner.classList.remove('hidden');
- }
- 
- const deviceId = getDeviceID();
- const workerName = state.worker.name;
- 
- fetch(`${CONFIG.url}?action=sync&worker=${encodeURIComponent(workerName)}&key=${CONFIG.key}&deviceId=${deviceId}&_cb=${Date.now()}`)
- .then(r => r.json())
- .then(data => {
- const banner = document.getElementById('uploadBanner');
- if (banner) banner.classList.add('hidden');
- 
- if (data.status === "device_denied") {
- // This device is not authorised for this worker — lock out the app visibly.
- const banner = document.getElementById('uploadBanner');
- if (banner) banner.classList.add('hidden');
- // Show a persistent full-screen warning rather than a dismissable toast
- const offlineBanner = document.getElementById('offlineBanner');
- if (offlineBanner) {
- offlineBanner.textContent = '🔒 DEVICE NOT AUTHORISED — Contact your administrator';
- offlineBanner.classList.remove('hidden');
- offlineBanner.style.backgroundColor = '#7f1d1d';
- }
- console.error('Device denied by server:', data.message);
- if (showUI) alert('🔒 Device Not Authorised\n\n' + (data.message || 'This device is not registered for your worker account.'));
- return;
- }
-
- if (data.status === "error") {
- if (showUI) alert("❌ Sync Error: " + (data.message || 'Unknown error'));
- return;
- }
- updateLastSyncUI(); // Refreshes the "Just now" label
- if (showUI) showToast('✅ Sync Complete');
- 
- // 2. DATA MERGE: Sites, Forms, and Metadata
- const existingManual = state.locations.filter(x => x && x.id && x.id.startsWith('loc_'));
- const backendSites = (data.sites || []).map(s => ({
- id: 'site_' + s.siteName.replace(/\s/g, ''),
- name: s.siteName,
- address: s.address,
- companyName: s.company,
- templateName: s.template,
- noReport: false,
- contactName: s.contactName,
- contactPhone: s.contactPhone,
- contactEmail: s.contactEmail,
- notes: s.notes,
- isCritical: s.critical || false,
- riskLevel: s.riskLevel || '', // Low / Medium / High / Critical — from Sites sheet col K
- preVisitForm: s.preVisitForm || false, // TRUE triggers pre-visit form gate — from Sites sheet col L
- // NEW: Capture the emergency info from the spreadsheet
- 'Emergency Procedures': s.emergencyProcedures || s['Emergency Procedures'] || ''
- }));
- 
- state.locations = backendSites.concat(existingManual);
- state.globalForms = data.forms || [];
- state.cachedForms = data.cachedTemplates || {};
- state.meta = data.meta || {};
-
- // 3. INTEGRITY: Update timestamp ONLY on verified success
- state.lastSyncTime = new Date().toISOString();
- saveState();
- renderLocations();
- checkActiveNotice();
- checkVehicleStatus();
- updateLastSyncUI(); 
- 
- if (showUI) showToast('✅ Sync Complete');
- })
- .catch(e => {
- // Log actual network failures for troubleshooting
- console.error('OTG Sync Failure:', e);
- const banner = document.getElementById('uploadBanner');
- if (banner) banner.classList.add('hidden');
- if (showUI) {
- showToast('❌ Sync failed — check connection');
- } else if (state && state.activeVisit) {
- // Background sync failed during a live visit — the outbox will retry,
- // but the worker should know their data may not have reached the server.
- showToast('⚠️ Background sync failed — data queued', 5000);
- }
- });
-}
-
-function updateLastSyncUI() {
- const label = document.getElementById('lastSyncLabel');
- if (!label || !state.lastSyncTime) return;
-
- const lastSync = new Date(state.lastSyncTime);
- const diffMs = Date.now() - lastSync.getTime();
- const minsOld = diffMs / (1000 * 60);
- const hoursOld = minsOld / 60;
-
- let text, classes;
-
- if (minsOld < 1) {
- text = '● Synced just now';
- classes = 'bg-green-900/60 text-green-300 border-green-700/50';
- } else if (hoursOld < 24) {
- text = `● Synced ${Math.floor(minsOld)}m ago`;
- classes = 'bg-gray-800/80 text-gray-300 border-gray-600/50';
- } else if (hoursOld < 72) {
- text = `⚠ Sync: > 1 day ago`;
- classes = 'bg-yellow-900/60 text-yellow-200 border-yellow-700/50';
- } else {
- text = `◉ SYNC REQUIRED`;
- classes = 'bg-red-900/60 text-red-200 border-red-600/50 animate-pulse';
- }
-
- label.className = 'text-xs font-bold tracking-tighter ml-1 px-2 py-0.5 rounded-full border inline-block ' + classes;
- label.innerText = text;
-}
- 
-// ============================================================================
-// PHASE 2 & 3: ALL REMAINING FEATURES
-// ============================================================================
-
-// FULLSCREEN RE-ENTRY GUARD
-// If the user drags from the top to reveal the Android browser chrome while
-// the battery saver is active, the OS exits fullscreen. This listener detects
-// that and immediately re-requests fullscreen, keeping the nav/status bars
-// hidden and preventing accidental navigation away from the app.
-;(function() {
- const fsChange = () => {
- if (document.fullscreenElement) return; // Still fullscreen — nothing to do
- if (!isBatterySaverActive) return; // Saver not active — don't re-enter fullscreen
- // Saver IS active but fullscreen was exited — re-enter it
- const el = document.documentElement;
- const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
- if (rfs) rfs.call(el).catch(() => {});
- };
- document.addEventListener('fullscreenchange', fsChange);
- document.addEventListener('webkitfullscreenchange', fsChange);
+const sp = PropertiesService.getScriptProperties();
+const tid = sp.getProperty('REPORT_TEMPLATE_ID');
+if(tid) CONFIG.REPORT_TEMPLATE_ID = tid;
+
+// Derive the correct emergency services number from the configured country code.
+// Used in all alert email templates so contacts see the right number for their region.
+const EMERGENCY_NUMBER = (function() {
+    const map = { '+64': '111', '+61': '000', '+44': '999', '+1': '911' };
+    return map[CONFIG.COUNTRY_CODE] || '111';
 })();
 
-// Feature 14: Critical Timing Mode
-function updateCriticalTimingBadge() {
- const badge = document.getElementById('highRiskBadge');
- if (!badge || !state || !state.activeVisit) return;
- 
- const location = state.locations.find(l => l.id === state.activeVisit.locationId);
- if (location && location.isCritical) {
- badge.classList.remove('hidden');
- } else {
- badge.classList.add('hidden');
- }
- 
- // Keep welfare badge in sync — hide it too when there's no active visit
- const welfareBadge = document.getElementById('welfareBadge');
- if (welfareBadge && (!state || !state.activeVisit)) {
- welfareBadge.classList.add('hidden');
- }
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu('🛡️ OTG Admin')
+      .addItem('1. Setup Client Reporting', 'setupClientReporting')
+      .addItem('2. Run Monthly Stats', 'runMonthlyStats')
+      .addItem('3. Run Travel Report', 'generateWorkerTravelReport')
+      .addSeparator()
+      .addItem('Send Health Email Now', 'sendHealthEmail')
+      .addItem('Run System Diagnostics', 'runDiagnostics')
+      .addItem('Force Sync Forms', 'getGlobalForms')
+      .addToUi();
 }
 
-// Feature 9: Site Info Modal
-
-// Feature 13: Location Management (Add/Edit/Delete)
-function openLocationEditor(locationId) {
- const location = state.locations.find(l => l.id === locationId);
- if (!location) return;
- 
- document.getElementById('locId').value = location.id;
- document.getElementById('locBusiness').value = location.companyName || '';
- document.getElementById('locName').value = location.name || '';
- document.getElementById('locAddr').value = location.address || '';
- document.getElementById('locContactName').value = location.contactName || '';
- document.getElementById('locContactPhone').value = location.contactPhone || '';
- document.getElementById('locContactEmail').value = location.contactEmail || '';
- 
- const criticalCheckbox = document.getElementById('locCritical');
- if (criticalCheckbox) {
- criticalCheckbox.checked = location.isCritical || false;
- }
- 
- const btnDel = document.getElementById('btnDelLoc');
- if (location.id.startsWith('loc_')) {
- if (btnDel) btnDel.classList.remove('hidden');
- } else {
- if (btnDel) btnDel.classList.add('hidden');
- }
- 
- showModal('location');
+// ==========================================
+// 3. WEB HANDLERS (GET/POST)
+// ==========================================
+function doGet(e) {
+  try {
+      if(!e || !e.parameter) return sendResponse(e, {status:"error", message:"No Params"});
+      const p = e.parameter;
+   // NEW: Version Ping for System Info
+      if (p.action === 'ping') {
+          return sendResponse(e, { status: "success", version: CONFIG.VERSION });
+      }
+      if (p.action === 'getDistance' && p.start && p.end) {
+          const dist = getRouteDistance(p.start, p.end);
+          return sendResponse(e, { status: "success", km: dist });
+      }
+      if (p.action === 'getDistanceWithTrail' && p.trail) {
+          const dist = getRouteDistanceWithTrail(p.trail);
+          return dist !== null
+              ? sendResponse(e, { status: 'success', km: dist, type: 'road-trail' })
+              : sendResponse(e, { status: 'error', message: 'ORS waypoint routing failed' });
+      }
+      if(p.test) return (p.key === CONFIG.MASTER_KEY) ? sendResponse(e, {status:"success"}) : sendResponse(e, {status:"error"});
+      if(p.key === CONFIG.MASTER_KEY && !p.action) return sendResponse(e, getDashboardData());
+      if(p.action === 'sync') return (p.key === CONFIG.MASTER_KEY || p.key === CONFIG.WORKER_KEY) ? sendResponse(e, getSyncData(p.worker, p.deviceId)) : sendResponse(e, {status:"error"});
+      if(p.action === 'getGlobalForms') return sendResponse(e, getGlobalForms());
+      if(p.action === 'viewProcedures' && p.siteName) {
+          if (p.key !== CONFIG.MASTER_KEY && p.key !== CONFIG.WORKER_KEY) return sendResponse(e, {status:'error'});
+          return getEmergencyProceduresViewer(p.siteName, p.companyName || '');
+      }
+      return sendResponse(e, {status:"error"});
+  } catch(err) { return sendResponse(e, {status:"error", message: err.toString()}); }
 }
 
-// Ensure the "Save" button in your locationModal calls this
-function saveLoc() {
- const locId = document.getElementById('locId').value;
- const name = document.getElementById('locName').value.trim();
- if (!name) { alert('Site name is required'); return; }
-
- const templateInput = document.getElementById('locTemplate');
- const requiresReportEl = document.getElementById('locRequiresReport');
- const templateName = templateInput ? templateInput.value.trim() : '';
-
- const locationData = {
- id: locId || 'loc_' + Date.now(),
- name: name,
- companyName: document.getElementById('locBusiness').value.trim(),
- address: document.getElementById('locAddr').value.trim(),
- contactName: document.getElementById('locContactName').value.trim(),
- contactPhone: document.getElementById('locContactPhone').value.trim(),
- contactEmail: document.getElementById('locContactEmail').value.trim(),
- isCritical: document.getElementById('locCritical').checked,
- // New fields: per-site report preference and optional custom template
- noReport: requiresReportEl ? !requiresReportEl.checked : false,
- templateName: templateName || null
- };
-
- const idx = state.locations.findIndex(l => l.id === locationData.id);
- if (idx >= 0) state.locations[idx] = locationData;
- else state.locations.push(locationData);
-
- saveState();
- renderLocations();
- closeModal('location');
- showToast('✅ Location saved');
-}
-
-function deleteLoc() {
- const locId = document.getElementById('locId').value;
- if (!locId || !confirm('Delete this location?')) return;
- 
- state.locations = state.locations.filter(l => l.id !== locId);
- saveState();
- renderLocations();
- closeModal('location');
- showToast('🗑️ Location deleted');
-}
-
-function getGpsAddress() {
- if (!navigator.geolocation) return showToast('GPS not available');
-
- showToast('📡 Locking GPS signal...');
- navigator.geolocation.getCurrentPosition(
- pos => {
- const lat = pos.coords.latitude.toFixed(6);
- const lon = pos.coords.longitude.toFixed(6);
- const coordString = `${lat}, ${lon}`;
-
- // Reverse-geocode via Nominatim (OpenStreetMap, free, no API key)
- fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`,
- { headers: { 'Accept-Language': 'en' } })
- .then(r => r.json())
- .then(data => {
- const addr = data.display_name || coordString;
- document.getElementById('locAddr').value = addr;
- showToast('📍 Address captured');
- })
- .catch(() => {
- // Nominatim unreachable — fall back to raw coordinates
- document.getElementById('locAddr').value = coordString;
- showToast('📍 GPS captured (no address lookup)');
- });
- },
- err => showToast('GPS error: ' + err.message),
- { enableHighAccuracy: true, timeout: 10000 }
- );
-}
-
-// Feature 10: Country Code Handling
-function cleanGlobalPhone(num) {
- if (!num) return "";
- let n = num.replace(/[^0-9]/g, '');
- const prefix = (CONFIG.countryPrefix || "+64").replace('+', '');
- 
- if (!prefix) return "+" + n;
- if (n.startsWith(prefix)) return '+' + n;
- if (n.startsWith('0')) return '+' + prefix + n.substring(1);
- if (prefix === '1' && n.length === 10) return '+1' + n;
- return '+' + prefix + n;
-}
-
-// Feature 12: Travel/Mileage Tracking
 /**
- * Returns true only when a GPS string is a real, usable fix.
- * Rejects: null/empty, the sentinel "0,0", and any coordinate pair
- * that parses to exactly (0, 0) — which indicates a failed fix.
+ * PATCHED: Master Entry Point
+ * Integrated routing for Site Procedures and Notice Acknowledgments.
  */
-function _isValidGPS(str) {
- if (!str || typeof str !== 'string') return false;
- const parts = str.split(',').map(Number);
- if (parts.length < 2) return false;
- const [lat, lng] = parts;
- if (isNaN(lat) || isNaN(lng)) return false;
- if (lat === 0 && lng === 0) return false;
- return true;
+function doPost(e) {
+  if(!e || !e.parameter) return sendJSON({status:"error"});
+  if(e.parameter.key !== CONFIG.MASTER_KEY && e.parameter.key !== CONFIG.WORKER_KEY) return sendJSON({status:"error"});
+  
+  const lock = LockService.getScriptLock();
+  if (lock.tryLock(10000)) { 
+      try {
+          const p = e.parameter;
+          
+          if(p.action === 'resolve') {
+              handleResolvePost(p); 
+          }
+          else if(p.action === 'registerDevice') {
+              return sendJSON(handleRegisterDevice(p));
+          }
+          // NEW 3: Handle Notice Acknowledgments
+          else if(p.action === 'acknowledgeNotice') {
+              return sendJSON(handleNoticeAck(p));
+          }
+          else if(p.action === 'uploadEmergencyProcedures') {
+              updateSiteEmergencyProcedures(p);
+              handleWorkerPost(p);
+          }
+          else if (p.action === 'notifySafety') {
+            return sendJSON(handleSafetyResolution(p));
+          }
+          else if (p.action === 'broadcast') {
+              return sendJSON(handleBroadcast(p));
+          }
+          else {
+              handleWorkerPost(p);
+          }
+          
+          return sendJSON({status:"success"});
+          
+      } catch(err) { 
+          return sendJSON({status:"error", message: err.toString()}); 
+      } 
+      finally { 
+          lock.releaseLock(); 
+      }
+  } else { 
+      return sendJSON({status:"error", message:"Busy"}); 
+  }
 }
 
-function haversine(p1, p2) {
- const [lat1, lon1] = p1.split(',').map(Number);
- const [lat2, lon2] = p2.split(',').map(Number);
- const R = 6371; // Earth radius in km
- const dLat = (lat2 - lat1) * Math.PI / 180;
- const dLon = (lon2 - lon1) * Math.PI / 180;
- const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
- Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
- Math.sin(dLon/2) * Math.sin(dLon/2);
- return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+// ==========================================
+// 4. REPORTING ENGINE (BI LAYER)
+// ==========================================
+
+function setupClientReporting() {
+  const ui = SpreadsheetApp.getUi();
+  const resp = ui.prompt("Setup Client Reporting", "Enter exact Client Company Name (as it appears in 'Sites' tab):", ui.ButtonSet.OK_CANCEL);
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+  
+  const clientName = resp.getResponseText().trim();
+  if (!clientName) return;
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let indexSheet = ss.getSheetByName('Reporting');
+  if (!indexSheet) {
+      indexSheet = ss.insertSheet('Reporting');
+      indexSheet.appendRow(["Client Name", "Report Sheet ID", "Last Updated"]);
+      indexSheet.getRange(1,1,1,3).setFontWeight("bold").setBackground("#e2e8f0");
+  }
+
+  const newSheetName = `Stats - ${clientName}`;
+  let reportSheet = ss.getSheetByName(newSheetName);
+  if (reportSheet) { ui.alert("Sheet already exists!"); return; }
+  
+  reportSheet = ss.insertSheet(newSheetName);
+  reportSheet.appendRow(["Month", "Total Visits", "Total Hours", "Avg Duration", "Safety Checks %", "Numeric Sums (Mileage/etc)"]);
+  reportSheet.setFrozenRows(1);
+  reportSheet.getRange(1,1,1,6).setFontWeight("bold").setBackground("#1e40af").setFontColor("white");
+
+  indexSheet.appendRow([clientName, reportSheet.getSheetId().toString(), new Date()]);
+  ui.alert(`✅ Reporting setup for ${clientName}. \n\nYou can now run 'Monthly Stats' to populate this sheet.`);
 }
 
-async function getDistance(p1, p2, trail = []) {
-  if (!_isValidGPS(p1) || !_isValidGPS(p2)) return { km: 0, type: 'none' };
+function runMonthlyStats() {
+  const ui = SpreadsheetApp.getUi();
+  const resp = ui.prompt("Run Monthly Stats", "Enter Month (YYYY-MM):", ui.ButtonSet.OK_CANCEL);
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+  
+  const monthStr = resp.getResponseText().trim();
+  if (!/^\d{4}-\d{2}$/.test(monthStr)) { ui.alert("Invalid format. Use YYYY-MM."); return; }
 
-  // Speed-accumulator floor (Option 2).
-  // _speedAccumM is maintained by _takeSingleGPSFix() during travel using
-  // pos.coords.speed (Doppler-derived m/s — more accurate than position-derived speed).
-  // If the accumulator has a meaningful value we use it as a floor: whichever of
-  // ORS / Haversine / accumulator is highest wins. This protects workers against
-  // ORS under-reporting on winding or GPS-sparse routes with no battery cost.
-  const speedFloorKm = (_speedAccumM > 0) ? _speedAccumM / 1000 : 0;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const visitsSheet = ss.getSheetByName('Visits');
+  const indexSheet = ss.getSheetByName('Reporting');
+  
+  if (!visitsSheet || !indexSheet) { ui.alert("Missing 'Visits' or 'Reporting' tabs."); return; }
 
-  // Helper: apply floor and return result object
-  const withFloor = (result) => {
-    if (speedFloorKm > 0 && parseFloat(result.km) < speedFloorKm) {
-      return { km: speedFloorKm.toFixed(2), type: result.type + '+speed-floor' };
-    }
-    return result;
+  const data = visitsSheet.getDataRange().getValues();
+  const headers = data.shift();
+  
+  const dateIdx = headers.indexOf("Timestamp");
+  const compIdx = headers.indexOf("Location Name"); 
+  const reportIdx = headers.indexOf("Visit Report Data");
+  
+  const start = new Date(monthStr + "-01");
+  const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+
+  const stats = {}; 
+
+  data.forEach(row => {
+      const d = new Date(row[dateIdx]);
+      if (d >= start && d <= end) {
+          let client = "Unknown";
+          const clientList = indexSheet.getDataRange().getValues().map(r => r[0]);
+          const locName = row[compIdx].toString();
+          
+          const matchedClient = clientList.find(c => locName.includes(c));
+          if (matchedClient) client = matchedClient;
+          else return; 
+
+          if (!stats[client]) stats[client] = { visits: 0, duration: 0, sums: {} };
+          stats[client].visits++;
+          
+          const jsonStr = row[reportIdx];
+          if (jsonStr && jsonStr.startsWith("{")) {
+              try {
+                  const report = JSON.parse(jsonStr);
+                  for (const [k, v] of Object.entries(report)) {
+                      const num = parseFloat(v);
+                      if (!isNaN(num)) {
+                          if (!stats[client].sums[k]) stats[client].sums[k] = 0;
+                          stats[client].sums[k] += num;
+                      }
+                  }
+              } catch(e) {}
+          }
+      }
+  });
+
+  const clients = indexSheet.getDataRange().getValues();
+  let updatedCount = 0;
+
+  clients.forEach(row => {
+      const clientName = row[0];
+      const sheetId = row[1];
+      if (stats[clientName]) {
+          const allSheets = ss.getSheets();
+          const targetSheet = allSheets.find(s => s.getSheetId().toString() === sheetId.toString());
+          
+          if (targetSheet) {
+              const s = stats[clientName];
+              const sumStr = Object.entries(s.sums).map(([k,v]) => `${k}: ${v}`).join(", ");
+              
+              targetSheet.appendRow([
+                  monthStr,
+                  s.visits,
+                  (s.visits * 0.5).toFixed(1), 
+                  "N/A",
+                  "100%",
+                  sumStr
+              ]);
+              updatedCount++;
+          }
+      }
+  });
+
+  ui.alert(`Stats Run Complete. Updated ${updatedCount} client sheets.`);
+}
+
+function generateWorkerTravelReport() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const visitsSheet = ss.getSheetByName('Visits');
+  if(!visitsSheet) { SpreadsheetApp.getUi().alert("Error: 'Visits' sheet not found."); return; }
+
+  const ui = SpreadsheetApp.getUi();
+  const resp = ui.prompt("Run Travel Report", "Enter Month (YYYY-MM):", ui.ButtonSet.OK_CANCEL);
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+  
+  const monthStr = resp.getResponseText().trim();
+  if (!/^\d{4}-\d{2}$/.test(monthStr)) { ui.alert("Invalid format. Use YYYY-MM."); return; }
+
+  const reportSheetName = "Travel Report - " + monthStr;
+  let reportSheet = ss.getSheetByName(reportSheetName);
+  if (reportSheet) ss.deleteSheet(reportSheet);
+  reportSheet = ss.insertSheet(reportSheetName);
+
+  const data = visitsSheet.getDataRange().getValues();
+  const headers = data.shift();
+  
+  const col = {
+    worker: headers.indexOf("Worker Name"),
+    arrival: headers.indexOf("Timestamp"), 
+    depart: headers.indexOf("Anticipated Departure Time"),
+    report: headers.indexOf("Visit Report Data"),
+    location: headers.indexOf("Location Name")
   };
 
-  // TIER 1: ORS road routing with breadcrumb waypoints — most accurate.
-  // Sends the actual intermediate positions taken during the trip so ORS
-  // snaps to the road network along the path the worker really drove.
-  if (navigator.onLine && CONFIG.url && trail.length >= 3) {
-    try {
-      const validTrail = trail.filter(p => _isValidGPS(`${p.lat},${p.lng}`));
-      if (validTrail.length < 3) throw new Error('Insufficient valid trail points after GPS filtering');
-      const trailStr = validTrail.map(p => `${p.lat},${p.lng}`).join('|');
-      const url = `${CONFIG.url}?action=getDistanceWithTrail&trail=${encodeURIComponent(trailStr)}&key=${CONFIG.key}`;
-      const response = await fetch(url);
-      const data = await response.json();
-      if (data.status === 'success' && data.km) {
-        return withFloor({ km: data.km, type: 'road-trail' });
-      }
-    } catch (e) {
-      console.warn('Trail ORS failed, falling back:', e);
+  const start = new Date(monthStr + "-01");
+  const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+  
+  const workerStats = {};
+
+  data.forEach(row => {
+    const d = new Date(row[col.arrival]);
+    if (d >= start && d <= end) {
+        const worker = row[col.worker];
+        if (!worker) return;
+        if (!workerStats[worker]) workerStats[worker] = { trips: [], totalDist: 0, totalDurMs: 0 };
+
+        let distance = 0;
+        let reportJson = row[col.report];
+        
+        if (reportJson && reportJson.startsWith("{")) {
+            try {
+                const r = JSON.parse(reportJson);
+                for (let key in r) {
+                    if (/km|mil|dist/i.test(key)) { 
+                        let val = parseFloat(r[key]);
+                        if (!isNaN(val)) distance += val;
+                    }
+                }
+            } catch(e){}
+        }
+        
+        const distCol = headers.indexOf("Distance (km)");
+        if(distCol > -1 && row[distCol]) {
+             let val = parseFloat(row[distCol]);
+             if(!isNaN(val)) distance = val; 
+        }
+
+        workerStats[worker].trips.push({
+            date: d,
+            location: row[col.location],
+            distance: distance
+        });
+        
+        workerStats[worker].totalDist += distance;
+    }
+  });
+
+  let rowIdx = 1;
+  reportSheet.getRange(rowIdx, 1).setValue("Travel Report: " + monthStr).setFontWeight("bold").setFontSize(14);
+  rowIdx += 2;
+
+  const sortedWorkers = Object.keys(workerStats).sort();
+
+  sortedWorkers.forEach(worker => {
+      const data = workerStats[worker];
+      
+      reportSheet.getRange(rowIdx, 1).setValue(worker).setFontWeight("bold").setBackground("#e2e8f0");
+      reportSheet.getRange(rowIdx, 1, 1, 4).merge();
+      rowIdx++;
+      
+      const headerRange = reportSheet.getRange(rowIdx, 1, 1, 4);
+      headerRange.setValues([["Date", "Location", "Distance (km)", "Notes"]]);
+      headerRange.setFontWeight("bold").setBorder(false, false, true, false, false, false);
+      rowIdx++;
+
+      data.trips.sort((a,b) => a.date - b.date).forEach(trip => {
+          reportSheet.getRange(rowIdx, 1, 1, 4).setValues([[
+              trip.date.toLocaleDateString() + " " + trip.date.toLocaleTimeString(),
+              trip.location,
+              trip.distance > 0 ? trip.distance : "-",
+              ""
+          ]]);
+          rowIdx++;
+      });
+
+      const subTotalRow = reportSheet.getRange(rowIdx, 1, 1, 4);
+      subTotalRow.setValues([["TOTALS:", "", data.totalDist.toFixed(1), ""]]);
+      subTotalRow.setFontWeight("bold").setBorder(true, false, false, false, false, false);
+      rowIdx += 2; 
+  });
+
+  reportSheet.autoResizeColumns(1, 4);
+  ui.alert("Travel Report Generated!");
+}
+
+// ==========================================
+// 5. CORE LOGIC (WORKER/MONITOR)
+// ==========================================
+
+/**
+ * RE-ENGINEERED: handleResolvePost
+ * Logic: Updates the Visit record AND triggers "All Clear" alerts to contacts.
+ */
+function handleResolvePost(p) {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('Visits');
+    const workerName = p['Worker Name'];
+    const lastRow = sheet.getLastRow();
+    let rowUpdated = false;
+
+    if (lastRow > 1) {
+        const startRow = Math.max(2, lastRow - 50); 
+        const numRows = lastRow - startRow + 1;
+        const data = sheet.getRange(startRow, 1, numRows, 11).getValues();
+        for (let i = data.length - 1; i >= 0; i--) {
+            const rowData = data[i];
+            if (rowData[2] === workerName) {
+                const status = String(rowData[10]);
+                // Targets active safety alerts
+                if (status.includes('EMERGENCY') || status.includes('PANIC') || status.includes('DURESS') || status.includes('OVERDUE')) {
+                    const targetRow = startRow + i;
+                    sheet.getRange(targetRow, 11).setValue(p['Alarm Status']); 
+                    sheet.getRange(targetRow, 12).setValue((String(rowData[11]) + "\n" + p['Notes']).trim()); 
+                    rowUpdated = true;
+                    break;
+                }
+            }
+        }
+    }
+    
+    // Fallback: If no active visit is found, log the resolution as a new entry
+    if (!rowUpdated) {
+        const ts = new Date();
+        const dateStr = Utilities.formatDate(ts, CONFIG.TIMEZONE, "yyyy-MM-dd");
+        const row = [
+            ts.toISOString(), dateStr, workerName, p['Worker Phone Number'], 
+            p['Emergency Contact Name'], p['Emergency Contact Number'], p['Emergency Contact Email'], 
+            p['Escalation Contact Name'], p['Escalation Contact Number'], p['Escalation Contact Email'], 
+            p['Alarm Status'], p['Notes'], p['Location Name'], p['Location Address'], 
+            p['Last Known GPS'], p['Timestamp'], p['Battery Level'], "", "", "", "", "", "", "", ""
+        ];
+        sheet.appendRow(row);
     }
 
-    // TIER 2: Sum of Haversine segments along actual breadcrumbs.
-    // Less accurate than ORS (crow-flies between each reading) but still
-    // far better than a single A→B estimate for indirect journeys.
-    const cleanTrail = trail.filter(p => _isValidGPS(`${p.lat},${p.lng}`));
-    let totalM = 0;
-    for (let i = 1; i < cleanTrail.length; i++) {
-      totalM += _gpsHaversineMetres(cleanTrail[i-1].lat, cleanTrail[i-1].lng, cleanTrail[i].lat, cleanTrail[i].lng);
+    // NEW: TRIGGER "ALL CLEAR" NOTIFICATIONS
+    // This sends the Email and SMS to both emergency contacts immediately.
+    handleSafetyResolution(p); 
+}
+function handleWorkerPost(p) {
+    // ── IDEMPOTENCY GUARD ────────────────────────────────────────────────────
+    // The IndexedDB outbox on the worker device retries failed deliveries until
+    // it receives an HTTP 200. Under no-cors mode the response is always opaque,
+    // so the outbox cannot distinguish a genuine failure from a GAS redirect —
+    // it retries conservatively. Without a dedup check a single alarm event
+    // could produce multiple spreadsheet rows.
+    //
+    // Strategy: maintain a rolling set of the last 200 seen keys in a single
+    // PropertiesService entry (JSON array, ~5 KB — well under the 9 KB limit).
+    // Keys are only present when the worker app sends them; legacy payloads
+    // without the field are passed through unchanged.
+    if (p.idempotencyKey) {
+        const IDEM_PROP = 'IDEM_KEYS_V1';
+        const seen = JSON.parse(sp.getProperty(IDEM_PROP) || '[]');
+        if (seen.includes(p.idempotencyKey)) {
+            // Duplicate delivery — silently ack without writing to the sheet.
+            console.log('Outbox dedup: discarding duplicate key ' + p.idempotencyKey);
+            return;
+        }
+        // Register the key, keep the window trimmed to 100 entries.
+        seen.push(p.idempotencyKey);
+        if (seen.length > 100) seen.splice(0, seen.length - 100); // 100 keys ≈ 5KB, safe under GAS 9KB per-key limit
+        sp.setProperty(IDEM_PROP, JSON.stringify(seen));
     }
-    if (totalM > 0) {
-      return withFloor({ km: (totalM / 1000).toFixed(2), type: 'trail-crow' });
+    // ── END IDEMPOTENCY GUARD ────────────────────────────────────────────────
+
+    // ── TEST_ALERT FAST PATH ─────────────────────────────────────────────────
+    // TEST_ALERT must never touch the Visits sheet. Writing it would overwrite the
+    // open ARRIVED row's status, stranding the visit and blocking the next real
+    // visit from correctly writing its address details.
+    if (p['Alarm Status'] && p['Alarm Status'].includes('TEST_ALERT')) {
+        triggerAlerts(p, "TEST");
+        return;
+    }
+    // ── END TEST_ALERT FAST PATH ─────────────────────────────────────────────
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName('Visits');
+    const workerName = p['Worker Name'];
+    const templateName = p['Template Name'] || "";
+    const isNoteToSelf = (templateName.trim().toLowerCase() === 'note to self');
+
+    let p1="", p2="", p3="", p4="", sig="";
+    if(p['Photo 1']) p1 = saveImage(p['Photo 1'], workerName);
+    if(p['Photo 2']) p2 = saveImage(p['Photo 2'], workerName);
+    if(p['Photo 3']) p3 = saveImage(p['Photo 3'], workerName);
+    if(p['Photo 4']) p4 = saveImage(p['Photo 4'], workerName);
+    if(p['Signature']) sig = saveImage(p['Signature'], workerName, true); 
+
+    const ts = new Date();
+    const dateStr = Utilities.formatDate(ts, CONFIG.TIMEZONE, "yyyy-MM-dd");
+    let polishedNotes = p['Notes'] || "";
+    const hasFormData = p['Visit Report Data'] && p['Visit Report Data'].length > 2;
+
+    let distanceValue = p['Distance'] || ""; 
+
+    if (hasFormData) {
+        try {
+            const reportObj = JSON.parse(p['Visit Report Data']);
+            if (CONFIG.GEMINI_API_KEY && CONFIG.GEMINI_API_KEY.length > 10) {
+                polishedNotes = smartScribe(reportObj, templateName, p['Notes']);
+            }
+            for (let key in reportObj) {
+                if (/km|mil|dist|odo/i.test(key)) { 
+                    let val = parseFloat(reportObj[key]);
+                    if (!isNaN(val)) { distanceValue = val; break; }
+                }
+            }
+        } catch(e) { console.error("Data Parsing Error: " + e); }
+    }
+    
+    if (!isNoteToSelf) {
+        if(!sheet) {
+            sheet = ss.insertSheet('Visits');
+            sheet.appendRow(["Timestamp", "Date", "Worker Name", "Worker Phone Number", "Emergency Contact Name", "Emergency Contact Number", "Emergency Contact Email", "Escalation Contact Name", "Escalation Contact Number", "Escalation Contact Email", "Alarm Status", "Notes", "Location Name", "Location Address", "Last Known GPS", "GPS Timestamp", "Battery Level", "Photo 1", "Distance (km)", "Visit Report Data", "Anticipated Departure Time", "Signature", "Photo 2", "Photo 3", "Photo 4"]);
+        }
+        
+        let rowUpdated = false;
+        const lastRow = sheet.getLastRow();
+        const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+        const distColIdx = headers.indexOf("Distance (km)");
+        
+        if (lastRow > 1) {
+            const startRow = Math.max(2, lastRow - 50); 
+            const numRows = lastRow - startRow + 1;
+            const data = sheet.getRange(startRow, 1, numRows, 11).getValues(); 
+            for (let i = data.length - 1; i >= 0; i--) {
+                const rowData = data[i];
+                if (rowData[2] === workerName) {
+                    const status = String(rowData[10]);
+                    const isClosed = status.includes('DEPARTED') || status.includes('COMPLETED') || status.includes('DATA_ENTRY_ONLY') || status.includes('USER_SAFE') || status.includes('NOTICE_ACK') || status.includes('PRE_VISIT');
+                    
+                    if (!isClosed) {
+                        const targetRow = startRow + i;
+                        sheet.getRange(targetRow, 1).setValue(ts.toISOString()); 
+                        sheet.getRange(targetRow, 11).setValue(p['Alarm Status']); 
+                        if (distanceValue && distColIdx > -1) sheet.getRange(targetRow, distColIdx + 1).setValue(distanceValue);
+                        if (polishedNotes && polishedNotes !== rowData[11]) {
+                             const oldNotes = sheet.getRange(targetRow, 12).getValue();
+                             if (!oldNotes.includes(polishedNotes)) sheet.getRange(targetRow, 12).setValue((oldNotes + "\n" + polishedNotes).trim());
+                        }
+                        if (p['Last Known GPS']) sheet.getRange(targetRow, 15).setValue(p['Last Known GPS']);
+                        if (p['Visit Report Data']) sheet.getRange(targetRow, headers.indexOf("Visit Report Data") + 1).setValue(p['Visit Report Data']);
+                        const deptCol = headers.indexOf("Anticipated Departure Time");
+                        if (p['Anticipated Departure Time'] && deptCol > -1) sheet.getRange(targetRow, deptCol + 1).setValue(p['Anticipated Departure Time']);
+                        // Write Drive file links for photos and signature
+                        const p1Col  = headers.indexOf("Photo 1");
+                        const sigCol = headers.indexOf("Signature");
+                        const p2Col  = headers.indexOf("Photo 2");
+                        const p3Col  = headers.indexOf("Photo 3");
+                        const p4Col  = headers.indexOf("Photo 4");
+                        if (p1  && p1Col  > -1) sheet.getRange(targetRow, p1Col  + 1).setValue(p1);
+                        if (sig && sigCol > -1) sheet.getRange(targetRow, sigCol + 1).setValue(sig);
+                        if (p2  && p2Col  > -1) sheet.getRange(targetRow, p2Col  + 1).setValue(p2);
+                        if (p3  && p3Col  > -1) sheet.getRange(targetRow, p3Col  + 1).setValue(p3);
+                        if (p4  && p4Col  > -1) sheet.getRange(targetRow, p4Col  + 1).setValue(p4);
+                        rowUpdated = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+// Ensure these fallbacks are in your backend script to catch the frontend keys
+const emgPhone = p['Emergency Contact Number'] || p['Emergency Contact Phone'] || "";
+const escPhone = p['Escalation Contact Number'] || p['Escalation Contact Phone'] || "";
+
+if (!rowUpdated) {
+    const row = [
+        ts.toISOString(), 
+        dateStr, 
+        workerName, 
+        p['Worker Phone Number'], 
+        p['Emergency Contact Name'], 
+        emgPhone, // FIXED: Maps frontend 'Phone' to backend 'Number'
+        p['Emergency Contact Email'], 
+        p['Escalation Contact Name'], 
+        escPhone, // FIXED: Maps frontend 'Phone' to backend 'Number'
+        p['Escalation Contact Email'], 
+        p['Alarm Status'], 
+        polishedNotes, 
+        p['Location Name'], 
+        p['Location Address'], 
+        p['Last Known GPS'], 
+        p['Timestamp'], 
+        p['Battery Level'], 
+        p1, 
+        distanceValue, 
+        p['Visit Report Data'], 
+        p['Anticipated Departure Time'], 
+        sig, 
+        p2, 
+        p3, 
+        p4
+    ];
+    sheet.appendRow(row);
+}
+    }
+
+    updateStaffStatus(p);
+    if(hasFormData) {
+        try {
+            const reportObj = JSON.parse(p['Visit Report Data']);
+            processFormEmail(p, reportObj, polishedNotes, p1, p2, p3, p4, sig);
+        } catch(e) { console.error("Email Error: " + e); }
+    }
+
+    if(p['Alarm Status'].includes("EMERGENCY") || p['Alarm Status'].includes("PANIC") || p['Alarm Status'].includes("DURESS") || p['Alarm Status'].includes("OVERDUE ALARM")) {
+        triggerAlerts(p, "IMMEDIATE");
+    }
+}
+function processFormEmail(p, reportObj, polishedNotes, p1, p2, p3, p4, sig) {
+    const templateName = p['Template Name'] || "";
+    if (!templateName) return;
+    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const tSheet = ss.getSheetByName('Templates');
+    const safeTName = templateName.trim().toLowerCase();
+    
+    let recipientEmail = "";
+    
+    // Audit Fix: Mandatory Worker Routing for Private Notes
+    if (safeTName === 'note to self') {
+        recipientEmail = p['Worker Email']; 
+    } else if (tSheet) {
+        const tData = tSheet.getDataRange().getValues();
+        for (let i = 1; i < tData.length; i++) {
+            if (tData[i][1] && tData[i][1].toString().trim().toLowerCase() === safeTName) {
+                recipientEmail = tData[i][3]; 
+                break;
+            }
+        }
+    }
+    
+    if (!recipientEmail || !recipientEmail.includes('@')) {
+        console.warn("No valid recipient found for email routing.");
+        return;
+    }
+
+    const inlineImages = {};
+    const imgTags = [];
+    const processImg = (key, cidName, title) => {
+        if (p[key] && p[key].length > 100) { 
+            const blob = dataURItoBlob(p[key]);
+            if (blob) {
+                inlineImages[cidName] = blob;
+                imgTags.push(`<div style="margin-bottom: 20px;"><p style="font-size:12px;font-weight:bold;">${title}</p><img src="cid:${cidName}" style="max-width:100%;border-radius:8px;"></div>`);
+            }
+        }
+    };
+
+    processImg('Photo 1', 'photo1', 'Attachment 1');
+    processImg('Photo 2', 'photo2', 'Attachment 2');
+    processImg('Photo 3', 'photo3', 'Attachment 3');
+    processImg('Photo 4', 'photo4', 'Attachment 4');
+    
+    if (p['Signature']) {
+        const sigBlob = dataURItoBlob(p['Signature']);
+        if (sigBlob) inlineImages['signature'] = sigBlob;
+    }
+
+    // GPS map link — validate before using (no 0,0, no near-zero noise)
+    let mapHtml = "";
+    const rawGps  = (p['Last Known GPS'] || '').toString().trim();
+    const gpsParts = rawGps.split(',');
+    const gpsLat   = parseFloat(gpsParts[0]);
+    const gpsLng   = parseFloat(gpsParts[1]);
+    const hasValidGps = gpsParts.length === 2
+        && !isNaN(gpsLat) && !isNaN(gpsLng)
+        && Math.abs(gpsLat) > 0.001
+        && Math.abs(gpsLng) > 0.001
+        && Math.abs(gpsLat) <= 90
+        && Math.abs(gpsLng) <= 180;
+    if (hasValidGps) {
+        const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(rawGps)}`;
+        mapHtml = `
+        <div style="margin-top:20px; padding:15px; background:#f0f7ff; border-radius:8px; border:1px solid #cfe2ff; text-align:center;">
+            <p style="margin:0 0 10px 0; font-size:11px; font-weight:800; color:#1e40af; text-transform:uppercase;">📍 Visit Location Intelligence</p>
+            <a href="${mapUrl}" style="display:inline-block; padding:12px 24px; background:#1e40af; color:#ffffff; text-decoration:none; border-radius:6px; font-weight:bold;">View Location on Google Maps</a>
+        </div>`;
+    }
+
+    let subject = (safeTName === 'note to self') ? `[PRIVATE] Note to Self` : `[${templateName}] - ${p['Worker Name']}`;
+    let html = `<div style="font-family:Arial,sans-serif;padding:20px;max-width:600px;border:1px solid #eee;border-radius:12px;background-color:#ffffff;color:#333;">
+        <h2 style="color:#1e40af;margin-top:0;">${templateName}</h2>
+        <p style="color:#666;font-size:12px;">Worker: ${p['Worker Name']} | Sent: ${new Date().toLocaleString()}</p>
+        <hr style="border:0;border-top:1px solid #eee;margin:20px 0;">
+        
+        <div style="background:#f9fafb;padding:15px;border-radius:8px;margin-bottom:20px;border-left:4px solid #1e40af;">
+            <p style="white-space:pre-wrap;margin:0;font-size:14px;line-height:1.6;">${polishedNotes}</p>
+        </div>
+        
+        <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+            <tbody>`;
+        
+    // Skip fields rendered separately (signature, GPS) and raw data-URI blobs
+    const skipKeys = new Set(['Signature', 'GPS', 'Last Known GPS', 'Photo 1', 'Photo 2', 'Photo 3', 'Photo 4']);
+    for (const [key, value] of Object.entries(reportObj)) {
+        if (skipKeys.has(key)) continue;
+        if (typeof value === 'string' && value.startsWith('data:')) continue;
+        html += `<tr style="border-bottom:1px solid #f3f4f6;"><td style="padding:8px 0;font-size:13px;color:#6b7280;width:40%;">${key}</td><td style="padding:8px 0;font-size:13px;font-weight:600;color:#111827;">${value}</td></tr>`;
+    }
+    
+    html += `</tbody></table>
+        ${mapHtml} 
+        <div style="margin-top:25px;">${imgTags.join('')}</div>
+        ${p['Signature'] ? '<div style="margin-top:20px;padding-top:20px;border-top:1px solid #eee;"><p style="font-size:11px;color:#999;text-transform:uppercase;">Digital Signature</p><img src="cid:signature" style="max-height:80px;"></div>' : ''}
+    </div>`;
+
+    MailApp.sendEmail({ to: recipientEmail, subject: subject, htmlBody: html, inlineImages: inlineImages });
+
+    // Privacy Purge for Private Notes
+    if (p['autoDelete'] === 'true' && safeTName === 'note to self') {
+        const fileUrls = [p1, p2, p3, p4, sig];
+        fileUrls.forEach(url => {
+            if (url && url.includes('id=')) {
+                try { DriveApp.getFileById(url.split('id=')[1]).setTrashed(true); } catch(e) {}
+            }
+        });
+    }
+}
+
+function dataURItoBlob(dataURI) {
+    try {
+        if (!dataURI) return null;
+        let contentType = 'image/jpeg';
+        let base64Data = dataURI;
+
+        if (dataURI.includes('base64,')) {
+            const parts = dataURI.split(',');
+            if (parts.length < 2) return null;
+            contentType = parts[0].split(':')[1].split(';')[0];
+            base64Data = parts[1];
+        }
+
+        const byteString = Utilities.base64Decode(base64Data);
+        return Utilities.newBlob(byteString, contentType, "image");
+    } catch(e) { 
+        console.error("Error decoding base64: " + e.toString());
+        return null; 
+    }
+}
+
+function handleRegisterDevice(p) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Staff');
+  if (!sheet) return { status: "error", message: "Staff sheet missing" };
+  const data = sheet.getDataRange().getValues();
+  const workerName = p['Worker Name'];
+  const deviceId = p.deviceId;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === workerName) {
+      const existingId = (data[i][4] || '').toString().trim();
+      // Only allow registration if column E is empty or already matches this device.
+      // If a different device ID is bound, an admin must clear column E first.
+      if (existingId && existingId !== deviceId) {
+        console.warn(`Registration blocked for ${workerName}: bound to a different device.`);
+        return { status: "error", message: "This worker is already registered on another device. Ask your administrator to clear the existing registration." };
+      }
+      sheet.getRange(i + 1, 5).setValue(deviceId);
+      return { status: "success", message: "Device successfully bound to " + workerName };
+    }
+  }
+  return { status: "error", message: "Worker not found in Staff registry" };
+}
+
+function updateStaffStatus(p) {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName('Staff');
+    if(!sheet) return;
+    const data = sheet.getDataRange().getValues();
+    for(let i=1; i<data.length; i++) {
+        if(data[i][0] === p['Worker Name']) {
+            // Only update column E if it is empty or already matches this device.
+            // Prevents visit events from overwriting a legitimately bound device ID.
+            const existingId = (data[i][4] || '').toString().trim();
+            const incomingId = (p['deviceId'] || '').toString().trim();
+            if (!existingId || existingId === incomingId) {
+                sheet.getRange(i+1, 5).setValue(incomingId);
+            }
+            if(p['Template Name'] && p['Template Name'].includes('Vehicle')) {
+                sheet.getRange(i+1, 6).setValue(new Date()); 
+                try {
+                    const rData = JSON.parse(p['Visit Report Data']);
+                    const term = CONFIG.VEHICLE_TERM || "WOF";
+                    const expKey = Object.keys(rData).find(k => k.includes('Expiry') || k.includes(term) || k.includes('Rego'));
+                    if(expKey && rData[expKey]) { sheet.getRange(i+1, 7).setValue(rData[expKey]); }
+                } catch(e){}
+            }
+            // Persist ntfy topics to Staff sheet columns H (8) and I (9) so that
+            // server-triggered escalations can push notifications without needing
+            // the topics in the Visits row. Only written when present — never blanked.
+            const emgNtfy = (p['Emergency Contact Ntfy'] || '').toString().trim();
+            const escNtfy = (p['Escalation Contact Ntfy'] || '').toString().trim();
+            if (emgNtfy) sheet.getRange(i+1, 8).setValue(emgNtfy);
+            if (escNtfy) sheet.getRange(i+1, 9).setValue(escNtfy);
+            break;
+        }
+    }
+}
+
+function _cleanPhone(num) {
+    if (!num) return null;
+    // Strip non-numeric characters
+    let n = num.toString().replace(/[^0-9]/g, ''); 
+    if (n.length < 5) return null;
+    
+    // Handle local '0' prefix (e.g., 021 becomes +6421)
+    if (n.startsWith('0')) { 
+        return (CONFIG.COUNTRY_CODE || "+64") + n.substring(1); 
+    }
+    
+    // Ensure the '+' prefix is present for Textbelt
+    return n.startsWith('+') ? n : "+" + n;
+}
+
+/**
+ * RE-ENGINEERED: High-Urgency Alert Router
+ * Fixes: GPS Variable injection and Dual-Contact SMS Routing.
+ */
+function triggerAlerts(p, type) {
+
+    // ── GPS HANDLING ────────────────────────────────────────────────────────
+    // Guard: treat "0,0" as no fix (it's the worker app fallback when GPS
+    // was unavailable, not a real coordinate).
+    const rawGPS   = p['Last Known GPS'];
+    const hasGPS   = rawGPS && rawGPS.trim() !== '' && rawGPS.trim() !== '0,0';
+    // BUG FIX: previous code used $${} which injected a literal '$' into the URL.
+    // Correct template literal interpolation is simply ${}.
+    const gpsLink  = hasGPS
+        ? `https://maps.google.com/?q=${encodeURIComponent(rawGPS.trim())}`
+        : null;
+    const gpsText  = hasGPS
+        ? `<a href="${gpsLink}" style="color:#2563eb;">${rawGPS.trim()}</a>`
+        : `Not available — please use the address above to locate the worker.`;
+    // SMS must not contain URLs (Textbelt rejects them). Reverse-geocode the
+    // coordinates to a short address instead. Falls back to raw lat,lng if
+    // Nominatim is unavailable. Email and ntfy retain the full gpsLink above.
+    const gpsSmsTxt = hasGPS
+        ? `Location: ${reverseGeocode_(rawGPS.trim())}`
+        : `Location: Not available`;
+
+    // ── STATUS-SPECIFIC MESSAGING ──────────────────────────────────────────
+    const status        = (p['Alarm Status'] || '').toUpperCase();
+    const workerName    = p['Worker Name']    || 'The worker';
+    const workerFirst   = workerName.split(' ')[0];
+    const workerPhone   = p['Worker Phone Number'] || 'Not provided';
+    const locationName  = p['Location Name']  || 'Unknown location';
+    const locationAddr  = p['Location Address'] || '';
+    const battery       = p['Battery Level']  || 'Unknown';
+    const notes         = p['Notes']          || '';
+    const sentAt        = Utilities.formatDate(
+                              new Date(), CONFIG.TIMEZONE, "dd/MM/yyyy, HH:mm:ss");
+
+    // Colour, urgency label and action guidance are tailored to each status.
+    let   headerColour  = '#dc2626';  // red  — default for alarms
+    let   statusLabel   = status;
+    let   whatHappened  = '';
+    let   actionSteps   = '';
+    let   noteToContact = '';
+    let   ntfyPriority  = 'high';     // ntfy push priority for this alert type
+    let   ntfyTags      = 'rotating_light';  // ntfy emoji tags
+
+    if (status.includes('DURESS')) {
+        headerColour  = '#7c3aed';  // purple — covert threat
+        statusLabel   = 'DURESS — SILENT ALARM';
+        ntfyPriority  = 'urgent';
+        ntfyTags      = 'rotating_light,purple_circle';
+        whatHappened  = `This worker has activated a <strong>DURESS signal</strong>. This may mean they are under threat and unable to speak freely. <strong>Please treat this as a real emergency.</strong>`;
+        actionSteps   = `
+            <li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhone}</li>
+            <li>If there is no answer within a few minutes, contact someone at the site and ask them to check on the worker's safety</li>
+            <li>If you believe they are in danger, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>
+            <li>Once contact is made, ask them to resolve the alert using their safety app or call their Safety Manager</li>`;
+        noteToContact = `Before escalating to police, consider that the worker may be unable to speak freely. A silent duress is designed to look like a normal message — do not reveal that you have received this alert if you speak to someone at the scene who could be the threat.`;
+    }
+    else if (status.includes('PANIC') || status.includes('SOS')) {
+        headerColour  = '#dc2626';
+        statusLabel   = 'PANIC / SOS — MANUAL ALARM';
+        ntfyPriority  = 'urgent';
+        ntfyTags      = 'rotating_light,red_circle';
+        whatHappened  = `This worker has <strong>manually triggered a SOS panic alarm</strong>. They may be in immediate danger.`;
+        actionSteps   = `
+            <li>Try to <strong>call ${workerFirst}</strong> on ${workerPhone} immediately</li>
+            <li>If there is no answer, contact someone at the site to check on the worker</li>
+            <li>If you believe they are in danger, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>
+            <li>Once contact is made, ask them to clear the alarm using their app PIN</li>`;
+        noteToContact = `This alarm was triggered manually by the worker pressing the SOS button. It should be treated as a genuine alert unless confirmed otherwise.`;
+    }
+    else if (status.includes('EMERGENCY')) {
+        headerColour  = '#dc2626';
+        statusLabel   = 'EMERGENCY — SIGNIFICANTLY OVERDUE';
+        ntfyPriority  = 'urgent';
+        ntfyTags      = 'rotating_light,red_circle';
+        whatHappened  = `This worker is <strong>significantly overdue</strong> and we have not been able to confirm their safety. Their grace period has expired.`;
+        actionSteps   = `
+            <li>Try to <strong>call ${workerFirst}</strong> on ${workerPhone} immediately</li>
+            <li>Contact someone at the site to check on the worker's welfare</li>
+            <li>If unreachable after a reasonable effort, <strong>consider contacting emergency services (${EMERGENCY_NUMBER})</strong> and providing the location above</li>`;
+        noteToContact = `Before escalating to police, consider that the worker may be out of mobile data coverage, may have closed the app, or may have a flat battery. Try calling, texting, and checking with the site first.`;
+    }
+    else if (status.includes('OVERDUE') || status.includes('CRITICAL ESCALATION') || status.includes('OVERDUE WARNING')) {
+        headerColour  = '#d97706';  // amber — concern, not yet emergency
+        statusLabel   = 'OVERDUE — MISSED CHECK-IN';
+        ntfyPriority  = 'high';
+        ntfyTags      = 'warning,yellow_circle';
+        whatHappened  = `This worker <strong>has not checked out as scheduled</strong>. They may be delayed, unreachable, or in difficulty.`;
+        actionSteps   = `
+            <li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhone}</li>
+            <li>If you cannot reach them, contact someone at the site and ask them to check on the worker's safety</li>
+            <li>If they remain unreachable and you have concerns, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>`;
+        noteToContact = `Before escalating to police, consider that the worker may be running late, out of coverage, or have a flat battery. Try calling, texting, and other contact methods first.`;
+    }
+    else if (status.includes('TEST_ALERT')) {
+        headerColour  = '#1d4ed8';  // blue — not a real emergency
+        statusLabel   = 'TEST — Safety System Check';
+        ntfyPriority  = 'default';
+        ntfyTags      = 'test_tube,blue_circle';
+        whatHappened  = `This is a <strong>scheduled test</strong> of ${workerName}'s lone worker safety app. <strong>No action is required.</strong>`;
+        actionSteps   = `
+            <li>No action required — this confirms your emergency contact details are correct and alerts are reaching your inbox</li>
+            <li>Please check that this email did not land in your spam folder</li>
+            <li>If you did <em>not</em> expect this test, contact ${workerName} on ${workerPhone} to confirm it was sent intentionally</li>`;
+        noteToContact = '';
+    }
+    else {
+        // Fallback for any other status (CRITICAL TIMING, LOW BATTERY, etc.)
+        whatHappened  = `A safety event has been recorded for this worker. Status: <strong>${status}</strong>.`;
+        actionSteps   = `<li>Try to contact <strong>${workerFirst}</strong> on ${workerPhone}</li>
+                         <li>If you have concerns about their safety, contact emergency services (${EMERGENCY_NUMBER})</li>`;
+        noteToContact = '';
+    }
+
+    const headerEmoji = status.includes('TEST_ALERT') ? '🧪' : '🚨';
+
+    // ── BUILD HTML EMAIL ───────────────────────────────────────────────────
+    const locationBlock = [
+        `<tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap;vertical-align:top">Site:</td><td style="padding:4px 0"><strong>${locationName}</strong></td></tr>`,
+        locationAddr ? `<tr><td style="color:#6b7280;padding:4px 12px 4px 0;vertical-align:top">Address:</td><td style="padding:4px 0">${locationAddr}</td></tr>` : '',
+        `<tr><td style="color:#6b7280;padding:4px 12px 4px 0;vertical-align:top">GPS:</td><td style="padding:4px 0">${gpsText}</td></tr>`
+    ].filter(Boolean).join('');
+
+    // Build a per-recipient email with the correct salutation.
+    // Each recipient gets "Dear [their first name]" rather than a generic greeting.
+    // ntfyTopic: if provided, a subscribe deeplink is shown in TEST emails so contacts can opt in to push.
+    const buildHtml = (recipientName, ntfyTopic) => {
+        const salutation = recipientName
+            ? `Dear ${recipientName.split(' ')[0]},`
+            : 'Dear Emergency Contact,';
+        const ntfyServer = (CONFIG.NTFY_SERVER && !CONFIG.NTFY_SERVER.includes('%%'))
+            ? CONFIG.NTFY_SERVER.replace(/\/$/, '')
+            : 'https://ntfy.sh';
+        // Always shown in TEST_ALERT emails — this is the onboarding moment.
+        // Two states: topic already configured (show subscribe button) or not yet set up (show instructions).
+        const ntfySubscribeBlock = status.includes('TEST_ALERT')
+            ? (ntfyTopic && ntfyTopic.trim()
+                ? `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:16px 20px;margin:24px 0 0">
+                     <p style="margin:0 0 8px;font-size:13px;font-weight:bold;color:#1e40af">📲 Enable Instant Push Notifications</p>
+                     <p style="margin:0 0 12px;font-size:13px;color:#374151">Install the free <strong>ntfy app</strong> on your phone and tap the button below to subscribe to <strong>${workerName}'s</strong> safety alerts. You'll receive a push notification the instant an alarm fires — no need to check your email.</p>
+                     <a href="${ntfyServer}/${ntfyTopic.trim()}" style="display:inline-block;background:#1d4ed8;color:#fff;font-size:13px;font-weight:bold;padding:10px 20px;border-radius:6px;text-decoration:none">Subscribe to Push Alerts →</a>
+                     <p style="margin:10px 0 0;font-size:11px;color:#6b7280">Download ntfy: <a href="https://apps.apple.com/app/ntfy/id1625396347" style="color:#2563eb">iOS App Store</a> · <a href="https://play.google.com/store/apps/details?id=io.heckel.ntfy" style="color:#2563eb">Google Play</a> · <a href="https://ntfy.sh" style="color:#2563eb">Web browser</a></p>
+                   </div>`
+                : `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px 20px;margin:24px 0 0">
+                     <p style="margin:0 0 8px;font-size:13px;font-weight:bold;color:#166534">📲 Optional: Enable Instant Push Notifications</p>
+                     <p style="margin:0 0 10px;font-size:13px;color:#374151">As well as this email, you can receive an <strong>instant push notification</strong> on your phone the moment any alarm fires — even on a locked screen, with no delay.</p>
+                     <p style="margin:0 0 10px;font-size:13px;color:#374151"><strong>To set this up:</strong></p>
+                     <ol style="margin:0 0 12px 20px;padding:0;font-size:13px;color:#374151;line-height:1.8">
+                       <li>Download the free <strong>ntfy app</strong> (links below)</li>
+                       <li>Open the app and tap <strong>Subscribe to topic</strong></li>
+                       <li>Choose a private topic name — anything memorable, e.g. <em>jane-safety-alerts</em></li>
+                       <li>Share that topic name with <strong>${workerFirst}</strong> so they can enter it in their safety app</li>
+                     </ol>
+                     <p style="margin:0 0 4px;font-size:11px;color:#6b7280">Download ntfy: <a href="https://apps.apple.com/app/ntfy/id1625396347" style="color:#16a34a">iOS App Store</a> · <a href="https://play.google.com/store/apps/details?id=io.heckel.ntfy" style="color:#16a34a">Google Play</a> · <a href="https://ntfy.sh" style="color:#16a34a">Web browser</a></p>
+                     <p style="margin:4px 0 0;font-size:11px;color:#6b7280">ntfy is free and open source. Topics are private — nobody can find yours unless you share the name.</p>
+                   </div>`)
+            : '';
+        return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 0">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%">
+
+      <!-- Header -->
+      <tr><td style="background:${headerColour};color:#fff;padding:24px 28px;border-radius:8px 8px 0 0">
+        <div style="font-size:11px;font-weight:bold;letter-spacing:3px;opacity:0.85;text-transform:uppercase;margin-bottom:6px">OTG Lone Worker Safety</div>
+        <div style="font-size:22px;font-weight:bold">${headerEmoji} ${statusLabel}</div>
+      </td></tr>
+
+      <!-- Body -->
+      <tr><td style="background:#fff;padding:28px;border-radius:0 0 8px 8px">
+
+        <p style="margin:0 0 20px">${salutation}</p>
+        <p style="margin:0 0 20px">You are receiving this message because you are listed as <strong>${workerName}</strong>'s emergency contact.</p>
+
+        <h2 style="font-size:14px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:8px;margin:0 0 12px">What Has Happened</h2>
+        <p style="margin:0 0 6px">${whatHappened}</p>
+        ${notes ? `<p style="margin:8px 0 0;color:#6b7280;font-style:italic">&ldquo;${notes}&rdquo;</p>` : ''}
+
+        <h2 style="font-size:14px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:8px;margin:24px 0 12px">Worker Details</h2>
+        <table cellpadding="0" cellspacing="0">
+          <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Name:</td><td style="padding:4px 0"><strong>${workerName}</strong></td></tr>
+          <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Phone:</td><td style="padding:4px 0">${workerPhone}</td></tr>
+        </table>
+
+        <h2 style="font-size:14px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:8px;margin:24px 0 12px">Last Known Location</h2>
+        <table cellpadding="0" cellspacing="0">${locationBlock}</table>
+
+        <h2 style="font-size:14px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:8px;margin:24px 0 12px">What You Should Do Now</h2>
+        <ol style="margin:0 0 0 20px;padding:0;line-height:1.8">${actionSteps}</ol>
+
+        ${noteToContact ? `
+        <div style="background:#fef9c3;border-left:4px solid #eab308;padding:14px 16px;margin:24px 0 0;border-radius:0 6px 6px 0">
+          <p style="margin:0;font-size:13px;color:#78350f">${noteToContact}</p>
+        </div>` : ''}
+
+        ${ntfySubscribeBlock}
+
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0">
+        <table cellpadding="0" cellspacing="0" style="font-size:12px;color:#6b7280;width:100%">
+          <tr><td style="padding:2px 12px 2px 0;white-space:nowrap">Status:</td><td>${statusLabel}</td></tr>
+          <tr><td style="padding:2px 12px 2px 0;white-space:nowrap">Battery:</td><td>${battery}</td></tr>
+          <tr><td style="padding:2px 12px 2px 0;white-space:nowrap">Sent at:</td><td>${sentAt}</td></tr>
+        </table>
+
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
+    };
+
+    // ── EMAIL ROUTING ──────────────────────────────────────────────────────
+    // Send each contact a personalised email (correct "Dear [Name]" salutation).
+    const contactPairs = [
+        { email: p['Emergency Contact Email'],   name: p['Emergency Contact Name'],   ntfy: p['Emergency Contact Ntfy']   },
+        { email: p['Escalation Contact Email'],  name: p['Escalation Contact Name'],  ntfy: p['Escalation Contact Ntfy']  }
+    ].filter(c => c.email && c.email.includes('@'));
+
+    contactPairs.forEach(contact => {
+        const subject  = `${headerEmoji} ${statusLabel} — ${workerName}`;
+        const htmlBody = buildHtml(contact.name, contact.ntfy);
+        try {
+            MailApp.sendEmail({ to: contact.email, subject, htmlBody });
+        } catch (mailErr) {
+            console.error("ALERT EMAIL FAILED: " + mailErr.toString());
+            try {
+                const failCount = parseInt(sp.getProperty('DAILY_FAIL_COUNT') || '0', 10);
+                sp.setProperty('DAILY_FAIL_COUNT', String(failCount + 1));
+                sp.setProperty('LAST_FAIL_DETAIL',
+                    `${new Date().toISOString()} | Worker: ${workerName} | ${mailErr.toString().substring(0, 200)}`);
+            } catch (propErr) { console.error("Could not write fail counter: " + propErr.toString()); }
+        }
+    });
+
+    // ── SMS ROUTING ────────────────────────────────────────────────────────
+    if (CONFIG.TEXTBELT_API_KEY && CONFIG.TEXTBELT_API_KEY.length > 5) {
+        const numbers = [
+            p['Emergency Contact Number'] || p['Emergency Contact Phone'],
+            p['Escalation Contact Number'] || p['Escalation Contact Phone']
+        ].map(n => _cleanPhone(n)).filter(n => n);
+
+        const smsBody = `🚨 ${statusLabel}\nWorker: ${workerName}\nSite: ${locationName}\nPhone: ${workerPhone}\n${gpsSmsTxt}`;
+        numbers.forEach(num => {
+            try {
+                UrlFetchApp.fetch('https://textbelt.com/text', {
+                    method: 'post',
+                    payload: { phone: num, message: smsBody, key: CONFIG.TEXTBELT_API_KEY }
+                });
+            } catch (e) { console.error("SMS Failed: " + e.toString()); }
+        });
+    }
+
+    // ── NTFY PUSH ROUTING ─────────────────────────────────────────────────
+    // Sends an instant push notification to each contact's phone via the ntfy app.
+    // Fires in addition to email and SMS — never instead of them.
+    // Silently skipped per-contact if no ntfy topic is configured.
+    const ntfyMessage = [
+        `Worker: ${workerName} · ${workerPhone}`,
+        `Site: ${locationName}`,
+        locationAddr ? `Address: ${locationAddr}` : '',
+        hasGPS ? `GPS: ${gpsLink}` : 'GPS: Not available',
+        `Battery: ${battery}`,
+        `Sent: ${sentAt}`
+    ].filter(Boolean).join('\n');
+
+    const ntfyContacts = [
+        { topic: p['Emergency Contact Ntfy'],  name: p['Emergency Contact Name']  },
+        { topic: p['Escalation Contact Ntfy'], name: p['Escalation Contact Name'] }
+    ].filter(c => c.topic && c.topic.trim());
+
+    ntfyContacts.forEach(c => {
+        _sendNtfy(c.topic, `${headerEmoji} ${statusLabel} — ${workerName}`, ntfyMessage, ntfyPriority, ntfyTags);
+    });
+}
+
+/**
+ * REVERSE GEOCODE HELPER
+ * Converts a "lat,lng" coordinate string to a short human-readable address
+ * (road + suburb) using the Nominatim OSM API.
+ *
+ * Returns a formatted address string on success, or the raw "lat, lng"
+ * coordinate string on any failure (network error, no result, missing fields).
+ *
+ * Used to produce SMS-safe location text — no URLs, no map links.
+ *
+ * @param  {string} rawGPS  - Coordinate string in "lat,lng" format
+ * @return {string}         - "Road Name, Suburb" or "lat, lng" fallback
+ */
+function reverseGeocode_(rawGPS) {
+    try {
+        const parts = rawGPS.trim().split(',');
+        if (parts.length < 2) return rawGPS.trim();
+        const lat = parts[0].trim();
+        const lng = parts[1].trim();
+
+        const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`;
+        const response = UrlFetchApp.fetch(url, {
+            headers: { 'User-Agent': 'OTG-AppSuite/1.0 (lone-worker-safety)' },
+            muteHttpExceptions: true
+        });
+
+        if (response.getResponseCode() !== 200) return `${lat}, ${lng}`;
+
+        const data = JSON.parse(response.getContentText());
+        if (!data || !data.address) return `${lat}, ${lng}`;
+
+        const addr   = data.address;
+        const road   = addr.road || addr.pedestrian || addr.footway || '';
+        // NZ suburb structures vary — try each in order of specificity
+        const suburb = addr.suburb || addr.quarter || addr.village
+                     || addr.town  || addr.city_district || '';
+
+        if (!road && !suburb) return `${lat}, ${lng}`;
+        if (!road)   return suburb;
+        if (!suburb) return road;
+        return `${road}, ${suburb}`;
+
+    } catch (e) {
+        console.error('reverseGeocode_ failed: ' + e.message);
+        // Fall back to raw coordinates so the SMS still contains location info
+        return rawGPS.trim();
+    }
+}
+
+/**
+ * NTFY PUSH NOTIFICATION HELPER
+ * Posts a push notification to a contact's ntfy topic.
+ * The ntfy app on their phone receives it instantly, bypassing email latency.
+ *
+ * @param {string} topic    - The contact's private ntfy topic string (e.g. "alice-safety-7x9k2")
+ * @param {string} title    - Notification title (shown in bold on lock screen)
+ * @param {string} message  - Notification body text
+ * @param {string} priority - ntfy priority: "min","low","default","high","urgent"
+ * @param {string} tags     - Comma-separated ntfy emoji tags (e.g. "rotating_light,red_circle")
+ *
+ * Silently skipped if topic is blank or NTFY_SERVER is not configured.
+ * All errors are caught — a failed push must never prevent email/SMS from sending.
+ */
+function _sendNtfy(topic, title, message, priority, tags) {
+    if (!topic || topic.trim() === '') return;
+    const server = (CONFIG.NTFY_SERVER && !CONFIG.NTFY_SERVER.includes('%%'))
+        ? CONFIG.NTFY_SERVER.replace(/\/$/, '')
+        : 'https://ntfy.sh';
+    const url = `${server}/${topic.trim()}`;
+    try {
+        UrlFetchApp.fetch(url, {
+            method: 'post',
+            headers: {
+                'Title':    title,
+                'Priority': priority || 'default',
+                'Tags':     tags    || 'bell'
+            },
+            payload:            message,
+            muteHttpExceptions: true
+        });
+        console.log(`ntfy push sent to topic: ${topic}`);
+    } catch (e) {
+        console.error(`ntfy push failed for topic "${topic}": ${e.toString()}`);
+    }
+}
+
+
+/**
+ * DEAD-MAN'S SWITCH PING
+ * Fires a silent HTTP GET to the Healthchecks.io check URL after every
+ * successful checkOverdueVisits() run. If Healthchecks.io doesn't receive
+ * a ping within the configured grace window (~35 min), it emails the admin
+ * to report that the escalation engine has gone silent.
+ *
+ * Skipped silently if HEALTHCHECK_URL is blank or not yet configured.
+ * All errors are caught — a failed ping must never crash the escalation engine.
+ */
+function _pingHealthcheck() {
+    const url = CONFIG.HEALTHCHECK_URL;
+    if (!url || url.includes('%%') || url.length < 10) return;
+    try {
+        UrlFetchApp.fetch(url, { method: 'get', muteHttpExceptions: true });
+        console.log('Healthcheck ping sent.');
+    } catch (e) {
+        console.warn('Healthcheck ping failed (non-critical): ' + e.toString());
+    }
+}
+
+function checkOverdueVisits() {
+    // Record successful trigger execution time for health email reporting
+    try { sp.setProperty('LAST_TRIGGER_TIME', new Date().toISOString()); } catch(e) {}
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('Visits');
+    if(!sheet) return;
+    const data = sheet.getDataRange().getValues();
+    const now = new Date();
+    const latest = {};
+    
+    for(let i=1; i<data.length; i++) {
+        const row = data[i];
+        const name = row[2]; 
+        if(!latest[name] || new Date(row[0]) > latest[name].time) {
+            latest[name] = { r: i+1, time: new Date(row[0]), rowData: row };
+        }
+    }
+    
+    Object.keys(latest).forEach(worker => {
+        try {
+            const entry = latest[worker].rowData;
+            const status = String(entry[10]); 
+            const dueTimeStr = entry[20]; 
+            const isClosed = status.includes("DEPARTED") || status.includes("COMPLETED") || status.includes("DATA_ENTRY_ONLY") || status.includes("USER_SAFE") || status.includes("NOTICE_ACK");
+            
+            if(!isClosed && dueTimeStr) {
+                const due = new Date(dueTimeStr);
+                const diffMins = (now - due) / 60000; 
+                const isCritical = (entry[11] && entry[11].includes("[CRITICAL_TIMING]"));
+
+                // 1. CRITICAL TIMING: Immediate Dual Alert at 0 mins
+                if (isCritical && diffMins >= 0 && !status.includes("EMERGENCY")) {
+                    triggerEscalation(sheet, entry, "EMERGENCY - CRITICAL TIMING BREACH", true);
+                    return; 
+                }
+
+                // 2. STANDARD: 15/30/45/60 min escalations
+                if (!isCritical && diffMins >= 15 && diffMins < 30 && !status.includes('15MIN')) {
+                    triggerEscalation(sheet, entry, "OVERDUE - 15MIN ALERT", false);
+                }
+                else if (diffMins >= 30 && diffMins < 45 && !status.includes('30MIN')) {
+                    triggerEscalation(sheet, entry, "OVERDUE - 30MIN ALERT", false);
+                }
+                else if (diffMins >= 45 && diffMins < 60 && !status.includes('45MIN')) {
+                    triggerEscalation(sheet, entry, "OVERDUE - 45MIN ALERT", false);
+                }
+                else if (diffMins >= 60 && !status.includes("EMERGENCY")) {
+                    triggerEscalation(sheet, entry, "EMERGENCY - 60MIN BREACH", true);
+                }
+            }
+        } catch (err) { console.error(`Escalation Error: ${err.toString()}`); }
+    });
+
+    // Ping dead-man's switch — confirms the escalation engine ran to completion.
+    // Only fires here (after the loop) so a crash or early return leaves Healthchecks
+    // without a ping, which it correctly interprets as a system failure.
+    _pingHealthcheck();
+}
+
+/**
+ * OBSERVABILITY HEALTH EMAIL
+ * Run on a daily time-based trigger (e.g. 07:00 each morning).
+ * Also available from the OTG Admin menu for manual execution.
+ *
+ * Reports:
+ *   - Visit count in the last 24 hours
+ *   - Escalation alerts dispatched in the last 24 hours
+ *   - Failed alert emails (tracked via PropertiesService DAILY_FAIL_COUNT)
+ *   - Timestamp of the last successful checkOverdueVisits() trigger run
+ *   - Any workers with an open visit older than 24 hours (likely a missed departure)
+ */
+function sendHealthEmail() {
+    const now = new Date();
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const tz = CONFIG.TIMEZONE || 'UTC';
+    const fmtTime = d => Utilities.formatDate(new Date(d), tz, "dd MMM yyyy HH:mm z");
+
+    // --- 1. Read Visits sheet ---
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('Visits');
+
+    let visitCount = 0;
+    let escalationCount = 0;
+    const stalledVisits = []; // Open visits that started > 24h ago
+
+    const ESCALATION_STATUSES = ['OVERDUE', 'EMERGENCY', 'PANIC', 'SOS', 'DURESS'];
+    const CLOSED_STATUSES     = ['DEPARTED', 'COMPLETED', 'DATA_ENTRY_ONLY', 'USER_SAFE', 'NOTICE_ACK'];
+
+    if (sheet && sheet.getLastRow() > 1) {
+        const data = sheet.getDataRange().getValues();
+        // Track the most recent row per worker to detect stalled open visits
+        const latestRowPerWorker = {};
+
+        for (let i = 1; i < data.length; i++) {
+            const row       = data[i];
+            const rowTime   = new Date(row[0]);   // col A: Timestamp
+            const worker    = String(row[2]);      // col C: Worker Name
+            const status    = String(row[10]);     // col K: Alarm Status
+
+            // Count visits and escalations in the last 24h
+            if (rowTime > oneDayAgo) {
+                visitCount++;
+                if (ESCALATION_STATUSES.some(s => status.toUpperCase().includes(s))) {
+                    escalationCount++;
+                }
+            }
+
+            // Track the latest row per worker for stall detection
+            if (!latestRowPerWorker[worker] || rowTime > latestRowPerWorker[worker].time) {
+                latestRowPerWorker[worker] = { time: rowTime, status: status, location: String(row[12]) };
+            }
+        }
+
+        // Flag workers whose latest row is open and older than 24h
+        Object.keys(latestRowPerWorker).forEach(worker => {
+            const entry = latestRowPerWorker[worker];
+            const isClosed = CLOSED_STATUSES.some(s => entry.status.toUpperCase().includes(s));
+            if (!isClosed && entry.time < oneDayAgo) {
+                stalledVisits.push({
+                    worker:   worker,
+                    since:    fmtTime(entry.time),
+                    status:   entry.status,
+                    location: entry.location
+                });
+            }
+        });
+    }
+
+    // --- 2. Read PropertiesService counters ---
+    const failCount      = parseInt(sp.getProperty('DAILY_FAIL_COUNT') || '0', 10);
+    const lastFailDetail = sp.getProperty('LAST_FAIL_DETAIL') || 'None';
+    const lastTriggerRaw = sp.getProperty('LAST_TRIGGER_TIME');
+    const lastTriggerStr = lastTriggerRaw ? fmtTime(lastTriggerRaw) : '<strong style="color:#c0392b">Never recorded — is the 1-minute trigger set up?</strong>';
+
+    // --- 3. Build HTML email ---
+    const statusColour = (val, bad) => `color:${val > 0 && bad ? '#c0392b' : val > 0 ? '#e67e22' : '#27ae60'}`;
+
+    const stalledRows = stalledVisits.length === 0
+        ? '<tr><td colspan="4" style="color:#27ae60;padding:8px 12px">None — all visits closed within 24 hours ✓</td></tr>'
+        : stalledVisits.map(v =>
+            `<tr>
+               <td style="padding:8px 12px">${v.worker}</td>
+               <td style="padding:8px 12px">${v.since}</td>
+               <td style="padding:8px 12px">${v.status}</td>
+               <td style="padding:8px 12px">${v.location}</td>
+             </tr>`
+          ).join('');
+
+    const html = `
+<div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;color:#1a1a1a">
+  <div style="background:#1e3a5f;padding:20px 24px;border-radius:6px 6px 0 0">
+    <h2 style="margin:0;color:#fff;font-size:18px">🛡️ OTG Daily Health Report — ${CONFIG.ORG_NAME}</h2>
+    <p style="margin:4px 0 0;color:#adc8e8;font-size:13px">Generated ${fmtTime(now)}</p>
+  </div>
+
+  <div style="background:#f4f6f9;padding:20px 24px">
+
+    <h3 style="margin:0 0 12px;font-size:15px;color:#1e3a5f">Last 24 Hours — Activity Summary</h3>
+    <table style="border-collapse:collapse;width:100%;background:#fff;border-radius:4px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)">
+      <tr style="background:#e8edf3">
+        <th style="text-align:left;padding:10px 12px;font-size:13px">Metric</th>
+        <th style="text-align:left;padding:10px 12px;font-size:13px">Value</th>
+      </tr>
+      <tr>
+        <td style="padding:10px 12px;border-top:1px solid #eee">Worker visits logged</td>
+        <td style="padding:10px 12px;border-top:1px solid #eee"><strong>${visitCount}</strong></td>
+      </tr>
+      <tr>
+        <td style="padding:10px 12px;border-top:1px solid #eee">Escalation alerts dispatched</td>
+        <td style="padding:10px 12px;border-top:1px solid #eee"><strong style="${statusColour(escalationCount, false)}">${escalationCount}</strong></td>
+      </tr>
+      <tr>
+        <td style="padding:10px 12px;border-top:1px solid #eee">Failed alert emails <em style="font-size:11px;color:#888">(since last report)</em></td>
+        <td style="padding:10px 12px;border-top:1px solid #eee"><strong style="${statusColour(failCount, true)}">${failCount}</strong>
+          ${failCount > 0 ? `<br><span style="font-size:11px;color:#888">Last: ${lastFailDetail}</span>` : ''}
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:10px 12px;border-top:1px solid #eee">Escalation engine last ran</td>
+        <td style="padding:10px 12px;border-top:1px solid #eee">${lastTriggerStr}</td>
+      </tr>
+    </table>
+
+    <h3 style="margin:20px 0 12px;font-size:15px;color:#1e3a5f">Open Visits Older Than 24 Hours <em style="font-weight:normal;font-size:13px;color:#888">(likely missed departures)</em></h3>
+    <table style="border-collapse:collapse;width:100%;background:#fff;border-radius:4px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)">
+      <tr style="background:#e8edf3">
+        <th style="text-align:left;padding:10px 12px;font-size:13px">Worker</th>
+        <th style="text-align:left;padding:10px 12px;font-size:13px">Open Since</th>
+        <th style="text-align:left;padding:10px 12px;font-size:13px">Last Status</th>
+        <th style="text-align:left;padding:10px 12px;font-size:13px">Location</th>
+      </tr>
+      ${stalledRows}
+    </table>
+
+    ${failCount > 0 ? `
+    <div style="background:#fdf3f3;border-left:4px solid #c0392b;padding:12px 16px;margin-top:16px;border-radius:0 4px 4px 0">
+      <strong style="color:#c0392b">⚠ Alert email failures detected.</strong>
+      Check Apps Script &gt; Executions log for full stack traces.
+    </div>` : ''}
+
+    ${stalledVisits.length > 0 ? `
+    <div style="background:#fef9ec;border-left:4px solid #e67e22;padding:12px 16px;margin-top:16px;border-radius:0 4px 4px 0">
+      <strong style="color:#e67e22">⚠ ${stalledVisits.length} worker(s) have open visits older than 24 hours.</strong>
+      These may represent missed departures or a visit the worker forgot to close. Follow up manually.
+    </div>` : ''}
+
+  </div>
+  <div style="background:#e8edf3;padding:10px 24px;border-radius:0 0 6px 6px;font-size:11px;color:#888">
+    OTG AppSuite ${CONFIG.VERSION} — this report was sent by <em>sendHealthEmail()</em>. To unsubscribe, remove the daily trigger from Apps Script.
+  </div>
+</div>`;
+
+    // --- 4. Send ---
+    const recipient = (CONFIG.HEALTH_EMAIL && CONFIG.HEALTH_EMAIL.includes('@'))
+        ? CONFIG.HEALTH_EMAIL
+        : Session.getEffectiveUser().getEmail();
+
+    const subject = `${stalledVisits.length > 0 || failCount > 0 ? '⚠️' : '✅'} OTG Health Report — ${CONFIG.ORG_NAME} — ${Utilities.formatDate(now, tz, "dd MMM yyyy")}`;
+
+    MailApp.sendEmail({ to: recipient, subject: subject, htmlBody: html });
+
+    // --- 5. Reset daily fail counter now that it's been reported ---
+    sp.setProperty('DAILY_FAIL_COUNT', '0');
+    sp.deleteProperty('LAST_FAIL_DETAIL');
+
+    console.log(`Health email sent to ${recipient}. Visits: ${visitCount}, Escalations: ${escalationCount}, Fails: ${failCount}, Stalled: ${stalledVisits.length}`);
+}
+
+/**
+ * SYSTEM DIAGNOSTICS
+ * Checks all integrations, configuration, sheets, and triggers.
+ * Run from: OTG Admin menu → Run System Diagnostics, or manually in the Apps Script editor.
+ * Output: Logger (visible in editor) + HTML email to the configured health email address.
+ *
+ * ntfy test: posts to a derived diagnostics topic — subscribe to it once in the ntfy app
+ * to verify push delivery end-to-end. Topic format: [org-slug]-otg-diag
+ */
+function runDiagnostics() {
+    const results = [];
+    const tz  = CONFIG.TIMEZONE || 'UTC';
+    const now = new Date();
+
+    // ── Helper — record a result and log it immediately ───────────────────
+    const check = (category, name, status, detail) => {
+        results.push({ category, name, status, detail });
+        const icon = { PASS: '✅', WARN: '⚠️', FAIL: '❌', SKIP: '⏭️' }[status] || '?';
+        Logger.log(`${icon} [${category}] ${name}: ${detail}`);
+    };
+
+    // ── 1. CONFIG INJECTION ───────────────────────────────────────────────
+    Logger.log('── CONFIG INJECTION ──');
+    const uninjected = Object.keys(CONFIG).filter(k => String(CONFIG[k]).includes('%%'));
+    if (uninjected.length === 0) {
+        check('Config', 'Variable injection', 'PASS', 'All CONFIG variables are correctly injected.');
+    } else {
+        check('Config', 'Variable injection', 'FAIL',
+            'Un-injected placeholders found: ' + uninjected.join(', ') +
+            '. Re-deploy from the Factory or set these values manually.');
+    }
+
+    // ── 2. REQUIRED SHEETS ────────────────────────────────────────────────
+    Logger.log('── SHEETS ──');
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    ['Staff', 'Visits', 'Sites', 'Templates'].forEach(name => {
+        try {
+            const s = ss.getSheetByName(name);
+            if (s) {
+                check('Sheets', '"' + name + '" exists', 'PASS',
+                    'Found. Rows: ' + Math.max(0, s.getLastRow() - 1) + ' (excluding header).');
+            } else {
+                check('Sheets', '"' + name + '" exists', 'FAIL',
+                    'Sheet not found. ' + (name === 'Visits'
+                        ? 'Will be created automatically on first worker post.'
+                        : 'Must be created manually before workers can use the system.'));
+            }
+        } catch(e) { check('Sheets', '"' + name + '" exists', 'FAIL', e.toString()); }
+    });
+
+    // Staff: at least one active worker
+    try {
+        const staffSheet = ss.getSheetByName('Staff');
+        if (staffSheet && staffSheet.getLastRow() > 1) {
+            const staffData = staffSheet.getDataRange().getValues();
+            const active = staffData.slice(1).filter(r =>
+                (r[0] || '').toString().trim() &&
+                (r[2] || '').toString().trim().toLowerCase() !== 'inactive'
+            );
+            check('Sheets', 'Staff — Active workers', active.length > 0 ? 'PASS' : 'WARN',
+                active.length > 0
+                    ? active.length + ' active worker(s) found.'
+                    : 'No active workers found. Workers with Status = "Inactive" cannot sync.');
+        }
+    } catch(e) { check('Sheets', 'Staff — Active workers', 'FAIL', e.toString()); }
+
+    // ── 3. PHOTOS FOLDER ──────────────────────────────────────────────────
+    Logger.log('── PHOTOS FOLDER ──');
+    const folderId = CONFIG.PHOTOS_FOLDER_ID;
+    if (!folderId || folderId.includes('%%') || folderId.length < 10) {
+        check('Storage', 'Photos folder', 'WARN',
+            'PHOTOS_FOLDER_ID not configured. Visit report photos will not be saved to Drive.');
+    } else {
+        try {
+            const folder = DriveApp.getFolderById(folderId);
+            const testFile = folder.createFile(
+                '_otg_diag_test.txt',
+                'OTG diagnostic write test — safe to delete.',
+                MimeType.PLAIN_TEXT
+            );
+            testFile.setTrashed(true);
+            check('Storage', 'Photos folder', 'PASS',
+                'Accessible and writable. Folder name: "' + folder.getName() + '".');
+        } catch(e) {
+            check('Storage', 'Photos folder', 'FAIL',
+                'Folder inaccessible or not writable: ' + e.toString());
+        }
+    }
+
+    // ── 4. MAILAPP QUOTA ──────────────────────────────────────────────────
+    Logger.log('── EMAIL ──');
+    try {
+        const quota = MailApp.getRemainingDailyQuota();
+        const status = quota > 50 ? 'PASS' : quota > 10 ? 'WARN' : 'FAIL';
+        check('Email', 'Daily send quota', status,
+            quota + ' emails remaining today. ' +
+            '(Free Google accounts: 100/day; Workspace accounts: 1,500/day.) ' +
+            (quota <= 10 ? 'Critically low — alarm emails may not send.' : ''));
+    } catch(e) { check('Email', 'Daily send quota', 'FAIL', e.toString()); }
+
+    // ── 5. TEXTBELT SMS ───────────────────────────────────────────────────
+    Logger.log('── TEXTBELT SMS ──');
+    const textbeltKey = CONFIG.TEXTBELT_API_KEY;
+    if (!textbeltKey || textbeltKey.includes('%%') || textbeltKey.length < 5) {
+        check('SMS', 'Textbelt', 'SKIP',
+            'TEXTBELT_API_KEY not configured. SMS notifications are disabled.');
+    } else {
+        try {
+            const resp = UrlFetchApp.fetch(
+                'https://textbelt.com/quota/' + encodeURIComponent(textbeltKey),
+                { method: 'get', muteHttpExceptions: true }
+            );
+            const code = resp.getResponseCode();
+            const body = JSON.parse(resp.getContentText());
+            if (code === 200 && body.success) {
+                const remaining = body.quotaRemaining;
+                const status = remaining > 10 ? 'PASS' : remaining > 0 ? 'WARN' : 'FAIL';
+                check('SMS', 'Textbelt quota', status,
+                    'Key valid. Credits remaining: ' + remaining + '.' +
+                    (remaining === 0 ? ' Top-up required — SMS will fail until credits are purchased.' : '') +
+                    (remaining <= 10 && remaining > 0 ? ' Running low — consider topping up.' : ''));
+            } else {
+                check('SMS', 'Textbelt quota', 'FAIL',
+                    'Unexpected response (HTTP ' + code + '): ' +
+                    resp.getContentText().substring(0, 200));
+            }
+        } catch(e) { check('SMS', 'Textbelt quota', 'FAIL', 'Request failed: ' + e.toString()); }
+    }
+
+    // ── 6. NTFY PUSH ──────────────────────────────────────────────────────
+    Logger.log('── NTFY PUSH ──');
+    const ntfyServer = (CONFIG.NTFY_SERVER && !CONFIG.NTFY_SERVER.includes('%%'))
+        ? CONFIG.NTFY_SERVER.replace(/\/$/, '')
+        : 'https://ntfy.sh';
+    const orgSlug = (CONFIG.ORG_NAME || 'otg')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+        .substring(0, 24);
+    const diagTopic = orgSlug + '-otg-diag';
+    try {
+        const resp = UrlFetchApp.fetch(ntfyServer + '/' + diagTopic, {
+            method: 'post',
+            headers: { 'Title': '🔧 OTG Diagnostics Test', 'Priority': 'default', 'Tags': 'test_tube' },
+            payload: 'OTG system diagnostic ran at ' +
+                     Utilities.formatDate(now, tz, 'dd MMM yyyy HH:mm z') +
+                     '. If you received this, ntfy push notifications are working correctly.' +
+                     ' Topic: ' + diagTopic,
+            muteHttpExceptions: true
+        });
+        const code = resp.getResponseCode();
+        if (code >= 200 && code < 300) {
+            check('ntfy Push', 'Diagnostic send', 'PASS',
+                'Message posted to topic "' + diagTopic + '" on ' + ntfyServer + ' (HTTP ' + code + '). ' +
+                'Subscribe to this topic in the ntfy app to confirm end-to-end delivery.');
+        } else {
+            check('ntfy Push', 'Diagnostic send', 'FAIL',
+                ntfyServer + ' returned HTTP ' + code + ': ' +
+                resp.getContentText().substring(0, 300));
+        }
+    } catch(e) { check('ntfy Push', 'Diagnostic send', 'FAIL', 'Request failed: ' + e.toString()); }
+
+    // ── 7. HEALTHCHECKS.IO ────────────────────────────────────────────────
+    Logger.log('── HEALTHCHECKS.IO ──');
+    const hcUrl = CONFIG.HEALTHCHECK_URL;
+    if (!hcUrl || hcUrl.includes('%%') || hcUrl.length < 10) {
+        check('Dead-Man Switch', 'Healthchecks.io', 'SKIP',
+            'HEALTHCHECK_URL not configured. Dead-man switch monitoring is disabled. ' +
+            'Register a check at healthchecks.io and paste the ping URL into the Factory.');
+    } else {
+        try {
+            const resp = UrlFetchApp.fetch(hcUrl, { method: 'get', muteHttpExceptions: true });
+            const code = resp.getResponseCode();
+            if (code === 200) {
+                check('Dead-Man Switch', 'Healthchecks.io ping', 'PASS',
+                    'Ping accepted (HTTP 200). Dead-man switch is active.');
+            } else {
+                check('Dead-Man Switch', 'Healthchecks.io ping', 'WARN',
+                    'Unexpected HTTP ' + code + '. Verify the ping URL is correct in CONFIG.');
+            }
+        } catch(e) {
+            check('Dead-Man Switch', 'Healthchecks.io ping', 'FAIL', 'Request failed: ' + e.toString());
+        }
+    }
+
+    // ── 8. GEMINI API ─────────────────────────────────────────────────────
+    Logger.log('── GEMINI API ──');
+    const geminiKey = CONFIG.GEMINI_API_KEY;
+    if (!geminiKey || geminiKey.includes('%%') || geminiKey.length < 10) {
+        check('AI Scribe', 'Gemini API key', 'SKIP',
+            'GEMINI_API_KEY not configured. Smart Scribe (AI visit note polishing) is disabled.');
+    } else {
+        try {
+            const resp = UrlFetchApp.fetch(
+                'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + geminiKey,
+                {
+                    method: 'post',
+                    contentType: 'application/json',
+                    payload: JSON.stringify({ contents: [{ parts: [{ text: 'Reply with the single word: OK' }] }] }),
+                    muteHttpExceptions: true
+                }
+            );
+            const code = resp.getResponseCode();
+            if (code === 200) {
+                check('AI Scribe', 'Gemini API key', 'PASS', 'Key valid — API is responding.');
+            } else if (code === 403) {
+                check('AI Scribe', 'Gemini API key', 'FAIL',
+                    'HTTP 403 — key invalid, or Generative Language API not enabled for this Google Cloud project.');
+            } else if (code === 429) {
+                check('AI Scribe', 'Gemini API key', 'WARN',
+                    'HTTP 429 — rate limit hit during diagnostic. Key is likely valid but quota is exhausted.');
+            } else {
+                check('AI Scribe', 'Gemini API key', 'WARN',
+                    'HTTP ' + code + ': ' + resp.getContentText().substring(0, 200));
+            }
+        } catch(e) { check('AI Scribe', 'Gemini API key', 'FAIL', 'Request failed: ' + e.toString()); }
+    }
+
+    // ── 9. ORS ROUTING API ────────────────────────────────────────────────
+    Logger.log('── ORS ROUTING API ──');
+    const orsKey = CONFIG.ORS_API_KEY;
+    if (!orsKey || orsKey.includes('%%') || orsKey.length < 10) {
+        check('Routing', 'ORS API key', 'SKIP',
+            'ORS_API_KEY not configured. Road-distance calculations are disabled.');
+    } else {
+        try {
+            // Minimal geocode call — no directions quota consumed
+            const resp = UrlFetchApp.fetch(
+                'https://api.openrouteservice.org/geocode/search?api_key=' + orsKey +
+                '&text=Wellington+New+Zealand&size=1',
+                { method: 'get', muteHttpExceptions: true }
+            );
+            const code = resp.getResponseCode();
+            if (code === 200) {
+                check('Routing', 'ORS API key', 'PASS', 'Key valid — API is responding.');
+            } else if (code === 403) {
+                check('Routing', 'ORS API key', 'FAIL',
+                    'HTTP 403 — key invalid or daily quota exhausted.');
+            } else if (code === 429) {
+                check('Routing', 'ORS API key', 'WARN',
+                    'HTTP 429 — rate limited during diagnostic. Key is likely valid.');
+            } else {
+                check('Routing', 'ORS API key', 'WARN',
+                    'HTTP ' + code + ': ' + resp.getContentText().substring(0, 200));
+            }
+        } catch(e) { check('Routing', 'ORS API key', 'FAIL', 'Request failed: ' + e.toString()); }
+    }
+
+    // ── 10. TRIGGERS ──────────────────────────────────────────────────────
+    Logger.log('── TRIGGERS ──');
+    const RECOMMENDED = [
+        {
+            fn:       'checkOverdueVisits',
+            label:    'Escalation engine',
+            required: true,
+            note:     'REQUIRED — must run every 10 minutes or less. ' +
+                      'Workers will NOT be escalated if this trigger is missing.'
+        },
+        {
+            fn:       'sendHealthEmail',
+            label:    'Daily health email',
+            required: false,
+            note:     'Recommended — run once daily for admin visibility of system health.'
+        },
+        {
+            fn:       'archiveOldData',
+            label:    'Visit archiver',
+            required: false,
+            note:     'Recommended — run weekly to keep the Visits sheet performant.'
+        }
+    ];
+
+    try {
+        const triggers    = ScriptApp.getProjectTriggers();
+        const installedFns = triggers.map(t => t.getHandlerFunction());
+
+        if (triggers.length === 0) {
+            check('Triggers', 'Installed triggers', 'FAIL',
+                'No triggers found. The escalation engine will not run automatically — ' +
+                'workers will NOT be monitored for overdue visits.');
+        } else {
+            triggers.forEach(t => {
+                const isTimeBased = t.getTriggerSource() === ScriptApp.TriggerSource.CLOCK;
+                check('Triggers', '"' + t.getHandlerFunction() + '"', 'PASS',
+                    (isTimeBased ? 'Time-based trigger installed.' : 'Trigger installed (source: ' + t.getTriggerSource() + ').'));
+            });
+        }
+
+        // Flag any recommended triggers that are missing
+        RECOMMENDED.forEach(rec => {
+            if (!installedFns.includes(rec.fn)) {
+                check('Triggers', '"' + rec.fn + '" — ' + rec.label,
+                    rec.required ? 'FAIL' : 'WARN',
+                    'Not installed. ' + rec.note);
+            }
+        });
+
+    } catch(e) {
+        check('Triggers', 'Trigger inspection', 'FAIL',
+            'Could not read project triggers: ' + e.toString());
+    }
+
+    // ── SUMMARY ───────────────────────────────────────────────────────────
+    const passCount = results.filter(r => r.status === 'PASS').length;
+    const warnCount = results.filter(r => r.status === 'WARN').length;
+    const failCount = results.filter(r => r.status === 'FAIL').length;
+    const skipCount = results.filter(r => r.status === 'SKIP').length;
+
+    Logger.log('── SUMMARY ──');
+    Logger.log('✅ PASS: ' + passCount + '  ⚠️ WARN: ' + warnCount +
+               '  ❌ FAIL: ' + failCount + '  ⏭️ SKIP (not configured): ' + skipCount);
+
+    // ── BUILD EMAIL ───────────────────────────────────────────────────────
+    const statusIcon  = s => ({ PASS: '✅', WARN: '⚠️', FAIL: '❌', SKIP: '⏭️' }[s] || '?');
+    const statusColor = s => ({ PASS: '#27ae60', WARN: '#e67e22', FAIL: '#c0392b', SKIP: '#888' }[s]);
+    const rowBg       = s => ({ PASS: '#f9fffa', WARN: '#fef9ec', FAIL: '#fdf3f3', SKIP: '#f8f8f8' }[s]);
+
+    const tableRows = results.map(r =>
+        '<tr style="background:' + rowBg(r.status) + ';border-top:1px solid #eee">' +
+        '<td style="padding:8px 12px;font-size:12px;color:#666;white-space:nowrap">' + r.category + '</td>' +
+        '<td style="padding:8px 12px;font-size:12px;font-weight:bold;white-space:nowrap">' + r.name + '</td>' +
+        '<td style="padding:8px 12px;font-size:12px;font-weight:bold;color:' + statusColor(r.status) + ';white-space:nowrap">' + statusIcon(r.status) + ' ' + r.status + '</td>' +
+        '<td style="padding:8px 12px;font-size:12px;color:#333">' + r.detail + '</td>' +
+        '</tr>'
+    ).join('');
+
+    const overallStatus = failCount > 0 ? 'ISSUES FOUND' : warnCount > 0 ? 'WARNINGS' : 'ALL CLEAR';
+    const overallIcon   = failCount > 0 ? '❌' : warnCount > 0 ? '⚠️' : '✅';
+    const headerColour  = failCount > 0 ? '#c0392b' : warnCount > 0 ? '#c07d00' : '#1e3a5f';
+
+    const html =
+'<div style="font-family:Arial,sans-serif;max-width:760px;margin:0 auto;color:#1a1a1a">' +
+'<div style="background:' + headerColour + ';padding:20px 24px;border-radius:6px 6px 0 0">' +
+'<h2 style="margin:0;color:#fff;font-size:18px">🔧 OTG System Diagnostics — ' + CONFIG.ORG_NAME + '</h2>' +
+'<p style="margin:6px 0 0;color:rgba(255,255,255,0.85);font-size:13px">' +
+'Run ' + Utilities.formatDate(now, tz, 'dd MMM yyyy HH:mm z') +
+' &nbsp;·&nbsp; ' + overallIcon + ' ' + overallStatus + '</p>' +
+'</div>' +
+'<div style="background:#f4f6f9;padding:20px 24px">' +
+'<div style="background:#fff;border-radius:4px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)">' +
+'<table style="border-collapse:collapse;width:100%">' +
+'<tr style="background:#e8edf3">' +
+'<th style="text-align:left;padding:10px 12px;font-size:12px;color:#555">Category</th>' +
+'<th style="text-align:left;padding:10px 12px;font-size:12px;color:#555">Check</th>' +
+'<th style="text-align:left;padding:10px 12px;font-size:12px;color:#555">Status</th>' +
+'<th style="text-align:left;padding:10px 12px;font-size:12px;color:#555">Detail</th>' +
+'</tr>' +
+tableRows +
+'<tr style="background:#e8edf3">' +
+'<td colspan="4" style="padding:10px 12px;font-size:12px;color:#555">' +
+'<strong>Summary:</strong> ' + passCount + ' passed &nbsp;·&nbsp; ' +
+warnCount + ' warnings &nbsp;·&nbsp; ' +
+failCount + ' failed &nbsp;·&nbsp; ' +
+skipCount + ' skipped (not configured)' +
+'</td></tr>' +
+'</table></div>' +
+'<p style="margin:14px 0 0;font-size:12px;color:#666">' +
+'ℹ️ An ntfy test notification was posted to topic <strong>' + diagTopic + '</strong> on <strong>' + ntfyServer + '</strong>. ' +
+'Subscribe to this topic in the ntfy app to verify push delivery end-to-end. ' +
+'You only need to subscribe once.' +
+'</p>' +
+'</div>' +
+'<div style="background:#e8edf3;padding:10px 24px;border-radius:0 0 6px 6px;font-size:11px;color:#888">' +
+'OTG AppSuite ' + CONFIG.VERSION + ' — run <em>runDiagnostics()</em> from the OTG Admin menu or Apps Script editor at any time.' +
+'</div></div>';
+
+    const recipient = (CONFIG.HEALTH_EMAIL && CONFIG.HEALTH_EMAIL.includes('@'))
+        ? CONFIG.HEALTH_EMAIL
+        : Session.getEffectiveUser().getEmail();
+
+    try {
+        MailApp.sendEmail({
+            to:       recipient,
+            subject:  overallIcon + ' OTG Diagnostics — ' + overallStatus + ' — ' + CONFIG.ORG_NAME,
+            htmlBody: html
+        });
+        Logger.log('Diagnostic email sent to: ' + recipient);
+    } catch(e) {
+        Logger.log('Could not send diagnostic email: ' + e.toString());
+    }
+}
+
+
+function getDashboardData() {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('Visits');
+    const staffSheet = ss.getSheetByName('Staff');
+    if(!sheet) return {workers: []};
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return {workers: []}; 
+    const startRow = Math.max(2, lastRow - 500); 
+    const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, 25).getValues();
+    const headers = ["Timestamp", "Date", "Worker Name", "Worker Phone Number", "Emergency Contact Name", "Emergency Contact Number", "Emergency Contact Email", "Escalation Contact Name", "Escalation Contact Number", "Escalation Contact Email", "Alarm Status", "Notes", "Location Name", "Location Address", "Last Known GPS", "GPS Timestamp", "Battery Level", "Photo 1", "Distance (km)", "Visit Report Data", "Anticipated Departure Time", "Signature", "Photo 2", "Photo 3", "Photo 4"];
+    const workers = data.map(r => { let obj = {}; headers.forEach((h, i) => obj[h] = r[i]); return obj; });
+    if(staffSheet) {
+        const sData = staffSheet.getDataRange().getValues();
+        workers.forEach(w => { for(let i=1; i<sData.length; i++) { if(sData[i][0] === w['Worker Name']) { w['WOFExpiry'] = sData[i][6]; } } });
+    }
+    return {workers: workers, escalation_limit: CONFIG.ESCALATION_MINUTES};
+}
+
+function getGlobalForms() {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const tSheet = ss.getSheetByName('Templates');
+    if(!tSheet) return [];
+    const tData = tSheet.getDataRange().getValues();
+    const forms = [];
+    for(let i=1; i<tData.length; i++) {
+        const row = tData[i];
+        if(row[2] === "ALL") {
+            const questions = [];
+            for(let q=4; q<34; q++) { if(row[q]) questions.push(row[q]); }
+            forms.push({name: row[1], questions: questions});
+        }
+    }
+    return forms;
+}
+
+function saveImage(b64, workerName, isSignature) {
+    if(!b64 || !CONFIG.PHOTOS_FOLDER_ID) return "";
+    try {
+        const blob = dataURItoBlob(b64);
+        if (!blob) return "";
+
+        const mainFolder = DriveApp.getFolderById(CONFIG.PHOTOS_FOLDER_ID);
+        let targetFolder = mainFolder;
+        if (workerName && workerName.length > 2) {
+            const folders = mainFolder.getFoldersByName(workerName);
+            if (folders.hasNext()) { targetFolder = folders.next(); } 
+            else { targetFolder = mainFolder.createFolder(workerName); }
+        }
+        const now = new Date();
+        const timeStr = Utilities.formatDate(now, CONFIG.TIMEZONE, "yyyy-MM-dd_HH-mm");
+        const safeName = (workerName || "Unknown").replace(/[^a-zA-Z0-9]/g, ''); 
+        const type = isSignature ? "Signature" : "Photo";
+        const fileName = `${timeStr}_${safeName}_${type}_${Math.floor(Math.random()*100)}.jpg`;
+        blob.setName(fileName); 
+        
+        const file = targetFolder.createFile(blob);
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        return file.getUrl();
+    } catch(e) { return "Error saving photo: " + e.toString(); }
+}
+
+function smartScribe(data, type, notes) {
+    if(!CONFIG.GEMINI_API_KEY) return notes;
+    let safeNotes = notes || "";
+    let safeData = JSON.stringify(data || {});
+    
+    if(CONFIG.ENABLE_REDACTION) {
+        const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g;
+        safeNotes = safeNotes.replace(emailRegex, "[EMAIL_REDACTED]");
+        const phoneRegex = /\b(\+?6[14][\s-]?|0)[289][0-9][\s-]?[0-9]{3}[\s-]?[0-9]{3,4}\b/g;
+        safeNotes = safeNotes.replace(phoneRegex, "[PHONE_REDACTED]");
+    }
+
+    // THE MASTER EDITOR PROMPT (Universal for all Work Documents)
+    const prompt = `You are the Lead Administrator for ${CONFIG.ORG_NAME}. 
+    Task: Convert the provided raw field data and informal notes into a formal, structured professional report.
+    Format: Professional work documentation.
+    Language: Use formal ${CONFIG.LOCALE} English (e.g., if en-NZ, use 'authorised' instead of 'authorized').
+    Context: This is a "${type}" report.
+    Style: Clear, objective, and professional. 
+    Constraint: Correct all grammar/spelling. Do NOT invent new facts. Maintain technical specificities.
+    
+    RAW DATA: ${safeData}
+    FIELD NOTES: "${safeNotes}"
+    
+    Output only the polished, professional report text.`;
+    
+    try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
+        const payload = { contents: [{ parts: [{ text: prompt }] }] };
+        const options = { method: 'post', contentType: 'application/json', payload: JSON.stringify(payload), muteHttpExceptions: true };
+        const response = UrlFetchApp.fetch(url, options);
+        const json = JSON.parse(response.getContentText());
+        
+        if (json.candidates && json.candidates.length > 0) {
+            const aiText = json.candidates[0].content.parts[0].text.trim();
+            if (aiText.length < 5 || aiText.includes("I cannot")) return notes;
+            return aiText;
+        } else { return notes; }
+    } catch (e) { return notes; }
+}
+
+function sendJSON(data) {
+  return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function archiveOldData() {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('Visits');
+    const archive = ss.getSheetByName('Archive') || ss.insertSheet('Archive');
+    const data = sheet.getDataRange().getValues();
+    if(data.length <= 1) return;
+    const today = new Date();
+    const cutoff = new Date(today.setDate(today.getDate() - CONFIG.ARCHIVE_DAYS));
+    const keep = [data[0]];
+    const move = [];
+    for(let i=1; i<data.length; i++) {
+        if(new Date(data[i][0]) < cutoff && (data[i][10].includes('DEPARTED') || data[i][10].includes('SAFE') || data[i][10].includes('COMPLETED'))) { move.push(data[i]); } else { keep.push(data[i]); }
+    }
+    if(move.length > 0) {
+        archive.getRange(archive.getLastRow()+1, 1, move.length, move[0].length).setValues(move);
+        sheet.clearContents();
+        sheet.getRange(1, 1, keep.length, keep[0].length).setValues(keep);
+    }
+}
+
+function sendWeeklySummary() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Visits');
+  if(!sheet) return;
+  const data = sheet.getDataRange().getValues();
+  const now = new Date();
+  const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  let count = 0, distance = 0, alerts = 0;
+  for(let i=1; i<data.length; i++) {
+    const rowTime = new Date(data[i][0]);
+    if(rowTime > oneWeekAgo) {
+      count++;
+      if(data[i][18]) distance += Number(data[i][18]);
+      if(data[i][10].toString().includes("EMERGENCY")) alerts++;
+    }
+  }
+  const html = `<h2>Weekly Safety Report</h2><p><strong>Period:</strong> Last 7 Days</p><table border="1" cellpadding="10" style="border-collapse:collapse;"><tr><td><strong>Total Visits</strong></td><td>${count}</td></tr><tr><td><strong>Distance Traveled</strong></td><td>${distance.toFixed(2)} km</td></tr><tr><td><strong>Safety Alerts</strong></td><td style="color:${alerts>0?'red':'green'}">${alerts}</td></tr></table><p><em>Generated by OTG AppSuite</em></p>`;
+  MailApp.sendEmail({to: Session.getEffectiveUser().getEmail(), subject: "Weekly Safety Summary", htmlBody: html});
+}
+
+function sendResponse(e, data) {
+    const json = JSON.stringify(data);
+    if (e && e.parameter && e.parameter.callback) {
+        return ContentService.createTextOutput(`${e.parameter.callback}(${json})`)
+            .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
+    return ContentService.createTextOutput(json)
+        .setMimeType(ContentService.MimeType.JSON);
+}
+
+// SECURE ORS PROXY (Fixes API Key Leakage)
+function getRouteDistance(start, end) {
+  if (!CONFIG.ORS_API_KEY || CONFIG.ORS_API_KEY.length < 5) return null;
+  
+  try {
+    // Reverse coordinates for ORS requirements (lon,lat)
+    const p1 = start.split(',').reverse().join(',');
+    const p2 = end.split(',').reverse().join(',');
+    
+    const url = `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${CONFIG.ORS_API_KEY}&start=${p1}&end=${p2}`;
+    const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    
+    if (response.getResponseCode() === 200) {
+      const json = JSON.parse(response.getContentText());
+      const meters = json.features[0].properties.segments[0].distance;
+      return (meters / 1000).toFixed(2); // Return km
+    }
+  } catch (e) {
+    console.warn("ORS Proxy Error: " + e.toString());
+  }
+  return null;
+}
+
+/**
+ * ORS WAYPOINT ROUTING
+ * Accepts a pipe-delimited breadcrumb trail ("lat,lng|lat,lng|...") collected
+ * by the worker app during a travel session. Decimates to ≤25 points (well
+ * within the ORS free-tier limit), then POST-routes through all of them.
+ *
+ * This gives road-accurate distance along the path actually driven, rather than
+ * the theoretical A→B route that getRouteDistance() returns.
+ *
+ * ORS POST endpoint returns json.routes[0].summary.distance in metres.
+ * Note: ORS expects coordinates as [longitude, latitude] — opposite of our
+ * internal convention of "lat,lng".
+ */
+function getRouteDistanceWithTrail(trailStr) {
+    if (!CONFIG.ORS_API_KEY || CONFIG.ORS_API_KEY.length < 5) return null;
+
+    // Parse "lat,lng|lat,lng|..." into ORS-format [lng, lat] pairs
+    const points = trailStr.split('|').map(seg => {
+        const parts = seg.split(',');
+        const lat = parseFloat(parts[0]);
+        const lng = parseFloat(parts[1]);
+        return (!isNaN(lat) && !isNaN(lng)) ? [lng, lat] : null;
+    }).filter(Boolean);
+
+    if (points.length < 2) return null;
+
+    const coords = _decimateTrail(points, 40); // ORS free tier supports 50; 40 gives accuracy headroom
+
+    try {
+        const response = UrlFetchApp.fetch(
+            'https://api.openrouteservice.org/v2/directions/driving-car',
+            {
+                method: 'post',
+                contentType: 'application/json; charset=utf-8',
+                headers: { 'Authorization': CONFIG.ORS_API_KEY },
+                payload: JSON.stringify({ coordinates: coords }),
+                muteHttpExceptions: true
+            }
+        );
+
+        if (response.getResponseCode() === 200) {
+            const json = JSON.parse(response.getContentText());
+            const metres = json.routes[0].summary.distance;
+            return (metres / 1000).toFixed(2);
+        }
+        console.warn('ORS waypoint HTTP ' + response.getResponseCode() + ': ' + response.getContentText().substring(0, 200));
+    } catch (e) {
+        console.warn('ORS Waypoints Error: ' + e.toString());
+    }
+    return null;
+}
+
+/**
+ * Decimates a coordinate array to at most maxPoints by uniform sampling,
+ * always preserving the first and last points (trip start and end).
+ */
+function _decimateTrail(points, maxPoints) {
+    if (points.length <= maxPoints) return points;
+    const result = [points[0]];
+    const step = (points.length - 1) / (maxPoints - 1);
+    for (let i = 1; i < maxPoints - 1; i++) {
+        result.push(points[Math.round(i * step)]);
+    }
+    result.push(points[points.length - 1]);
+    return result;
+}
+
+/**
+ * PRIVACY SWEEP: Automatically moves private 'Note to Self' sent emails to the trash.
+ * This should be set to run on a time-based trigger (e.g., every hour).
+ */
+function cleanupPrivateSentNotes() {
+  try {
+    // Search only in the Sent folder for the specific private subject line
+    const threads = GmailApp.search('label:sent subject:"[PRIVATE] Note to Self"');
+    
+    if (threads.length > 0) {
+      for (let i = 0; i < threads.length; i++) {
+        threads[i].moveToTrash();
+      }
+      console.log(`Privacy Sweep: Moved ${threads.length} private threads to trash.`);
+    }
+  } catch (e) {
+    console.warn("Privacy Sweep Error: " + e.toString());
+  }
+}
+
+/**
+ * REFINED: getSyncData with Unified Targeting
+ * Logic: Pulls worker groups and applies a single Targeting Engine to filter all data.
+ */
+function getSyncData(workerName, deviceId) {
+    // 1. THE TARGETING ENGINE (Defined once at the top)
+    const isAuthorised = (targetStr, name, groups) => {
+        const allowed = (targetStr || "").toString().toLowerCase().split(',').map(s => s.trim());
+        if (allowed.includes("all")) return true;
+        if (allowed.includes(name)) return true;
+        
+        const myGroups = groups.split(',').map(s => s.trim()).filter(g => g !== "");
+        return myGroups.some(g => allowed.includes(g));
+    };
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const stSheet = ss.getSheetByName('Staff');
+    const wNameSafe = (workerName || "").toString().toLowerCase().trim();
+    
+    if (!stSheet) return {status: "error", message: "Staff sheet missing."};
+    
+    const stData = stSheet.getDataRange().getValues();
+    let workerFound = false;
+    let workerGroups = ""; 
+    let meta = {};
+
+    // 2. Identify Worker & Their Groups
+    for (let i = 1; i < stData.length; i++) {
+        if ((stData[i][0] || "").toString().toLowerCase().trim() === wNameSafe) {
+            // Column C (index 2) is 'Status' — block Inactive workers at the gate.
+            const staffStatus = (stData[i][2] || '').toString().trim().toLowerCase();
+            if (staffStatus === 'inactive') return {status: "error", message: "Access Denied."};
+            workerFound = true;
+            // Column D (Index 3) is 'Group Membership'
+            workerGroups = (stData[i][3] || "").toString().toLowerCase(); 
+            meta.lastVehCheck = stData[i][5];
+            meta.wofExpiry = stData[i][6];
+            break; 
+        }
+    }
+
+    if (!workerFound) return {status: "error", message: "Access Denied."};
+
+    // 3. Filter Sites
+    const sites = [];
+    const siteSheet = ss.getSheetByName('Sites');
+    if (siteSheet) {
+        const sData = siteSheet.getDataRange().getValues();
+        for (let i = 1; i < sData.length; i++) {
+            if (isAuthorised(sData[i][0], wNameSafe, workerGroups)) {
+                sites.push({ 
+                    template: sData[i][1], company: sData[i][2], siteName: sData[i][3], 
+                    address: sData[i][4], contactName: sData[i][5], 
+                    contactPhone: sData[i][6], contactEmail: sData[i][7], 
+                    notes: sData[i][8], emergencyProcedures: sData[i][9],
+                    riskLevel: sData[i][10] || '',  // Column K — Low / Medium / High / Critical
+                    preVisitForm: sData[i][11] === true || sData[i][11] === 'TRUE' || sData[i][11] === 'true'  // Column L
+                });
+            }
+        }
+    }
+    
+    // 4. Filter Templates (Forms)
+    const forms = [];
+    const cachedTemplates = {};
+    const tSheet = ss.getSheetByName('Templates');
+    if (tSheet) {
+        const tData = tSheet.getDataRange().getValues();
+        for (let i = 1; i < tData.length; i++) {
+            if (isAuthorised(tData[i][2], wNameSafe, workerGroups)) {
+                const questions = [];
+                for (let q = 4; q < 34; q++) { if (tData[i][q]) questions.push(tData[i][q]); }
+                forms.push({name: tData[i][1], type: tData[i][0], questions: questions, formTiming: (tData[i][34] || '').toString().trim().toLowerCase()});
+                cachedTemplates[tData[i][1]] = questions;
+            }
+        }
+    }
+
+// 5. Filter Notices (History)
+    const noticeHistory = [];
+    const noticeSheet = ss.getSheetByName('Notices');
+    if (noticeSheet) {
+        const nData = noticeSheet.getDataRange().getValues();
+        for (let i = nData.length - 1; i > 0 && noticeHistory.length < 10; i--) {
+            if (nData[i][6] === 'Active' && isAuthorised(nData[i][7], wNameSafe, workerGroups)) {
+                noticeHistory.push({
+                    id: nData[i][1], priority: nData[i][2], title: nData[i][3], 
+                    content: nData[i][4], date: nData[i][0]
+                });
+            }
+        }
+        meta.noticeHistory = noticeHistory; 
+        if (noticeHistory.length > 0) meta.activeNotice = noticeHistory[0];
+    }
+  
+// 6. Filter Resources
+    const resources = [];
+    const resSheet = ss.getSheetByName('Resources');
+    if (resSheet) {
+        const rData = resSheet.getDataRange().getValues();
+        for (let i = 1; i < rData.length; i++) {
+            if (isAuthorised(rData[i][4], wNameSafe, workerGroups)) {
+                resources.push({
+                    category: rData[i][0], title: rData[i][1], 
+                    type: rData[i][2], url: rData[i][3]
+                });
+            }
+        }
+        meta.resources = resources;
+    }
+    
+    return {sites, forms, cachedTemplates, meta, version: CONFIG.VERSION};
+}
+/**
+ * FIX: Handle broadcast messages from Monitor App.
+ * Writes a new row to the Notices sheet so every worker receives it on next sync.
+ */
+function handleBroadcast(p) {
+    try {
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        let sheet = ss.getSheetByName('Notices');
+        if (!sheet) {
+            sheet = ss.insertSheet('Notices');
+            sheet.appendRow(['Date', 'ID', 'Priority', 'Title', 'Content', 'Sender', 'Status', 'Target', 'Acknowledged By']);
+        }
+        const id  = 'BC-' + Date.now().toString(36).toUpperCase();
+        const row = [
+            new Date(),
+            id,
+            p.priority  || 'Standard',
+            'Broadcast from HQ',
+            p.message   || '',
+            p.source    || 'Monitor',
+            'Active',
+            'ALL',
+            ''
+        ];
+        sheet.appendRow(row);
+        return { status: 'success', id: id };
+    } catch(err) {
+        console.error('handleBroadcast error: ' + err);
+        return { status: 'error', message: err.toString() };
+    }
+}
+
+/**
+ * BACKEND logic: Specifically updates the 'Sites' tab
+ */
+function updateSiteEmergencyProcedures(payload) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const siteSheet = ss.getSheetByName("Sites");
+  if (!siteSheet) return { status: 'error', message: 'Sites tab not found' };
+
+  const data = siteSheet.getDataRange().getValues();
+  const headers = data[0];
+  
+  // 1. Identify "Emergency Procedures" column
+  let colIdx = headers.indexOf("Emergency Procedures");
+  if (colIdx === -1) {
+    colIdx = headers.length;
+    siteSheet.getRange(1, colIdx + 1).setValue("Emergency Procedures");
+  }
+
+  // 2. Locate the specific site row
+  let targetRow = -1;
+  const siteCol = headers.indexOf("Site Name");
+  const compCol = headers.indexOf("Company Name");
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][siteCol] === payload.siteName && data[i][compCol] === payload.companyName) {
+      targetRow = i + 1;
+      break;
     }
   }
 
-  // TIER 3: Standard ORS A→B road routing (no waypoints).
-  if (navigator.onLine && CONFIG.url) {
-    try {
-      const url = `${CONFIG.url}?action=getDistance&start=${p1}&end=${p2}&key=${CONFIG.key}`;
-      const response = await fetch(url);
-      const data = await response.json();
-      if (data.status === 'success' && data.km) {
-        return withFloor({ km: data.km, type: 'road' });
-      }
-    } catch (e) {
-      console.warn('A→B ORS failed, using haversine:', e);
+  if (targetRow === -1) return { status: 'error', message: 'Site match failed' };
+
+  // 3. Process Photos & Generate Links
+  const photoUrls = [];
+  const folder = DriveApp.getFolderById(CONFIG.PHOTOS_FOLDER_ID);
+  
+  (payload.photos || []).forEach((base64, idx) => {
+    const blob = Utilities.newBlob(Utilities.base64Decode(base64.split(",")[1]), "image/jpeg", `EP_${payload.siteName}_${idx}.jpg`);
+    const file = folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    photoUrls.push(file.getUrl());
+  });
+
+  // 4. Update the Sites cell
+  siteSheet.getRange(targetRow, colIdx + 1).setValue(photoUrls.join(", "));
+  return { status: 'success', links: photoUrls };
+}
+
+/**
+ * MISSION-CRITICAL: Notice Acknowledgment Logger
+ * Appends worker name to Column I of the Notices tab.
+ */
+function handleNoticeAck(p) {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('Notices');
+    const noticeId = p.noticeId;
+    const worker = p['Worker Name'];
+
+    if (!sheet) return { status: "error", message: "Notices tab missing" };
+    
+    const data = sheet.getDataRange().getValues();
+    // Logic: Find the row by ID and update the 'Acknowledged By' column (Index 8 / Column I)
+    for (let i = 1; i < data.length; i++) {
+        if (data[i][1] === noticeId) {
+            let currentAcks = data[i][8] ? data[i][8].toString().split(',').map(s => s.trim()) : [];
+            if (!currentAcks.includes(worker)) {
+                currentAcks.push(worker);
+                sheet.getRange(i + 1, 9).setValue(currentAcks.join(', '));
+            }
+            break;
+        }
     }
-  }
-
-  // TIER 4: Haversine A→B — always available, works offline.
-  const dist = haversine(p1, p2);
-  return withFloor({ km: dist.toFixed(2), type: 'crow' });
-}
-
-// Feature 16: Advanced GPS Control
-function toggleAdvancedGPS(enabled) {
- if (enabled) {
- startGPSMonitoring();
- state.settings.isAdvanced = true;
- showToast('📍 Advanced GPS enabled');
- } else {
- stopGPSMonitoring();
- state.settings.isAdvanced = false;
- const gpsIndicator = document.getElementById('gpsIndicator');
- if (gpsIndicator) gpsIndicator.classList.add('hidden');
- showToast('🔋 GPS throttled');
- }
- saveState();
-}
-
-// Feature 19: Voice Accent Selection
-function speakWithAccent(message) {
- if (!('speechSynthesis' in window)) return;
- 
- window.speechSynthesis.cancel();
- const utterance = new SpeechSynthesisUtterance(message);
- 
- // Try to find voice matching configured locale
- const voices = window.speechSynthesis.getVoices();
- const preferredVoice = voices.find(v => v.lang.includes(CONFIG.voiceLocale || 'en-NZ'));
- if (preferredVoice) {
- utterance.voice = preferredVoice;
- }
- 
- utterance.rate = 0.9;
- utterance.volume = 1.0;
- window.speechSynthesis.speak(utterance);
-}
-
-// Feature 18: Wizard Progress Dots
-function updateWizardDots() {
- for (let i = 1; i <= 3; i++) {
- const dot = document.getElementById(`dot${i}`);
- if (dot && state) {
- if (i === state.currentWizStep) {
- dot.classList.remove('bg-gray-700');
- dot.classList.add('bg-blue-500');
- } else {
- dot.classList.remove('bg-blue-500');
- dot.classList.add('bg-gray-700');
- }
- }
- }
-}
-
-// Feature 17: Android Install Banner
-function triggerInstall() {
- if (deferredPrompt) {
- // Show the browser's native install dialog
- deferredPrompt.prompt();
- 
- deferredPrompt.userChoice.then(choiceResult => {
- if (choiceResult.outcome === 'accepted') {
- console.log('✅ User installed the app');
- }
- // Clear the prompt so it can't be used again
- deferredPrompt = null;
- });
- 
- // Hide your custom banner immediately
- const banner = document.getElementById('installBanner');
- if (banner) banner.classList.add('hidden');
- }
-}
-
-function dismissInstall(type) {
- if (type === 'ios') {
- const modal = document.getElementById('iosInstallModal');
- if (modal) modal.classList.add('hidden'); // Fixed: was 'remove'
- } else if (type === 'android') {
- const banner = document.getElementById('installBanner');
- if (banner) banner.classList.add('hidden');
- }
- // UNIFIED KEY: Matches the check in checkIosInstall()
- localStorage.setItem('otg_install_dismissed', 'true');
-}
-// Feature 8: Enhanced Form Builder with all field types
-
-// ====== FEATURE 1: SHAKE-TO-ALERT (Covert Panic) ======
-
-function initShakeDetection() {
- if (!window.DeviceMotionEvent) {
- console.warn('DeviceMotion not available');
- return;
- }
- 
- window.addEventListener('devicemotion', handleShakeMotion, false);
-}
-
-function handleShakeMotion(event) {
- // Only active during visits
- if (!state || !state.activeVisit) return;
- if (shakeConfirmationMode) return; // Don't detect during confirmation
- 
- const accel = event.accelerationIncludingGravity;
- if (!accel || !accel.x || !accel.y || !accel.z) return;
- 
- const magnitude = Math.sqrt(
- accel.x * accel.x + 
- accel.y * accel.y + 
- accel.z * accel.z
- );
- 
- const now = Date.now();
- 
- // Raised threshold: 35 (was 25) reduces false positives from running/vehicles.
- // Requires 8 peaks in 2s (was 5) and tighter variance window.
- if (magnitude > 35) {
- shakeBuffer.push({ magnitude, time: now });
- lastShakeTime = now;
- 
- // Clean old entries (older than 2 seconds)
- shakeBuffer = shakeBuffer.filter(s => now - s.time < 2000);
- 
- // Require 8 vigorous peaks in 2 seconds
- if (shakeBuffer.length >= 8) {
- const avgMagnitude = shakeBuffer.reduce((sum, s) => sum + s.magnitude, 0) / shakeBuffer.length;
- const variance = shakeBuffer.reduce((sum, s) => sum + Math.pow(s.magnitude - avgMagnitude, 2), 0) / shakeBuffer.length;
- 
- // Variance < 200 allows energetic but consistent shaking
- if (variance < 200) {
- enterShakeConfirmation();
- }
- 
- shakeBuffer = [];
- }
- }
-}
-
-function enterShakeConfirmation() {
- shakeConfirmationMode = true;
- shakeBuffer = [];
- 
- const modal = document.getElementById('shakeConfirmModal');
- if (!modal) return;
- 
- // Wake from battery saver if needed
- deactivateBatterySaver();
- 
- // Show confirmation modal
- modal.classList.remove('hidden');
- 
- // Haptic: LONG-SHORT-LONG pattern
- if (navigator.vibrate) {
- navigator.vibrate([500, 200, 100, 200, 500]);
- }
- 
- // Countdown
- let countdown = 5;
- const countdownEl = document.getElementById('shakeCountdown');
- const countdownInterval = setInterval(() => {
- countdown--;
- if (countdownEl) countdownEl.textContent = countdown;
- if (countdown <= 0) {
- clearInterval(countdownInterval);
- }
- }, 1000);
- 
- // Watch for confirmation shake
- const confirmListener = (event) => {
- const accel = event.accelerationIncludingGravity;
- if (!accel) return;
- 
- const magnitude = Math.sqrt(
- accel.x * accel.x + 
- accel.y * accel.y + 
- accel.z * accel.z
- );
- 
- if (magnitude > 35) {
- shakeBuffer.push(magnitude);
- 
- // Need 3 shakes to confirm
- if (shakeBuffer.length >= 3) {
- window.removeEventListener('devicemotion', confirmListener);
- clearTimeout(shakeConfirmationTimeout);
- clearInterval(countdownInterval);
- confirmShakePanic();
- }
- }
- };
- 
- window.addEventListener('devicemotion', confirmListener, false);
- 
- // Timeout after 5 seconds — 3s was too fast for workers to notice.
- shakeConfirmationTimeout = setTimeout(() => {
- window.removeEventListener('devicemotion', confirmListener);
- clearInterval(countdownInterval);
- cancelShakeConfirmation();
- }, 5000);
-}
-
-function confirmShakePanic() {
- shakeConfirmationMode = false;
- const modal = document.getElementById('shakeConfirmModal');
- if (modal) modal.classList.add('hidden');
- 
- // Success feedback
- if (navigator.vibrate) {
- navigator.vibrate([200, 100, 200, 100, 200]);
- }
- 
- showToast('🚨 Covert alert sent', 2000);
- 
- // Trigger duress panic (all panic alerts go through same PIN verification)
- triggerPanic(true); // Duress mode
-}
-
-function cancelShakeConfirmation() {
- shakeConfirmationMode = false;
- shakeBuffer = [];
- 
- const modal = document.getElementById('shakeConfirmModal');
- if (modal) modal.classList.add('hidden');
-}
-
-// ====== FEATURE 2: VOLUME BUTTON PANIC (Android) ======
-
-function initVolumeDetection() {
- document.addEventListener('keydown', handleVolumePress, false);
-}
-
-function handleVolumePress(event) {
- // Only active during visits
- if (!state || !state.activeVisit) return;
- if (volumeConfirmationMode) return;
- 
- // Volume up or down
- if (event.key === 'VolumeUp' || event.key === 'VolumeDown' || 
- event.keyCode === 175 || event.keyCode === 174) { // Fallback keycodes
- 
- event.preventDefault(); // Try to suppress volume change
- 
- const now = Date.now();
- volumeBuffer.push(now);
- 
- // Keep only recent presses (within 3 seconds)
- volumeBuffer = volumeBuffer.filter(t => now - t < 3000);
- 
- // Check for 5 presses
- if (volumeBuffer.length >= 5) {
- volumeBuffer = [];
- enterVolumeConfirmation();
- }
- }
-}
-
-function enterVolumeConfirmation() {
- volumeConfirmationMode = true;
- volumeBuffer = [];
- 
- const modal = document.getElementById('volumeConfirmModal');
- if (!modal) return;
- 
- // Wake from battery saver if needed
- deactivateBatterySaver();
- 
- // Show confirmation modal
- modal.classList.remove('hidden');
- 
- // Haptic feedback
- if (navigator.vibrate) {
- navigator.vibrate([300, 100, 300]);
- }
- 
- // Countdown
- let countdown = 5;
- const countdownEl = document.getElementById('volumeCountdown');
- const countdownInterval = setInterval(() => {
- countdown--;
- if (countdownEl) countdownEl.textContent = countdown;
- if (countdown <= 0) {
- clearInterval(countdownInterval);
- }
- }, 1000);
- 
- // Watch for confirmation
- const confirmListener = (event) => {
- if (event.key === 'VolumeUp' || event.key === 'VolumeDown' || 
- event.keyCode === 175 || event.keyCode === 174) {
- 
- event.preventDefault();
- volumeBuffer.push(Date.now());
- 
- // Need 3 more presses to confirm
- if (volumeBuffer.length >= 3) {
- document.removeEventListener('keydown', confirmListener);
- clearTimeout(volumeConfirmationTimeout);
- clearInterval(countdownInterval);
- confirmVolumePanic();
- }
- }
- };
- 
- document.addEventListener('keydown', confirmListener, false);
- 
- // Timeout after 3 seconds
- volumeConfirmationTimeout = setTimeout(() => {
- document.removeEventListener('keydown', confirmListener);
- clearInterval(countdownInterval);
- cancelVolumeConfirmation();
- }, 3000);
-}
-
-function confirmVolumePanic() {
- volumeConfirmationMode = false;
- const modal = document.getElementById('volumeConfirmModal');
- if (modal) modal.classList.add('hidden');
- 
- // Success feedback
- if (navigator.vibrate) {
- navigator.vibrate([200, 100, 200]);
- }
- 
- showToast('🚨 Volume panic alert sent', 2000);
- 
- // Trigger panic (goes through same PIN verification)
- triggerPanic(false); // Standard panic, not duress
-}
-
-function cancelVolumeConfirmation() {
- volumeConfirmationMode = false;
- volumeBuffer = [];
- 
- const modal = document.getElementById('volumeConfirmModal');
- if (modal) modal.classList.add('hidden');
-}
-
-// ====== FEATURE 3: SLIDE-TO-WAKE (Hold-to-Slide) ======
-
-/**
- * Wire up all persistent slide-to-confirm action pills.
- * Called once at startup — listeners are registered once and remain active.
- */
-function initAllActionPills() {
- // Start Visit pill
- initSlidePill('btnStart', 'slideStartThumb', 'slideStartLabel', () => {
- const durationMins = state.visitDurationMinutes || 0;
- if (durationMins <= 0) return showToast('⏳ Select a duration first');
- if (!state.isTravelActive && !state.selectedLocationId) return showToast('📍 Select a site first');
- startVisit();
- });
-
- // Depart pill
- initSlidePill('btnDepart', 'slideDepartThumb', 'slideDepartLabel', preDepart);
-
- // Safety Notice acknowledgement pill
- initSlidePill('btnAckNotice', 'slideAckThumb', 'slideAckLabel', acknowledgeNotice);
+    // Record in the Visits tab for audit history
+    handleWorkerPost(p); 
+    return { status: "success" };
 }
 
 /**
- * Generic Slide-to-Confirm pill initialiser.
- * Mirrors initSlideToWake but is reusable for any action pill.
- * Register once at startup — uses closure flags so multiple pills coexist safely.
- *
- * @param {string} pillId - container element id
- * @param {string} thumbId - draggable thumb element id
- * @param {string} labelId - label span id (fades as thumb moves)
- * @param {Function} onComplete - callback fired when gesture completes
+ * HELPER: Unified Escalation Handler
+ * Logic: Appends row and routes to Primary (isDual=false) or Both (isDual=true).
  */
-function initSlidePill(pillId, thumbId, labelId, onComplete) {
- const pill = document.getElementById(pillId);
- const thumb = document.getElementById(thumbId);
- const label = document.getElementById(labelId);
- if (!pill || !thumb) return;
+function triggerEscalation(sheet, entry, newStatus, isDual) {
+    const newRow = [...entry];
+    newRow[0] = new Date().toISOString(); 
+    newRow[10] = newStatus; 
+    newRow[11] = entry[11] + ` [AUTO-${newStatus}]`;
+    sheet.appendRow(newRow);
 
- const THUMB_W = thumb.offsetWidth || 56;
- const START_ZONE = 0.30; // gesture must begin within first 30% of track
+    // Look up ntfy topics from the Staff sheet — they are not stored in Visits rows.
+    // Silently degrades to empty strings if the sheet is missing or the row isn't found.
+    let emgNtfy = '', escNtfy = '';
+    try {
+        const staffSheet = sheet.getParent().getSheetByName('Staff');
+        if (staffSheet) {
+            const staffData = staffSheet.getDataRange().getValues();
+            for (let j = 1; j < staffData.length; j++) {
+                if (staffData[j][0] === entry[2]) {
+                    emgNtfy = (staffData[j][7] || '').toString().trim(); // Column H
+                    escNtfy = (staffData[j][8] || '').toString().trim(); // Column I
+                    break;
+                }
+            }
+        }
+    } catch (e) { console.error('ntfy Staff lookup failed: ' + e.toString()); }
 
- let isSliding = false;
- let gestureValid = false;
- let startClientX = 0;
- let maxSlide = 0;
-
- function getClientX(e) { return e.touches ? e.touches[0].clientX : e.clientX; }
-
- function onStart(e) {
- if (pill.classList.contains('pill-disabled')) return;
- const rect = pill.getBoundingClientRect();
- const relX = getClientX(e) - rect.left;
- maxSlide = rect.width - THUMB_W - 8;
- if (relX / rect.width > START_ZONE) return;
- isSliding = true;
- gestureValid = true;
- startClientX = getClientX(e);
- thumb.style.transition = 'none';
- e.preventDefault();
- }
-
- function onMove(e) {
- if (!isSliding || !gestureValid) return;
- const delta = Math.max(0, Math.min(getClientX(e) - startClientX, maxSlide));
- thumb.style.transform = `translateX(${delta}px)`;
- const progress = delta / maxSlide;
- if (label) label.style.opacity = String(Math.max(0, 1 - progress * 1.3));
- if (progress >= 0.85) completeSlide();
- }
-
- function onEnd() {
- if (!isSliding) return;
- isSliding = false;
- gestureValid = false;
- thumb.style.transition = 'transform 0.3s ease';
- thumb.style.transform = 'translateX(0)';
- if (label) label.style.opacity = '1';
- }
-
- function completeSlide() {
- isSliding = false;
- gestureValid = false;
- thumb.style.transition = 'transform 0.15s ease-out';
- thumb.style.transform = `translateX(${maxSlide}px)`;
- if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
- setTimeout(() => {
- thumb.style.transition = 'none';
- thumb.style.transform = 'translateX(0)';
- if (label) label.style.opacity = '1';
- onComplete();
- }, 150);
- }
-
- pill.addEventListener('touchstart', onStart, { passive: false });
- pill.addEventListener('mousedown', onStart);
- window.addEventListener('touchmove', onMove, { passive: false });
- window.addEventListener('mousemove', onMove);
- window.addEventListener('touchend', onEnd);
- window.addEventListener('mouseup', onEnd);
-}
-
-function initSlideToWake() {
- // Wire to the ACTUAL battery-saver elements: wakeSlider (touch target),
- // sliderThumb (visual knob), slideLabel (text).
- // The range input is kept purely as a visual container — its value is ignored.
- // We use pointer/touch events so the gesture must be a deliberate LEFT-TO-RIGHT
- // drag that starts near the thumb. Any tap, or a drag starting mid-track, is ignored.
-
- const container = document.getElementById('wakeSlidePill');
- const thumb = document.getElementById('sliderThumb');
- const label = document.getElementById('slideLabel');
- if (!container || !thumb) return;
-
- const THUMB_W = 56; // px — matches w-14 (3.5rem at 16px base)
- const START_ZONE = 0.25; // gesture must begin within first 25% of track
-
- let isSliding = false;
- let gestureValid = false; // true only when drag started in the left zone
- let startClientX = 0;
- let maxSlide = 0;
- let currentOffset = 0;
-
- function getClientX(e) {
- return e.touches ? e.touches[0].clientX : e.clientX;
- }
-
- function onStart(e) {
- const rect = container.getBoundingClientRect();
- const relX = getClientX(e) - rect.left;
- maxSlide = rect.width - THUMB_W - 8;
-
- // Only begin tracking if the touch starts in the left START_ZONE
- if (relX / rect.width > START_ZONE) return;
-
- isSliding = true;
- gestureValid = true;
- startClientX = getClientX(e);
- currentOffset = 0;
- thumb.style.transition = 'none';
- e.preventDefault(); // prevent scroll while sliding
- }
-
- function onMove(e) {
- if (!isSliding || !gestureValid) return;
- const delta = Math.max(0, Math.min(getClientX(e) - startClientX, maxSlide));
- currentOffset = delta;
- thumb.style.transform = `translateX(${delta}px)`;
- const progress = delta / maxSlide;
- if (label) label.style.opacity = 1 - progress;
- if (progress >= 0.85) completeSlide();
- }
-
- function onEnd() {
- if (!isSliding) return;
- isSliding = false;
- gestureValid = false;
- // Snap thumb back
- thumb.style.transition = 'transform 0.3s ease';
- thumb.style.transform = 'translateX(0)';
- if (label) { label.style.opacity = 1; label.style.transition = 'opacity 0.2s'; }
- currentOffset = 0;
- }
-
- function completeSlide() {
- isSliding = false;
- gestureValid = false;
- // Request fullscreen here — still inside the touch event handler context.
- // Must be before any setTimeout or Android Chrome will reject it.
- const _el = document.documentElement;
- const _rfs = _el.requestFullscreen || _el.webkitRequestFullscreen || _el.mozRequestFullScreen;
- if (_rfs && !document.fullscreenElement) _rfs.call(_el, { navigationUI: 'hide' }).catch(() => {});
- thumb.style.transition = 'transform 0.15s ease-out';
- thumb.style.transform = `translateX(${maxSlide}px)`;
- if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
- setTimeout(() => {
- deactivateBatterySaver();
- isSosLocked = true;
- setTimeout(() => { isSosLocked = false; }, 2000);
- // Reset visual state for next time saver is activated
- thumb.style.transition = 'none';
- thumb.style.transform = 'translateX(0)';
- if (label) { label.style.opacity = 1; }
- currentOffset = 0;
- }, 150);
- }
-
- // Attach to the slider container (covers the full pill area)
- container.addEventListener('touchstart', onStart, { passive: false });
- container.addEventListener('mousedown', onStart);
- window.addEventListener('touchmove', onMove, { passive: false });
- window.addEventListener('mousemove', onMove);
- window.addEventListener('touchend', onEnd);
- window.addEventListener('touchcancel', onEnd); // Interrupted gestures (e.g. incoming call) must reset state
- window.addEventListener('mouseup', onEnd);
-}
- 
-
-/**
- * MISSION-CRITICAL: Screen Wake Lock
- * Logic: Prevents the device from dimming or locking the screen physically.
- */
-async function requestWakeLock() {
- if ('wakeLock' in navigator) {
- try {
- // Only request if we don't already have an active lock
- if (!wakeLock) {
- wakeLock = await navigator.wakeLock.request('screen');
- 
- wakeLock.addEventListener('release', () => {
- console.log('Wake Lock released');
- wakeLock = null;
- });
- 
- console.log('✅ Wake Lock active - screen will not auto-lock');
- }
- } catch (err) {
- console.error(`${err.name}, ${err.message}`);
- }
- }
-}
-
-function releaseWakeLock() {
- if (wakeLock) {
- wakeLock.release();
- wakeLock = null;
- console.log('Wake Lock released');
- }
+    const payload = {
+        'Worker Name':               entry[2],
+        'Worker Phone Number':       entry[3],
+        'Emergency Contact Name':    entry[4],
+        'Emergency Contact Number':  entry[5],
+        'Emergency Contact Email':   entry[6],
+        'Emergency Contact Ntfy':    emgNtfy,
+        'Escalation Contact Name':   entry[7],
+        'Escalation Contact Number': isDual ? entry[8] : "",
+        'Escalation Contact Email':  isDual ? entry[9] : "",
+        'Escalation Contact Ntfy':   isDual ? escNtfy : "",
+        'Alarm Status':              newStatus,
+        'Notes':                     `Alert: Worker is ${newStatus}.`,
+        'Location Name':             entry[12],
+        'Location Address':          entry[13],
+        'Last Known GPS':            entry[14],
+        'Battery Level':             entry[16]
+    };
+    triggerAlerts(payload, isDual ? "CRITICAL ESCALATION" : "OVERDUE WARNING");
 }
 
 /**
- * SCREEN ORIENTATION LOCK
- * Locks the display to portrait while a visit is active.
- * Prevents accidental rotation into landscape, which breaks the locked-screen
- * layout and could obscure the countdown timer or alarm controls.
- *
- * screen.orientation.lock() is supported on Android Chrome and most PWA contexts.
- * On iOS Safari it is silently ignored — no error, no effect, no fallback needed.
- * On desktop it will throw (not a mobile context) — caught and silently ignored.
+ * NEW: handleSafetyResolution
+ * Logic: Notifies both contacts that the emergency has ended.
  */
-function _lockOrientation() {
- try {
- if (screen.orientation && screen.orientation.lock) {
- screen.orientation.lock('portrait').catch(() => {});
- }
- } catch (e) { /* not supported in this context — safe to ignore */ }
-}
+function handleSafetyResolution(p) {
+    // GUARD: Scan the sheet BEFORE handleWorkerPost runs, because handleWorkerPost
+    // will overwrite the open alarm row's status to USER_SAFE_CONFIRMED — after which
+    // the scan would hit the 'SAFE' break condition and incorrectly return alertWasSent=false,
+    // suppressing All Clear every time.
+    const workerNameCheck = (p['Worker Name'] || '').toString().trim();
+    let alertWasSent = false;
+    try {
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        const sheet = ss.getSheetByName('Visits');
+        if (sheet) {
+            const data = sheet.getDataRange().getValues();
+            const alarmStatuses = ['OVERDUE', 'PANIC', 'SOS', 'DURESS', 'EMERGENCY'];
+            for (let i = data.length - 1; i > 0 && i > data.length - 200; i--) {
+                if ((data[i][2] || '').toString().trim() === workerNameCheck) {
+                    const rowStatus = (data[i][10] || '').toString().toUpperCase();
+                    if (alarmStatuses.some(s => rowStatus.includes(s))) { alertWasSent = true; break; }
+                    if (rowStatus.includes('DEPARTED') || rowStatus.includes('SAFE')) break;
+                }
+            }
+        }
+    } catch(e) { console.warn('All Clear guard: ' + e); }
 
-function _unlockOrientation() {
- try {
- if (screen.orientation && screen.orientation.unlock) {
- screen.orientation.unlock();
- }
- } catch (e) { /* safe to ignore */ }
-}
+    if (!alertWasSent) {
+        console.log('All Clear suppressed — no alarm was sent for ' + workerNameCheck);
+        return { status: 'success', allClearSuppressed: true };
+    }
 
-// Release wake lock and orientation lock when visit ends
-function exitLockedScreen() {
- releaseWakeLock();
- _unlockOrientation();
-}
+    // 1. Update the Visit Record for the audit trail (after the guard, so the scan sees clean data).
+    handleWorkerPost(p);
 
-function checkWizPinMatch() {
- const pin = document.getElementById('wizPin')?.value || '';
- const pinC = document.getElementById('wizPinConfirm')?.value || '';
- const dur = document.getElementById('wizDuress')?.value || '';
- const durC = document.getElementById('wizDuressConfirm')?.value || '';
- const btnNext = document.getElementById('btnWizNext');
- const err = document.getElementById('pinMatchError');
- const ok = document.getElementById('pinMatchOk');
+    // 2. Draft the Resolution Messages
+    const subject    = `✅ ALL CLEAR — ${p['Worker Name']} is safe`;
+    const workerName = p['Worker Name'] || 'The worker';
+    const workerPhone = p['Worker Phone Number'] || 'Not provided';
+    const resolvedAt  = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "dd/MM/yyyy, HH:mm:ss");
 
- // Only show feedback once the user has started filling in confirm fields
- const hasInput = pinC !== '' || durC !== '';
+    const buildAllClearHtml = (recipientName) => {
+        const salutation = recipientName ? `Dear ${recipientName.split(' ')[0]},` : 'Dear Emergency Contact,';
+        return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 0">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%">
+      <tr><td style="background:#16a34a;color:#fff;padding:24px 28px;border-radius:8px 8px 0 0">
+        <div style="font-size:11px;font-weight:bold;letter-spacing:3px;opacity:0.85;text-transform:uppercase;margin-bottom:6px">OTG Lone Worker Safety</div>
+        <div style="font-size:22px;font-weight:bold">✅ ALL CLEAR — Worker is Safe</div>
+      </td></tr>
+      <tr><td style="background:#fff;padding:28px;border-radius:0 0 8px 8px">
+        <p style="margin:0 0 20px">${salutation}</p>
+        <p style="margin:0 0 20px"><strong>${workerName}</strong> has confirmed they are safe. The previous safety alert is now resolved. <strong>No further action is required.</strong></p>
+        <table cellpadding="0" cellspacing="0" style="font-size:13px;color:#374151">
+          <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Worker:</td><td>${workerName}</td></tr>
+          <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Phone:</td><td>${workerPhone}</td></tr>
+          <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Location:</td><td>${p['Location Name'] || 'Unknown'}</td></tr>
+          <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Cleared at:</td><td>${resolvedAt}</td></tr>
+        </table>
+        <p style="margin:20px 0 0;font-size:13px;color:#6b7280">If you have any concerns, please contact the worker directly on ${workerPhone}.</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
+    };
 
- // Validation rules
- const pinFull = pin.length === 4 && dur.length === 4;
- const pinsMatch = pin === pinC && dur === durC;
- const pinsDistinct = pin !== dur;
- const allGood = pinFull && pinsMatch && pinsDistinct;
+    // 3. Dual-Contact Email — personalised salutation per recipient
+    const contactPairs = [
+        { email: p['Emergency Contact Email'],  name: p['Emergency Contact Name']  },
+        { email: p['Escalation Contact Email'], name: p['Escalation Contact Name'] }
+    ].filter(c => c.email && c.email.includes('@'));
 
- // Update Next button
- if (btnNext) {
- btnNext.disabled = !allGood;
- btnNext.classList.toggle('opacity-50', !allGood);
- }
+    contactPairs.forEach(contact => {
+        try {
+            MailApp.sendEmail({ to: contact.email, subject, htmlBody: buildAllClearHtml(contact.name) });
+        } catch (e) { console.error("All Clear email failed: " + e.toString()); }
+    });
+    
+    // 4. Dual-Contact SMS
+    if(CONFIG.TEXTBELT_API_KEY && CONFIG.TEXTBELT_API_KEY.length > 5) {
+        const numbers = [
+    p['Emergency Contact Number'] || p['Emergency Contact Phone'], 
+    p['Escalation Contact Number'] || p['Escalation Contact Phone']
+].map(n => _cleanPhone(n)).filter(n => n);
+        numbers.forEach(num => { 
+            try {
+                UrlFetchApp.fetch('https://textbelt.com/text', {
+                    'method': 'post',
+                    'payload': { 'phone': num, 'message': `${subject}. Alert resolved.`, 'key': CONFIG.TEXTBELT_API_KEY }
+                }); 
+            } catch(e) { console.error('All Clear SMS failed: ' + e.toString()); }
+        });
+    }
 
- // Hide both feedback elements first
- err?.classList.add('hidden');
- ok?.classList.add('hidden');
+    // 5. ntfy push — All Clear notification to both contacts
+    const allClearMsg = [
+        `Worker: ${p['Worker Name'] || 'Unknown'} · ${p['Worker Phone Number'] || ''}`,
+        `Location: ${p['Location Name'] || 'Unknown'}`,
+        `Cleared: ${resolvedAt}`
+    ].filter(Boolean).join('\n');
 
- if (!hasInput) return; // No feedback until user starts confirming
+    [p['Emergency Contact Ntfy'], p['Escalation Contact Ntfy']]
+        .filter(t => t && t.trim())
+        .forEach(topic => {
+            _sendNtfy(topic, `✅ ALL CLEAR — ${p['Worker Name'] || 'Worker'} is safe`, allClearMsg, 'default', 'white_check_mark,green_circle');
+        });
 
- if (allGood) {
- ok?.classList.remove('hidden');
- } else {
- if (err) {
- if (!pinsDistinct && pinFull) {
- err.textContent = '⚠️ Safety PIN and Duress PIN must be different.';
- } else if (pinFull && !pinsMatch) {
- err.textContent = '⚠️ PINs do not match — please re-enter.';
- } else if (pinC !== '' && pin !== pinC) {
- err.textContent = '⚠️ Safety PIN confirmation does not match.';
- } else if (durC !== '' && dur !== durC) {
- err.textContent = '⚠️ Duress PIN confirmation does not match.';
- } else {
- err.textContent = '⚠️ Both PINs must be 4 digits and confirmed.';
- }
- err.classList.remove('hidden');
- }
- }
+    return { status: "success" };
 }
 
 /**
- * Site Info Modal: renders location details and routes to emergency procedures
- * or context-aware procedure submission if none are on file.
+ * Serves a self-contained HTML page showing emergency procedure photos for a site.
+ * Photos are fetched via DriveApp (no sign-in required from the viewer's side)
+ * and embedded as base64 <img> tags. Returned as HtmlOutput via doGet.
  */
-function populateSiteInfoModal(location) {
- const content = document.getElementById('siteInfoContent');
- if (!content) return;
-
- // 1. Build Header & Basic Site Details
- let html = `<div class="space-y-4">
- <div>
- <label class="text-xs text-blue-400 font-black tracking-widest">Site Name</label>
- <div class="text-lg font-bold text-white">${escapeHtml(location.name)}</div>
- </div>`;
-
- if (location.companyName) html += `<div><label class="text-sm text-gray-300 font-black tracking-widest">Company</label><div class="text-white">${escapeHtml(location.companyName)}</div></div>`;
- if (location.address) html += `<div><label class="text-sm text-gray-300 font-black tracking-widest">Address</label><div class="text-white">${escapeHtml(location.address)}</div></div>`;
- 
- // 2. SITE SAFETY INFO LOGIC: View existing or trigger context-aware submission
- if (location['Emergency Procedures']) {
- html += `<div class="pt-2">
- <button onclick="viewEmergencyProcedures('${location['Emergency Procedures']}')" 
- class="w-full py-4 bg-red-600 text-white font-black rounded-2xl flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-transform">
- 🛡️ VIEW SITE SAFETY INFORMATION
- </button>
- </div>`;
- } else {
- // Prepare context object and escape quotes for HTML attribute safety
- const ctx = { siteName: location.name, companyName: location.companyName || "" };
- const ctxSafe = JSON.stringify(ctx).replace(/"/g, '&quot;'); 
- 
- html += `<div class="pt-2">
- <button onclick="closeModal('info'); loadFormAndShow('Update Site Procedures', ${ctxSafe})" 
- class="w-full py-4 bg-gray-800 border-2 border-dashed border-gray-600 text-gray-400 font-bold rounded-2xl flex flex-col items-center justify-center gap-1 active:bg-gray-700 active:scale-95 transition-all">
- <span class="text-xs tracking-widest opacity-60">No Site Safety Information found</span>
- <span class="text-xs text-blue-400 font-black ">Click to submit documentation</span>
- </button>
- </div>`;
- }
-
- if (location.contactName || location.contactPhone) {
- html += `<div class="pt-2 border-t border-gray-700">
- <label class="text-xs text-red-400 font-black tracking-widest">Contact</label>
- <div class="text-white font-bold">${escapeHtml(location.contactName || 'Primary Contact')}</div>
- ${location.contactPhone ? `<div class="text-gray-400 text-xs">${escapeHtml(location.contactPhone)}</div>` : ''}
- </div>`;
- }
-
- if (location.notes) {
- html += `<div class="p-3 bg-blue-900/10 rounded-xl border border-blue-500/20 mt-2">
- <label class="text-xs text-blue-400 font-black tracking-widest mb-1 block">Notes</label>
- <div class="text-xs text-gray-300 italic">${escapeHtml(location.notes)}</div>
- </div>`;
- }
-
- // 4. WELFARE CHECK SECTION — only shown when checkinEnabled
- if (CONFIG.checkinEnabled) {
- // Risk level badge (read-only — set by supervisor in the Sites sheet)
- const riskColours = {
- Low: 'bg-green-900/40 text-green-400 border-green-700',
- Medium: 'bg-yellow-900/40 text-yellow-400 border-yellow-700',
- High: 'bg-orange-900/40 text-orange-400 border-orange-700',
- Critical: 'bg-red-900/40 text-red-400 border-red-700'
- };
- const riskClass = (location.riskLevel && riskColours[location.riskLevel])
- ? riskColours[location.riskLevel]
- : 'bg-gray-800 text-gray-400 border-gray-600';
- const riskLabel = location.riskLevel || 'Not set';
-
- // Persistent site override — what interval is currently saved for this site
- const savedMins = location.welfareIntervalMins || '';
- const effectiveMins = savedMins || (location.riskLevel && RISK_WELFARE_MAP[location.riskLevel]) || CONFIG.checkinInterval || 60;
- const effectiveLabel = savedMins
- ? `${savedMins}m (site default)`
- : (location.riskLevel && RISK_WELFARE_MAP[location.riskLevel])
- ? `${effectiveMins}m (${location.riskLevel} risk default)`
- : `${effectiveMins}m (global default)`;
-
- html += `<div class="pt-3 border-t border-gray-700 mt-2">
- <div class="flex items-center justify-between mb-2">
- <label class="text-xs text-teal-400 font-black tracking-widest">🔔 Welfare Check</label>
- <span class="text-xs px-2 py-0.5 rounded border font-black tracking-widest ${riskClass}">${escapeHtml(riskLabel)}</span>
- </div>
- <p class="text-xs text-gray-400 mb-2">Effective: <strong class="text-white">${effectiveLabel}</strong></p>
- <div class="flex gap-2 items-center">
- <input id="siteWelfareInput" type="number" min="5" max="480" value="${escapeHtml(String(savedMins || effectiveMins))}"
- class="w-20 bg-gray-900 border border-gray-600 rounded-lg px-2 py-1.5 text-white text-sm text-center font-mono focus:border-teal-500 focus:outline-none"
- placeholder="${effectiveMins}">
- <span class="text-xs text-gray-400">mins</span>
- <button onclick="saveSiteWelfareOverride('${escapeHtml(location.id)}')"
- class="flex-1 py-1.5 bg-teal-700 hover:bg-teal-600 text-white text-xs font-black rounded-lg transition-colors">
- Save Default
- </button>
- ${savedMins ? `<button onclick="clearSiteWelfareOverride('${escapeHtml(location.id)}')"
- class="py-1.5 px-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs font-black rounded-lg transition-colors">
- ✕
- </button>` : ''}
- </div>
- <p class="text-xs text-gray-500 mt-1.5 italic">Saved here as the default for every visit to this site. Adjust per-visit on the home screen.</p>
- </div>`;
- } // end if (CONFIG.checkinEnabled)
-
- // 5. REPORT REQUIRED TOGGLE — worker-settable default for this site
- // Travel locations are handled separately via Travel Settings.
- if (location.id !== 'travel') {
- const noRep = !!(location.noReport);
- html += `<div class="pt-3 border-t border-gray-700 mt-2">
- <div class="flex items-center justify-between gap-3">
- <div>
- <div class="text-xs text-gray-300 font-black tracking-widest">📄 Report Required</div>
- <div id="siteReportHint" class="text-xs text-gray-500 italic mt-0.5">${noRep ? 'No report — hold to end will exit directly' : 'A report will be requested on departure'}</div>
- </div>
- <label class="relative shrink-0 cursor-pointer">
- <input type="checkbox" id="siteReportToggle" class="sr-only peer" ${noRep ? '' : 'checked'}
- onchange="toggleSiteReport('${escapeHtml(location.id)}', this.checked)">
- <div class="w-11 h-6 bg-gray-600 peer-checked:bg-blue-600 rounded-full transition-colors"></div>
- <div class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform peer-checked:translate-x-5"></div>
- </label>
- </div>
- </div>`;
- }
-
- html += `</div>`;
-
- // Delete button — personal (loc_) sites only. Org-configured sites are not deletable.
- if (location.id.startsWith('loc_')) {
- html += `<div class="pt-4 border-t border-gray-700 mt-4">
- <button onclick="deletePersonalSite('${escapeHtml(location.id)}')"
- class="w-full py-3 bg-red-900/30 border border-red-800/50 text-red-400 font-black rounded-xl text-sm hover:bg-red-900/50 active:scale-95 transition-all">
- 🗑️ Delete Personal Site
- </button>
- </div>`;
- }
-
- content.innerHTML = html;
-
- // 3. Configure Action Buttons (Call, Email, Navigation)
- const btnCall = document.getElementById('btnSiteCall');
- const btnEmail = document.getElementById('btnSiteEmail');
- const btnNav = document.getElementById('btnSiteNav');
-
- if (location.contactPhone && btnCall) {
- btnCall.href = `tel:${cleanGlobalPhone(location.contactPhone)}`;
- btnCall.classList.remove('hidden');
- } else if (btnCall) btnCall.classList.add('hidden');
-
- if (location.contactEmail && btnEmail) {
- btnEmail.href = `mailto:${location.contactEmail}`;
- btnEmail.classList.remove('hidden');
- } else if (btnEmail) btnEmail.classList.add('hidden');
-
- if (location.address && btnNav) {
- const encodedAddr = encodeURIComponent(location.address);
- // FIXED: Corrected template literal syntax for navigation
- btnNav.href = `https://www.google.com/maps/search/?api=1&query=${encodedAddr}`;
- btnNav.classList.remove('hidden');
- } else if (btnNav) {
- btnNav.classList.add('hidden');
- }
-}
-
-// Global function to trigger info from a tile
-function showSiteInfo(locationId, event) {
- if (event) event.stopPropagation(); // Prevents selecting the tile
- const location = state.locations.find(l => l.id === locationId);
- if (location) {
- populateSiteInfoModal(location);
- showModal('info');
- }
-}
-
-/**
- * Toggles the report-required default for a site directly from the Site Info modal.
- * checked = report required (noReport = false); unchecked = no report (noReport = true).
- * Persists to state, updates the hint text, and refreshes the depart button label
- * if this is the currently active visit site.
- */
-function toggleSiteReport(locationId, checked) {
- const loc = state.locations.find(l => l.id === locationId);
- if (!loc) return;
-
- loc.noReport = !checked;
- saveState();
-
- // Update the hint text in the modal without a full re-render
- const hint = document.getElementById('siteReportHint');
- if (hint) {
- hint.textContent = loc.noReport
- ? 'No report — hold to end will exit directly'
- : 'A report will be requested on departure';
- }
-
- // Refresh the depart button if this is the active visit site
- if (state.activeVisit && state.activeVisit.locationId === locationId) {
- updateDepartLabel();
- }
-
- // Refresh tiles to update any "No report" subtitle shown on the card/row
- renderLocations();
-}
-
-/**
- * Deletes a personal (worker-added) site from state.
- * Only valid for loc_ sites — org-configured sites (site_ prefix) are not deletable.
- * Guards against deleting the site currently active in a visit.
- */
-function deletePersonalSite(locationId) {
- if (!locationId || !locationId.startsWith('loc_')) return;
-
- // Guard: don't allow deletion of the active visit site
- if (state.activeVisit && state.activeVisit.locationId === locationId) {
- showToast('⚠️ Cannot delete a site while a visit is in progress at that site.');
- return;
- }
-
- const loc = state.locations.find(l => l.id === locationId);
- if (!loc) return;
-
- if (!confirm(`Delete "${loc.name}"?\n\nThis will permanently remove this personal site from your device.`)) return;
-
- state.locations = state.locations.filter(l => l.id !== locationId);
- saveState();
- closeModal('info');
- renderLocations();
- updateMySitesSummary();
- showToast(`🗑️ "${loc.name}" deleted`);
-}
-
-
-// Fixed existing Locked Screen info trigger
-function showCurrentSiteInfo() {
- if (!state || !state.activeVisit) return;
- const location = state.locations.find(l => l.id === state.activeVisit.locationId);
- if (location) {
- populateSiteInfoModal(location);
- showModal('info');
- }
-}
-
-/**
- * MISSION-CRITICAL: PIN Verification & Visual Deception Engine
- * Logic: Distinguishes between standard resets and silent duress transitions.
- */
-function withPinVerification(isDuress, successCallback) {
- showModal('pin');
- const input = document.getElementById('pinInput');
- const confirmBtn = document.getElementById('btnPinConfirm');
- input.value = '';
- input.focus();
-
- confirmBtn.onclick = () => {
- const entered = input.value;
- const correctStd = state.pins.std;
- const correctDur = state.pins.duress;
- const isCurrentlyAlarmed = document.body.classList.contains('panic-mode');
-
- // 1. STANDARD PIN: Normal System Reset
- if (entered === correctStd) {
- closeModal('pin');
- successCallback();
- } 
- 
- // 2. DURESS PIN: Visual Deception & Silent Alert
- else if (entered === correctDur) {
- closeModal('pin');
-
- // DECEPTION LOGIC: If the alarm is screaming, make it look like a standard clear
- if (isCurrentlyAlarmed) {
- // Instantly kill visual/audible SOS indicators
- document.body.classList.remove('bg-red-900', 'panic-mode', 'strobe-active');
- if (window.speechSynthesis) window.speechSynthesis.cancel();
- 
- // Show 'Cleared' message for 10 seconds as requested
- showToast("✅ Alarm Successfully Cleared", 10000);
- } else {
- // If triggered from a normal state, show 'Reset' success
- showToast("✅ System Reset Successful", 10000);
- }
-
- // Execute Silent Duress (No speech, no vibration)
- triggerPanic(true); 
- 
- // Return to standard UI to complete the deception
- successCallback();
- } 
- 
- // 3. INCORRECT ENTRY
- else {
- showToast('❌ Incorrect PIN');
- input.value = '';
- if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
- }
- };
-}
-
-/**
- * RE-ENGINEERED: Priority-Aware Notice Engine
- * Logic: Delays notices if a mission-critical Vehicle Grounding block is active.
- */
-function checkActiveNotice() {
- if (!state.meta || !state.meta.activeNotice) return;
- 
- const notice = state.meta.activeNotice;
- const ackList = JSON.parse(localStorage.getItem('otg_acknowledged_notices') || '[]');
- if (ackList.includes(notice.id)) return;
-
- const modal = document.getElementById('noticeModal');
- // 1. SAFETY GATE: Do not hide the 'Grounded' warning with a notice
- const isGrounded = !document.getElementById('wofBlockModal').classList.contains('hidden');
- if (isGrounded) {
- console.log("Notice delayed: Vehicle grounding takes priority.");
- return;
- }
- const title = document.getElementById('noticeTitle');
- const content = document.getElementById('noticeContent');
- const card = document.getElementById('noticeCard');
- const icon = document.getElementById('noticeIcon');
-
- title.innerText = notice.title;
- content.innerText = notice.content;
-
- // 2. PRIORITY STYLING
- card.classList.remove('border-blue-600', 'border-orange-500', 'border-red-600');
- if (notice.priority === 'Critical') {
- card.classList.add('border-red-600');
- icon.innerText = '🚨';
- } else if (notice.priority === 'Urgent') {
- card.classList.add('border-orange-500');
- icon.innerText = '⚠️';
- } else {
- card.classList.add('border-blue-600');
- icon.innerText = '📢';
- }
-
- // GOLDEN FIX: Remove 'hidden' and force z-index to ensure it is not covered by the main layout
- modal.classList.remove('hidden');
- modal.style.display = 'flex'; 
- modal.style.zIndex = "400"; 
-}
-
-/**
- * MISSION-CRITICAL: Notice Acknowledgment
- * Logic: Logs the ID to the backend and dismisses the UI.
- */
-async function acknowledgeNotice() {
- if (!state.meta || !state.meta.activeNotice) return;
- const notice = state.meta.activeNotice;
-
- // 1. UPDATE UI IMMEDIATELY
- closeModal('notice'); 
-
- // 2. PERSIST LOCALLY
- const ackList = JSON.parse(localStorage.getItem('otg_acknowledged_notices') || '[]');
- if (!ackList.includes(notice.id)) {
- ackList.push(notice.id);
- localStorage.setItem('otg_acknowledged_notices', JSON.stringify(ackList));
- }
-
- // 3. LOG TO BACKEND
- const payload = buildPayload({
- "action": "acknowledgeNotice",
- "noticeId": notice.id,
- "Alarm Status": "NOTICE_ACK",
- "Notes": `Confirmed: ${notice.title}`
- });
-
- processUploadQueue(payload);
- showToast('✅ Acknowledgment queued');
-}
- 
-/**
- * PATCHED: Procedure Viewer
- * Handles multiple comma-separated Drive links with mobile-safe opening.
- */
-function viewEmergencyProcedures(linksString) {
- if (!linksString) {
- showToast("⚠️ No procedures linked to this site");
- return;
- }
-
- // 1. Split the comma-separated string from index 9
- const links = linksString.split(',').map(l => l.trim()).filter(l => l !== "");
- 
- if (links.length === 0) return;
-
- // 2. Mobile-Safe Multi-Link Handling
- if (links.length === 1) {
- window.open(links[0], '_blank');
- } else {
- // Provide feedback if opening multiple tabs
- showToast(`Opening ${links.length} procedure pages...`);
- 
- links.forEach((url, index) => {
- // Logic: Stagger the opens to prevent browser 'spam' blockers
- setTimeout(() => {
- window.open(url, '_blank');
- }, index * 600); 
- });
- }
-}
-
-/**
- * HUB NAVIGATION & RENDERING
- */
-function openResourceHub() {
- renderResources();
- showModal('resourceHub');
-}
-
-function switchHubTab(tab) {
- const isRes = tab === 'res';
- const tabRes = document.getElementById('tabRes');
- const tabNot = document.getElementById('tabNot');
- tabRes.className = isRes ? 'pb-2 text-xs font-black tracking-widest text-blue-500 border-b-2 border-blue-500' : 'pb-2 text-xs font-black tracking-widest text-gray-300';
- tabNot.className = !isRes ? 'pb-2 text-xs font-black tracking-widest text-blue-500 border-b-2 border-blue-500' : 'pb-2 text-xs font-black tracking-widest text-gray-300';
- tabRes.setAttribute('aria-selected', isRes ? 'true' : 'false');
- tabNot.setAttribute('aria-selected', isRes ? 'false' : 'true');
- const panel = document.getElementById('hubContent');
- if (panel) panel.setAttribute('aria-labelledby', isRes ? 'tabRes' : 'tabNot');
- 
- if (isRes) renderResources();
- else renderNoticeArchive();
-}
-
-function renderResources() {
- const container = document.getElementById('hubContent');
- const items = state.meta.resources || [];
-
- const guideCard = `
- <div class="p-4 bg-blue-950/60 border border-blue-700/50 rounded-2xl active:scale-95 transition" onclick="window.open('./worker_guide.html', '_blank')">
- <div class="text-xs text-blue-400 font-black tracking-widest mb-1">📘 Built-in</div>
- <div class="text-sm font-bold text-white">Worker User Guide</div>
- <div class="text-sm text-gray-300 mt-2 font-black">Open Guide ↗</div>
- </div>`;
-
- container.innerHTML = guideCard + (items.length ? items.map(r => `
- <div class="p-4 bg-white/5 border border-white/5 rounded-2xl active:scale-95 transition" onclick="window.open('${escapeHtml(r.url)}', '_blank')">
- <div class="text-xs text-blue-400 font-black tracking-widest mb-1">${escapeHtml(r.category)}</div>
- <div class="text-sm font-bold text-white">${escapeHtml(r.title)}</div>
- <div class="text-sm text-gray-300 mt-2 font-black">Open ${escapeHtml(r.type)} ↗</div>
- </div>
- `).join('') : '');
-}
-
-function renderNoticeArchive() {
- const container = document.getElementById('hubContent');
- const items = state.meta.noticeHistory || [];
- container.innerHTML = items.length ? items.map(n => `
- <div class="p-4 bg-white/5 border border-white/5 rounded-2xl opacity-60">
- <div class="text-sm text-gray-300 font-black tracking-widest mb-1">${escapeHtml(new Date(n.date).toLocaleDateString())}</div>
- <div class="text-sm font-bold text-white mb-1">${escapeHtml(n.title)}</div>
- <div class="text-xs text-gray-400 leading-snug">${escapeHtml(n.content)}</div>
- </div>
- `).join('') : '<p class="text-center text-xs opacity-40 py-10">Archive empty.</p>';
-}
-
-/**
- * GRACE EXPIRY: Critical Alarm Activation
- * Logic: Locks UI to Alarm mode and notifies contacts via backend.
- */
-function triggerGraceExpiryAlarm() {
- setVisitPhase(VISIT_PHASES.ALARMING);
- saveState();
-
- // Acquire wake lock so the alarm screen stays lit — the worker must not
- // be able to miss the SLIDE TO CONFIRM prompt because the phone went dark.
- if (typeof requestWakeLock === 'function') requestWakeLock();
-
- // Ensure GPS is running and pinned to minimum interval — the worker may be
- // stationary, so adaptive back-off would reduce resolution at the worst time.
- if (gpsWatchId === null && typeof startGPSMonitoring === 'function') startGPSMonitoring();
- gpsCurrentIntervalMs = GPS_MIN_INTERVAL_MS;
-
- // 1. Notify Backend
- processUploadQueue(buildPayload({
- 'Alarm Status': 'OVERDUE ALARM',
- 'Notes': navigator.onLine
- ? '15-minute grace period expired. Emergency contacts notified.'
- : '15-minute grace period expired. Device was offline — contacts not yet notified.',
- 'Last Known GPS': lastGPS || "0,0"
- }));
-
- // 2. UI Lock & Audio
- document.body.classList.add('bg-red-900', 'panic-mode');
- const _numContacts = [state.worker?.emgName, state.worker?.escName].filter(Boolean).length;
- const _contactWord = _numContacts === 1 ? "contact has" : "contacts have";
- announce(navigator.onLine
- ? `Safety Alarm Activated. Your emergency ${_contactWord} been notified.`
- : `Safety Alarm Activated. No signal — use the email or call buttons to reach your contacts.`);
- 
- const overdueLabel = document.getElementById('overdueLabel');
- if (overdueLabel) {
- overdueLabel.innerText = "ALARM ACTIVATED";
- overdueLabel.classList.add('border-white', 'text-white');
- }
-
- // Show both alarm escalation buttons — email and call — visible to worker
- // and any bystander. Independent of the backend.
- _showAlarmButtons();
-}
-
-/**
- * REDUNDANT ESCALATION — DIRECT MAILTO FALLBACK
- * Constructs a pre-addressed, pre-filled email to all configured emergency
- * contacts using the device's native mail client. Completely independent of
- * the backend — works even if the GAS script has failed, quota is exhausted,
- * or the spreadsheet is inaccessible.
- *
- * Called from btnDirectAlert on the alarm screen. Also accessible to any
- * bystander who picks up the worker's phone.
- */
-function sendDirectAlert() {
- const w = state?.worker || {};
- const v = state?.activeVisit || {};
-
- // Gather all configured email contacts, deduplicate, drop blanks
- const contacts = [...new Set([
- w.emgEmail || w.iceEmail,
- w.escEmail || w.ice2Email
- ])].filter(Boolean);
-
- if (contacts.length === 0) {
- showToast('⚠️ No email contacts configured — add them in Settings');
- return;
- }
-
- const workerName = w.name || 'Unknown Worker';
- const location = v.locationName || 'Unknown Location';
- const address = v.locationAddress || '';
- const gps = lastGPS || v.startGPS || null;
- const alarmTime = new Date().toLocaleString([], {
- year: 'numeric', month: 'short', day: 'numeric',
- hour: '2-digit', minute: '2-digit'
- });
-
- const mapsLine = (gps && gps !== '0,0')
- ? `GPS Location: https://maps.google.com/?q=${gps}`
- : 'GPS Location: Not available';
-
- const subject = encodeURIComponent(
- `⚠️ SAFETY ALARM — ${workerName} — ${location}`
- );
-
- // Keep body concise — some mail clients truncate long mailto: URIs
- const bodyLines = [
- `SAFETY ALARM — DIRECT DEVICE ALERT`,
- ``,
- `Worker: ${workerName}`,
- `Location: ${location}`,
- address ? `Address: ${address}` : null,
- mapsLine,
- `Time: ${alarmTime}`,
- ``,
- `This alert was sent DIRECTLY from ${workerName}'s device.`,
- `The worker did not check in as scheduled.`,
- ``,
- `Please attempt contact immediately.`,
- `If unreachable, contact emergency services and provide the location above.`,
- ``,
- `— OTG Lone Worker Safety`
- ].filter(l => l !== null).join('\n');
-
- const mailto = `mailto:${contacts.join(',')}?subject=${subject}&body=${encodeURIComponent(bodyLines)}`;
-
- // Open native mail client
- window.location.href = mailto;
-
- showToast('📧 Opening email — tap Send to dispatch');
-}
-
-/**
- * REDUNDANT ESCALATION — QUICK-CALL ICE CONTACT
- * Opens the native phone dialler pre-filled with the primary emergency contact.
- * Works for the worker or any bystander — no knowledge of the app required.
- */
-function callICE() {
- const w = state?.worker || {};
- const phone = w.emgPhone || w.icePhone;
- const name = w.emgName || w.iceName || 'Emergency Contact';
- if (!phone) {
- showToast('⚠️ No emergency contact phone configured — add one in Settings');
- return;
- }
- // Strip spaces and non-numeric characters for a clean tel: link
- window.location.href = `tel:${phone.replace(/[^\d+]/g, '')}`;
-}
-
-/**
- * Show both alarm-escalation buttons (email + call) and populate the call
- * button label with the contact's name and number so bystanders know who
- * they are calling before they tap.
- */
-function _showAlarmButtons() {
- const btnDirect = document.getElementById('btnDirectAlert');
- const btnCall = document.getElementById('btnCallICE');
- const callLabel = document.getElementById('btnCallICELabel');
-
- if (btnDirect) btnDirect.classList.remove('hidden');
-
- if (btnCall) {
- const w = state?.worker || {};
- const name = w.emgName || w.iceName || '';
- const phone = w.emgPhone || w.icePhone || '';
- if (phone) {
- if (callLabel) callLabel.textContent = name ? `${name} — ${phone}` : phone;
- btnCall.classList.remove('hidden');
- }
- // If no phone is configured, hide rather than show a non-functional button
- }
-}
-
- /**
- * NEW: Low Battery Safety Check
- * Logic: Alerts the worker and the Monitor App if the device is at risk of shutting down.
- */
-async function checkBatterySafety() {
- // Only check if we haven't already sent an alert this visit
- if (!state.activeVisit || state.activeVisit.lowBatterySent) return;
-
- // Use the cached level — refreshBatteryLevel() keeps this accurate every 3 minutes,
- // which is sufficient to detect a 15% threshold before it becomes critical.
- // Calling getBatteryPercent() directly here was firing an async Battery API call
- // on every tick (every 10s), an unnecessary overhead for a slowly-changing value.
- const levelStr = currentBatteryLevel;
- const level = parseInt(levelStr);
-
- if (level <= 15) {
- // 1. Notify the Worker
- announce("Warning. Low battery detected. Please connect to a power source to maintain safety monitoring.");
- if (navigator.vibrate) navigator.vibrate([800, 200, 800]);
-
- // 2. Notify the Monitor App
- processUploadQueue(buildPayload({
- 'Alarm Status': 'LOW BATTERY',
- 'Notes': `Device battery is critical at ${levelStr}. Safety monitoring may be interrupted soon.`
- }));
-
- state.activeVisit.lowBatterySent = true;
- saveState();
- }
-}
-/**
- * NEW: Battery Saver HUD Updater
- * Logic: Updates visible HUD elements using minimal DOM operations.
- */
-function updateBatterySaverHUD() {
- const timeHUD = document.getElementById('saverTimerHUD');
- const battTextHUD = document.getElementById('saverBatteryHUD');
- const battBarHUD = document.getElementById('saverBatteryBarHUD');
-
- // Show whole-minutes remaining, rounded up so the last minute shows
- // "1 min remaining" rather than jumping to zero on a 30-second tick.
- if (timeHUD) {
- if (state && state.activeVisit) {
- const remainingSecs = state.activeVisit.duration - (Date.now() - state.activeVisit.startTime) / 1000;
- if (remainingSecs > 0) {
- const minsUp = Math.ceil(remainingSecs / 60);
- const label = minsUp === 1 ? 'min remaining' : 'mins remaining';
- timeHUD.innerHTML = `<span class="text-5xl font-mono font-bold text-gray-300">${minsUp}</span><br><span class="text-sm font-bold text-gray-400 tracking-widest">${label}</span>`;
- } else {
- const isAlarmed = state.activeVisit.criticalSent;
- if (isAlarmed) {
- timeHUD.innerHTML = `<span class="text-3xl font-bold text-red-500 animate-pulse">ALARM ACTIVATED</span>`;
- } else {
- const minsUntil = Math.max(0, Math.ceil(15 - Math.abs(remainingSecs) / 60));
- const contactLine = minsUntil > 0
- ? `Notifying contacts in ${minsUntil} min${minsUntil === 1 ? '' : 's'}`
- : 'Notifying contacts now';
- timeHUD.innerHTML = `<span class="text-3xl font-bold text-red-500 animate-pulse">OVERDUE</span><br><span class="text-sm font-bold text-red-400 tracking-wide">${contactLine}</span>`;
- }
- }
- } else {
- timeHUD.innerText = '--';
- }
- }
-
- // Display battery info from currentBatteryLevel (state.battery is never populated)
- const battLevel = parseInt(currentBatteryLevel) || 0;
- if (battTextHUD) {
- battTextHUD.innerText = battLevel + '%';
- if (battBarHUD) battBarHUD.style.width = battLevel + '%';
- }
-}
-
-// checkWakeSlider removed — slide-to-wake is now handled entirely by
-// initSlideToWake() using touch/pointer events on the pill container.
-// The wakeSlider range input is a visual-only element; its value is not read.
-
-
-
-/**
- * SAFETY COMPONENT: App Visibility Observer
- * Logic: Re-engages safety systems and wake locks when the app is focused.
- */
-document.addEventListener("visibilitychange", async () => {
- if (document.visibilityState === 'visible') {
- // Re-acquire wake lock whenever a visit is active and the page returns to
- // the foreground. The WakeLock API automatically releases the lock when
- // the page is hidden (e.g. user switches apps) — we must re-request it on
- // every foreground event to maintain continuous screen-on behaviour.
- // This prevents the OS from applying its own lock screen during a visit.
- if (state && state.activeVisit && typeof requestWakeLock === 'function') {
- await requestWakeLock();
- }
-
- if (state && state.activeVisit) {
- if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
- showToast("✅ Safety Monitoring Active");
- if (typeof tick === 'function') tick();
-
- // Flush any queued outbox payloads now that we're back in the foreground.
- // The outbox may have accumulated records while offline or backgrounded —
- // calling here ensures delivery resumes as soon as connectivity is available,
- // without waiting for the next natural enqueue trigger.
- if (typeof outboxProcess === 'function') outboxProcess();
-
- // iOS SUSPENSION CATCH-UP — MAIN ALARM
- // On iOS Safari, setInterval is throttled (or fully suspended) when
- // the PWA is backgrounded. tick() runs normally here, but the alarm
- // logic fires only within narrow time windows (e.g. diffMins >= 15
- // for exactly one tick cycle). If the suspension bridged that window,
- // the alarm never fires — the worker is overdue and nobody knows.
- //
- // Fix: independently evaluate the alarm condition after every
- // foreground event, completely bypassing the tick window logic.
- // This is unconditional arithmetic — no window dependency.
- const v = state.activeVisit;
- if (v.anticipatedDepartureTime &&
- !v.criticalSent &&
- !v.isSafeConfirmed) {
- const minsOverdue = (Date.now() - v.anticipatedDepartureTime) / 60000;
- if (minsOverdue >= 15) {
- console.warn(`iOS catch-up: alarm window missed during suspension (${minsOverdue.toFixed(1)} min overdue) — firing now`);
- triggerGraceExpiryAlarm();
- }
- }
-
- // iOS SUSPENSION CATCH-UP — WELFARE CHECK
- // If a welfare check was in progress (modal was shown) while the app
- // was backgrounded, the 2-minute countdown stopped ticking. On restore,
- // check if the deadline has already passed and fire the alarm if so.
- // If the deadline is still in the future, re-show the modal with the
- // adjusted (remaining) countdown so the worker can still confirm.
- if (CONFIG.checkinEnabled && v.welfareDeadline) {
- const now = Date.now();
- if (now >= v.welfareDeadline) {
- // Deadline passed while suspended — treat as missed
- v.welfareDeadline = null;
- saveState();
- const modal = document.getElementById('welfareCheckModal');
- if (modal) modal.classList.add('hidden');
- _clearWelfareCountdown();
- if (!v.criticalSent && !v.isSafeConfirmed) {
- console.warn('iOS catch-up: welfare check deadline passed during suspension — firing alarm');
- triggerGraceExpiryAlarm();
- }
- } else {
- // Deadline not yet passed — re-show modal with remaining time
- // The existing welfareCountdownId is dead (interval was suspended);
- // _showWelfareModal will clear it and restart from remaining seconds.
- _clearWelfareCountdown();
- const remainingSecs = Math.ceil((v.welfareDeadline - now) / 1000);
- const modal = document.getElementById('welfareCheckModal');
- const countEl = document.getElementById('welfareCountdown');
- if (modal && countEl) {
- modal.classList.remove('hidden');
- let rem = remainingSecs;
- const m = Math.floor(rem / 60);
- const s = rem % 60;
- countEl.textContent = `${m}:${s.toString().padStart(2, '0')}`;
- welfareCountdownId = setInterval(() => {
- rem--;
- const mm = Math.floor(rem / 60);
- const ss = rem % 60;
- countEl.textContent = `${mm}:${ss.toString().padStart(2, '0')}`;
- if (rem <= 0) {
- _clearWelfareCountdown();
- modal.classList.add('hidden');
- v.welfareDeadline = null;
- saveState();
- if (!v.criticalSent && !v.isSafeConfirmed) triggerGraceExpiryAlarm();
- }
- }, 1000);
- }
- }
- }
- }
- }
-});
- 
-</script>
-
+function getEmergencyProceduresViewer(siteName, companyName) {
+    try {
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        const siteSheet = ss.getSheetByName('Sites');
+        if (!siteSheet) return HtmlService.createHtmlOutput('<p>Sites tab not found.</p>');
+
+        const data = siteSheet.getDataRange().getValues();
+        const headers = data[0];
+        const siteCol = headers.indexOf('Site Name');
+        const compCol = headers.indexOf('Company Name');
+        const procCol = headers.indexOf('Emergency Procedures');
+        if (procCol === -1) return HtmlService.createHtmlOutput('<p>No Emergency Procedures column.</p>');
+
+        let linksStr = '';
+        for (let i = 1; i < data.length; i++) {
+            const siteMatch = (data[i][siteCol] || '').toString().trim() === siteName.trim();
+            const compMatch = !companyName || (data[i][compCol] || '').toString().trim() === companyName.trim();
+            if (siteMatch && compMatch) {
+                linksStr = (data[i][procCol] || '').toString().trim();
+                break;
+            }
+        }
+
+        if (!linksStr) return HtmlService.createHtmlOutput('<p style="font-family:sans-serif;color:#fff;background:#111;padding:24px">No procedures found for this site.</p>');
+
+        const urls = linksStr.split(',').map(u => u.trim()).filter(u => u);
+        const images = urls.map((url, idx) => {
+            try {
+                // Extract Drive file ID from URL — handles /file/d/ID/view and open?id=ID forms
+                const match = url.match(/\/d\/([-\w]+)/) || url.match(/[?&]id=([-\w]+)/);
+                if (!match) return `<p class="err">Photo ${idx + 1}: unrecognised URL format.</p>`;
+                const blob = DriveApp.getFileById(match[1]).getBlob();
+                const b64  = Utilities.base64Encode(blob.getBytes());
+                const mime = blob.getContentType() || 'image/jpeg';
+                return `<img src="data:${mime};base64,${b64}" alt="Procedure photo ${idx + 1}">`;
+            } catch(e) {
+                return `<p class="err">Photo ${idx + 1} could not be loaded: ${e.message}</p>`;
+            }
+        }).join('\n');
+
+        const displayName = _escHtml(companyName ? companyName + ' — ' + siteName : siteName);
+
+        const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Emergency Procedures</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #111; color: #fff; font-family: -apple-system, sans-serif; padding: 16px; }
+    header { margin-bottom: 20px; }
+    header h1 { font-size: 13px; font-weight: 900; text-transform: uppercase;
+                letter-spacing: 3px; color: #ef4444; margin-bottom: 4px; }
+    header p  { font-size: 14px; color: #d1d5db; font-weight: 600; }
+    .photos img { width: 100%; display: block; border-radius: 10px;
+                  margin-bottom: 14px; box-shadow: 0 2px 12px #0008; }
+    .err { color: #f87171; font-size: 13px; padding: 8px 0; }
+    footer { margin-top: 24px; font-size: 11px; color: #4b5563; text-align: center; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🛡️ Emergency Procedures</h1>
+    <p>${displayName}</p>
+  </header>
+  <div class="photos">
+    ${images}
+  </div>
+  <footer>OTG AppSuite &mdash; Site Safety Documentation</footer>
 </body>
-</html>
+</html>`;
+
+        return HtmlService.createHtmlOutput(html)
+            .setTitle('Emergency Procedures')
+            .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+
+    } catch(err) {
+        return HtmlService.createHtmlOutput('<p style="font-family:sans-serif;padding:24px;color:#f87171">Error: ' + err.toString() + '</p>');
+    }
+}
+
+/** Minimal HTML-escape for values inserted into GAS HtmlOutput strings. */
+function _escHtml(str) {
+    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
