@@ -4769,6 +4769,7 @@ async function startVisit(isSkipCheck = false) {
  renderLocations();
  updateArrivedButtonState(); 
  if (btn) delete btn.dataset.starting; // Clear guard — allows next visit to start
+  if (typeof window._armBackTrap === 'function') window._armBackTrap();
  enterLockedScreen();
 }
  
@@ -5780,6 +5781,7 @@ function _initApp() {
  checkActiveNotice();
  
  if (state.activeVisit) {
+      if (typeof window._armBackTrap === 'function') window._armBackTrap();
  enterLockedScreen();
  // enterLockedScreen() starts tickIntervalId - no duplicate needed here
  }
@@ -6888,6 +6890,52 @@ function updateLastSyncUI() {
  };
  document.addEventListener('fullscreenchange', fsChange);
  document.addEventListener('webkitfullscreenchange', fsChange);
+})();
+
+// BACK-NAVIGATION TRAP
+// Arms a history state sentinel to intercept the Android back button / back
+// gesture while a visit is active. On popstate the sentinel is immediately
+// re-pushed so the user stays on this page. The trap is armed:
+//   (a) at visit start via window._armBackTrap(), and
+//   (b) at app init when a visit is already in state (page reload during visit).
+// The popstate handler self-disarms once the visit ends — normal back navigation
+// outside of an active visit is unaffected.
+;(function() {
+  function armBackTrap() {
+    if (history.state && history.state.otgTrap) return; // Already armed
+    history.pushState({ otgTrap: true }, '');
+  }
+
+  window.addEventListener('popstate', () => {
+    if (!state || !state.activeVisit) return; // No active visit — let navigation proceed
+    // Neutralise the back event by immediately re-pushing the sentinel
+    history.pushState({ otgTrap: true }, '');
+    if (navigator.vibrate) navigator.vibrate([100, 100, 100]);
+    showToast('⚠️ Visit in progress — use the app controls to end your visit');
+  });
+
+  // Expose so startVisit() and _initApp() can arm it at the right moment
+  window._armBackTrap = armBackTrap;
+})();
+
+// BATTERY SAVER FULLSCREEN RE-ENTRY ON TOUCH
+// The fullscreenchange guard above attempts to re-enter fullscreen automatically,
+// but Android Chrome rejects requestFullscreen() outside a user gesture, making
+// that re-entry a best-effort no-op on Android. This touchstart listener on the
+// overlay itself fixes that: every touch on the battery saver screen IS a valid
+// user gesture, so the nav/status bars are silently hidden the next time the
+// worker touches the screen after they reappear (e.g. after a swipe-down).
+// { passive: true } ensures the wake slider's own touch handlers are unaffected.
+;(function() {
+  const saver = document.getElementById('batterySaver');
+  if (!saver) return;
+  saver.addEventListener('touchstart', () => {
+    if (!isBatterySaverActive) return;
+    if (document.fullscreenElement) return;
+    const el = document.documentElement;
+    const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+    if (rfs) rfs.call(el, { navigationUI: 'hide' }).catch(() => {});
+  }, { passive: true });
 })();
 
 // Feature 14: Critical Timing Mode
@@ -8476,6 +8524,18 @@ document.addEventListener("visibilitychange", async () => {
  }
 
  if (state && state.activeVisit) {
+      // BATTERY SAVER OVERLAY RECOVERY
+      // If the worker switched apps or the screen was briefly taken over while
+      // the battery saver was active, the overlay may have been obscured.
+      // Re-assert it unconditionally — deactivateBatterySaver() is the only
+      // legitimate exit path, and it sets isBatterySaverActive = false first.
+      if (isBatterySaverActive) {
+        const _saver = document.getElementById('batterySaver');
+        const _main  = document.getElementById('lockedPage');
+        if (_saver) _saver.classList.remove('hidden');
+        if (_main)  _main.style.display = 'none';
+        updateBatterySaverHUD();
+      }
  if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
  showToast("✅ Safety Monitoring Active");
  if (typeof tick === 'function') tick();
