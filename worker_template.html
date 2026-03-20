@@ -714,6 +714,8 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div id="overdueLabel" class="hidden text-red-500 font-black text-2xl animate-pulse my-2 tracking-[0.2em] border-2 border-red-500 inline-block px-6 py-2 rounded-xl ">
  OVERDUE
  </div>
+ <!-- what3words address — populated on panic/alarm if w3wApiKey is configured in config.json -->
+ <div id="w3wDisplay" class="hidden mt-1 text-emerald-400 font-mono text-sm font-bold tracking-tight"></div>
  <div id="countdownTimer" class="text-8xl font-bold font-mono text-white tracking-tighter">00:00</div>
  <!-- GPS accuracy warning — shown only when accuracy > 100m. Tappable for explanation. -->
  <div id="gpsAccuracyBadge"
@@ -1333,6 +1335,7 @@ const CONFIG = {
  voiceLocale: 'en-NZ',
  reqTravelReport: true,
  ntfyServer: 'https://ntfy.sh',
+ w3wApiKey: '',
  buildVersion: '0.0.0'
 };
 
@@ -1370,6 +1373,7 @@ function applyConfig(cfg) {
  CONFIG.appName = cfg.appName || cfg.orgName || '';
  CONFIG.key = cfg.workerKey || '';
  CONFIG.ntfyServer = cfg.ntfyServer || 'https://ntfy.sh';
+ CONFIG.w3wApiKey = cfg.w3wApiKey || '';
  CONFIG.buildVersion = cfg.version || '0.0.0';
 
  // Features
@@ -1580,7 +1584,7 @@ let formExecutionContext = null;
 let dimTimer;
 let isBatterySaverActive = false; // Single source of truth for battery saver state
 const DIM_DELAY = 10000; // 10 seconds
-const WAKE_GRACE_MS = 30000; // 30s after waking, inactivity timer will not re-arm
+const WAKE_GRACE_MS = 0; // No grace period — inactivity timer re-arms immediately after wake
 let lastWakeTime = 0;
 let welfareIntervalId = null; // Drives the periodic welfare check schedule
 let welfareCountdownId = null; // Drives the 2-minute countdown within the modal
@@ -3507,6 +3511,8 @@ async function triggerPanic(duress = false) {
  // Show direct email + call buttons — independent of the backend,
  // covers the case where the GAS script fails to dispatch the alert.
  _showAlarmButtons();
+ // Fetch what3words address so worker can relay precise location to emergency services
+ fetchW3wForPanic();
  }
 }
 
@@ -3560,6 +3566,8 @@ function iamSafe() {
  if (btnExtend) btnExtend.classList.remove('hidden');
  if (btnDirect) btnDirect.classList.add('hidden');
  if (btnCall) btnCall.classList.add('hidden');
+ const w3wDisplay = document.getElementById('w3wDisplay');
+ if (w3wDisplay) { w3wDisplay.textContent = ''; w3wDisplay.classList.add('hidden'); }
  
  showToast("✅ Safety status confirmed");
  });
@@ -4759,18 +4767,18 @@ async function startVisit(isSkipCheck = false) {
  saveState();
  }
 
- // Clear the wake grace period BEFORE arming the inactivity timer.
- // If the previous visit was woken shortly before departure, lastWakeTime would
- // still be recent and resetInactivityTimer() would refuse to arm — causing the
- // first dim of this new visit to never fire.
  lastWakeTime = 0;
 
- resetInactivityTimer(); 
  renderLocations();
  updateArrivedButtonState(); 
  if (btn) delete btn.dataset.starting; // Clear guard — allows next visit to start
-  if (typeof window._armBackTrap === 'function') window._armBackTrap();
+ if (typeof window._armBackTrap === 'function') window._armBackTrap();
  enterLockedScreen();
+ // Enter battery saver immediately at visit start — no need to wait for the
+ // inactivity timer. Called after enterLockedScreen() so #lockedPage is ready
+ // before being hidden. Also provides a valid user-gesture context for
+ // requestFullscreen() on Android Chrome.
+ activateBatterySaver();
 }
  
 // ============================================================================
@@ -8317,6 +8325,8 @@ function triggerGraceExpiryAlarm() {
  // Show both alarm escalation buttons — email and call — visible to worker
  // and any bystander. Independent of the backend.
  _showAlarmButtons();
+ // Fetch what3words address so worker can relay precise location to emergency services
+ fetchW3wForPanic();
 }
 
 /**
@@ -8403,6 +8413,37 @@ function callICE() {
  }
  // Strip spaces and non-numeric characters for a clean tel: link
  window.location.href = `tel:${phone.replace(/[^\d+]/g, '')}`;
+}
+
+/**
+/**
+ * fetchW3wForPanic — fetches a what3words address for the current GPS fix
+ * and populates #w3wDisplay on the locked screen.
+ * Only runs if CONFIG.w3wApiKey is set. Silent on failure.
+ * Called from triggerPanic() and the overdue alarm path.
+ */
+async function fetchW3wForPanic() {
+ try {
+  const key = CONFIG.w3wApiKey;
+  if (!key || key.length < 8) return;
+  const gps = lastGPS || (state?.activeVisit?.startGPS) || null;
+  if (!gps || gps === '0,0') return;
+  const [lat, lng] = gps.split(',').map(s => s.trim());
+  if (!lat || !lng) return;
+  const url = `https://api.what3words.com/v3/convert-to-3wa?coordinates=${lat},${lng}&key=${encodeURIComponent(key)}`;
+  const res = await fetch(url);
+  if (!res.ok) return;
+  const data = await res.json();
+  if (!data.words) return;
+  const addr = `///${data.words}`;
+  const el = document.getElementById('w3wDisplay');
+  if (el) {
+   el.textContent = addr;
+   el.classList.remove('hidden');
+  }
+ } catch (e) {
+  console.warn('[OTG] w3w panic fetch failed:', e.message);
+ }
 }
 
 /**
