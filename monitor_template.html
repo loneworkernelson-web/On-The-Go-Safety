@@ -367,6 +367,7 @@ const SCRIPT_URL   = "%%SHEET_URL%%";
 const VEHICLE_TERM = "%%VEHICLE_TERM%%";
 const MAP_LAT      = parseFloat("%%MAP_LAT%%") || -40.9;  // Factory-injected map centre latitude
 const MAP_LNG      = parseFloat("%%MAP_LNG%%") || 174.9; // Factory-injected map centre longitude
+const W3W_API_KEY  = "%%W3W_API_KEY%%";                  // Factory-injected — empty string disables w3w
 
 // ============================================================================
 // 2. SESSION STATE
@@ -1101,6 +1102,10 @@ function renderGrid() {
                     </a>
                 </div>
 
+                ${(hasRealGps && W3W_API_KEY && !W3W_API_KEY.includes('%%')) ? `
+                <div id="w3w_${attrName}" class="mt-2 text-center text-xs text-slate-500 font-mono tracking-tight">
+                </div>` : ''}
+
                 ${isAlert ? `
                     <button onclick="openResolve('${attrName}')"
                             class="mt-2 w-full bg-green-600 hover:bg-green-500 py-2 rounded text-xs font-bold text-white shadow-lg active:scale-95 transition-transform">
@@ -1123,6 +1128,34 @@ function renderGrid() {
     if (activeEl) activeEl.textContent = activeC;
     if (alertEl)  alertEl.textContent  = alertC;
     if (staleEl)  staleEl.textContent  = staleC;
+
+    // ── Populate what3words addresses asynchronously ──────────────────────────
+    // Tiles have a #w3w_{attrName} span rendered empty. We fill them here after
+    // the DOM is written so the synchronous render isn't blocked by API calls.
+    if (W3W_API_KEY && !W3W_API_KEY.includes('%%')) {
+        filtered.forEach(w => {
+            const gps = w.gps || w['Last Known GPS'] || '0,0';
+            const hasRealGps = gps !== '0,0' && gps !== '0.0,0.0' && gps.includes(',');
+            if (!hasRealGps) return;
+            const safeName = escapeHtml(w['Worker Name'] || 'Unknown');
+            const attrName = safeName.replace(/'/g, "&#39;");
+            const el = document.getElementById(`w3w_${attrName}`);
+            if (!el) return;
+            // If already cached, populate immediately
+            const cached = w3wCache.get(gps);
+            if (cached && cached !== 'pending' && cached !== 'failed') {
+                el.innerHTML = `<a href="https://what3words.com/${cached.replace('///', '')}" target="_blank" class="text-emerald-400 hover:text-emerald-300">${cached}</a>`;
+                return;
+            }
+            // Otherwise fetch asynchronously and populate when done
+            fetchW3w(gps).then(addr => {
+                if (addr) {
+                    const liveEl = document.getElementById(`w3w_${attrName}`);
+                    if (liveEl) liveEl.innerHTML = `<a href="https://what3words.com/${addr.replace('///', '')}" target="_blank" class="text-emerald-400 hover:text-emerald-300">${addr}</a>`;
+                }
+            });
+        });
+    }
 
     // Drive the siren
     updateAlarmAudio(alertC > 0);
@@ -1324,6 +1357,38 @@ const _MAP_COLORS = { red: '#ef4444', purple: '#d946ef', amber: '#f59e0b', green
 // Values: {lat, lng} on success | 'pending' while in-flight | 'failed' on error.
 // Keyed by address string; session-persistent (cleared on page reload only).
 const geocodeCache = new Map();
+
+// ── what3words cache & helper ──────────────────────────────────────────────
+// Keyed by "lat,lng" GPS string. Values: "///word.word.word" | 'pending' | 'failed'.
+// Only active when W3W_API_KEY is configured and non-empty.
+const w3wCache = new Map();
+
+async function fetchW3w(gps) {
+    if (!W3W_API_KEY || W3W_API_KEY.includes('%%') || W3W_API_KEY.length < 8) return null;
+    if (w3wCache.has(gps)) {
+        const v = w3wCache.get(gps);
+        return (v === 'pending' || v === 'failed') ? null : v;
+    }
+    w3wCache.set(gps, 'pending');
+    try {
+        const [lat, lng] = gps.split(',').map(s => s.trim());
+        const url = `https://api.what3words.com/v3/convert-to-3wa?coordinates=${lat},${lng}&key=${encodeURIComponent(W3W_API_KEY)}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data.words) {
+            const addr = `///${data.words}`;
+            w3wCache.set(gps, addr);
+            return addr;
+        }
+        w3wCache.set(gps, 'failed');
+        return null;
+    } catch (e) {
+        console.warn('[OTG] w3w fetch failed for:', gps, e);
+        w3wCache.set(gps, 'failed');
+        return null;
+    }
+}
 
 async function geocodeAddress(address) {
     if (!address) { geocodeCache.set(address, 'failed'); return; }
