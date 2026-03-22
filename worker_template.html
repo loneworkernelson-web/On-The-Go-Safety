@@ -3497,7 +3497,7 @@ function enterLockedScreen() {
  * MISSION-CRITICAL: Safety Trigger Engine
  * Logic: Distinguishes between audible SOS and stealth Duress.
  */
-async function triggerPanic(duress = false) {
+async function triggerPanic(duress = false, alarmCode = null) {
  // GUARD: Prevent a second duress/panic from firing while one is already active.
  // This stops repeated shakes (while thinking it failed) from queuing multiple alerts.
  // Falls back to module-level isPanicActive when there is no activeVisit (pre-visit alarm).
@@ -3565,7 +3565,7 @@ async function triggerPanic(duress = false) {
  }
  
  // 3. BACKEND LOGGING
- await logSafety(duress ? "DURESS" : "PANIC", duress ? "Silent duress alert — triggered via Shake to Alert." : "Manual SOS");
+ await logSafety(alarmCode || (duress ? "DURESS" : "PANIC"), duress ? "Silent duress alert — triggered via Shake to Alert." : "Manual SOS");
  
  if (state && state.activeVisit) {
  setVisitPhase(VISIT_PHASES.ALARMING);
@@ -5409,7 +5409,7 @@ function decoyKeyPress(key) {
   }
 }
 
-function _evaluateDecoyPin(entered) {
+async function _evaluateDecoyPin(entered) {
   const stdPin = state?.pins?.std;
   const duressPin = state?.pins?.duress;
 
@@ -5428,10 +5428,14 @@ function _evaluateDecoyPin(entered) {
     showToast("✅ Safety status confirmed");
     navigate('main');
   } else if (entered === duressPin) {
-    // Duress PIN — silently escalate; decoy screen stays visible
-    // isPanicActive is already true; bypass the duplicate guard by clearing temporarily
+    // Duress PIN — silently escalate to backend (sends DURESS), then dismiss
+    // the decoy screen and return to the home screen. To a bystander it looks
+    // like the worker simply unlocked their phone normally.
+    // isPanicActive is already true; bypass the duplicate guard by clearing temporarily.
     isPanicActive = false;
-    triggerPanic(true);
+    await triggerPanic(true); // sends DURESS (default) — confirms escalation
+    hideDecoyLockScreen();
+    navigate('main');
   } else {
     // Wrong PIN — shake feedback, stay on decoy screen
     const dots = document.getElementById('decoyDots');
@@ -7584,8 +7588,10 @@ function confirmShakePanic() {
  
  showToast('🚨 Covert alert sent', 2000);
  
- // Trigger duress panic (all panic alerts go through same PIN verification)
- triggerPanic(true); // Duress mode
+ // Trigger with PANIC code — initial covert shake is a PANIC alarm.
+ // If the worker then enters their duress PIN on the decoy lock screen,
+ // a second call fires with the default DURESS code to indicate confirmed escalation.
+ triggerPanic(true, "PANIC");
 }
 
 function cancelShakeConfirmation() {
