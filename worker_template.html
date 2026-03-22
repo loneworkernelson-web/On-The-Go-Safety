@@ -4757,6 +4757,7 @@ async function startVisit(isSkipCheck = false) {
  checkinIntervalMins: _resolvedWelfare, // welfare check interval for this visit
  phase: VISIT_PHASES.ACTIVE,
  isPanic: false,
+ isDuress: false,
  criticalSent: false,
  warn5minSent: false,
  warn2minSent: false,
@@ -4764,6 +4765,7 @@ async function startVisit(isSkipCheck = false) {
  };
 
  state.isTravelActive = false;
+ isPanicActive = false; // Reset stale flag so a new visit never inherits a previous alarm state
  // travelNoReport is intentionally NOT reset here — it must survive through the visit
  // so the departure path can read it correctly. Reset happens in directDepart() after
  // the trip ends, or in preDepart() if a form is submitted.
