@@ -301,18 +301,68 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <p id="toastText" class="font-bold text-sm"></p>
 </div>
 
-<!-- PANIC BANNER — shown on all screens when alarm fires outside an active visit.
-     Fixed at bottom, z-[9000] sits above pages but below battery saver and toast. -->
-<div id="panicBanner" class="hidden fixed bottom-0 left-0 right-0 z-[9000] bg-red-700 border-t-4 border-red-500 px-4 pt-3 pb-5 flex flex-col items-center gap-3 shadow-2xl">
-  <div class="flex items-center gap-2 animate-pulse">
-    <span class="text-white text-xl">🚨</span>
-    <span class="text-white font-black text-lg tracking-widest">ALARM ACTIVE</span>
-    <span class="text-white text-xl">🚨</span>
+<!-- DECOY LOCK SCREEN — shown when covert alarm fires outside an active visit.
+     Impersonates an OS lock screen. Worker enters safety PIN to confirm safe,
+     duress PIN to silently escalate. z-[9998] sits below battery saver and toast. -->
+<div id="decoyLockScreen" class="hidden fixed inset-0 z-[9998] flex flex-col items-center justify-between py-12 px-6 select-none" style="background: linear-gradient(180deg, #1c1c3a 0%, #14213d 55%, #0e3057 100%);">
+  <!-- Time & Date -->
+  <div class="flex flex-col items-center mt-6">
+    <div id="decoyTime" class="text-8xl font-thin text-white tracking-tight leading-none"></div>
+    <div id="decoyDate" class="text-base text-white/60 mt-3 font-light tracking-wide"></div>
   </div>
-  <button id="btnBannerSafe" class="long-press-btn w-full py-4 bg-green-600 hover:bg-green-500 text-white font-black rounded-2xl text-lg shadow-2xl animate-pulse">
-    Hold to Confirm Safe
-  </button>
+
+  <!-- PIN entry area -->
+  <div class="flex flex-col items-center gap-7 w-full max-w-xs">
+    <p class="text-white/75 text-sm font-light tracking-[0.3em] uppercase">Enter Passcode</p>
+
+    <!-- Dot indicators -->
+    <div id="decoyDots" class="flex gap-5 h-4 items-center"></div>
+
+    <!-- Numeric keypad -->
+    <div class="grid grid-cols-3 gap-3 w-full">
+      <button class="decoy-key" onclick="decoyKeyPress('1')">1</button>
+      <button class="decoy-key" onclick="decoyKeyPress('2')">2<span class="decoy-sub">ABC</span></button>
+      <button class="decoy-key" onclick="decoyKeyPress('3')">3<span class="decoy-sub">DEF</span></button>
+      <button class="decoy-key" onclick="decoyKeyPress('4')">4<span class="decoy-sub">GHI</span></button>
+      <button class="decoy-key" onclick="decoyKeyPress('5')">5<span class="decoy-sub">JKL</span></button>
+      <button class="decoy-key" onclick="decoyKeyPress('6')">6<span class="decoy-sub">MNO</span></button>
+      <button class="decoy-key" onclick="decoyKeyPress('7')">7<span class="decoy-sub">PQRS</span></button>
+      <button class="decoy-key" onclick="decoyKeyPress('8')">8<span class="decoy-sub">TUV</span></button>
+      <button class="decoy-key" onclick="decoyKeyPress('9')">9<span class="decoy-sub">WXYZ</span></button>
+      <button class="decoy-key decoy-key-blank" disabled></button>
+      <button class="decoy-key" onclick="decoyKeyPress('0')">0</button>
+      <button class="decoy-key decoy-key-action" onclick="decoyKeyPress('del')" aria-label="Delete">⌫</button>
+    </div>
+  </div>
+
+  <!-- Bottom cosmetic row -->
+  <div class="flex justify-between w-full max-w-xs text-white/35 text-sm font-light">
+    <span></span>
+    <span>Emergency SOS</span>
+  </div>
 </div>
+
+<style>
+.decoy-key {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 68px; border-radius: 50%; background: rgba(255,255,255,0.18);
+  color: white; font-size: 1.6rem; font-weight: 300; border: none; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  transition: background 0.1s;
+}
+.decoy-key:active { background: rgba(255,255,255,0.35); }
+.decoy-key-blank { background: transparent !important; cursor: default; }
+.decoy-key-action { font-size: 1.2rem; font-weight: 400; }
+.decoy-sub { display: block; font-size: 0.5rem; font-weight: 500; letter-spacing: 0.08em; color: rgba(255,255,255,0.65); line-height: 1; margin-top: 1px; }
+@keyframes decoy-shake {
+  0%,100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-6px); }
+  80% { transform: translateX(6px); }
+}
+.decoy-shake { animation: decoy-shake 0.4s ease; }
+</style>
 
 <div id="batterySaver" class="fixed inset-0 bg-black z-[9999] hidden flex flex-col items-center justify-between py-16 px-10 text-white select-none"
  role="status"
@@ -3493,8 +3543,13 @@ async function triggerPanic(duress = false) {
  document.body.classList.remove('bg-red-900', 'panic-mode', 'strobe-active');
  if (window.speechSynthesis) window.speechSynthesis.cancel();
  
- // DECEPTION: Show a standard 'Reset' toast for 10 seconds
- showToast("✅ System Reset Successful", 10000); 
+ // DECEPTION: If no active visit, show decoy lock screen — worker confirms safe or escalates via PIN.
+ // If inside a visit, show standard 'Reset' toast (visit UI continues normally).
+ if (!state?.activeVisit) {
+   showDecoyLockScreen();
+ } else {
+   showToast("✅ System Reset Successful", 10000);
+ }
  console.log("SILENT DURESS: UI remains normal but backend alerted.");
  } 
  // 2. PANIC (LOUD) LOGIC
@@ -3531,9 +3586,7 @@ async function triggerPanic(duress = false) {
  _showAlarmButtons();
  // Fetch what3words address so worker can relay precise location to emergency services
  fetchW3wForPanic();
-    // If no active visit the worker may navigate away — show persistent banner
-    // on all screens so they can always reach "Hold to Confirm Safe".
-    if (!state?.activeVisit) showPanicBanner();
+    // No-visit covert (duress) path uses decoy lock screen — nothing extra needed here.
  }
 }
 
@@ -3581,7 +3634,7 @@ function iamSafe() {
  if (lockedPage) lockedPage.classList.remove('panic-mode');
  document.body.classList.remove('bg-red-900');
  document.body.classList.remove('strobe-active');
- hidePanicBanner();
+ hideDecoyLockScreen();
  
  // 6. BUTTON INTERFACE RESET: Restore standard visit controls
  const btnSafe = document.getElementById('btnSafe');
@@ -5287,18 +5340,109 @@ function renderPanicState() {
  }
 }
 
-// 5. PANIC BANNER — persistent alarm affordance shown on all screens outside a visit
-function showPanicBanner() {
-  const banner = document.getElementById('panicBanner');
-  if (!banner) return;
-  banner.classList.remove('hidden');
-  const btn = document.getElementById('btnBannerSafe');
-  if (btn) setupLongPress(btn, 1500, iamSafe);
+// 5. DECOY LOCK SCREEN — shown when covert alarm fires outside an active visit
+let _decoyEntry = '';
+let _decoyClockInterval = null;
+
+function showDecoyLockScreen() {
+  const el = document.getElementById('decoyLockScreen');
+  if (!el) return;
+  _decoyEntry = '';
+  _updateDecoyDots();
+  _updateDecoyClock();
+  _decoyClockInterval = setInterval(_updateDecoyClock, 1000);
+  el.classList.remove('hidden');
 }
 
-function hidePanicBanner() {
-  const banner = document.getElementById('panicBanner');
-  if (banner) banner.classList.add('hidden');
+function hideDecoyLockScreen() {
+  const el = document.getElementById('decoyLockScreen');
+  if (el) el.classList.add('hidden');
+  if (_decoyClockInterval) { clearInterval(_decoyClockInterval); _decoyClockInterval = null; }
+  _decoyEntry = '';
+}
+
+function _updateDecoyClock() {
+  const now = new Date();
+  const timeEl = document.getElementById('decoyTime');
+  const dateEl = document.getElementById('decoyDate');
+  if (timeEl) {
+    const h = now.getHours(), m = now.getMinutes();
+    timeEl.textContent = `${h}:${String(m).padStart(2,'0')}`;
+  }
+  if (dateEl) {
+    dateEl.textContent = now.toLocaleDateString(undefined, { weekday:'long', day:'numeric', month:'long' });
+  }
+}
+
+function _updateDecoyDots() {
+  const container = document.getElementById('decoyDots');
+  if (!container) return;
+  const maxLen = Math.max(state?.pins?.std?.length || 4, state?.pins?.duress?.length || 4, 4);
+  container.innerHTML = '';
+  for (let i = 0; i < maxLen; i++) {
+    const dot = document.createElement('div');
+    dot.style.cssText = `width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,0.7);background:${i < _decoyEntry.length ? 'rgba(255,255,255,0.9)' : 'transparent'};transition:background 0.1s;`;
+    container.appendChild(dot);
+  }
+}
+
+function decoyKeyPress(key) {
+  if (key === 'del') {
+    _decoyEntry = _decoyEntry.slice(0, -1);
+    _updateDecoyDots();
+    return;
+  }
+  _decoyEntry += key;
+  _updateDecoyDots();
+
+  const maxLen = Math.max(
+    (state?.pins?.std || '').length,
+    (state?.pins?.duress || '').length,
+    4
+  );
+
+  if (_decoyEntry.length >= maxLen) {
+    const entered = _decoyEntry;
+    _decoyEntry = '';
+    _updateDecoyDots();
+    _evaluateDecoyPin(entered);
+  }
+}
+
+function _evaluateDecoyPin(entered) {
+  const stdPin = state?.pins?.std;
+  const duressPin = state?.pins?.duress;
+
+  if (entered === stdPin) {
+    // Correct safety PIN — confirm safe and dismiss
+    hideDecoyLockScreen();
+    isPanicActive = false;
+    const payload = buildPayload({
+      'action': 'notifySafety',
+      'Alarm Status': 'USER_SAFE_CONFIRMED',
+      'Notes': 'Worker confirmed safe via decoy lock screen PIN.'
+    });
+    processUploadQueue(payload);
+    logSafety("USER_SAFE", "Worker entered PIN on decoy lock screen to cancel alarm state.");
+    announce("Safety confirmed. Notifying contacts.");
+    showToast("✅ Safety status confirmed");
+    navigate('main');
+  } else if (entered === duressPin) {
+    // Duress PIN — silently escalate; decoy screen stays visible
+    // isPanicActive is already true; bypass the duplicate guard by clearing temporarily
+    isPanicActive = false;
+    triggerPanic(true);
+  } else {
+    // Wrong PIN — shake feedback, stay on decoy screen
+    const dots = document.getElementById('decoyDots');
+    if (dots) {
+      dots.classList.remove('decoy-shake');
+      void dots.offsetWidth; // reflow to restart animation
+      dots.classList.add('decoy-shake');
+    }
+    if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
+    setTimeout(() => _updateDecoyDots(), 50);
+  }
 }
 
 // 6. WARM UP GPS - Pre-warms GPS for faster first capture
