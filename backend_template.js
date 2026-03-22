@@ -806,6 +806,14 @@ function triggerAlerts(p, type) {
     // was unavailable, not a real coordinate).
     const rawGPS   = p['Last Known GPS'];
     const hasGPS   = rawGPS && rawGPS.trim() !== '' && rawGPS.trim() !== '0,0';
+    // Parse lat/lng for w3w lookup and precise GPS validation.
+    const gpsParts    = (rawGPS || '').trim().split(',');
+    const gpsLat      = parseFloat(gpsParts[0]);
+    const gpsLng      = parseFloat(gpsParts[1]);
+    const hasValidGps = gpsParts.length === 2
+        && !isNaN(gpsLat) && !isNaN(gpsLng)
+        && Math.abs(gpsLat) > 0.001 && Math.abs(gpsLng) > 0.001
+        && Math.abs(gpsLat) <= 90   && Math.abs(gpsLng) <= 180;
     // BUG FIX: previous code used $${} which injected a literal '$' into the URL.
     // Correct template literal interpolation is simply ${}.
     const gpsLink  = hasGPS
@@ -2471,7 +2479,10 @@ function handleSafetyResolution(p) {
         if (sheet) {
             const data = sheet.getDataRange().getValues();
             const alarmStatuses = ['OVERDUE', 'PANIC', 'SOS', 'DURESS', 'EMERGENCY'];
-            for (let i = data.length - 1; i > 0 && i > data.length - 200; i--) {
+            // No row cap — the loop breaks on DEPARTED/SAFE so won't scan the whole
+            // sheet unnecessarily. A cap risks missing an alarm row on busy sheets,
+            // which would incorrectly suppress the All-Clear notification.
+            for (let i = data.length - 1; i > 0; i--) {
                 if ((data[i][2] || '').toString().trim() === workerNameCheck) {
                     const rowStatus = (data[i][10] || '').toString().toUpperCase();
                     if (alarmStatuses.some(s => rowStatus.includes(s))) { alertWasSent = true; break; }
