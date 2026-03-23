@@ -3268,7 +3268,8 @@ function preDepart() {
  return;
  }
 
- const btnDepart = document.getElementById('btnDepart');
+        const btnDepart = document.getElementById('btnDepart');
+        if (btnDepart) btnDepart.classList.add('pill-disabled');
  const _dLabel = document.getElementById('slideDepartLabel'); if (_dLabel) _dLabel.textContent = 'Please Wait — Getting GPS';
  
  navigator.geolocation.getCurrentPosition(
@@ -3503,7 +3504,9 @@ function enterLockedScreen() {
  
  // Setup long-press handlers for buttons
  // (Depart pill is wired once at startup via initAllActionPills)
- updateDepartLabel(); // Set label + report/no-report subtitle
+    const _dp = document.getElementById('btnDepart');
+    if (_dp) _dp.classList.remove('pill-disabled');
+    updateDepartLabel(); // Set label + report/no-report subtitle
  
  const btnExtend = document.getElementById('btnExtend');
  if (btnExtend) setupLongPress(btnExtend, 1500, () => showModal('extend'));
