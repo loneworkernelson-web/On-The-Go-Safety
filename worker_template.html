@@ -3762,7 +3762,7 @@ function tick() {
  }
  // Still check for 15m expiry in background.
  // isSafeConfirmed guard prevents re-triggering after worker clears the alarm.
- if (Math.abs(diffMins) >= 15 &&
+ if (Math.abs(diffMins) >= escMins &&
  !state.activeVisit.criticalSent && !state.activeVisit.isSafeConfirmed) {
  triggerGraceExpiryAlarm();
  }
@@ -3794,7 +3794,7 @@ function tick() {
  // isSafeConfirmed prevents re-triggering on every tick after the worker
  // clears the alarm — without it, resetting criticalSent in iamSafe()
  // causes an immediate re-fire, creating an infinite alarm loop.
- if (Math.abs(diffMins) >= 15 && !isAlarmed && !state.activeVisit.isSafeConfirmed) {
+ if (Math.abs(diffMins) >= (CONFIG.escalationMinutes || 15) && !isAlarmed && !state.activeVisit.isSafeConfirmed) {
  triggerGraceExpiryAlarm();
  }
 
@@ -8626,8 +8626,8 @@ function triggerGraceExpiryAlarm() {
   processUploadQueue(buildPayload({
     'Alarm Status': 'OVERDUE ALARM',
     'Notes': navigator.onLine
-      ? '15-minute grace period expired. Emergency contacts notified.'
-      : '15-minute grace period expired. Device was offline — contacts not yet notified.',
+      ? `${CONFIG.escalationMinutes || 15}-minute grace period expired. Emergency contacts notified.`
+      : `${CONFIG.escalationMinutes || 15}-minute grace period expired. Device was offline — contacts not yet notified.`,
     'Last Known GPS': lastGPS || '0,0'
   }));
 
@@ -8849,10 +8849,10 @@ function updateBatterySaverHUD() {
  if (isAlarmed) {
  timeHUD.innerHTML = `<span class="text-3xl font-bold text-red-500 animate-pulse">ALARM ACTIVATED</span>`;
  } else {
- const minsUntil = Math.max(0, Math.ceil(15 - Math.abs(remainingSecs) / 60));
+ const minsUntil = Math.max(0, Math.ceil((CONFIG.escalationMinutes || 15) - Math.abs(remainingSecs) / 60));
  const contactLine = minsUntil > 0
  ? `Notifying contacts in ${minsUntil} min${minsUntil === 1 ? '' : 's'}`
- : 'Notifying contacts now';
+ : 'Activating alarm…';
  timeHUD.innerHTML = `<span class="text-3xl font-bold text-red-500 animate-pulse">OVERDUE</span><br><span class="text-sm font-bold text-red-400 tracking-wide">${contactLine}</span>`;
  }
  }
@@ -8928,7 +8928,7 @@ document.addEventListener("visibilitychange", async () => {
  !v.criticalSent &&
  !v.isSafeConfirmed) {
  const minsOverdue = (Date.now() - v.anticipatedDepartureTime) / 60000;
- if (minsOverdue >= 15) {
+ if (minsOverdue >= (CONFIG.escalationMinutes || 15)) {
  console.warn(`iOS catch-up: alarm window missed during suspension (${minsOverdue.toFixed(1)} min overdue) — firing now`);
  triggerGraceExpiryAlarm();
  }
