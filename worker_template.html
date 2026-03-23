@@ -2748,7 +2748,8 @@ function buildReportForm(templateName, fieldArea) {
 
  if (!['HEADING', 'HEAD', 'NOTE'].includes(baseType)) {
  const labelEl = document.createElement('label');
- labelEl.className = 'block text-xs font-black text-gray-300 tracking-widest mb-2 ml-1';
+ labelEl.className = 'block text-xs font-black tracking-widest mb-2 ml-1';
+ labelEl.style.color = 'var(--text-on-primary)';
  if (isRequired) {
  // Red asterisk — universal required-field convention
  labelEl.innerHTML = escapeHtml(cleanLabel) +
@@ -2764,7 +2765,9 @@ function buildReportForm(templateName, fieldArea) {
  case 'HEADING':
  case 'HEAD':
  const h = document.createElement('h3');
- h.className = 'text-blue-400 font-black text-text-xs tracking-[0.25em] mb-4 border-b border-blue-500/20 pb-2 mt-6';
+ h.className = 'font-black text-text-xs tracking-[0.25em] mb-4 pb-2 mt-6';
+ h.style.color = 'var(--accent)';
+ h.style.borderBottom = '1px solid color-mix(in srgb, var(--accent) 30%, transparent)';
  h.innerText = cleanLabel;
  wrapper.appendChild(h);
  fieldArea.appendChild(wrapper);
@@ -2822,7 +2825,7 @@ function buildReportForm(templateName, fieldArea) {
  const card = document.createElement('div');
  card.className = 'check-card active:bg-blue-900/20 transition-all';
  card.innerHTML = `
- <span class="text-sm font-bold text-gray-300">${cleanLabel}${isRequired ? ' <span class="text-red-500 font-black" aria-label="required">*</span>' : ''}</span>
+ <span class="text-sm font-bold" style="color:var(--text-on-primary)">${cleanLabel}${isRequired ? ' <span class="text-red-500 font-black" aria-label="required">*</span>' : ''}</span>
  <input type="checkbox" id="${fieldId}" data-key="${cleanLabel}" class="w-7 h-7 rounded-lg accent-blue-500"${isRequired ? ' data-required="true" data-label="' + cleanLabel + '"' : ''}>
  `;
  wrapper.innerHTML = ''; 
@@ -4285,7 +4288,7 @@ function openFormsLibrary() {
 
  row.innerHTML = `
  <div class="text-3xl mb-2">${icon}</div>
- <div class="text-sm font-extrabold tracking-tight leading-tight" style="color:var(--text-on-primary)">${escapeHtml(form.name)}</div>
+ <div class="text-sm font-extrabold tracking-tight leading-tight text-white">${escapeHtml(form.name)}</div>
  <div class="text-xs text-blue-400 font-bold mt-1">${form.questions.length} Checks</div>
  `;
  
