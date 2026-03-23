@@ -2717,6 +2717,68 @@ function startTravellingPulse() {
  * RE-ENGINEERED: Professional Form Builder
  * Resolves: Inline Currency ($), Suffix Units (km/hrs/%), and Card-style Checkboxes.
  */
+
+/**
+ * Prepends Start Point and Destination fields to the Travel Report form.
+ * Start address: read from state.activeVisit.startAddress (async geocode fired at trip start).
+ *   - null: geocode still in flight — show 'Locating…' placeholder, poll every 500ms.
+ *   - string: resolved address (or raw coords if Nominatim failed) — pre-fill directly.
+ * Destination: locationName + locationAddress from state.activeVisit.
+ * Both fields are editable text inputs with data-key so they are collected by submitReport().
+ */
+function _injectTripEndpointFields(container) {
+  if (!container || !state || !state.activeVisit) return;
+
+  const makeField = (labelText, keyName, value, placeholder) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'mb-5';
+    const lbl = document.createElement('label');
+    lbl.className = 'block text-xs font-black tracking-widest mb-2 ml-1';
+    lbl.style.color = 'var(--text-on-primary)';
+    lbl.innerText = labelText;
+    wrapper.appendChild(lbl);
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'form-input';
+    input.setAttribute('data-key', keyName);
+    input.value = value || '';
+    if (placeholder) input.placeholder = placeholder;
+    wrapper.appendChild(input);
+    return { wrapper, input };
+  };
+
+  // ── Destination ───────────────────────────────────────────────────────────
+  const destName = state.activeVisit.locationName || '';
+  const destAddr = state.activeVisit.locationAddress || '';
+  const destValue = destAddr ? `${destName} — ${destAddr}` : destName;
+  const dest = makeField('Destination', 'Trip Destination', destValue, 'Destination');
+
+  // ── Start Point ───────────────────────────────────────────────────────────
+  const startAddr = state.activeVisit.startAddress;
+  const start = makeField('Start Point', 'Trip Start Point', startAddr || '', startAddr === null ? 'Locating…' : '');
+
+  // Prepend: Start Point first (top), then Destination below it
+  container.insertBefore(dest.wrapper, container.firstChild);
+  container.insertBefore(start.wrapper, container.firstChild);
+
+  // If geocode is still in flight, poll until it resolves (500ms interval, 30s timeout)
+  if (startAddr === null) {
+    let attempts = 0;
+    const poll = setInterval(() => {
+      attempts++;
+      const resolved = state.activeVisit && state.activeVisit.startAddress;
+      if (resolved) {
+        start.input.value = resolved;
+        start.input.placeholder = '';
+        clearInterval(poll);
+      } else if (attempts >= 60) { // 30s timeout — give up gracefully
+        start.input.placeholder = 'Address unavailable';
+        clearInterval(poll);
+      }
+    }, 500);
+  }
+}
+
 function buildReportForm(templateName, fieldArea) {
  if (!fieldArea) return;
  fieldArea.innerHTML = ''; 
@@ -3022,6 +3084,10 @@ function loadFormAndShow(templateName, context = null) {
  const fieldsContainer = document.getElementById('reportFields');
  if (fieldsContainer) {
  buildReportForm(templateName, fieldsContainer);
+    // Inject pre-filled Start Point / Destination fields at top of travel report.
+    if (templateName === 'Travel Report') {
+      _injectTripEndpointFields(fieldsContainer);
+    }
  }
  
  // Signature Pad Initialisation
@@ -4806,7 +4872,8 @@ async function startVisit(isSkipCheck = false) {
  criticalSent: false,
  warn5minSent: false,
  warn2minSent: false,
- warn90Sent: false
+ warn90Sent: false,
+ startAddress: null  // Populated async by background Nominatim geocode at trip start
  };
 
  state.isTravelActive = false;
@@ -4819,6 +4886,29 @@ async function startVisit(isSkipCheck = false) {
  // so the departure path can read it correctly. Reset happens in directDepart() after
  // the trip ends, or in preDepart() if a form is submitted.
  saveState();
+
+  // BACKGROUND GEOCODE: fire immediately after trip start so the reverse-geocoded
+  // start address is ready (or nearly ready) by the time the post-travel form opens.
+  // Writes async into state.activeVisit.startAddress. Guard on activeVisit != null
+  // prevents a stale write if the worker ends a very short trip before fetch resolves.
+  if (isTravelMode && verifiedStartGPS && verifiedStartGPS !== '0,0') {
+    const [_bgLat, _bgLon] = verifiedStartGPS.split(',');
+    fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${_bgLat}&lon=${_bgLon}`,
+      { headers: { 'Accept-Language': 'en' } })
+      .then(r => r.json())
+      .then(data => {
+        if (state.activeVisit) {
+          state.activeVisit.startAddress = data.display_name || verifiedStartGPS;
+          saveState();
+        }
+      })
+      .catch(() => {
+        if (state.activeVisit) {
+          state.activeVisit.startAddress = verifiedStartGPS; // raw coords fallback
+          saveState();
+        }
+      });
+  }
 
  const alarmStatus = isTravelMode ? "TRAVELLING" : "ARRIVED";
  const logNote = isTravelMode ? `Travel to ${loc.name} started.` : `${loc.name} visit started.`;
