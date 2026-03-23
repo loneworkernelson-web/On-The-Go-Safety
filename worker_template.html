@@ -217,6 +217,35 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  0%, 49% { background-color: #991b1b !important; }
  50%, 100% { background-color: #000000 !important; }
 }
+
+/* ── ALARM OVERLAY ─────────────────────────────────────────────────────────
+   Fixed, pointer-events:none grain texture shown on worker device during any
+   active alarm. Covert — does not affect usability or attract attention.
+   Panic = amber tint. Duress = purple tint (escalated).
+   z-index 8999 sits below toast (9000) and battery-saver (9001+).
+────────────────────────────────────────────────────────────────────────── */
+#alarmOverlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 8999;
+  /* SVG fractalNoise grain tile */
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='256' height='256' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+  background-size: 256px 256px;
+  background-repeat: repeat;
+}
+#alarmOverlay.alarm-panic {
+  display: block;
+  background-color: rgba(251, 146, 60, 0.10); /* amber */
+  box-shadow: inset 0 0 0 3px rgba(251, 146, 60, 0.55);
+}
+#alarmOverlay.alarm-duress {
+  display: block;
+  background-color: rgba(168, 85, 247, 0.10); /* purple */
+  box-shadow: inset 0 0 0 3px rgba(168, 85, 247, 0.55);
+}
+
  /* HIGH-CONTRAST WIZARD OVERHAUL */
 #setupPage {
  background-color: #050505 !important; /* True deep black */
@@ -300,6 +329,11 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 <div id="toastMsg" class="fixed top-4 left-4 right-4 bg-gray-800 border-l-4 border-blue-500 text-white px-4 py-3 rounded shadow-md transform -translate-y-full transition-transform duration-300 z-[10000]" aria-live="polite">
  <p id="toastText" class="font-bold text-sm"></p>
 </div>
+
+<!-- ALARM OVERLAY — fixed, pointer-events:none grain texture. Covert visual indicator
+     during any active PANIC or DURESS alarm. Amber = PANIC, Purple = DURESS.
+     Never intercepts touches — the global click capture handler does that. -->
+<div id="alarmOverlay" aria-hidden="true"></div>
 
 <!-- DECOY LOCK SCREEN — shown when covert alarm fires outside an active visit.
      Impersonates an OS lock screen. Worker enters safety PIN to confirm safe,
@@ -1690,6 +1724,10 @@ let volumeConfirmationTimeout = null;
 
 // True while a PANIC or DURESS alarm is active (used as guard when no activeVisit exists)
 let isPanicActive = false;
+// True when alarm has been escalated to DURESS (worker entered duress PIN after PANIC)
+let isDuressActive = false;
+// Repeating 2-min GPS post to backend while any alarm is active
+let alarmGpsPulseInterval = null;
 
 let wakeLock = null;
 let isSosLocked = false; // Prevent SOS immediately after wake
@@ -2056,6 +2094,11 @@ function submitReport() {
  if (tickIntervalId) { clearInterval(tickIntervalId); tickIntervalId = null; }
  if (travellingInterval) { clearInterval(travellingInterval); travellingInterval = null; }
  if (arrivedPulseInterval) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; }
+ _stopAlarmGpsPulse();
+ _disarmAlarmInterceptor();
+ hideAlarmOverlay();
+ isPanicActive = false;
+ isDuressActive = false;
  stopWelfareChecks(); // dismiss any pending welfare modal and clear the schedule
  if (typeof exitLockedScreen === 'function') exitLockedScreen(); 
  
@@ -3176,6 +3219,11 @@ function directDepart() {
  clearInterval(travellingInterval); travellingInterval = null;
  if (arrivedPulseInterval) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; }
  }
+ _stopAlarmGpsPulse();
+ _disarmAlarmInterceptor();
+ hideAlarmOverlay();
+ isPanicActive = false;
+ isDuressActive = false;
  stopWelfareChecks(); // dismiss any pending welfare modal and clear the schedule
  if (typeof exitLockedScreen === 'function') exitLockedScreen();
  saveState();
@@ -3499,165 +3547,97 @@ function enterLockedScreen() {
  */
 async function triggerPanic(duress = false, alarmCode = null) {
  // GUARD: Prevent a second duress/panic from firing while one is already active.
- // This stops repeated shakes (while thinking it failed) from queuing multiple alerts.
+ // duress=true is the ESCALATION path (duress PIN entered) — only guard if already in DURESS.
+ // duress=false is the initial PANIC path — guard if already in PANIC (not DURESS).
  // Falls back to module-level isPanicActive when there is no activeVisit (pre-visit alarm).
- if (duress && (state?.activeVisit?.isDuress || isPanicActive)) {
- console.log('Duress already active — ignoring repeat trigger.');
- return;
- }
- if (!duress && (state?.activeVisit?.isPanic || isPanicActive) && !state?.activeVisit?.isDuress) {
- console.log('Panic already active — ignoring repeat trigger.');
- return;
+ // Guard: ignore repeat PANIC if already in PANIC (not yet escalated).
+ // Duress escalation is handled by escalateToDuress(), not triggerPanic(true).
+ if (state?.activeVisit?.isPanic || isPanicActive) {
+   console.log('Alarm already active — ignoring repeat trigger.');
+   return;
  }
  isPanicActive = true;
 
  // GPS PRE-CAPTURE: Get a fresh fix BEFORE calling logSafety.
- // For site visits lastGPS is null (cleared at visit start because the site
- // address is the authoritative location). The adaptive GPS monitor fires
- // getCurrentPosition asynchronously and may not resolve for several seconds —
- // by which point logSafety has already sent "0,0" to the backend.
- // Awaiting a direct getCurrentPosition here ensures we have real coordinates
- // in the alert. 5-second timeout keeps UX snappy; failure falls through
- // gracefully to whatever lastGPS currently holds.
+ // Awaiting a direct getCurrentPosition ensures real coordinates in the alert.
+ // 5-second timeout keeps UX snappy; failure falls through gracefully.
  await new Promise(resolve => {
- navigator.geolocation.getCurrentPosition(
- pos => {
- lastGPS = `${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`;
- resolve();
- },
- () => resolve(), // timeout / denied — lastGPS unchanged, alert still sends
- { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
- );
+   navigator.geolocation.getCurrentPosition(
+     pos => {
+       lastGPS = `${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`;
+       resolve();
+     },
+     () => resolve(),
+     { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+   );
  });
 
- // Start continuous GPS monitoring for ongoing location pulses
+ // Pin GPS to minimum interval for alarm duration — worker may be stationary.
  if (gpsWatchId === null && typeof startGPSMonitoring === 'function') startGPSMonitoring();
- // Force minimum poll interval regardless of current adaptive value — the
- // worker may be stationary (and in distress), so movement-based adaptation
- // would incorrectly back off. Pin to 2-minute minimum for alarm duration.
  gpsCurrentIntervalMs = GPS_MIN_INTERVAL_MS;
- 
- // 1. DURESS (SILENT) LOGIC
- if (duress) {
- // KILL LOUD ALARMS: Physically stop red flash, strobes, and speech
- document.body.classList.remove('bg-red-900', 'panic-mode', 'strobe-active');
- if (window.speechSynthesis) window.speechSynthesis.cancel();
- 
- // DECEPTION: If no active visit, show decoy lock screen — worker confirms safe or escalates via PIN.
- // If inside a visit, show standard 'Reset' toast (visit UI continues normally).
- if (!state?.activeVisit) {
-   showDecoyLockScreen();
- } else {
-   showToast("✅ System Reset Successful", 10000);
- }
- console.log("SILENT DURESS: UI remains normal but backend alerted.");
- } 
- // 2. PANIC (LOUD) LOGIC
- else {
- document.body.classList.add('bg-red-900', 'panic-mode', 'strobe-active');
- announce("Panic alarm activated.");
- 
- // Audio escalation
- await initAudio();
- if (audioReady && synth) {
- try { synth.triggerAttackRelease('C4', '8n'); } catch (e) {}
- }
- }
- 
- // 3. BACKEND LOGGING
- await logSafety(alarmCode || (duress ? "DURESS" : "PANIC"), duress ? "Silent duress alert — triggered via Shake to Alert." : "Manual SOS");
- 
+
+ // Start repeating GPS pulse to backend every 2 minutes while alarm is active.
+ // Uses neutral ALARM_GPS_PULSE code — backend logs location without re-firing alerts.
+ _startAlarmGpsPulse();
+
+ // ALL ALARMS ARE COVERT ON THE WORKER DEVICE.
+ // No red screen, no strobe, no audio. The monitor handles audible/visual alerting.
+ // The alarm overlay (grain texture + amber tint) is the only visible indicator.
+ showAlarmOverlay('panic');
+
+ // Backend logging — all three triggers (SOS, Shake, Volume) send PANIC.
+ await logSafety("PANIC", alarmCode || "Manual alarm activated.");
+
  if (state && state.activeVisit) {
- setVisitPhase(VISIT_PHASES.ALARMING);
- if (duress) state.activeVisit.isDuress = true;
- saveState();
+   setVisitPhase(VISIT_PHASES.ALARMING);
+   saveState();
  }
 
- // 4. UI STACK CLEANUP
- closeModal('pin'); // Ensure the PIN pad is gone
- closeModal('notice'); 
+ // Close any open modals cleanly.
+ closeModal('pin');
+ closeModal('notice');
  closeModal('resourceHub');
- 
- // Switch to the Panic UI only for loud mode
- if (!duress) {
- renderPanicState();
- // Show direct email + call buttons — independent of the backend,
- // covers the case where the GAS script fails to dispatch the alert.
- _showAlarmButtons();
- // Fetch what3words address so worker can relay precise location to emergency services
- fetchW3wForPanic();
-    // No-visit covert (duress) path uses decoy lock screen — nothing extra needed here.
- }
+
+ // Arm the global tap interceptor — every button press now requires PIN.
+ _armAlarmInterceptor();
 }
 
 /**
- * RE-ENGINEERED: iamSafe with Automated Contact Notification
- * Logic: Clears UI alarm state and notifies backend to send "All Clear" alerts.
+ * iamSafe — clears any active PANIC or DURESS alarm after PIN verification.
+ * Called by the alarm interceptor when the worker taps any button while alarmed.
+ * Standard PIN → clear alarm. Duress PIN → escalateToDuress().
+ * This function only handles the CLEAR path; escalation is a separate call.
  */
 function iamSafe() {
- // Allow iamSafe when an alarm is active regardless of whether a visit is in progress.
- // isPanicActive covers the case where the alarm was triggered outside a visit.
- if (!state || (!state.activeVisit && !isPanicActive)) return;
- 
- // 1. PIN VERIFICATION: Required to prevent accidental or forced clearance
- withPinVerification(false, () => {
- const alarmWasFired = !!(state?.activeVisit?.isPanic || isPanicActive);
+  if (!state || (!state.activeVisit && !isPanicActive)) return;
 
- // Voice feedback — only mention contacts if the alarm actually went out
- announce(alarmWasFired ? "Safety confirmed. Notifying contacts." : "Safety confirmed.");
+  const alarmWasFired = !!(state?.activeVisit?.isPanic || isPanicActive);
 
- // 2. TRIGGER BACKEND RESOLUTION — only if alarm genuinely fired.
- // If we are in the 2-minute warning window but no alarm has been sent,
- // there is nothing for contacts to be notified about.
- if (alarmWasFired) {
- const payload = buildPayload({
- 'action': 'notifySafety',
- 'Alarm Status': 'USER_SAFE_CONFIRMED',
- 'Notes': 'Worker has manually entered PIN to confirm they are safe.'
- });
- processUploadQueue(payload);
- }
+  announce(alarmWasFired ? "Safety confirmed. Notifying contacts." : "Safety confirmed.");
 
- // 3. AUDIT TRAIL: Standard log entry for the spreadsheet
- logSafety("USER_SAFE", "Worker entered PIN to cancel alarm state.");
- 
- // 4. STATE MANAGEMENT: Clear module-level panic flag.
- // Only transition visit phase if a visit is actually in progress.
- isPanicActive = false;
- if (state.activeVisit) {
- setVisitPhase(VISIT_PHASES.CLOSED);
- saveState();
- }
- 
- // 5. UI VISUAL RESET: Remove high-urgency styling
- const lockedPage = document.getElementById('lockedPage');
- if (lockedPage) lockedPage.classList.remove('panic-mode');
- document.body.classList.remove('bg-red-900');
- document.body.classList.remove('strobe-active');
- hideDecoyLockScreen();
- 
- // 6. BUTTON INTERFACE RESET: Restore standard visit controls
- const btnSafe = document.getElementById('btnSafe');
- const btnDepart = document.getElementById('btnDepart');
- const btnExtend = document.getElementById('btnExtend');
- const btnDirect = document.getElementById('btnDirectAlert');
- const btnCall = document.getElementById('btnCallICE');
- if (btnSafe) btnSafe.classList.add('hidden');
- if (btnDepart) btnDepart.classList.remove('hidden');
- if (btnExtend) btnExtend.classList.remove('hidden');
- if (btnDirect) btnDirect.classList.add('hidden');
- if (btnCall) btnCall.classList.add('hidden');
- const w3wDisplay = document.getElementById('w3wDisplay');
- if (w3wDisplay) { w3wDisplay.textContent = ''; w3wDisplay.classList.add('hidden'); }
- 
- showToast("✅ Safety status confirmed");
+  // Notify backend of resolution
+  if (alarmWasFired) {
+    const payload = buildPayload({
+      'action': 'notifySafety',
+      'Alarm Status': 'USER_SAFE_CONFIRMED',
+      'Notes': 'Worker confirmed safe via PIN entry.'
+    });
+    processUploadQueue(payload);
+  }
 
- // 7. NAVIGATION: If no active visit, return to home screen
- if (!state.activeVisit) {
- navigate('main');
- }
- });
+  // Audit trail
+  logSafety("USER_SAFE", "Worker entered PIN to cancel alarm state.");
+
+  // Clear all alarm state
+  _clearAlarmState();
+
+  showToast("✅ Safety status confirmed");
+
+  if (!state.activeVisit) {
+    navigate('main');
+  }
 }
+
 /**
  * RE-ENGINEERED: High-Integrity Safety Heartbeat
  * Logic: 5m Vibration, 2m Verbal Alarm, Negative Counter, and 15m Grace Period.
@@ -4226,6 +4206,8 @@ window.addEventListener('beforeunload', () => {
  stopWelfareChecks();
  if (travellingInterval) clearInterval(travellingInterval);
  if (arrivedPulseInterval) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; }
+ _stopAlarmGpsPulse();
+ _disarmAlarmInterceptor();
  if (tickIntervalId) clearInterval(tickIntervalId);
 });
 
@@ -4818,7 +4800,11 @@ async function startVisit(isSkipCheck = false) {
  };
 
  state.isTravelActive = false;
- isPanicActive = false; // Reset stale flag so a new visit never inherits a previous alarm state
+ isPanicActive = false;   // Reset stale flag so a new visit never inherits a previous alarm state
+ isDuressActive = false;  // Same for duress escalation state
+ _stopAlarmGpsPulse();    // Ensure no alarm GPS interval carries over
+ _disarmAlarmInterceptor(); // Ensure no interceptor carries over
+ hideAlarmOverlay();        // Ensure overlay is hidden
  // travelNoReport is intentionally NOT reset here — it must survive through the visit
  // so the departure path can read it correctly. Reset happens in directDepart() after
  // the trip ends, or in preDepart() if a form is submitted.
@@ -5322,10 +5308,176 @@ function gatherFormData() {
  return d;
 }
  
-// 4. RENDER PANIC STATE - Changes UI to panic mode
+// ── ALARM SYSTEM HELPERS ────────────────────────────────────────────────────
+
+/**
+ * showAlarmOverlay — applies the covert grain texture overlay.
+ * mode: 'panic' (amber) | 'duress' (purple)
+ */
+function showAlarmOverlay(mode) {
+  const el = document.getElementById('alarmOverlay');
+  if (!el) return;
+  el.classList.remove('alarm-panic', 'alarm-duress');
+  el.classList.add(mode === 'duress' ? 'alarm-duress' : 'alarm-panic');
+}
+
+function hideAlarmOverlay() {
+  const el = document.getElementById('alarmOverlay');
+  if (!el) return;
+  el.classList.remove('alarm-panic', 'alarm-duress');
+}
+
+/**
+ * _startAlarmGpsPulse — posts location to backend every 2 minutes while alarm is active.
+ * Uses ALARM_GPS_PULSE — backend records location, does not re-fire contact alerts.
+ */
+function _startAlarmGpsPulse() {
+  _stopAlarmGpsPulse(); // clear any existing interval
+  alarmGpsPulseInterval = setInterval(() => {
+    if (!isPanicActive && !isDuressActive) { _stopAlarmGpsPulse(); return; }
+    processUploadQueue(buildPayload({
+      'Alarm Status': 'ALARM_GPS_PULSE',
+      'Notes': isDuressActive ? 'GPS pulse — duress alarm active.' : 'GPS pulse — panic alarm active.',
+      'Last Known GPS': typeof lastGPS !== 'undefined' ? lastGPS : '0,0'
+    }));
+  }, GPS_MIN_INTERVAL_MS); // 2 minutes
+}
+
+function _stopAlarmGpsPulse() {
+  if (alarmGpsPulseInterval) {
+    clearInterval(alarmGpsPulseInterval);
+    alarmGpsPulseInterval = null;
+  }
+}
+
+/**
+ * _clearAlarmState — common teardown for both iamSafe() and the override
+ * path in triggerGraceExpiryAlarm resolution. Resets all alarm flags,
+ * stops the GPS pulse, disarms the interceptor, hides the overlay.
+ */
+function _clearAlarmState() {
+  isPanicActive = false;
+  isDuressActive = false;
+  _stopAlarmGpsPulse();
+  _disarmAlarmInterceptor();
+  hideAlarmOverlay();
+
+  // Clear visit-level alarm flags if a visit is active
+  if (state && state.activeVisit) {
+    state.activeVisit.isPanic = false;
+    state.activeVisit.isDuress = false;
+    setVisitPhase(VISIT_PHASES.CLOSED);
+    saveState();
+  }
+
+  // Clean up any legacy loud-alarm classes left from previous sessions
+  document.body.classList.remove('bg-red-900', 'panic-mode', 'strobe-active');
+  const lockedPage = document.getElementById('lockedPage');
+  if (lockedPage) lockedPage.classList.remove('panic-mode');
+}
+
+/**
+ * escalateToDuress — called when the worker enters their Duress PIN via
+ * the alarm interceptor while a PANIC is already active.
+ * Switches overlay amber→purple, posts DURESS to backend. App continues
+ * normally — to any onlooker, the PIN just cleared an error.
+ */
+async function escalateToDuress() {
+  isDuressActive = true;
+
+  // Switch overlay to purple to distinguish DURESS from PANIC
+  showAlarmOverlay('duress');
+
+  // Update visit-level flag so state persists across reloads
+  if (state && state.activeVisit) {
+    state.activeVisit.isDuress = true;
+    saveState();
+  }
+
+  // Post DURESS to backend — contacts notified per their escalation protocol
+  await logSafety("DURESS", "Worker escalated to duress via PIN entry.");
+
+  // Interceptor stays armed — next tap still requires PIN
+  // (worker remains under duress until they enter their safety PIN)
+}
+
+// Capture-phase listener reference — stored so it can be removed cleanly
+let _alarmInterceptorFn = null;
+
+/**
+ * _armAlarmInterceptor — installs a capture-phase click listener on document.
+ * Every tap while an alarm is active triggers a PIN prompt.
+ * Standard PIN → iamSafe(). Duress PIN → escalateToDuress().
+ */
+function _armAlarmInterceptor() {
+  _disarmAlarmInterceptor(); // ensure no double-arm
+
+  _alarmInterceptorFn = (e) => {
+    // Only intercept taps on interactive elements
+    const target = e.target.closest('button, [role="button"], .slide-action-pill, a[href]');
+    if (!target) return;
+    // Don't intercept PIN pad itself — that would create infinite loop
+    if (target.closest('#pinModal')) return;
+
+    e.stopPropagation();
+    e.preventDefault();
+    _alarmPinPrompt();
+  };
+
+  document.addEventListener('click', _alarmInterceptorFn, true); // capture phase
+}
+
+function _disarmAlarmInterceptor() {
+  if (_alarmInterceptorFn) {
+    document.removeEventListener('click', _alarmInterceptorFn, true);
+    _alarmInterceptorFn = null;
+  }
+}
+
+/**
+ * _alarmPinPrompt — shows PIN modal with context-aware handling.
+ * Standard PIN → clears alarm (iamSafe). Duress PIN → escalateToDuress.
+ * Wrong PIN → shake feedback, stay armed.
+ */
+function _alarmPinPrompt() {
+  showModal('pin');
+  const input = document.getElementById('pinInput');
+  const confirmBtn = document.getElementById('btnPinConfirm');
+  if (!input || !confirmBtn) return;
+  input.value = '';
+  input.focus();
+
+  // Clone button to remove any prior onclick
+  const fresh = confirmBtn.cloneNode(true);
+  confirmBtn.parentNode.replaceChild(fresh, confirmBtn);
+
+  fresh.onclick = () => {
+    const entered = input.value;
+    const stdPin = state?.pins?.std;
+    const duressPin = state?.pins?.duress;
+
+    if (entered === stdPin) {
+      // Safety PIN — clear alarm, resume normal operation
+      closeModal('pin');
+      iamSafe();
+    } else if (entered === duressPin) {
+      // Duress PIN — looks like a normal PIN entry; silently escalates
+      closeModal('pin');
+      showToast('✅ Confirmed', 2000);
+      escalateToDuress();
+    } else {
+      showToast('❌ Incorrect PIN');
+      input.value = '';
+      if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+    }
+  };
+}
+
+// 4. RENDER PANIC STATE - Changes UI to panic mode (retained for grace-expiry path)
 function renderPanicState() {
- const lockedPage = document.getElementById('lockedPage');
- if (lockedPage) lockedPage.classList.add('panic-mode');
+  const lockedPage = document.getElementById('lockedPage');
+  if (lockedPage) lockedPage.classList.add('panic-mode');
+
  
  const btnDepart = document.getElementById('btnDepart');
  if (btnDepart) btnDepart.classList.add('hidden');
@@ -5414,9 +5566,9 @@ async function _evaluateDecoyPin(entered) {
   const duressPin = state?.pins?.duress;
 
   if (entered === stdPin) {
-    // Correct safety PIN — confirm safe and dismiss
+    // Safety PIN — clear all alarm state and return to main screen
     hideDecoyLockScreen();
-    isPanicActive = false;
+    _clearAlarmState();
     const payload = buildPayload({
       'action': 'notifySafety',
       'Alarm Status': 'USER_SAFE_CONFIRMED',
@@ -5428,20 +5580,16 @@ async function _evaluateDecoyPin(entered) {
     showToast("✅ Safety status confirmed");
     navigate('main');
   } else if (entered === duressPin) {
-    // Duress PIN — silently escalate to backend (sends DURESS), then dismiss
-    // the decoy screen and return to the home screen. To a bystander it looks
-    // like the worker simply unlocked their phone normally.
-    // isPanicActive is already true; bypass the duplicate guard by clearing temporarily.
-    isPanicActive = false;
-    await triggerPanic(true); // sends DURESS (default) — confirms escalation
+    // Duress PIN — escalate silently, dismiss decoy screen, return to home
     hideDecoyLockScreen();
+    await escalateToDuress();
     navigate('main');
   } else {
     // Wrong PIN — shake feedback, stay on decoy screen
     const dots = document.getElementById('decoyDots');
     if (dots) {
       dots.classList.remove('decoy-shake');
-      void dots.offsetWidth; // reflow to restart animation
+      void dots.offsetWidth;
       dots.classList.add('decoy-shake');
     }
     if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
@@ -6817,8 +6965,8 @@ function confirmExtension(minutes) {
  state.activeVisit.warn2minSent = false;
  state.activeVisit.warn90Sent = false;
  
- // UI Clean-up
- document.body.classList.remove('bg-red-900', 'panic-mode');
+ // UI Clean-up — alarm state is not cleared by extend, but legacy classes must go
+ document.body.classList.remove('bg-red-900', 'panic-mode', 'strobe-active');
  const timerEl = document.getElementById('countdownTimer');
  if (timerEl) timerEl.classList.remove('text-red-500', 'animate-pulse');
  const overdueLabel = document.getElementById('overdueLabel');
@@ -7586,12 +7734,11 @@ function confirmShakePanic() {
  navigator.vibrate([200, 100, 200, 100, 200]);
  }
  
- showToast('🚨 Covert alert sent', 2000);
+ showToast('🚨 Alert sent', 2000);
  
- // Trigger with PANIC code — initial covert shake is a PANIC alarm.
- // If the worker then enters their duress PIN on the decoy lock screen,
- // a second call fires with the default DURESS code to indicate confirmed escalation.
- triggerPanic(true, "PANIC");
+ // All covert triggers send PANIC — same as SOS and volume.
+ // Duress escalation happens later via PIN entry.
+ triggerPanic(false);
 }
 
 function cancelShakeConfirmation() {
@@ -7700,10 +7847,10 @@ function confirmVolumePanic() {
  navigator.vibrate([200, 100, 200]);
  }
  
- showToast('🚨 Volume panic alert sent', 2000);
+ showToast('🚨 Alert sent', 2000);
  
- // Trigger panic (goes through same PIN verification)
- triggerPanic(false); // Standard panic, not duress
+ // Standard PANIC — same as SOS and shake. Covert on device; monitor handles alerting.
+ triggerPanic(false);
 }
 
 function cancelVolumeConfirmation() {
@@ -8276,47 +8423,19 @@ function withPinVerification(isDuress, successCallback) {
  input.focus();
 
  confirmBtn.onclick = () => {
- const entered = input.value;
- const correctStd = state.pins.std;
- const correctDur = state.pins.duress;
- const isCurrentlyAlarmed = document.body.classList.contains('panic-mode');
+   const entered = input.value;
+   const correctStd = state.pins.std;
 
- // 1. STANDARD PIN: Normal System Reset
- if (entered === correctStd) {
- closeModal('pin');
- successCallback();
- } 
- 
- // 2. DURESS PIN: Visual Deception & Silent Alert
- else if (entered === correctDur) {
- closeModal('pin');
-
- // DECEPTION LOGIC: If the alarm is screaming, make it look like a standard clear
- if (isCurrentlyAlarmed) {
- // Instantly kill visual/audible SOS indicators
- document.body.classList.remove('bg-red-900', 'panic-mode', 'strobe-active');
- if (window.speechSynthesis) window.speechSynthesis.cancel();
- 
- // Show 'Cleared' message for 10 seconds as requested
- showToast("✅ Alarm Successfully Cleared", 10000);
- } else {
- // If triggered from a normal state, show 'Reset' success
- showToast("✅ System Reset Successful", 10000);
- }
-
- // Execute Silent Duress (No speech, no vibration)
- triggerPanic(true); 
- 
- // Return to standard UI to complete the deception
- successCallback();
- } 
- 
- // 3. INCORRECT ENTRY
- else {
- showToast('❌ Incorrect PIN');
- input.value = '';
- if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
- }
+   // Standard PIN — invoke the success callback
+   if (entered === correctStd) {
+     closeModal('pin');
+     successCallback();
+   } else {
+     // Wrong PIN — shake feedback
+     showToast('❌ Incorrect PIN');
+     input.value = '';
+     if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+   }
  };
 }
 
@@ -8486,46 +8605,51 @@ function renderNoticeArchive() {
  * Logic: Locks UI to Alarm mode and notifies contacts via backend.
  */
 function triggerGraceExpiryAlarm() {
- setVisitPhase(VISIT_PHASES.ALARMING);
- saveState();
+  setVisitPhase(VISIT_PHASES.ALARMING);
+  saveState();
+  isPanicActive = true;
 
- // Acquire wake lock so the alarm screen stays lit — the worker must not
- // be able to miss the SLIDE TO CONFIRM prompt because the phone went dark.
- if (typeof requestWakeLock === 'function') requestWakeLock();
+  // Acquire wake lock so the alarm screen stays lit
+  if (typeof requestWakeLock === 'function') requestWakeLock();
 
- // Ensure GPS is running and pinned to minimum interval — the worker may be
- // stationary, so adaptive back-off would reduce resolution at the worst time.
- if (gpsWatchId === null && typeof startGPSMonitoring === 'function') startGPSMonitoring();
- gpsCurrentIntervalMs = GPS_MIN_INTERVAL_MS;
+  // Pin GPS to minimum interval
+  if (gpsWatchId === null && typeof startGPSMonitoring === 'function') startGPSMonitoring();
+  gpsCurrentIntervalMs = GPS_MIN_INTERVAL_MS;
 
- // 1. Notify Backend
- processUploadQueue(buildPayload({
- 'Alarm Status': 'OVERDUE ALARM',
- 'Notes': navigator.onLine
- ? '15-minute grace period expired. Emergency contacts notified.'
- : '15-minute grace period expired. Device was offline — contacts not yet notified.',
- 'Last Known GPS': lastGPS || "0,0"
- }));
+  // Start repeating GPS pulse to backend
+  _startAlarmGpsPulse();
 
- // 2. UI Lock & Audio
- document.body.classList.add('bg-red-900', 'panic-mode');
- const _numContacts = [state.worker?.emgName, state.worker?.escName].filter(Boolean).length;
- const _contactWord = _numContacts === 1 ? "contact has" : "contacts have";
- announce(navigator.onLine
- ? `Safety Alarm Activated. Your emergency ${_contactWord} been notified.`
- : `Safety Alarm Activated. No signal — use the email or call buttons to reach your contacts.`);
- 
- const overdueLabel = document.getElementById('overdueLabel');
- if (overdueLabel) {
- overdueLabel.innerText = "ALARM ACTIVATED";
- overdueLabel.classList.add('border-white', 'text-white');
- }
+  // 1. Notify Backend
+  processUploadQueue(buildPayload({
+    'Alarm Status': 'OVERDUE ALARM',
+    'Notes': navigator.onLine
+      ? '15-minute grace period expired. Emergency contacts notified.'
+      : '15-minute grace period expired. Device was offline — contacts not yet notified.',
+    'Last Known GPS': lastGPS || '0,0'
+  }));
 
- // Show both alarm escalation buttons — email and call — visible to worker
- // and any bystander. Independent of the backend.
- _showAlarmButtons();
- // Fetch what3words address so worker can relay precise location to emergency services
- fetchW3wForPanic();
+  // 2. Audio alert + overlay — grace expiry is a loud alarm on the device
+  // (worker is not in a covert situation; they simply missed their check-in)
+  const _numContacts = [state.worker?.emgName, state.worker?.escName].filter(Boolean).length;
+  const _contactWord = _numContacts === 1 ? 'contact has' : 'contacts have';
+  announce(navigator.onLine
+    ? `Safety Alarm Activated. Your emergency ${_contactWord} been notified.`
+    : 'Safety Alarm Activated. No signal — use the email or call buttons to reach your contacts.');
+
+  showAlarmOverlay('panic');
+
+  const overdueLabel = document.getElementById('overdueLabel');
+  if (overdueLabel) {
+    overdueLabel.innerText = 'ALARM ACTIVATED';
+    overdueLabel.classList.add('border-white', 'text-white');
+  }
+
+  // Arm tap interceptor — any button tap prompts for PIN
+  _armAlarmInterceptor();
+
+  // Show backup contact buttons
+  _showAlarmButtons();
+  fetchW3wForPanic();
 }
 
 /**
