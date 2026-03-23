@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏭</text></svg>">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>On-The-Go App Factory v85.0 — Config Model</title>
+      <title>On-The-Go App Factory v84.0 — Config Model</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap" rel="stylesheet">
@@ -811,35 +811,118 @@ function triggerResample() {
             return;
         }
 
+        // ── 1. PIXEL COLLECTION ───────────────────────────────────────────────
         const canvas = document.createElement('canvas'); canvas.width = 192; canvas.height = 192;
         const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, 192, 192);
-        const data = ctx.getImageData(30, 30, 132, 132).data; const clusters = [];
-        for (let i = 0; i < data.length; i += 16) {
-            const r = data[i], g = data[i+1], b = data[i+2];
-            const max = Math.max(r, g, b), min = Math.min(r, g, b), sat = (max - min) / max;
-            if (sat < 0.25 || max < 30 || max > 240) continue;
-            const key = `${Math.round(r/30)*30},${Math.round(g/30)*30},${Math.round(b/30)*30}`;
-            let existing = clusters.find(c => c.key === key);
-            if(existing) existing.count++; else clusters.push({key, count: 1, rgb: [r,g,b]});
+        const data = ctx.getImageData(0, 0, 192, 192).data;
+        const pixels = [];
+        for (let i = 0; i < data.length; i += 4) {
+            const r = data[i], g = data[i+1], b = data[i+2], a = data[i+3];
+            if (a < 128) continue;                          // skip transparent
+            const max = Math.max(r, g, b), min = Math.min(r, g, b);
+            const sat = max === 0 ? 0 : (max - min) / max;
+            if (sat < 0.15 || max < 25) continue;          // keep pastels; skip near-black
+            pixels.push([r, g, b]);
         }
-        clusters.sort((a,b) => b.count - a.count);
-        const distinct = clusters.slice(0, 4);
+        if (pixels.length < 10) {
+            document.getElementById('paletteArea').classList.remove('hidden');
+            return;
+        }
+
+        // ── 2. K-MEANS++ CLUSTERING ──────────────────────────────────────────
+        const K = 5;
+        function dist2(a, b) { return (a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2; }
+
+        // k-means++ seeding: each new centre chosen proportional to distance² from nearest existing centre
+        const centres = [pixels[Math.floor(Math.random() * pixels.length)]];
+        while (centres.length < K) {
+            const dists = pixels.map(p => Math.min(...centres.map(c => dist2(p, c))));
+            const total = dists.reduce((s, d) => s + d, 0);
+            let r = Math.random() * total, cum = 0;
+            for (let i = 0; i < pixels.length; i++) { cum += dists[i]; if (cum >= r) { centres.push(pixels[i]); break; } }
+        }
+
+        // Iterate to convergence (20 passes is ample for 192² palette work)
+        let centroids = centres.map(c => [...c]);
+        const assignments = new Int32Array(pixels.length);
+        for (let iter = 0; iter < 20; iter++) {
+            for (let i = 0; i < pixels.length; i++) {
+                let best = 0, bestD = Infinity;
+                for (let k = 0; k < K; k++) { const d = dist2(pixels[i], centroids[k]); if (d < bestD) { bestD = d; best = k; } }
+                assignments[i] = best;
+            }
+            const sums = Array.from({length: K}, () => [0,0,0,0]);
+            for (let i = 0; i < pixels.length; i++) {
+                const k = assignments[i];
+                sums[k][0] += pixels[i][0]; sums[k][1] += pixels[i][1]; sums[k][2] += pixels[i][2]; sums[k][3]++;
+            }
+            for (let k = 0; k < K; k++) {
+                if (sums[k][3] > 0) centroids[k] = [
+                    Math.round(sums[k][0]/sums[k][3]),
+                    Math.round(sums[k][1]/sums[k][3]),
+                    Math.round(sums[k][2]/sums[k][3])
+                ];
+            }
+        }
+
+        // Build cluster list; discard tiny clusters (< 1% of sampled pixels)
+        const counts = new Array(K).fill(0);
+        for (let i = 0; i < pixels.length; i++) counts[assignments[i]]++;
+        const minPx = pixels.length * 0.01;
+        const clusters = centroids
+            .map((rgb, k) => ({ rgb, count: counts[k] }))
+            .filter(c => c.count >= minPx)
+            .sort((a, b) => b.count - a.count);
+
+        if (clusters.length < 2) { document.getElementById('paletteArea').classList.remove('hidden'); return; }
+
+        // ── 3. PAIR SCORING ───────────────────────────────────────────────────
+        function toHex(rgb) { return '#' + rgb.map(x => Math.max(0,Math.min(255,x)).toString(16).padStart(2,'0')).join(''); }
+        function rgbToHue(r, g, b) {
+            r /= 255; g /= 255; b /= 255;
+            const max = Math.max(r,g,b), min = Math.min(r,g,b), d = max - min;
+            if (d === 0) return 0;
+            let h;
+            switch (max) {
+                case r: h = ((g-b)/d + (g<b?6:0)) / 6; break;
+                case g: h = ((b-r)/d + 2) / 6; break;
+                default: h = ((r-g)/d + 4) / 6;
+            }
+            return h * 360;
+        }
+        function hueDist(h1, h2) { const d = Math.abs(h1-h2); return Math.min(d, 360-d); } // 0–180
+
+        function scorePair(c1, c2) {
+            const h1 = toHex(c1.rgb), h2 = toHex(c2.rgb);
+            const hd = hueDist(rgbToHue(...c1.rgb), rgbToHue(...c2.rgb)) / 180; // 0–1
+            const cr = Math.min(contrastRatio(h1, h2), 10) / 10;               // 0–1, uses existing WCAG engine
+            return hd * 0.6 + cr * 0.4;  // hue distance weighted above contrast
+        }
+
+        // Score all ordered pairs (primary ≠ accent), then de-duplicate by primary hex
+        const allPairs = [];
+        for (let i = 0; i < clusters.length; i++)
+            for (let j = 0; j < clusters.length; j++)
+                if (i !== j) allPairs.push({ primary: clusters[i], accent: clusters[j], score: scorePair(clusters[i], clusters[j]) });
+        allPairs.sort((a, b) => b.score - a.score);
+
+        const seen = new Set(), topPairs = [];
+        for (const pair of allPairs) {
+            const ph = toHex(pair.primary.rgb);
+            if (!seen.has(ph)) { seen.add(ph); topPairs.push(pair); if (topPairs.length === 3) break; }
+        }
+
+        // ── 4. RENDER SWATCHES ────────────────────────────────────────────────
         const container = document.getElementById('logoClusterSwatches'); container.innerHTML = '';
-        
-        distinct.forEach((c, idx) => {
-            if (idx >= 3) return;
-            const primary = "#" + c.rgb.map(x => x.toString(16).padStart(2, '0')).join('');
-            const next = distinct[idx+1] || distinct[0] || {rgb: [255,255,255]};
-            const accent = "#" + next.rgb.map(x => x.toString(16).padStart(2, '0')).join('');
-            
-            const swatch = document.createElement('div'); swatch.className = "preset-swatch";
-            swatch.innerHTML = `<div class="swatch-half" style="background:${primary}"></div><div class="swatch-half" style="background:${accent}"></div>`;
-            swatch.onclick = () => applyPreset(primary, accent, swatch);
+        topPairs.forEach((pair, idx) => {
+            const p = toHex(pair.primary.rgb), a = toHex(pair.accent.rgb);
+            const swatch = document.createElement('div'); swatch.className = 'preset-swatch';
+            swatch.innerHTML = `<div class="swatch-half" style="background:${p}"></div><div class="swatch-half" style="background:${a}"></div>`;
+            swatch.onclick = () => applyPreset(p, a, swatch);
             container.appendChild(swatch);
-            if(idx === 0) applyPreset(primary, accent, swatch);
+            if (idx === 0) applyPreset(p, a, swatch);
         });
 
-        // RESTORED: This line is required to make the branding section visible!
         document.getElementById('paletteArea').classList.remove('hidden');
     }
 
