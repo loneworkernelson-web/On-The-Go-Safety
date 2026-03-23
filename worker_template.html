@@ -4702,17 +4702,21 @@ async function startVisit(isSkipCheck = false) {
  const loc = state.locations.find(l => l.id === locId) || { id: 'travel', name: 'General Travel', address: 'Field Work' };
  // For travel mode, check for a sentinel row named '_travel' in the Sites tab.
  // This allows the pre-visit form gate to apply to travel sessions without a real site row.
- if (isTravelMode) {
- const travelSentinel = (state.locations || []).find(l => l.name === '_travel');
- if (travelSentinel && travelSentinel.preVisitForm) loc.preVisitForm = true;
- }
+ // IMPORTANT: Do NOT mutate loc — it is a direct reference into state.locations and any
+ // mutation would persist via saveState(), causing the form to appear on future non-travel
+ // visits to the same site. Resolve to a local boolean instead.
+ const travelSentinelForm = isTravelMode && (() => {
+   const sentinel = (state.locations || []).find(l => l.name === '_travel');
+   return !!(sentinel && sentinel.preVisitForm);
+ })();
+ const effectivePreVisitForm = loc.preVisitForm || travelSentinelForm;
  const durationMins = state.visitDurationMinutes || 0;
  const isHighRisk = document.getElementById('chkHighRisk')?.checked || false;
 
  // PRE-VISIT FORM: If the site requires one and it hasn't been completed yet,
  // show it now. The form submit will call pendingVisitStartFn() to resume here.
  // Skip entirely if the worker has toggled 'No Report Required' for this trip.
- if (!isPreVisitFormDone && loc.preVisitForm && !state.travelNoReport) {
+ if (!isPreVisitFormDone && effectivePreVisitForm && !state.travelNoReport) {
  const preTemplate = (state.globalForms || []).find(f => f.formTiming === 'pre-visit');
  if (preTemplate) {
  if (btn) delete btn.dataset.starting;
