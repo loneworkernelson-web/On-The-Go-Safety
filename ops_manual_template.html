@@ -268,7 +268,7 @@
     <p class="doc-meta">
         <strong>System:</strong> %%ORG_NAME%% — OTG Lone Worker Safety System &nbsp;|&nbsp;
         <strong>Architecture:</strong> Config Model &nbsp;|&nbsp;
-        <strong>Version:</strong> v85.0
+        <strong>Version:</strong> v87.0
     </p>
 
     <div class="toc">
@@ -320,7 +320,7 @@
             <div class="mock-tab">5. Deployment</div>
         </div>
         <div class="mock-factory-body">
-            <div style="color:#94a3b8;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">OTG AppSuite Factory — v84.0 · Config Model</div>
+            <div style="color:#94a3b8;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">OTG AppSuite Factory — v87.0 · Config Model</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                 <div>
                     <div style="font-size:9px;color:#60a5fa;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Organisation Name</div>
@@ -521,9 +521,11 @@
     <ol>
         <li>Open the <code>{org}_monitor.html</code> file in Chrome, Edge, or Firefox.</li>
         <li>Enter your <strong>Secret Key</strong> (Admin Key from Factory Step 1).</li>
-        <li>Click <strong>Unlock</strong>. Polling begins automatically.</li>
-        <li>Click <strong>Start Audio</strong> — you must interact with the page once before the browser will allow audio alerts to play.</li>
+        <li>Click <strong>Unlock</strong>. Polling begins automatically and audio alerts arm silently as part of the login click — no further action is needed.</li>
     </ol>
+    <div class="info-box">
+        <strong>Audio re-arming:</strong> If audio stops working (e.g. after a browser tab suspension), use the <strong>🔇 / 🔊</strong> toggle button in the monitor header to re-arm it manually. The button is always available — clicking it again from within a user gesture satisfies the browser's autoplay policy.
+    </div>
 
     <div class="mock-monitor">
         <div class="mock-monitor-header">
@@ -628,11 +630,10 @@
     </div>
 
     <h3>Sites Tab</h3>
-    <p>Pre-load approved locations into the <code>Sites</code> tab. Workers see these as tiles in their location list after tapping Sync. Assign a template to a site in the <strong>Template Name</strong> column to automatically prompt workers with a form — the timing of that prompt (on arrival, on departure, or both) is controlled by the template itself, as described below.</p>
+    <p>Pre-load approved locations into the <code>Sites</code> tab. Workers see these as tiles in their location list after tapping Sync. Assign a template to a site in the <strong>Template Name</strong> column to automatically prompt workers with a form on departure.</p>
 
     <h3>Building Report Templates (Templates Tab)</h3>
-    <p>The <code>Templates</code> tab defines the report forms workers complete during or after a visit. A template is a named set of questions — you can have as many as you need for different site types, risk profiles, or client requirements. Assign a template to a site in the <strong>Template Name</strong> column of the Sites tab to activate it for that location.</p>
-    <p>Use this syntax in the question columns (columns E onward):</p>
+    <p>The <code>Templates</code> tab defines the report forms workers complete at the end of visits. Use this syntax in the question columns:</p>
     <table>
         <thead><tr><th>Code</th><th>Renders As</th><th>Best For</th></tr></thead>
         <tbody>
@@ -647,57 +648,6 @@
             <tr><td><code>[SIGN] Label</code></td><td>Signature capture</td><td>Client sign-off</td></tr>
         </tbody>
     </table>
-
-    <h3>Controlling When a Form Fires (Form Timing)</h3>
-    <p>By default, a template's form is presented to the worker when they <strong>depart</strong> the site — they complete it before tapping "I'm Leaving". You can change this using the <strong>Form Timing</strong> column (column AI of the Templates tab).</p>
-    <table>
-        <thead><tr><th>Column AI value</th><th>When the form appears</th><th>Typical use</th></tr></thead>
-        <tbody>
-            <tr><td><em>(blank)</em></td><td>On departure — after the worker taps "I'm Leaving"</td><td>Standard visit reports, client sign-off, mileage</td></tr>
-            <tr><td><code>arrival</code></td><td>On arrival — after the worker taps "I've Arrived"</td><td>Site induction checklist, hazard acknowledgement, client condition check</td></tr>
-            <tr><td><code>both</code></td><td>On arrival <em>and</em> again on departure</td><td>Opening/closing checklists, before-and-after comparisons</td></tr>
-        </tbody>
-    </table>
-
-    <div class="info-box">
-        <strong>Column AI, not column A.</strong> The Templates tab has up to 30 question columns (E through AH). Form Timing sits in column AI — the first column <em>after</em> the question block. Scroll right past your last question column to find it.
-    </div>
-
-    <h3>Pre-Visit Forms for Travel</h3>
-    <p>Travel visits — where a worker drives from one location to another as the visit itself — support a <strong>pre-departure questionnaire</strong> that must be completed before the worker can start the trip. This is separate from the arrival/departure form timing described above.</p>
-
-    <p>A pre-visit form is useful for:</p>
-    <ul>
-        <li>Vehicle safety checks (tyre condition, fuel, lights)</li>
-        <li>Route confirmation and estimated travel time</li>
-        <li>Confirming the worker is fit to drive</li>
-        <li>Any pre-trip compliance requirement your organisation needs documented</li>
-    </ul>
-
-    <h4>How to set it up</h4>
-    <p>Pre-visit forms for travel use a reserved sentinel row in the Sites tab. The system looks for a row where <strong>column A (Assigned To) is exactly <code>_travel</code></strong> and <strong>column L (Pre-Visit Form) is <code>TRUE</code></strong>.</p>
-
-    <ol>
-        <li>In the <strong>Sites tab</strong>, add a new row.</li>
-        <li>Set <strong>column A</strong> to exactly <code>_travel</code> (lowercase, including the underscore).</li>
-        <li>Set <strong>column B (Template Name)</strong> to the name of the template you want to use as the pre-visit questionnaire.</li>
-        <li>Set <strong>column L (Pre-Visit Form)</strong> to <code>TRUE</code>.</li>
-        <li>Leave all other columns in this row blank — the row is never shown to workers as a location tile; it is read by the system internally only.</li>
-    </ol>
-
-    <p>When the worker starts a travel visit, the app reads the <code>_travel</code> row, loads the linked template, and presents the form before the trip begins. The worker cannot proceed until the form is submitted.</p>
-
-    <div class="info-box">
-        <strong>The <code>_travel</code> row does not appear in the worker's location list.</strong> The app filters it out automatically — workers only see it in action when they initiate a travel visit. It is purely a configuration hook.
-    </div>
-
-    <div class="warning-box">
-        <h3>⚠️ Only one <code>_travel</code> row is supported</h3>
-        <p>The system reads the first row where column A is <code>_travel</code>. If you have more than one, only the first will be used. Remove or rename any duplicate rows.</p>
-    </div>
-
-    <h4>Pre-visit form timing and the Templates tab</h4>
-    <p>The template linked from the <code>_travel</code> row behaves like any other template — you build it using the same question syntax. The Form Timing column (AI) has no effect on a pre-visit form; it always fires before departure by definition. You can safely leave column AI blank for a template used exclusively as a pre-visit form.</p>
 
     <h3>Access Reports</h3>
     <p>In your Google Sheet, use the <strong>"🛡️ OTG Admin"</strong> menu for administrative actions including running the health report manually, triggering data archiving, or sending the weekly summary on-demand.</p>
@@ -796,10 +746,6 @@ const prompt = `Read these notes: "${safeNotes}".
         <strong>Strongly recommended</strong> for any organisation where worker safety is critical. The free tier supports up to 20 checks.
     </div>
 
-    <h3>SMS Alert Location Format</h3>
-    <p>When the escalation engine sends an SMS to emergency contacts, the worker's location is expressed as a human-readable street address (e.g. <em>"Manners St, Te Aro"</em>) rather than raw GPS coordinates. The system uses the Nominatim reverse geocoding service (powered by OpenStreetMap data) to convert the worker's last known GPS fix into a suburb-level description automatically — no API key or configuration is required.</p>
-    <p>If the reverse geocoding lookup fails (e.g. the worker is in an area with limited OpenStreetMap coverage, or the request times out), the SMS falls back to raw coordinates. Email and ntfy alerts are not affected — they always include a full Google Maps URL.</p>
-
     <h3>Daily Health Report Email</h3>
     <p>When the <strong>sendHealthEmail</strong> trigger is configured (Trigger C), the system emails a daily summary each morning containing:</p>
     <ul>
@@ -813,45 +759,6 @@ const prompt = `Read these notes: "${safeNotes}".
     <h3>AI Privacy Redaction</h3>
     <p>When enabled in Factory Step 1, the AI report processor automatically removes worker names and other identifying information from visit notes before sending them to the Gemini AI API. This is a data minimisation practice and is <strong>strongly recommended</strong> when using any external AI service to process staff records.</p>
     <p>You can toggle this on or off per deployment via the <strong>AI Privacy Redaction</strong> checkbox in Factory Step 1 → Safety &amp; Fleet Options.</p>
-
-    <h3>what3words Integration</h3>
-    <p><a href="https://what3words.com" style="color:var(--accent);">what3words</a> divides the world into 3-metre squares, each with a unique three-word address (e.g. <code>///filled.count.soap</code>). When configured, the system appends a what3words address to emergency emails, displays it on the monitor worker tile, and shows it on the worker's panic/alarm screen in the field. A three-word address is easier to read aloud over a phone call than a grid reference, and unambiguous in locations where street addresses are absent or imprecise — rural properties, parks, coastal areas.</p>
-
-    <h4>Licensing</h4>
-    <p>what3words is <strong>free for registered charities and NGOs</strong>. To get started:</p>
-    <ol>
-        <li>Go to <a href="https://accounts.what3words.com/select-plan" style="color:var(--accent);">accounts.what3words.com/select-plan</a> and select the <strong>Free</strong> plan.</li>
-        <li>Complete registration, then contact what3words to request a charity/NGO upgrade. You will need to supply evidence of your charitable status.</li>
-        <li>Once upgraded, your key will have access to the <code>convert-to-3wa</code> coordinate conversion endpoint. This endpoint is <strong>not</strong> available on the standard free tier — the charity upgrade is required.</li>
-    </ol>
-    <p>Commercial organisations require a paid plan. See <a href="https://what3words.com/business/pricing" style="color:var(--accent);">what3words.com/business/pricing</a> for current rates.</p>
-
-    <div class="info-box">
-        <strong>Completely optional.</strong> If the W3W API Key field is left blank in the Factory, the feature is silently disabled throughout the system — no errors, no visible UI elements, no missing data. You can add a key at any time via a config-only update.
-    </div>
-
-    <h4>Setup</h4>
-    <ol>
-        <li>Open the <strong>Factory</strong> and go to Step 1 (or Step 3, depending on your Factory version).</li>
-        <li>Find the <strong>W3W API Key</strong> field (immediately after the ORS Key field) and paste your what3words API key.</li>
-        <li>Regenerate and redeploy. For the worker app, a config-only update is sufficient — replace <code>config.json</code> only. The monitor app and backend script must also be redeployed as they receive the key via <code>%%W3W_API_KEY%%</code> injection at Factory output time.</li>
-    </ol>
-
-    <h4>How it behaves at runtime</h4>
-    <ul>
-        <li><strong>Emergency emails:</strong> The backend fetches the what3words address once at alert-send time and appends a clickable row below the GPS coordinates. Results are not cached server-side — alert volume for charity deployments is well within free-tier limits.</li>
-        <li><strong>Monitor dashboard:</strong> After each polling cycle renders the worker grid, the monitor asynchronously fetches what3words addresses for all tiles with a valid GPS fix and displays a clickable deep-link. Results are cached for the session by GPS string — a worker who hasn't moved won't trigger a repeat lookup.</li>
-        <li><strong>Worker alarm screen:</strong> When a panic alarm or overdue alarm fires, the worker app fetches the what3words address for the last known GPS fix (falling back to the visit start GPS if no later fix is available) and displays it in green on the alarm screen. This gives the worker a precise location to relay to responders by voice. The display clears automatically when the worker confirms they are safe.</li>
-    </ul>
-
-    <h3>Travel Distance Accuracy (OpenRouteService)</h3>
-    <p>The system calculates driving distance for travel visit reports using the <a href="https://openrouteservice.org" style="color:var(--accent);">OpenRouteService (ORS)</a> routing API. Enter your ORS API key in Factory Step 1 to enable this. If no key is configured, or if the ORS request fails, the system falls back to a crow-flight (straight-line) calculation.</p>
-    <p>A few behaviours worth knowing:</p>
-    <ul>
-        <li><strong>Version resilience:</strong> The system probes for ORS API v2 and v3 on first use and caches the result for the session. This means ORS deployments continue to work across API version transitions without any configuration change on your part.</li>
-        <li><strong>Speed floor:</strong> Travel distance calculations include a speed-based floor derived from the worker's GPS speed readings. On routes where crow-flight significantly underestimates actual road distance (e.g. motorway detours, one-way systems), the speed accumulator produces a more accurate result automatically. No configuration is required.</li>
-        <li><strong>Diagnostics:</strong> The <strong>Run System Diagnostics</strong> function checks your ORS key and reports its status. A SKIP result means ORS is not configured; the system will use crow-flight for all travel reports.</li>
-    </ul>
 
     <h3>System Diagnostics</h3>
     <p>The <strong>Run System Diagnostics</strong> function is a comprehensive health check that tests every integration and configuration item in your deployment. Run it after initial setup to confirm everything is working, after any configuration change, or whenever you suspect a problem with alerts not reaching contacts.</p>
@@ -970,8 +877,8 @@ const prompt = `Read these notes: "${safeNotes}".
             </tr>
             <tr>
                 <td><strong>Monitor plays no sound</strong></td>
-                <td>Browser autoplay policy — audio requires user interaction first</td>
-                <td>Click anywhere on the Monitor page before alerts are expected, then click <strong>Start Audio</strong>.</td>
+                <td>Browser tab was suspended or reloaded after login — audio context was discarded</td>
+                <td>Click the <strong>🔇 / 🔊</strong> audio toggle button in the monitor header. This re-arms the audio context from within a user gesture, which satisfies the browser's autoplay policy. Audio is armed automatically on initial login, so this step is only needed after a suspension or reload.</td>
             </tr>
             <tr>
                 <td><strong>App shows wrong branding</strong> after config update</td>
@@ -1007,6 +914,11 @@ const prompt = `Read these notes: "${safeNotes}".
                 <td><strong>Worker can't install PWA</strong> on iPhone</td>
                 <td>Not using Safari — Chrome on iOS doesn't support "Add to Home Screen" for PWAs</td>
                 <td>Worker must use <strong>Safari</strong> on iPhone. Share → Add to Home Screen.</td>
+            </tr>
+            <tr>
+                <td><strong>Volume button panic not triggering</strong> — pressing volume buttons has no effect</td>
+                <td>MediaSession not registered, or audio was never armed on this visit. Android Chrome only routes hardware volume key events to the page when an active MediaSession is present.</td>
+                <td>Confirm the worker has armed audio at least once during the visit (the app registers a MediaSession in <code>initAudio()</code> after Tone.js starts). If the app was freshly installed and audio has never been used, the MediaSession may not yet be active. The MediaSession is also registered at <code>initVolumeDetection()</code> on app start. Note: volume button panic is Android-only — it will not work on iPhone.</td>
             </tr>
             <tr>
                 <td><strong>Worker Guide / Ops Manual download button is greyed out</strong></td>
