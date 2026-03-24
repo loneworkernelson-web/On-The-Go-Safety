@@ -820,8 +820,8 @@ function _logSmsResult_(to, body, parsed, isNetworkError) {
                ' quota=' + quotaLeft + ' error="' + errorMsg +
                '" body="' + preview + '"');
 
-    // Only write a sheet row for failures — keeps the log clean.
-    if (success) return;
+    // TEMPORARY DIAGNOSTIC: logging all results (success + failure) to sheet.
+    // Once the delivery issue is resolved, restore: if (success) return;
 
     try {
         const ss    = SpreadsheetApp.getActiveSpreadsheet();
