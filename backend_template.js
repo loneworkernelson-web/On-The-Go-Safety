@@ -828,8 +828,7 @@ function _logSmsResult_(to, body, parsed, isNetworkError) {
                ' textId=' + textId + ' quota=' + quotaLeft + ' error="' + errorMsg +
                '" body="' + preview + '"');
 
-    // TEMPORARY DIAGNOSTIC: logging all results (success + failure) to sheet.
-    // Once the delivery issue is resolved, restore: if (success) return;
+    if (success) return;
 
     try {
         const ss    = SpreadsheetApp.getActiveSpreadsheet();
@@ -852,7 +851,7 @@ function _logSmsResult_(to, body, parsed, isNetworkError) {
 /**
  * SMS Provider Dispatcher
  * Routes outbound SMS to the configured provider. All results are logged via
- * _logSmsResult_() — successes to Logger.log, failures also to the SMS Log sheet.
+ * _logSmsResult_() — successes to Logger.log only; failures also written to the SMS Log sheet.
  * Safe to call even when no provider is configured — logs a skip and returns.
  */
 function _sendSms_(to, body) {
@@ -1189,7 +1188,7 @@ function triggerAlerts(p, type) {
             p['Escalation Contact Number'] || p['Escalation Contact Phone']
         ].map(n => _cleanPhone(n)).filter(n => n);
 
-        const smsBody = `ALERT: ${statusLabel}\nWorker: ${workerName}\nSite: ${locationName}\nPhone: ${workerPhone}\n${gpsSmsTxt}`;
+        const smsBody = `🚨 ALERT: ${statusLabel}\nWorker: ${workerName}\nSite: ${locationName}\nPhone: ${workerPhone}\n${gpsSmsTxt}`;
         Logger.log('[SMS] Preparing to send. Body: "' + smsBody + '"');
         numbers.forEach(num => { try { _sendSms_(num, smsBody); } catch(e) { _logSmsResult_(num, smsBody, e.toString(), true); } });
     }
