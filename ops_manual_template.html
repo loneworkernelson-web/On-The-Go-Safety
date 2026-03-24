@@ -734,6 +734,16 @@ const prompt = `Read these notes: "${safeNotes}".
         <strong>iOS limitation:</strong> The ntfy iOS app does not currently support Critical Alerts — the notification tier that overrides the physical mute switch. iPhone contacts should leave their mute switch off if they are on-call as an emergency contact.
     </div>
 
+    <h3>SMS Text Alerts</h3>
+    <p>The system can send an SMS text message to emergency and escalation contacts the instant an alarm fires, in addition to email and ntfy push. SMS is a useful backup channel — particularly for contacts who haven't installed ntfy, or when email delivery is delayed. Credits are consumed per message sent.</p>
+    <p>The SMS provider is selected per-deployment in <strong>Factory Step 1</strong> based on your region. The correct provider and credential fields are shown automatically when you select your country.</p>
+
+%%SMS_PROVIDER_SETUP%%
+
+    <div class="info-box">
+        <strong>SMS is optional.</strong> If no provider is configured (SMS_PROVIDER = none), email and ntfy remain the primary notification channels. SMS is recommended for deployments where contacts are unlikely to have ntfy installed, or where GSM coverage is more reliable than data.
+    </div>
+
     <h3>Healthchecks.io Dead-Man's Switch</h3>
     <p>The backend's escalation engine runs every ~15 minutes via a trigger. If that trigger silently stops firing (a known Google Apps Script limitation), workers could reach overdue status without any alarm. Healthchecks.io catches this.</p>
     <ul>
@@ -767,7 +777,7 @@ const prompt = `Read these notes: "${safeNotes}".
     <p>Open your Google Sheet and go to <strong>🛡️ OTG Admin → Run System Diagnostics</strong>. The function runs immediately and does two things simultaneously: it logs results to the Apps Script execution log (visible in the Apps Script editor under <strong>View → Logs</strong>), and it emails a formatted HTML report to your configured health email address.</p>
 
     <div class="info-box">
-        <strong>Safe to run at any time.</strong> The diagnostic does not send any real alerts to workers' emergency contacts, does not consume Textbelt SMS credits, and does not affect any visit data. The ntfy test posts to a private diagnostics topic, not to your contacts' topics.
+        <strong>Safe to run at any time.</strong> The diagnostic does not send any real alerts to workers' emergency contacts, does not consume SMS credits, and does not affect any visit data. The ntfy test posts to a private diagnostics topic, not to your contacts' topics.
     </div>
 
     <h4>What it checks</h4>
@@ -800,9 +810,9 @@ const prompt = `Read these notes: "${safeNotes}".
                 <td>Free Google accounts: 100 emails/day. Workspace accounts: 1,500/day. A FAIL (under 10 remaining) means alarm emails may not send until midnight reset.</td>
             </tr>
             <tr>
-                <td><strong>Textbelt SMS</strong></td>
-                <td>API key is valid and reports credit balance via <code>/quota</code> endpoint — no SMS is sent</td>
-                <td>SKIP means SMS is not configured (optional). FAIL means the key is invalid. WARN means credits are low — top up at textbelt.com before they reach zero.</td>
+                <td><strong>SMS Provider</strong></td>
+                <td>Verifies credentials with the configured SMS provider (Twilio, Burst SMS, or Textbelt) — no SMS is sent</td>
+                <td>SKIP means SMS is not configured (optional). FAIL means credentials are invalid or the provider API is unreachable. WARN (Textbelt/Burst) means credit balance is low — top up before it reaches zero.</td>
             </tr>
             <tr>
                 <td><strong>ntfy push</strong></td>
