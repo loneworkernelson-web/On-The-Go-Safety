@@ -1751,7 +1751,11 @@ async function initAudio() {
  await Tone.start();
  synth = new Tone.Synth().toDestination();
  audioReady = true;
- 
+
+ // Refresh MediaSession now that the AudioContext is confirmed running.
+ // This re-asserts audio focus so Android routes volume keys to the page.
+ _registerMediaSession();
+
  // Restore console
  console.log = originalLog;
  console.log('✅ Audio initialized successfully');
@@ -7853,6 +7857,36 @@ function cancelShakeConfirmation() {
 
 function initVolumeDetection() {
  document.addEventListener('keydown', handleVolumePress, false);
+
+ // Register a MediaSession so Android Chrome routes hardware volume key
+ // events to the page rather than silently handling them as system volume.
+ // Without this, keydown is never dispatched for VolumeUp/VolumeDown on Android.
+ _registerMediaSession();
+}
+
+/**
+ * _registerMediaSession — claims audio focus via the MediaSession API.
+ * Called at init and refreshed after Tone.js starts (initAudio) so that
+ * Android Chrome keeps routing volume key events to the page.
+ * Safe to call multiple times; each call simply re-asserts the session.
+ */
+function _registerMediaSession() {
+ if (!('mediaSession' in navigator)) return;
+ try {
+   navigator.mediaSession.metadata = new MediaMetadata({
+     title: 'OTG Safety — Visit Active',
+     artist: CONFIG.orgName || '%%ORG_NAME%%',
+     album: 'Lone Worker Safety System'
+   });
+   navigator.mediaSession.playbackState = 'playing';
+   // Register no-op handlers — required for some browsers to treat
+   // the session as active and hold audio focus.
+   ['play', 'pause', 'stop'].forEach(action => {
+     try { navigator.mediaSession.setActionHandler(action, () => {}); } catch (_) {}
+   });
+ } catch (e) {
+   console.warn('[MediaSession] Registration failed:', e.message);
+ }
 }
 
 function handleVolumePress(event) {
@@ -7860,10 +7894,12 @@ function handleVolumePress(event) {
  if (!state) return;
  if (volumeConfirmationMode) return;
  
- // Volume up or down
- if (event.key === 'VolumeUp' || event.key === 'VolumeDown' || 
- event.keyCode === 175 || event.keyCode === 174) { // Fallback keycodes
- 
+ // Volume up or down.
+ // Chrome 66+ uses 'AudioVolumeUp'/'AudioVolumeDown' (W3C spec).
+ // Older browsers used 'VolumeUp'/'VolumeDown' — kept as fallback.
+ if (event.key === 'AudioVolumeUp'  || event.key === 'AudioVolumeDown' ||
+     event.key === 'VolumeUp'       || event.key === 'VolumeDown') {
+
  event.preventDefault(); // Try to suppress volume change
  
  const now = Date.now();
@@ -7911,9 +7947,9 @@ function enterVolumeConfirmation() {
  
  // Watch for confirmation
  const confirmListener = (event) => {
- if (event.key === 'VolumeUp' || event.key === 'VolumeDown' || 
- event.keyCode === 175 || event.keyCode === 174) {
- 
+ if (event.key === 'AudioVolumeUp'  || event.key === 'AudioVolumeDown' ||
+     event.key === 'VolumeUp'       || event.key === 'VolumeDown') {
+
  event.preventDefault();
  volumeBuffer.push(Date.now());
  
