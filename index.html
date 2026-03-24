@@ -282,10 +282,11 @@
                     <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Region / Provider</label>
                     <select id="smsProvider" class="input-field cursor-pointer py-2 text-sm font-black" onchange="updateSmsProviderUI()">
                         <option value="none">— Disabled —</option>
+                        <option value="kudosity_nz">New Zealand — Kudosity (recommended)</option>
+                        <option value="kudosity_au">Australia — Kudosity</option>
                         <option value="twilio_nz">New Zealand — Twilio</option>
                         <option value="twilio_uk">United Kingdom — Twilio</option>
                         <option value="twilio_ca">Canada — Twilio</option>
-                        <option value="burst">Australia — Burst SMS</option>
                         <option value="textbelt">United States — Textbelt</option>
                     </select>
                 </div>
@@ -298,7 +299,7 @@
                 </div>
                 <!-- Burst SMS fields -->
                 <div id="smsFieldsBurst" class="space-y-2 hidden">
-                    <p class="help-text italic leading-tight mb-2">Sign up at <a href="https://www.burstsms.com.au" target="_blank" class="link">burstsms.com.au</a>. API Key and Secret are in your account dashboard under API Settings.</p>
+                    <p class="help-text italic leading-tight mb-2">Sign up at <a href="https://kudosity.com" target="_blank" class="link">kudosity.com</a> (formerly Burst SMS). API Key and Secret are in your account dashboard under API Settings.</p>
                     <div><label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">API Key</label><input type="text" id="burstKey" class="input-field py-2 text-xs font-mono font-bold" placeholder="Your API Key" oninput="saveInput(this)"></div>
                     <div><label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">API Secret</label><input type="password" id="burstSecret" class="input-field py-2 text-xs font-mono font-bold" placeholder="Your API Secret" oninput="saveInput(this)"></div>
                     <div><label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">From (Sender ID or number)</label><input type="text" id="burstFrom" class="input-field py-2 text-xs font-mono font-bold" placeholder="OTGSafety (max 11 chars)" oninput="saveInput(this)"></div>
@@ -1049,7 +1050,7 @@ function applyPreset(p, a, el) {
         const val = document.getElementById('smsProvider').value;
         saveInput(document.getElementById('smsProvider'));
         document.getElementById('smsFieldsTwilio').classList.toggle('hidden',  !val.startsWith('twilio'));
-        document.getElementById('smsFieldsBurst').classList.toggle('hidden',   val !== 'burst');
+        document.getElementById('smsFieldsBurst').classList.toggle('hidden',   val !== 'kudosity_nz' && val !== 'kudosity_au');
         document.getElementById('smsFieldsTextbelt').classList.toggle('hidden', val !== 'textbelt');
     }
     function updateRegionInfo() { const sel = document.getElementById('countrySelect').value; selectedConfig = REGION_DATA[sel] || REGION_DATA["+64"]; document.getElementById('detectedTz').textContent = selectedConfig.tz; document.getElementById('vehTermDisplay').textContent = selectedConfig.term; document.getElementById('voiceLocaleDisplay').textContent = selectedConfig.locale; document.getElementById('phoneFmtDisplay').textContent = sel; document.getElementById('timezoneVal').value = selectedConfig.tz; }
@@ -1078,7 +1079,7 @@ function applyPreset(p, a, el) {
             .replace(/%%ORS_API_KEY%%/g, document.getElementById('orsKey').value).replace(/%%GEMINI_API_KEY%%/g, document.getElementById('geminiKey').value)
             .replace(/%%W3W_API_KEY%%/g, document.getElementById('w3wKey').value)
             .replace(/%%TEXTBELT_API_KEY%%/g, document.getElementById('textbeltKey').value || '')
-            .replace(/%%SMS_PROVIDER%%/g,       (function(){ const v = document.getElementById('smsProvider').value; return v.startsWith('twilio') ? 'twilio' : v === 'burst' ? 'burst' : v === 'textbelt' ? 'textbelt' : 'none'; })())
+            .replace(/%%SMS_PROVIDER%%/g,       (function(){ const v = document.getElementById('smsProvider').value; return v.startsWith('twilio') ? 'twilio' : (v === 'kudosity_nz' || v === 'kudosity_au') ? 'burst' : v === 'textbelt' ? 'textbelt' : 'none'; })())
             .replace(/%%TWILIO_ACCOUNT_SID%%/g, document.getElementById('twilioSid').value   || '')
             .replace(/%%TWILIO_AUTH_TOKEN%%/g,  document.getElementById('twilioToken').value  || '')
             .replace(/%%TWILIO_FROM%%/g,        document.getElementById('twilioFrom').value   || '')
@@ -1448,14 +1449,15 @@ function testConnection() {
                 '</ul>' +
                 '<div class="highlight"><strong>Verify with diagnostics:</strong> Run <strong>OTG Admin → Run System Diagnostics</strong> after deployment. The SMS check will confirm your credentials are valid and show your account status.</div>';
         }
-        if (provider === 'burst') {
-            return (forOpsManual ? '<h4>Burst SMS Setup (Australia)</h4>' : '<h3>SMS Provider: Burst SMS (Australia)</h3>') +
-                '<p>This deployment uses <strong>Burst SMS</strong> for SMS alerts. Burst SMS is an Australian-based provider with strong domestic delivery. Credits are prepaid.</p>' +
+        if (provider === 'kudosity_nz' || provider === 'kudosity_au') {
+            const region = provider === 'kudosity_nz' ? 'New Zealand' : 'Australia';
+            return (forOpsManual ? '<h4>Kudosity Setup (' + region + ')</h4>' : '<h3>SMS Provider: Kudosity (' + region + ')</h3>') +
+                '<p>This deployment uses <strong>Kudosity</strong> (formerly Burst SMS) for SMS alerts. Kudosity is an AU/NZ-based provider with strong regional delivery. Credits are prepaid and never expire.</p>' +
                 '<ul>' +
-                '<li>Sign up at <a href="https://www.burstsms.com.au">burstsms.com.au</a>.</li>' +
+                '<li>Sign up at <a href="https://kudosity.com">kudosity.com</a>. A free trial account is available — trial messages can only be sent to your registered number.</li>' +
                 '<li>Your <strong>API Key</strong> and <strong>API Secret</strong> are in your account dashboard under <strong>API Settings</strong>.</li>' +
-                '<li>Your <strong>From</strong> field can be a sender ID (up to 11 characters, e.g. <code>OTGSafety</code>) or a phone number. Sender IDs appear as the sender name on the recipient\'s phone. Note: replies to sender ID messages are not deliverable.</li>' +
-                '<li>Top up credits in your Burst SMS dashboard before they reach zero — the system diagnostics will warn when balance is low.</li>' +
+                '<li>Your <strong>From</strong> field can be a sender ID (up to 11 characters, e.g. <code>OTGSafety</code>) or a phone number. Sender IDs appear as the sender name on the recipient\'s phone. Note: replies to sender ID messages are not deliverable back to you.</li>' +
+                '<li>Top up credits in your Kudosity dashboard before they reach zero — the system diagnostics will warn when balance is low.</li>' +
                 '</ul>' +
                 '<div class="highlight"><strong>Verify with diagnostics:</strong> Run <strong>OTG Admin → Run System Diagnostics</strong> after deployment. The SMS check will confirm your credentials and report your current credit balance.</div>';
         }
