@@ -232,11 +232,20 @@ The current phase is stored in `state.activeVisit.phase` and read via `getVisitP
 
 Travel visits can be configured to require a pre-departure questionnaire. The `_travel` sentinel row in the Sites sheet (a row named `_travel` with `TRUE` in column L) is filtered from the location tile grid but is read by `startVisit()` to overlay `preVisitForm: true` onto travel visits. The form uses the same template-driven builder as all other forms.
 
-### 3.6 Back-Navigation Trap
+### 3.6 Travel Report — Trip Endpoint Auto-Fill
+
+When the active template is `Travel Report`, `_injectTripEndpointFields()` prepends two auto-filled fields to `#reportFields` before the form is shown:
+
+- **Trip Start Point** — resolved asynchronously via Nominatim reverse geocode of the worker's GPS fix at trip start. The field displays `"Locating…"` while the lookup is in flight, then polls every 500 ms (up to 30 s) until `state.activeVisit.startAddress` is populated. Falls back to `"Address unavailable"` on timeout.
+- **Trip Destination** — composed from the selected site's name and address (`locationName — locationAddress`). Falls back to name-only if the address field is blank.
+
+Both fields use `data-key` attributes and are collected by `submitReport()` alongside all other form answers. Workers can edit either field before submitting if the auto-filled value is incorrect.
+
+### 3.7 Back-Navigation Trap
 
 To prevent workers from accidentally leaving the app mid-visit by pressing the Android back button, `window._armBackTrap()` pushes an `{ otgTrap: true }` history entry as a sentinel. The `popstate` handler re-pushes the sentinel and shows a toast warning if `state.activeVisit` is set. The trap is armed at visit start (`startVisit()`) and on page reload when an active visit is detected (`_initApp()`).
 
-### 3.7 Form Builder Syntax
+### 3.8 Form Builder Syntax
 
 The app dynamically builds forms based on column headers in the `Templates` sheet using a prefix parser.
 
@@ -261,13 +270,27 @@ The app dynamically builds forms based on column headers in the `Templates` shee
 
 **Form timing** is controlled by column AI of the Templates sheet. It determines whether the form is presented at visit start, visit end, or both.
 
-### 3.8 Visit History
+### 3.9 Visit History
 
 Workers can view a log of their recent visits from the app's history screen. `populateVisitHistory()` reads the IndexedDB outbox for `ARRIVED` and `TRAVELLING` records, caps results at 30 entries, and groups them by NZ-locale calendar date.
 
-### 3.9 what3words (Panic Screen)
+### 3.10 what3words (Panic Screen)
 
 When `CONFIG.w3wApiKey` is set, `fetchW3wForPanic()` fires on panic activation and on overdue alarm expiry. It fetches the what3words address for `lastGPS` (falling back to `startGPS`) and displays it in emerald green in the `#w3wDisplay` element on the locked alarm screen. This gives emergency contacts a precise three-word location they can relay to response teams. The display is cleared and hidden when `iamSafe()` resets the UI.
+
+### 3.11 Volume Button Panic (Android Only)
+
+Workers can trigger a panic alarm using the hardware volume buttons — useful when operating the touchscreen discreetly is not possible.
+
+**Flow:**
+1. Five presses of either volume button within 3 seconds → full-screen confirmation modal (`shakeConfirmModal`) appears.
+2. Three more presses within 5 seconds → PANIC alarm fires (same path as the SOS button).
+
+**Key names:** The feature requires Chrome 66+ / W3C key names `'AudioVolumeUp'` / `'AudioVolumeDown'`. The legacy names `'VolumeUp'` / `'VolumeDown'` are kept as a fallback. `keyCode` fallbacks (174/175) have been removed — they were Windows/IE values that Android Chrome never used.
+
+**MediaSession requirement:** Android Chrome only routes hardware volume key events to the page when an active `MediaSession` is registered. `_registerMediaSession()` is called from `initVolumeDetection()` at app start, and re-asserted inside `initAudio()` after `Tone.start()` succeeds (the most reliable moment to claim audio focus on Android). Without a MediaSession, volume button presses are consumed by the OS volume control and never reach the page.
+
+This feature is Android-only and has no effect on iOS.
 
 ---
 
