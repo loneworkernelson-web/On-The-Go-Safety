@@ -275,7 +275,40 @@
             </div>
         </div>
         <div class="space-y-6">
-            <div><div class="flex justify-between items-end mb-1"><label for="textbeltKey" class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">Textbelt Key (SMS Alerts)</label><a href="https://textbelt.com/#pricing" target="_blank" class="link">Get Key</a></div><input type="text" id="textbeltKey" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Essential for sending high-priority SMS alerts to contacts if an alarm fires.</p></div>
+            <div class="pt-2 border-t border-gray-700">
+                <label class="text-[11px] font-black text-indigo-300 uppercase tracking-widest block mb-2">SMS Alerts</label>
+                <p class="help-text italic leading-tight mb-3">Sends a text message to emergency contacts the instant an alarm fires. Select the recommended provider for your region — credentials are injected into the backend automatically.</p>
+                <div class="mb-3">
+                    <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Region / Provider</label>
+                    <select id="smsProvider" class="input-field cursor-pointer py-2 text-sm font-black" onchange="updateSmsProviderUI()">
+                        <option value="none">— Disabled —</option>
+                        <option value="twilio_nz">New Zealand — Twilio</option>
+                        <option value="twilio_uk">United Kingdom — Twilio</option>
+                        <option value="twilio_ca">Canada — Twilio</option>
+                        <option value="burst">Australia — Burst SMS</option>
+                        <option value="textbelt">United States — Textbelt</option>
+                    </select>
+                </div>
+                <!-- Twilio fields -->
+                <div id="smsFieldsTwilio" class="space-y-2 hidden">
+                    <p class="help-text italic leading-tight mb-2">Create a free trial account at <a href="https://www.twilio.com" target="_blank" class="link">twilio.com</a>. You'll need an Account SID, Auth Token, and a purchased phone number. Paid credits (~NZ$0.10–0.15/SMS) required for production use.</p>
+                    <div><label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Account SID</label><input type="text" id="twilioSid" class="input-field py-2 text-xs font-mono font-bold" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" oninput="saveInput(this)"></div>
+                    <div><label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Auth Token</label><input type="password" id="twilioToken" class="input-field py-2 text-xs font-mono font-bold" placeholder="Your Auth Token" oninput="saveInput(this)"></div>
+                    <div><label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">From Number (E.164)</label><input type="text" id="twilioFrom" class="input-field py-2 text-xs font-mono font-bold" placeholder="+6499999999" oninput="saveInput(this)"></div>
+                </div>
+                <!-- Burst SMS fields -->
+                <div id="smsFieldsBurst" class="space-y-2 hidden">
+                    <p class="help-text italic leading-tight mb-2">Sign up at <a href="https://www.burstsms.com.au" target="_blank" class="link">burstsms.com.au</a>. API Key and Secret are in your account dashboard under API Settings.</p>
+                    <div><label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">API Key</label><input type="text" id="burstKey" class="input-field py-2 text-xs font-mono font-bold" placeholder="Your API Key" oninput="saveInput(this)"></div>
+                    <div><label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">API Secret</label><input type="password" id="burstSecret" class="input-field py-2 text-xs font-mono font-bold" placeholder="Your API Secret" oninput="saveInput(this)"></div>
+                    <div><label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">From (Sender ID or number)</label><input type="text" id="burstFrom" class="input-field py-2 text-xs font-mono font-bold" placeholder="OTGSafety (max 11 chars)" oninput="saveInput(this)"></div>
+                </div>
+                <!-- Textbelt fields -->
+                <div id="smsFieldsTextbelt" class="space-y-2 hidden">
+                    <p class="help-text italic leading-tight mb-2">Purchase credits at <a href="https://textbelt.com/#pricing" target="_blank" class="link">textbelt.com</a>. Note: Textbelt is optimised for US delivery — international reliability may vary.</p>
+                    <div><label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">API Key</label><input type="text" id="textbeltKey" class="input-field py-2 text-xs font-mono font-bold" placeholder="Your Textbelt key" oninput="saveInput(this)"></div>
+                </div>
+            </div>
             <div><div class="flex justify-between items-end mb-1"><label for="geminiKey" class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">Gemini AI Key (Grammar)</label><a href="https://aistudio.google.com/app/apikey" target="_blank" class="link">Get Key</a></div><input type="text" id="geminiKey" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Used to automatically professionalise worker reports and fix spelling.</p></div>
             <div><div class="flex justify-between items-end mb-1"><label for="orsKey" class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">ORS Key (Mileage Tracking)</label><a href="https://openrouteservice.org/dev/#/signup" target="_blank" class="link">Get Key</a></div><input type="text" id="orsKey" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Required for road-accurate mileage tracking. This key is hidden from workers.</p></div>
             <div><div class="flex justify-between items-end mb-1"><label for="w3wKey" class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">what3words Key (Location Codes)</label><a href="https://accounts.what3words.com/select-plan" target="_blank" class="link">Get Key</a></div><input type="text" id="w3wKey" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Adds a memorable 3-word location code (e.g. ///filled.count.soap) to emergency email alerts, the monitor dashboard, and the worker's panic screen — useful for relaying precise location to emergency services. <strong class="text-emerald-400">Free for registered charities and NGOs</strong> — select the Free plan, then <a href="https://what3words.com/contact-us" target="_blank" class="link">contact what3words</a> to request a charity upgrade. Paid plans required for commercial use.</p></div>
@@ -1011,7 +1044,14 @@ function applyPreset(p, a, el) {
     function copyData(k) { navigator.clipboard.writeText(BLUEPRINTS[k]); alert(k + " Blueprint Copied!"); }
     function openMagicLink() { window.open(MASTER_SHEET_URL, '_blank'); }
     function toggleCheck(el) { el.classList.toggle('checked'); el.querySelector('input').checked = el.classList.contains('checked'); }
-    function loadPersistedData() { ['orgName', 'secretKey', 'workerKey', 'webAppUrl', 'geminiKey', 'orsKey', 'w3wKey', 'textbeltKey', 'folderId', 'healthEmail', 'healthcheckUrl', 'ntfyServer', 'escalationMins', 'countrySelect', 'appName', 'checkinMins'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v) document.getElementById(id).value = v; }); ['chkRedaction', 'chkVehicle', 'chkCheckin', 'chkTravelReport', 'chkMileage'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v !== null) document.getElementById(id).checked = (v === 'true'); }); }
+    function loadPersistedData() { ['orgName', 'secretKey', 'workerKey', 'webAppUrl', 'geminiKey', 'orsKey', 'w3wKey', 'textbeltKey', 'twilioSid', 'twilioToken', 'twilioFrom', 'burstKey', 'burstSecret', 'burstFrom', 'smsProvider', 'folderId', 'healthEmail', 'healthcheckUrl', 'ntfyServer', 'escalationMins', 'countrySelect', 'appName', 'checkinMins'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v) { const el = document.getElementById(id); if(el) el.value = v; } }); ['chkRedaction', 'chkVehicle', 'chkCheckin', 'chkTravelReport', 'chkMileage'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v !== null) document.getElementById(id).checked = (v === 'true'); }); updateSmsProviderUI(); }
+    function updateSmsProviderUI() {
+        const val = document.getElementById('smsProvider').value;
+        saveInput(document.getElementById('smsProvider'));
+        document.getElementById('smsFieldsTwilio').classList.toggle('hidden',  !val.startsWith('twilio'));
+        document.getElementById('smsFieldsBurst').classList.toggle('hidden',   val !== 'burst');
+        document.getElementById('smsFieldsTextbelt').classList.toggle('hidden', val !== 'textbelt');
+    }
     function updateRegionInfo() { const sel = document.getElementById('countrySelect').value; selectedConfig = REGION_DATA[sel] || REGION_DATA["+64"]; document.getElementById('detectedTz').textContent = selectedConfig.tz; document.getElementById('vehTermDisplay').textContent = selectedConfig.term; document.getElementById('voiceLocaleDisplay').textContent = selectedConfig.locale; document.getElementById('phoneFmtDisplay').textContent = sel; document.getElementById('timezoneVal').value = selectedConfig.tz; }
     function closeModal(id) { document.getElementById(id).style.display = 'none'; document.getElementById('mainContent').classList.remove('blur-sm'); }
     function toggleEnterBtn() {
@@ -1037,7 +1077,15 @@ function applyPreset(p, a, el) {
             .replace(/%%SECRET_KEY%%/g, document.getElementById('secretKey').value).replace(/%%WORKER_KEY%%/g, document.getElementById('workerKey').value)
             .replace(/%%ORS_API_KEY%%/g, document.getElementById('orsKey').value).replace(/%%GEMINI_API_KEY%%/g, document.getElementById('geminiKey').value)
             .replace(/%%W3W_API_KEY%%/g, document.getElementById('w3wKey').value)
-            .replace(/%%TEXTBELT_API_KEY%%/g, document.getElementById('textbeltKey').value).replace(/%%PHOTOS_FOLDER_ID%%/g, document.getElementById('folderId').value)
+            .replace(/%%TEXTBELT_API_KEY%%/g, document.getElementById('textbeltKey').value || '')
+            .replace(/%%SMS_PROVIDER%%/g,       (function(){ const v = document.getElementById('smsProvider').value; return v.startsWith('twilio') ? 'twilio' : v === 'burst' ? 'burst' : v === 'textbelt' ? 'textbelt' : 'none'; })())
+            .replace(/%%TWILIO_ACCOUNT_SID%%/g, document.getElementById('twilioSid').value   || '')
+            .replace(/%%TWILIO_AUTH_TOKEN%%/g,  document.getElementById('twilioToken').value  || '')
+            .replace(/%%TWILIO_FROM%%/g,        document.getElementById('twilioFrom').value   || '')
+            .replace(/%%BURST_API_KEY%%/g,      document.getElementById('burstKey').value     || '')
+            .replace(/%%BURST_API_SECRET%%/g,   document.getElementById('burstSecret').value  || '')
+            .replace(/%%BURST_FROM%%/g,         document.getElementById('burstFrom').value    || '')
+            .replace(/%%PHOTOS_FOLDER_ID%%/g, document.getElementById('folderId').value)
             .replace(/%%ORGANISATION_NAME%%/g, document.getElementById('orgName').value).replace(/%%ORG_NAME%%/g, document.getElementById('orgName').value).replace(/%%TIMEZONE%%/g, document.getElementById('timezoneVal').value)
             .replace(/%%ESCALATION_MINUTES%%/g, document.getElementById('escalationMins').value).replace(/%%ENABLE_REDACTION%%/g, document.getElementById('chkRedaction').checked)
             .replace(/%%VEHICLE_TERM%%/g, selectedConfig.term).replace(/%%COUNTRY_PREFIX%%/g, document.getElementById('countrySelect').value)
@@ -1382,6 +1430,48 @@ function testConnection() {
         if (packNoteNoGuide) packNoteNoGuide.classList.toggle('hidden', guideAvail);
     }
 
+    function _buildSmsProviderSetupHtml(forOpsManual) {
+        const provider = document.getElementById('smsProvider').value;
+        if (!provider || provider === 'none') {
+            return '<div class="highlight"><strong>SMS alerts are not configured for this deployment.</strong> Email and ntfy push notifications remain the primary alert channels. To add SMS in future, regenerate the backend in the Factory and select an SMS provider.</div>';
+        }
+        if (provider.startsWith('twilio')) {
+            const region = provider === 'twilio_nz' ? 'New Zealand' : provider === 'twilio_uk' ? 'United Kingdom' : 'Canada';
+            return (forOpsManual ? '<h4>Twilio Setup (' + region + ')</h4>' : '<h3>SMS Provider: Twilio (' + region + ')</h3>') +
+                '<p>This deployment uses <strong>Twilio</strong> for SMS alerts. Twilio is a professional SMS gateway with strong delivery reliability in ' + region + '. Credits are pay-as-you-go (approximately NZ$0.10–0.20 per message depending on region).</p>' +
+                '<ul>' +
+                '<li>Sign up at <a href="https://www.twilio.com">twilio.com</a>. A free trial account is available for initial testing.</li>' +
+                '<li>Purchase a local phone number in your region from the Twilio Console — this is your "From" number that contacts will see as the SMS sender.</li>' +
+                '<li>Your <strong>Account SID</strong> and <strong>Auth Token</strong> are on the main Twilio Console dashboard.</li>' +
+                '<li>Upgrade to a paid account before go-live — trial accounts can only send to verified numbers.</li>' +
+                '<li>Top up credits at <strong>Console → Billing → Add Funds</strong>. Twilio sends low-balance email warnings automatically.</li>' +
+                '</ul>' +
+                '<div class="highlight"><strong>Verify with diagnostics:</strong> Run <strong>OTG Admin → Run System Diagnostics</strong> after deployment. The SMS check will confirm your credentials are valid and show your account status.</div>';
+        }
+        if (provider === 'burst') {
+            return (forOpsManual ? '<h4>Burst SMS Setup (Australia)</h4>' : '<h3>SMS Provider: Burst SMS (Australia)</h3>') +
+                '<p>This deployment uses <strong>Burst SMS</strong> for SMS alerts. Burst SMS is an Australian-based provider with strong domestic delivery. Credits are prepaid.</p>' +
+                '<ul>' +
+                '<li>Sign up at <a href="https://www.burstsms.com.au">burstsms.com.au</a>.</li>' +
+                '<li>Your <strong>API Key</strong> and <strong>API Secret</strong> are in your account dashboard under <strong>API Settings</strong>.</li>' +
+                '<li>Your <strong>From</strong> field can be a sender ID (up to 11 characters, e.g. <code>OTGSafety</code>) or a phone number. Sender IDs appear as the sender name on the recipient\'s phone. Note: replies to sender ID messages are not deliverable.</li>' +
+                '<li>Top up credits in your Burst SMS dashboard before they reach zero — the system diagnostics will warn when balance is low.</li>' +
+                '</ul>' +
+                '<div class="highlight"><strong>Verify with diagnostics:</strong> Run <strong>OTG Admin → Run System Diagnostics</strong> after deployment. The SMS check will confirm your credentials and report your current credit balance.</div>';
+        }
+        if (provider === 'textbelt') {
+            return (forOpsManual ? '<h4>Textbelt Setup (United States)</h4>' : '<h3>SMS Provider: Textbelt (US)</h3>') +
+                '<p>This deployment uses <strong>Textbelt</strong> for SMS alerts. Textbelt is a US-focused SMS service. Note that international delivery reliability may vary.</p>' +
+                '<ul>' +
+                '<li>Purchase credits at <a href="https://textbelt.com/#pricing">textbelt.com</a>. Credits are pay-as-you-go.</li>' +
+                '<li>Your API key is shown immediately after purchase — save it securely.</li>' +
+                '<li>Top up at <a href="https://textbelt.com/#pricing">textbelt.com</a> when credits are low. The system diagnostics will warn when balance is below 10 credits.</li>' +
+                '</ul>' +
+                '<div class="highlight"><strong>Verify with diagnostics:</strong> Run <strong>OTG Admin → Run System Diagnostics</strong> after deployment. The SMS check will confirm your key is valid and report remaining credits.</div>';
+        }
+        return '';
+    }
+
     function downloadGuide() {
         if (!TEMPLATES.guide) {
             alert('⚠️ Worker guide template not loaded. Add guide_template.html to the factory folder and refresh.');
@@ -1389,8 +1479,9 @@ function testConnection() {
         }
         const org = document.getElementById('orgName').value.trim() || 'org';
         const guideHtml = TEMPLATES.guide
-            .replace(/%%ORG_NAME%%/g,    org)
-            .replace(/%%VEHICLE_TERM%%/g, selectedConfig.term);
+            .replace(/%%ORG_NAME%%/g,             org)
+            .replace(/%%VEHICLE_TERM%%/g,          selectedConfig.term)
+            .replace(/%%SMS_PROVIDER_SETUP%%/g,    _buildSmsProviderSetupHtml(false));
         const blob = new Blob([guideHtml], { type: 'text/html' });
         const filename = 'worker_guide.html';
         const a = document.createElement('a');
@@ -1409,8 +1500,9 @@ function testConnection() {
         }
         const org = document.getElementById('orgName').value.trim() || 'org';
         const manualHtml = TEMPLATES.manual
-            .replace(/%%ORG_NAME%%/g,    org)
-            .replace(/%%VEHICLE_TERM%%/g, selectedConfig.term);
+            .replace(/%%ORG_NAME%%/g,             org)
+            .replace(/%%VEHICLE_TERM%%/g,          selectedConfig.term)
+            .replace(/%%SMS_PROVIDER_SETUP%%/g,    _buildSmsProviderSetupHtml(true));
         const blob = new Blob([manualHtml], { type: 'text/html' });
         const filename = org.replace(/[^a-z0-9_-]/gi, '_') + '_ops_manual.html';
         const a = document.createElement('a');
@@ -1445,8 +1537,9 @@ function testConnection() {
         let guideHtml = null;
         if (hasGuide) {
             guideHtml = TEMPLATES.guide
-                .replace(/%%ORG_NAME%%/g,    org)
-                .replace(/%%VEHICLE_TERM%%/g, selectedConfig.term);
+                .replace(/%%ORG_NAME%%/g,          org)
+                .replace(/%%VEHICLE_TERM%%/g,       selectedConfig.term)
+                .replace(/%%SMS_PROVIDER_SETUP%%/g, _buildSmsProviderSetupHtml(false));
         }
 
         const builtDate = new Date().toLocaleDateString('en-NZ', { day: '2-digit', month: 'long', year: 'numeric' });
