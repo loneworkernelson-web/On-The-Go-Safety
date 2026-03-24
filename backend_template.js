@@ -796,6 +796,52 @@ function _cleanPhone(num) {
 }
 
 /**
+ * Logs Textbelt SMS send results.
+ * Always writes to Logger.log (every send, success or failure).
+ * Appends a row to the 'SMS Log' sheet only on failure, so failures persist
+ * across executions and can be reviewed without catching a live run.
+ * Sheet is auto-created with headers on first use.
+ */
+function _logSmsResult_(to, body, parsed, isNetworkError) {
+    const success   = !isNetworkError && parsed && parsed.success === true;
+    const status    = isNetworkError  ? 'NETWORK_ERROR'
+                    : success         ? 'OK'
+                    : 'REJECTED';
+    const errorMsg  = isNetworkError  ? (parsed || 'Unknown network error')
+                    : (parsed && parsed.error) ? parsed.error
+                    : (parsed && parsed.message) ? parsed.message
+                    : '';
+    const quotaLeft = (parsed && parsed.quotaRemaining !== undefined)
+                    ? parsed.quotaRemaining : '';
+    const preview   = (body || '').substring(0, 120);
+
+    // Always log full detail to the execution transcript.
+    Logger.log('[SMS] to=' + to + ' status=' + status +
+               ' quota=' + quotaLeft + ' error="' + errorMsg +
+               '" body="' + preview + '"');
+
+    // Only write a sheet row for failures — keeps the log clean.
+    if (success) return;
+
+    try {
+        const ss    = SpreadsheetApp.getActiveSpreadsheet();
+        let logSheet = ss.getSheetByName('SMS Log');
+        if (!logSheet) {
+            logSheet = ss.insertSheet('SMS Log');
+            logSheet.appendRow([
+                'Timestamp', 'To', 'Status', 'Quota Remaining', 'Error', 'Message Preview'
+            ]);
+            logSheet.setFrozenRows(1);
+        }
+        logSheet.appendRow([
+            new Date(), to, status, quotaLeft, errorMsg, preview
+        ]);
+    } catch (sheetErr) {
+        Logger.log('[SMS] Could not write to SMS Log sheet: ' + sheetErr.toString());
+    }
+}
+
+/**
  * RE-ENGINEERED: High-Urgency Alert Router
  * Fixes: GPS Variable injection and Dual-Contact SMS Routing.
  */
@@ -1056,13 +1102,20 @@ function triggerAlerts(p, type) {
         ].map(n => _cleanPhone(n)).filter(n => n);
 
         const smsBody = `🚨 ${statusLabel}\nWorker: ${workerName}\nSite: ${locationName}\nPhone: ${workerPhone}\n${gpsSmsTxt}`;
+        Logger.log('[SMS] Preparing to send. Body: "' + smsBody + '"');
         numbers.forEach(num => {
             try {
-                UrlFetchApp.fetch('https://textbelt.com/text', {
+                const resp   = UrlFetchApp.fetch('https://textbelt.com/text', {
                     method: 'post',
-                    payload: { phone: num, message: smsBody, key: CONFIG.TEXTBELT_API_KEY }
+                    payload: { phone: num, message: smsBody, key: CONFIG.TEXTBELT_API_KEY },
+                    muteHttpExceptions: true
                 });
-            } catch (e) { console.error("SMS Failed: " + e.toString()); }
+                let parsed = null;
+                try { parsed = JSON.parse(resp.getContentText()); } catch(_) {}
+                _logSmsResult_(num, smsBody, parsed, false);
+            } catch (e) {
+                _logSmsResult_(num, smsBody, e.toString(), true);
+            }
         });
     }
 
