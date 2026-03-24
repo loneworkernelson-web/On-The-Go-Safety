@@ -9,7 +9,14 @@ const CONFIG = {
   WORKER_KEY: "%%WORKER_KEY%%", 
   ORS_API_KEY: "%%ORS_API_KEY%%", 
   GEMINI_API_KEY: "%%GEMINI_API_KEY%%", 
-  TEXTBELT_API_KEY: "%%TEXTBELT_API_KEY%%",
+  SMS_PROVIDER:       "%%SMS_PROVIDER%%",        // "twilio" | "burst" | "textbelt" | "none"
+  TWILIO_ACCOUNT_SID: "%%TWILIO_ACCOUNT_SID%%",  // Twilio: NZ, UK, Canada
+  TWILIO_AUTH_TOKEN:  "%%TWILIO_AUTH_TOKEN%%",
+  TWILIO_FROM:        "%%TWILIO_FROM%%",           // E.164 number or verified sender ID
+  BURST_API_KEY:      "%%BURST_API_KEY%%",         // Burst SMS: Australia
+  BURST_API_SECRET:   "%%BURST_API_SECRET%%",
+  BURST_FROM:         "%%BURST_FROM%%",            // Up to 11 char sender ID or phone
+  TEXTBELT_API_KEY:   "%%TEXTBELT_API_KEY%%",      // Textbelt: US
   PHOTOS_FOLDER_ID: "%%PHOTOS_FOLDER_ID%%", 
   REPORT_TEMPLATE_ID: "",   
   ORG_NAME: "%%ORGANISATION_NAME%%",
@@ -843,6 +850,86 @@ function _logSmsResult_(to, body, parsed, isNetworkError) {
 }
 
 /**
+ * SMS Provider Dispatcher
+ * Routes outbound SMS to the configured provider. All results are logged via
+ * _logSmsResult_() — successes to Logger.log, failures also to the SMS Log sheet.
+ * Safe to call even when no provider is configured — logs a skip and returns.
+ */
+function _sendSms_(to, body) {
+    const provider = (CONFIG.SMS_PROVIDER || '').toLowerCase().trim();
+    Logger.log('[SMS] Provider="' + provider + '" to=' + to);
+    switch (provider) {
+        case 'twilio':   _sendViaTwilio_(to, body);   break;
+        case 'burst':    _sendViaBurst_(to, body);     break;
+        case 'textbelt': _sendViaTextbelt_(to, body);  break;
+        default:
+            Logger.log('[SMS] No provider configured (SMS_PROVIDER="' + provider + '") — skipping send.');
+    }
+}
+
+/** Twilio — NZ, UK, Canada */
+function _sendViaTwilio_(to, body) {
+    const sid = CONFIG.TWILIO_ACCOUNT_SID;
+    const url = 'https://api.twilio.com/2010-04-01/Accounts/' + sid + '/Messages.json';
+    try {
+        const resp = UrlFetchApp.fetch(url, {
+            method: 'post',
+            headers: { Authorization: 'Basic ' + Utilities.base64Encode(sid + ':' + CONFIG.TWILIO_AUTH_TOKEN) },
+            payload: { To: to, From: CONFIG.TWILIO_FROM, Body: body },
+            muteHttpExceptions: true
+        });
+        let parsed = null;
+        try { parsed = JSON.parse(resp.getContentText()); } catch(_) {}
+        // Twilio success: response contains 'sid' and no 'error_code'.
+        const ok = parsed && parsed.sid && !parsed.error_code;
+        _logSmsResult_(to, body, {
+            success:        ok,
+            textId:         parsed && parsed.sid,
+            error:          parsed && (parsed.message || parsed.error_message),
+            quotaRemaining: ''
+        }, false);
+    } catch (e) { _logSmsResult_(to, body, e.toString(), true); }
+}
+
+/** Burst SMS — Australia */
+function _sendViaBurst_(to, body) {
+    try {
+        const resp = UrlFetchApp.fetch('https://api.transmitsms.com/send-sms.json', {
+            method: 'post',
+            headers: {
+                Authorization: 'Basic ' + Utilities.base64Encode(CONFIG.BURST_API_KEY + ':' + CONFIG.BURST_API_SECRET)
+            },
+            payload: { to: to, from: CONFIG.BURST_FROM, message: body },
+            muteHttpExceptions: true
+        });
+        let parsed = null;
+        try { parsed = JSON.parse(resp.getContentText()); } catch(_) {}
+        // Burst success: error.code === 0
+        const ok = parsed && parsed.error && parsed.error.code === 0;
+        _logSmsResult_(to, body, {
+            success:        ok,
+            textId:         parsed && parsed.message_id,
+            error:          parsed && parsed.error && parsed.error.description,
+            quotaRemaining: ''
+        }, false);
+    } catch (e) { _logSmsResult_(to, body, e.toString(), true); }
+}
+
+/** Textbelt — US */
+function _sendViaTextbelt_(to, body) {
+    try {
+        const resp = UrlFetchApp.fetch('https://textbelt.com/text', {
+            method: 'post',
+            payload: { phone: to, message: body, key: CONFIG.TEXTBELT_API_KEY },
+            muteHttpExceptions: true
+        });
+        let parsed = null;
+        try { parsed = JSON.parse(resp.getContentText()); } catch(_) {}
+        _logSmsResult_(to, body, parsed, false);
+    } catch (e) { _logSmsResult_(to, body, e.toString(), true); }
+}
+
+/**
  * RE-ENGINEERED: High-Urgency Alert Router
  * Fixes: GPS Variable injection and Dual-Contact SMS Routing.
  */
@@ -1096,7 +1183,7 @@ function triggerAlerts(p, type) {
     });
 
     // ── SMS ROUTING ────────────────────────────────────────────────────────
-    if (CONFIG.TEXTBELT_API_KEY && CONFIG.TEXTBELT_API_KEY.length > 5) {
+    if (CONFIG.SMS_PROVIDER && CONFIG.SMS_PROVIDER !== 'none' && !CONFIG.SMS_PROVIDER.includes('%%')) {
         const numbers = [
             p['Emergency Contact Number'] || p['Emergency Contact Phone'],
             p['Escalation Contact Number'] || p['Escalation Contact Phone']
@@ -1104,20 +1191,7 @@ function triggerAlerts(p, type) {
 
         const smsBody = `ALERT: ${statusLabel}\nWorker: ${workerName}\nSite: ${locationName}\nPhone: ${workerPhone}\n${gpsSmsTxt}`;
         Logger.log('[SMS] Preparing to send. Body: "' + smsBody + '"');
-        numbers.forEach(num => {
-            try {
-                const resp   = UrlFetchApp.fetch('https://textbelt.com/text', {
-                    method: 'post',
-                    payload: { phone: num, message: smsBody, key: CONFIG.TEXTBELT_API_KEY },
-                    muteHttpExceptions: true
-                });
-                let parsed = null;
-                try { parsed = JSON.parse(resp.getContentText()); } catch(_) {}
-                _logSmsResult_(num, smsBody, parsed, false);
-            } catch (e) {
-                _logSmsResult_(num, smsBody, e.toString(), true);
-            }
-        });
+        numbers.forEach(num => { try { _sendSms_(num, smsBody); } catch(e) { _logSmsResult_(num, smsBody, e.toString(), true); } });
     }
 
     // ── NTFY PUSH ROUTING ─────────────────────────────────────────────────
@@ -1607,33 +1681,89 @@ function runDiagnostics() {
             (quota <= 10 ? 'Critically low — alarm emails may not send.' : ''));
     } catch(e) { check('Email', 'Daily send quota', 'FAIL', e.toString()); }
 
-    // ── 5. TEXTBELT SMS ───────────────────────────────────────────────────
-    Logger.log('── TEXTBELT SMS ──');
-    const textbeltKey = CONFIG.TEXTBELT_API_KEY;
-    if (!textbeltKey || textbeltKey.includes('%%') || textbeltKey.length < 5) {
-        check('SMS', 'Textbelt', 'SKIP',
-            'TEXTBELT_API_KEY not configured. SMS notifications are disabled.');
+    // ── 5. SMS PROVIDER ───────────────────────────────────────────────────
+    Logger.log('── SMS PROVIDER ──');
+    const smsProvider = (CONFIG.SMS_PROVIDER || '').toLowerCase().trim();
+    if (!smsProvider || smsProvider === 'none' || smsProvider.includes('%%')) {
+        check('SMS', 'Provider', 'SKIP', 'SMS_PROVIDER not configured. SMS notifications are disabled.');
+    } else if (smsProvider === 'twilio') {
+        const sid = CONFIG.TWILIO_ACCOUNT_SID;
+        if (!sid || sid.includes('%%')) {
+            check('SMS', 'Twilio', 'FAIL', 'TWILIO_ACCOUNT_SID not configured.');
+        } else {
+            try {
+                const resp = UrlFetchApp.fetch(
+                    'https://api.twilio.com/2010-04-01/Accounts/' + sid + '.json',
+                    { method: 'get',
+                      headers: { Authorization: 'Basic ' + Utilities.base64Encode(sid + ':' + CONFIG.TWILIO_AUTH_TOKEN) },
+                      muteHttpExceptions: true }
+                );
+                const code = resp.getResponseCode();
+                const parsed = JSON.parse(resp.getContentText());
+                if (code === 200) {
+                    check('SMS', 'Twilio', 'PASS',
+                        'Account verified. Status: ' + parsed.status + '. From number: ' + CONFIG.TWILIO_FROM);
+                } else {
+                    check('SMS', 'Twilio', 'FAIL',
+                        'HTTP ' + code + ': ' + (parsed.message || resp.getContentText().substring(0, 200)));
+                }
+            } catch(e) { check('SMS', 'Twilio', 'FAIL', 'Request failed: ' + e.toString()); }
+        }
+    } else if (smsProvider === 'burst') {
+        const key = CONFIG.BURST_API_KEY;
+        if (!key || key.includes('%%')) {
+            check('SMS', 'Burst SMS', 'FAIL', 'BURST_API_KEY not configured.');
+        } else {
+            try {
+                const resp = UrlFetchApp.fetch('https://api.transmitsms.com/get-balance.json', {
+                    method: 'get',
+                    headers: { Authorization: 'Basic ' + Utilities.base64Encode(key + ':' + CONFIG.BURST_API_SECRET) },
+                    muteHttpExceptions: true
+                });
+                const code = resp.getResponseCode();
+                const parsed = JSON.parse(resp.getContentText());
+                if (code === 200 && parsed.balance !== undefined) {
+                    const bal = parsed.balance;
+                    const status = bal > 1 ? 'PASS' : bal > 0 ? 'WARN' : 'FAIL';
+                    check('SMS', 'Burst SMS', status,
+                        'Account verified. Balance: $' + bal +
+                        (bal === 0 ? ' Top-up required — SMS will fail until credits are purchased.' : '') +
+                        (bal > 0 && bal <= 1 ? ' Running low — consider topping up.' : '') +
+                        '. From: ' + CONFIG.BURST_FROM);
+                } else {
+                    check('SMS', 'Burst SMS', 'FAIL',
+                        'HTTP ' + code + ': ' + resp.getContentText().substring(0, 200));
+                }
+            } catch(e) { check('SMS', 'Burst SMS', 'FAIL', 'Request failed: ' + e.toString()); }
+        }
+    } else if (smsProvider === 'textbelt') {
+        const textbeltKey = CONFIG.TEXTBELT_API_KEY;
+        if (!textbeltKey || textbeltKey.includes('%%') || textbeltKey.length < 5) {
+            check('SMS', 'Textbelt', 'FAIL', 'TEXTBELT_API_KEY not configured.');
+        } else {
+            try {
+                const resp = UrlFetchApp.fetch(
+                    'https://textbelt.com/quota/' + encodeURIComponent(textbeltKey),
+                    { method: 'get', muteHttpExceptions: true }
+                );
+                const code = resp.getResponseCode();
+                const body = JSON.parse(resp.getContentText());
+                if (code === 200 && body.success) {
+                    const remaining = body.quotaRemaining;
+                    const status = remaining > 10 ? 'PASS' : remaining > 0 ? 'WARN' : 'FAIL';
+                    check('SMS', 'Textbelt quota', status,
+                        'Key valid. Credits remaining: ' + remaining + '.' +
+                        (remaining === 0 ? ' Top-up required — SMS will fail until credits are purchased.' : '') +
+                        (remaining <= 10 && remaining > 0 ? ' Running low — consider topping up.' : ''));
+                } else {
+                    check('SMS', 'Textbelt quota', 'FAIL',
+                        'Unexpected response (HTTP ' + code + '): ' +
+                        resp.getContentText().substring(0, 200));
+                }
+            } catch(e) { check('SMS', 'Textbelt quota', 'FAIL', 'Request failed: ' + e.toString()); }
+        }
     } else {
-        try {
-            const resp = UrlFetchApp.fetch(
-                'https://textbelt.com/quota/' + encodeURIComponent(textbeltKey),
-                { method: 'get', muteHttpExceptions: true }
-            );
-            const code = resp.getResponseCode();
-            const body = JSON.parse(resp.getContentText());
-            if (code === 200 && body.success) {
-                const remaining = body.quotaRemaining;
-                const status = remaining > 10 ? 'PASS' : remaining > 0 ? 'WARN' : 'FAIL';
-                check('SMS', 'Textbelt quota', status,
-                    'Key valid. Credits remaining: ' + remaining + '.' +
-                    (remaining === 0 ? ' Top-up required — SMS will fail until credits are purchased.' : '') +
-                    (remaining <= 10 && remaining > 0 ? ' Running low — consider topping up.' : ''));
-            } else {
-                check('SMS', 'Textbelt quota', 'FAIL',
-                    'Unexpected response (HTTP ' + code + '): ' +
-                    resp.getContentText().substring(0, 200));
-            }
-        } catch(e) { check('SMS', 'Textbelt quota', 'FAIL', 'Request failed: ' + e.toString()); }
+        check('SMS', 'Provider', 'FAIL', 'Unknown SMS_PROVIDER value: "' + smsProvider + '". Expected: twilio, burst, or textbelt.');
     }
 
     // ── 6. NTFY PUSH ──────────────────────────────────────────────────────
@@ -2602,19 +2732,13 @@ function handleSafetyResolution(p) {
     });
     
     // 4. Dual-Contact SMS
-    if(CONFIG.TEXTBELT_API_KEY && CONFIG.TEXTBELT_API_KEY.length > 5) {
+    if (CONFIG.SMS_PROVIDER && CONFIG.SMS_PROVIDER !== 'none' && !CONFIG.SMS_PROVIDER.includes('%%')) {
         const numbers = [
-    p['Emergency Contact Number'] || p['Emergency Contact Phone'], 
-    p['Escalation Contact Number'] || p['Escalation Contact Phone']
-].map(n => _cleanPhone(n)).filter(n => n);
-        numbers.forEach(num => { 
-            try {
-                UrlFetchApp.fetch('https://textbelt.com/text', {
-                    'method': 'post',
-                    'payload': { 'phone': num, 'message': `${subject}. Alert resolved.`, 'key': CONFIG.TEXTBELT_API_KEY }
-                }); 
-            } catch(e) { console.error('All Clear SMS failed: ' + e.toString()); }
-        });
+            p['Emergency Contact Number'] || p['Emergency Contact Phone'],
+            p['Escalation Contact Number'] || p['Escalation Contact Phone']
+        ].map(n => _cleanPhone(n)).filter(n => n);
+        const allClearBody = `${subject}. Alert resolved.`;
+        numbers.forEach(num => { try { _sendSms_(num, allClearBody); } catch(e) { _logSmsResult_(num, allClearBody, e.toString(), true); } });
     }
 
     // 5. ntfy push — All Clear notification to both contacts
