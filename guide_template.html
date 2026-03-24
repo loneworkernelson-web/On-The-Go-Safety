@@ -811,6 +811,14 @@
     <p>Your organisation may require you to complete a short questionnaire <strong>before</strong> a travel visit begins — covering vehicle condition, route details, or a fit-to-drive confirmation. If this is configured, the form will appear automatically after you tap the Travelling tile and before your trip timer starts.</p>
     <p>You must submit the form to proceed. The answers are sent to your organisation as part of the visit record. If you close the form without completing it, the trip will not start.</p>
 
+    <h3>Travel Report — Start Point &amp; Destination</h3>
+    <p>When you end a travel trip and the <strong>Travel Report</strong> template loads, two fields are automatically filled in at the top of the form:</p>
+    <ul>
+        <li><strong>Start Point</strong> — the address where your trip began, resolved automatically from your GPS location at trip start. While the app is looking up the address, the field shows <em>"Locating…"</em> — it will fill in within a few seconds once resolved. If GPS or network was unavailable at the time, raw coordinates are shown instead.</li>
+        <li><strong>Destination</strong> — the name and address of the location you visited, composed from your selected site details.</li>
+    </ul>
+    <p>Both fields are fully editable before you submit — correct them if the auto-filled information is wrong (for example, if you diverted from the planned destination). Both are included in the report sent to your organisation.</p>
+
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2>9. Settings &amp; Preferences</h2>
 
@@ -864,32 +872,29 @@
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2>10. Safety Check-ins</h2>
 
-    <p>If your organisation has enabled periodic welfare check-ins, the app will chime and display a prompt at regular intervals while a visit is active.</p>
+    <p>If your organisation has enabled periodic welfare check-ins, the app will chime and display a full-screen prompt at regular intervals while a visit is active.</p>
 
     <div class="mock-wrap">
-        <div class="mock-phone" style="width:260px;">
-            <div class="mock-statusbar"><span>10:41 AM</span><span>▐▐▐ 🔋</span></div>
-            <div class="mock-header">
-                <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
-            </div>
-            <div class="mock-body-pad">
-                <div class="mock-checkin-overlay">
-                    <div class="mock-checkin-title">🔔 Are you OK?</div>
-                    <div class="mock-checkin-sub">Welfare check — tap to confirm you're safe</div>
-                    <div class="mock-checkin-countdown">01:47</div>
-                    <div style="font-size:9px;color:#9ca3af;margin-bottom:10px;">Alert fires if unanswered in time</div>
-                    <div class="mock-safe-btn">✔ I Am Safe — Hold to Confirm</div>
-                </div>
+        <div class="mock-phone" style="width:260px;background:linear-gradient(135deg,#1e3a5f 0%,#0f172a 100%);border-color:#0f172a;">
+            <div class="mock-statusbar" style="background:rgba(0,0,0,0.4);color:#64748b;"><span>10:41 AM</span><span>▐▐▐ 🔋</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 16px 20px;text-align:center;min-height:340px;">
+                <div style="font-size:44px;margin-bottom:10px;">🙋</div>
+                <div style="font-size:16px;font-weight:900;color:white;letter-spacing:0.12em;margin-bottom:4px;">Are You OK?</div>
+                <div style="font-size:9px;color:#93c5fd;font-weight:700;margin-bottom:2px;">Periodic welfare check-in</div>
+                <div style="font-size:9px;color:#6b7280;margin-bottom:14px;">Alarm fires if not confirmed within:</div>
+                <div style="font-size:40px;font-weight:900;font-family:monospace;color:white;margin-bottom:20px;">2:00</div>
+                <div style="background:#22c55e;border:3px solid #86efac;border-radius:16px;padding:14px 20px;width:100%;font-size:11px;font-weight:900;color:white;letter-spacing:0.08em;">✅ I'm OK</div>
+                <div style="font-size:8px;color:#6b7280;margin-top:10px;line-height:1.4;">If you're unable to respond, ask someone nearby to tap the button for you.</div>
             </div>
         </div>
     </div>
-    <p class="mock-caption">Welfare check-in prompt — you have 2 minutes to respond</p>
+    <p class="mock-caption">Welfare check-in — full-screen prompt, tap once to confirm</p>
 
     <p><strong>When the prompt appears:</strong></p>
     <ul>
-        <li>Unlock your phone and <strong>hold the green "I Am Safe" button</strong> to confirm you're OK.</li>
-        <li>If you don't respond within 2 minutes, a safety alarm will automatically fire and alert your contacts.</li>
-        <li>The check-in interval is set by your organisation — check with your manager if you're unsure what to expect.</li>
+        <li>Unlock your phone and <strong>tap the green "✅ I'm OK" button once</strong> to confirm you're safe.</li>
+        <li>If you don't respond within 2 minutes, a safety alarm fires automatically and alerts your contacts.</li>
+        <li>The check-in interval may be fixed by your organisation, or you may be able to choose it yourself before starting a visit (10, 15, 30, 60, or 120 minute options). Check with your manager if you're unsure what to expect.</li>
     </ul>
 
     <!-- ═══════════════════════════════════════════════════════ -->
@@ -1049,86 +1054,190 @@
         <p style="margin-bottom:0;"><strong>The SOS button does NOT call emergency services.</strong> In a life-threatening emergency, call <strong>111</strong> (NZ), <strong>000</strong> (Australia), <strong>999</strong> (UK), or <strong>911</strong> (USA/Canada) first. The SOS function is a notification tool for your contacts and your organisation's safety monitor — it does not automatically dispatch police or ambulance.</p>
     </div>
 
-    <h3>Raising an Alarm (SOS)</h3>
-    <ol class="step-list">
-        <li>Tap the large red <strong>SOS button 3 times rapidly</strong>.</li>
-        <li>The screen turns red and begins broadcasting your GPS location.</li>
-        <li>Your emergency contact, escalation contact, and your organisation's monitor are alerted immediately.</li>
-        <li>Continue to move to safety and call emergency services if needed.</li>
-    </ol>
+    <h3>How the alarm works on your phone</h3>
+    <p>When an alarm fires, the app is intentionally <strong>discreet on your screen</strong>. There is no blaring red screen or flashing strobe visible to anyone nearby. Instead, a subtle amber grain texture appears around the edges of the screen — enough for you to know the alarm is active, but not obvious to a bystander.</p>
+    <p>Your emergency contact, escalation contact, and your organisation's safety monitor are alerted immediately by the backend. The monitor's dashboard will show a full audible and visual alarm — you do not need to do anything else once the alarm is triggered.</p>
 
     <div class="mock-wrap">
         <div class="mock-phone" style="width:260px;">
-            <div class="mock-statusbar" style="background:#450a0a;color:#fca5a5;"><span>10:47 AM</span><span>▐▐▐ 🔋</span></div>
-            <div class="mock-header" style="background:#7f1d1d;">
-                <div class="mock-header-left"><div class="mock-logo-dot" style="background:#ef4444;"></div><span style="color:#fca5a5;">%%ORG_NAME%%</span></div>
-                <span style="color:#ef4444;font-size:9px;font-weight:900;animation:pulse 1s infinite">● SOS ACTIVE</span>
+            <div class="mock-statusbar"><span>10:47 AM</span><span>▐▐▐ 🔋</span></div>
+            <div class="mock-header">
+                <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
+                <span style="color:#22c55e;font-size:9px;font-weight:900;">● ACTIVE</span>
             </div>
-            <div class="mock-body-pad">
-                <div class="mock-sos-screen">
-                    <div class="mock-sos-title">🚨 ALARM RAISED</div>
-                    <div class="mock-sos-sub">Your location is being shared with contacts</div>
-                    <div style="font-size:10px;color:#fca5a5;margin:8px 0;">GPS: -36.848461, 174.763336</div>
-                    <div style="font-size:9px;color:#9ca3af;margin-bottom:8px;">Alert sent to: J. Smith, M. Brown</div>
-                    <div class="mock-sos-btn">✔ I Am Safe — Hold &amp; Enter PIN</div>
+            <!-- Amber alarm overlay effect: inner glow border -->
+            <div style="position:relative;">
+                <div style="position:absolute;inset:0;border:4px solid rgba(251,146,60,0.6);pointer-events:none;z-index:2;border-radius:0;"></div>
+                <div class="mock-body" style="background:rgba(251,146,60,0.04);">
+                    <div class="mock-label">Currently Active At</div>
+                    <div class="mock-value" style="font-size:11px;">📍 City Library</div>
+                    <div class="mock-label">Time Remaining</div>
+                    <div class="mock-value" style="color:#f59e0b;">4 min</div>
+                    <div class="mock-progress-bar"><div class="mock-progress-fill" style="width:10%;background:#f59e0b;"></div></div>
+                    <div class="mock-timer-row" style="margin-top:10px;">
+                        <div class="mock-quick-btn" style="opacity:0.5;">Extend</div>
+                        <div class="mock-quick-btn" style="opacity:0.5;">📋 Forms</div>
+                    </div>
+                    <div style="background:rgba(251,146,60,0.08);border:1px solid rgba(251,146,60,0.3);border-radius:8px;padding:8px;text-align:center;margin-top:8px;">
+                        <div style="font-size:9px;color:#fb923c;font-weight:900;letter-spacing:0.08em;">🔴 ALARM ACTIVE</div>
+                        <div style="font-size:8px;color:#9ca3af;margin-top:3px;">Tap any button to confirm safe</div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    <p class="mock-caption">SOS active screen — red indicates alarm is broadcasting</p>
+    <p class="mock-caption">Alarm active — subtle amber border overlay; screen stays normal for bystanders</p>
 
-    <p>If your organisation has the <strong>what3words</strong> feature configured, a three-word location address (e.g. <code>///filled.count.soap</code>) will appear on this screen in green, below the GPS coordinates. This is your precise location expressed as three words — it identifies a 3-metre square anywhere in the world.</p>
-    <p>The what3words address is particularly useful if you need to describe your location verbally to a responder over the phone, or if you're in a place where a street address doesn't exist (a field, a beach, a car park). Read it out exactly as shown, including the three slashes: <em>"filled dot count dot soap"</em>. Your contacts will receive the same address in the emergency email sent to them automatically.</p>
-    <p>If you don't see a what3words address, either the feature isn't configured for your deployment or a GPS fix wasn't available when the alarm fired — your GPS coordinates are still sent to contacts.</p>
+    <h3>Confirming you are safe</h3>
+    <p>While an alarm is active, <strong>every button tap</strong> on the locked screen is intercepted and asks for your PIN before doing anything else. This protects against someone forcing you to cancel the alarm.</p>
     <ol class="step-list">
-        <li>When you are safe, hold the green <strong>"I Am Safe"</strong> button.</li>
-        <li>Enter your <strong>standard 4-digit PIN</strong>.</li>
-        <li>The alarm is cancelled and an "All Clear" message is sent to your contacts and the monitor.</li>
-    </ol>
-
-    <h3>Cancelling Under Duress</h3>
-    <p>If someone is watching you and forcing you to "cancel" an alarm:</p>
-    <ol class="step-list">
-        <li>Hold the "I Am Safe" button as normal.</li>
-        <li>Enter your <strong>Duress PIN</strong> (the different one you set up during setup).</li>
-        <li>The app will appear to cancel normally, but will silently send a <strong>DURESS</strong> alert with your location to your contacts and HQ.</li>
-    </ol>
-
-    <div class="tip">
-        <strong>💡 Remember:</strong> Your Duress PIN is your secret safety net. Never tell anyone what it is — not even someone pretending to be from your organisation.
-    </div>
-
-    <h3>Covert Alert — Shake to Trigger</h3>
-    <p>If you cannot safely reach the SOS button — for example, because someone is watching you — you can trigger a silent duress alert by shaking your phone:</p>
-    <ol class="step-list">
-        <li>During any active visit, <strong>shake your phone vigorously</strong> for about one second. The screen will flash red and vibrate.</li>
-        <li>A confirmation screen appears: <em>"Shake again to send covert alert."</em> You have <strong>5 seconds</strong> to confirm.</li>
-        <li><strong>Shake again</strong> to confirm. A silent <strong>DURESS</strong> alert is sent to your contacts and HQ monitor — identical to entering your Duress PIN.</li>
-        <li>If you do <strong>not</strong> shake again within 5 seconds, the screen dismisses automatically and no alert is sent. This prevents accidental triggers from running or rough terrain.</li>
+        <li>Tap <strong>any button</strong> on the screen. A PIN entry modal appears immediately.</li>
+        <li>Enter your <strong>standard 4-digit Safety PIN</strong>.</li>
+        <li>The alarm is cancelled. Your contacts receive an <strong>✅ All Clear</strong> notification and the amber overlay disappears.</li>
     </ol>
 
     <div class="mock-wrap">
         <div class="mock-phone" style="width:260px;">
-            <div class="mock-statusbar" style="background:#450a0a;color:#fca5a5;"><span>10:47 AM</span><span>▐▐▐ 🔋</span></div>
-            <div class="mock-header" style="background:#7f1d1d;">
-                <div class="mock-header-left"><div class="mock-logo-dot" style="background:#ef4444;"></div><span style="color:#fca5a5;">%%ORG_NAME%%</span></div>
-                <span style="color:#ef4444;font-size:9px;font-weight:900;">⚠ SHAKE DETECTED</span>
+            <div class="mock-statusbar"><span>10:47 AM</span><span>▐▐▐ 🔋</span></div>
+            <div class="mock-header">
+                <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
             </div>
             <div class="mock-body-pad">
-                <div class="mock-sos-screen">
-                    <div class="mock-sos-title" style="font-size:14px;">📳 Shake Detected</div>
-                    <div class="mock-sos-sub" style="margin-bottom:16px;">Shake again to send covert alert</div>
-                    <div style="font-size:10px;color:#fca5a5;margin-bottom:4px;">Stop shaking, then shake once more to confirm</div>
-                    <div style="font-size:36px;font-weight:900;color:white;font-family:monospace;">5</div>
-                    <div style="font-size:9px;color:#9ca3af;margin-top:8px;">No action = dismissed automatically</div>
+                <div class="mock-modal-overlay">
+                    <div class="mock-modal-card" style="text-align:center;">
+                        <div class="mock-modal-title" style="color:#f9fafb;">Enter PIN to Confirm Safe</div>
+                        <div style="display:flex;gap:8px;justify-content:center;margin-bottom:12px;">
+                            <div style="width:32px;height:38px;background:#111827;border:2px solid #3b82f6;border-radius:8px;display:flex;align-items:center;justify-content:center;color:white;font-size:16px;font-weight:900;">•</div>
+                            <div style="width:32px;height:38px;background:#111827;border:2px solid #3b82f6;border-radius:8px;display:flex;align-items:center;justify-content:center;color:white;font-size:16px;font-weight:900;">•</div>
+                            <div style="width:32px;height:38px;background:#111827;border:1px solid #374151;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#6b7280;font-size:16px;font-weight:900;">_</div>
+                            <div style="width:32px;height:38px;background:#111827;border:1px solid #374151;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#6b7280;font-size:16px;font-weight:900;">_</div>
+                        </div>
+                        <div class="mock-modal-btn" style="background:#15803d;">✔ Confirm — I Am Safe</div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    <p class="mock-caption">Shake confirmation screen — 5 seconds to confirm or it auto-dismisses</p>
+    <p class="mock-caption">PIN modal — appears when any button is tapped while an alarm is active</p>
 
     <div class="tip">
-        <strong>💡 Note:</strong> The shake alert triggers a <strong>DURESS</strong> alert — the same as entering your Duress PIN. Your contacts and HQ will be notified silently. The app will not display any alarm on screen, so it looks normal to anyone watching.
+        <strong>💡 What3Words:</strong> If your organisation has the what3words feature configured, a three-word location address (e.g. <code>///filled.count.soap</code>) will appear on your screen in green during an active alarm. Read it out exactly as shown if you need to describe your location verbally to a responder — it pinpoints a 3-metre square anywhere in the world.
+    </div>
+
+    <h3>Cancelling under duress</h3>
+    <p>If someone is watching you and forcing you to cancel an alarm, use your Duress PIN instead:</p>
+    <ol class="step-list">
+        <li>Tap any button to bring up the PIN modal as normal.</li>
+        <li>Enter your <strong>Duress PIN</strong> (the different one you set during setup) instead of your Safety PIN.</li>
+        <li>The app shows a brief "Confirmed" toast — it appears to cancel normally. A <strong>DURESS</strong> alert with your GPS is silently sent to your contacts and HQ monitor. The alarm interception remains active — every further button tap will again ask for PIN.</li>
+    </ol>
+
+    <div class="mock-wrap">
+        <div class="mock-phone" style="width:260px;">
+            <div class="mock-statusbar"><span>10:47 AM</span><span>▐▐▐ 🔋</span></div>
+            <div class="mock-header">
+                <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
+                <span style="color:#22c55e;font-size:9px;font-weight:900;">● ACTIVE</span>
+            </div>
+            <div style="position:relative;">
+                <!-- Purple duress overlay border -->
+                <div style="position:absolute;inset:0;border:4px solid rgba(168,85,247,0.6);pointer-events:none;z-index:2;"></div>
+                <div class="mock-body" style="background:rgba(168,85,247,0.04);">
+                    <div class="mock-label">Currently Active At</div>
+                    <div class="mock-value" style="font-size:11px;">📍 City Library</div>
+                    <div class="mock-toast" style="background:#2e1065;border-color:#7e22ce;color:#e9d5ff;margin-top:6px;">✅ Confirmed</div>
+                    <div style="background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.3);border-radius:8px;padding:8px;text-align:center;margin-top:4px;">
+                        <div style="font-size:9px;color:#c084fc;font-weight:900;letter-spacing:0.08em;">🔴 DURESS ACTIVE</div>
+                        <div style="font-size:8px;color:#9ca3af;margin-top:3px;">Silent alert sent — screen looks normal</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <p class="mock-caption">After Duress PIN — purple overlay only; screen appears normal to a bystander</p>
+
+    <div class="tip">
+        <strong>💡 Remember:</strong> Your Duress PIN is your secret safety net. Never tell anyone what it is — not even someone claiming to be from your organisation.
+    </div>
+
+    <h3>Ways to trigger an alarm</h3>
+    <p>There are three independent ways to raise an alarm, any of which can be used covertly:</p>
+
+    <h4>1. SOS Button — tap 3 times</h4>
+    <p>Tap the red <strong>SOS button 3 times rapidly</strong> (within about 2 seconds). This is the primary method and works at any time during an active visit.</p>
+
+    <div class="mock-wrap">
+        <div class="mock-phone" style="width:260px;">
+            <div class="mock-statusbar"><span>10:47 AM</span><span>▐▐▐ 🔋</span></div>
+            <div class="mock-header">
+                <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
+                <span style="color:#22c55e;font-size:9px;font-weight:900;">● ACTIVE</span>
+            </div>
+            <div class="mock-body" style="padding-top:14px;padding-bottom:14px;">
+                <div style="text-align:center;margin-bottom:10px;">
+                    <div style="width:64px;height:64px;background:#dc2626;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:white;letter-spacing:0.05em;box-shadow:0 0 0 6px rgba(220,38,38,0.2);">SOS</div>
+                </div>
+                <div style="text-align:center;font-size:9px;color:#9ca3af;margin-bottom:10px;">Tap 3× rapidly to raise alarm</div>
+                <div class="mock-slide-pill danger" style="margin-top:0;">
+                    <div class="mock-pill-thumb">→</div>
+                    End Visit
+                </div>
+            </div>
+        </div>
+    </div>
+    <p class="mock-caption">SOS button — tap rapidly 3 times to trigger</p>
+
+    <h4>2. Shake — shake vigorously, then shake again</h4>
+    <p>Shake your phone vigorously for about a second. A full-screen red confirmation modal appears with a 5-second countdown. <strong>Shake again</strong> to confirm — the alarm fires. If you do not shake again within 5 seconds, the screen dismisses automatically and nothing is sent.</p>
+
+    <div class="mock-wrap">
+        <div class="mock-phone" style="width:260px;background:#450a0a;border-color:#7f1d1d;">
+            <div class="mock-statusbar" style="background:#3b0808;color:#fca5a5;"><span>10:47 AM</span><span>▐▐▐ 🔋</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 16px 20px;text-align:center;min-height:320px;">
+                <div style="font-size:16px;font-weight:900;color:white;letter-spacing:0.12em;margin-bottom:6px;">SHAKE DETECTED</div>
+                <div style="font-size:9px;color:#fca5a5;margin-bottom:4px;">Shake again to send alert</div>
+                <div style="font-size:9px;color:#9ca3af;margin-bottom:18px;">Or wait 5 seconds to cancel</div>
+                <div style="font-size:56px;font-weight:900;font-family:monospace;color:white;margin-bottom:18px;">5</div>
+                <div style="font-size:9px;color:#9ca3af;line-height:1.5;">Stop shaking, then shake<br>once more to confirm</div>
+            </div>
+        </div>
+    </div>
+    <p class="mock-caption">Shake confirmation — 5 seconds to confirm or it auto-dismisses</p>
+
+    <h4>3. Volume buttons — Android only</h4>
+    <p>Press either volume button <strong>5 times within 3 seconds</strong>. A confirmation screen appears — press any volume button 3 more times within 5 seconds to confirm. This method works even when the screen is off or locked.</p>
+
+    <div class="mock-wrap">
+        <div class="mock-phone" style="width:260px;background:#431407;border-color:#7c2d12;">
+            <div class="mock-statusbar" style="background:#3a1107;color:#fdba74;"><span>10:47 AM</span><span>▐▐▐ 🔋</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 16px 20px;text-align:center;min-height:320px;">
+                <div style="font-size:16px;font-weight:900;color:white;letter-spacing:0.1em;margin-bottom:8px;">VOLUME PANIC</div>
+                <div style="font-size:9px;color:#fbbf24;font-weight:700;margin-bottom:18px;">Press volume buttons again to confirm</div>
+                <div style="font-size:48px;font-weight:900;font-family:monospace;color:white;margin-bottom:6px;">5</div>
+                <div style="display:flex;gap:10px;margin-top:16px;">
+                    <div style="background:#7c2d12;border:2px solid #f97316;border-radius:10px;padding:10px 14px;font-size:10px;font-weight:900;color:#fdba74;">VOL +</div>
+                    <div style="background:#7c2d12;border:2px solid #f97316;border-radius:10px;padding:10px 14px;font-size:10px;font-weight:900;color:#fdba74;">VOL −</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <p class="mock-caption">Volume panic — Android only; press 3 more times within 5 seconds to confirm</p>
+
+    <div class="tip">
+        <strong>💡 All three methods send the same alarm.</strong> SOS, shake, and volume buttons all send a PANIC alert to your contacts and monitor — the alarm behaviour and the way you cancel it is identical regardless of which trigger you used.
+    </div>
+
+    <h3>What your contacts receive</h3>
+    <p>When any alarm fires, your contacts receive:</p>
+    <ul>
+        <li>An instant push notification via ntfy (if configured) — straight to their lock screen</li>
+        <li>An email showing the alarm type, your name and phone number, your site and its address, and a GPS link</li>
+        <li>A <strong>what3words address</strong> (e.g. <code>///filled.count.soap</code>) in the emergency email, if that feature is configured</li>
+    </ul>
+    <p>When you confirm safe, your contacts receive an <strong>✅ All Clear</strong> push notification automatically.</p>
+
+    <div class="highlight">
+        <strong>ntfy is free and open source.</strong> Your organisation may run its own private ntfy server for additional privacy — if so, your administrator will have configured this and nothing changes from your perspective. If no custom server is configured, the free public service at ntfy.sh is used.
     </div>
 
     <h2>Quick Reference Card</h2>
@@ -1147,12 +1256,13 @@
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Submit a note or form mid-visit</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap <strong>📋 Forms</strong> button on locked screen</td></tr>
             <tr><td style="padding:10px;border:1px solid #e5e7eb;">Wake from Battery Saver</td><td style="padding:10px;border:1px solid #e5e7eb;">Slide the <strong>Wake</strong> pill right</td></tr>
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">View site safety information</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap <strong>ℹ</strong> on location tile → <strong>🛡️ VIEW SITE SAFETY INFORMATION</strong></td></tr>
-            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Welfare check-in</td><td style="padding:10px;border:1px solid #e5e7eb;">Hold green "I Am Safe" button when prompted (within 2 min)</td></tr>
-            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Raise emergency alarm</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap red SOS button 3 times rapidly</td></tr>
-            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Covert duress alert (can't reach SOS)</td><td style="padding:10px;border:1px solid #e5e7eb;">Shake vigorously → shake again to confirm within 5 sec</td></tr>
-            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Cancel alarm (you're safe)</td><td style="padding:10px;border:1px solid #e5e7eb;">Hold "I Am Safe" → enter standard PIN</td></tr>
-            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Cancel alarm under duress</td><td style="padding:10px;border:1px solid #e5e7eb;">Hold "I Am Safe" → enter Duress PIN (silent DURESS alert sent)</td></tr>
-            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Sync new locations</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap Sync button on main screen</td></tr>
+            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Welfare check-in</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap green <strong>✅ I'm OK</strong> button when prompted (within 2 min)</td></tr>
+            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Raise alarm — SOS button</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap red SOS button <strong>3 times rapidly</strong></td></tr>
+            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Raise alarm — shake</td><td style="padding:10px;border:1px solid #e5e7eb;">Shake vigorously → shake again within 5 sec to confirm</td></tr>
+            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Raise alarm — volume buttons (Android)</td><td style="padding:10px;border:1px solid #e5e7eb;">Press volume ×5 within 3 sec → press ×3 more to confirm</td></tr>
+            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Cancel alarm (you're safe)</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap any button → enter <strong>Safety PIN</strong></td></tr>
+            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Cancel alarm under duress</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap any button → enter <strong>Duress PIN</strong> (silent DURESS alert sent)</td></tr>
+            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Sync new locations</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap Sync button on main screen</td></tr>
         </tbody>
     </table>
 
