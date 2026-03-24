@@ -890,7 +890,7 @@ function _sendViaTwilio_(to, body) {
     } catch (e) { _logSmsResult_(to, body, e.toString(), true); }
 }
 
-/** Burst SMS — Australia */
+/** Kudosity (formerly Burst SMS) — Australia / New Zealand */
 function _sendViaBurst_(to, body) {
     try {
         const resp = UrlFetchApp.fetch('https://api.transmitsms.com/send-sms.json', {
@@ -903,8 +903,8 @@ function _sendViaBurst_(to, body) {
         });
         let parsed = null;
         try { parsed = JSON.parse(resp.getContentText()); } catch(_) {}
-        // Burst success: error.code === 0
-        const ok = parsed && parsed.error && parsed.error.code === 0;
+        // Kudosity (formerly Burst SMS) success: error.code === 0 (legacy) or 'SUCCESS' (current API)
+        const ok = parsed && parsed.error && (parsed.error.code === 0 || parsed.error.code === 'SUCCESS');
         _logSmsResult_(to, body, {
             success:        ok,
             textId:         parsed && parsed.message_id,
@@ -1711,7 +1711,7 @@ function runDiagnostics() {
     } else if (smsProvider === 'burst') {
         const key = CONFIG.BURST_API_KEY;
         if (!key || key.includes('%%')) {
-            check('SMS', 'Burst SMS', 'FAIL', 'BURST_API_KEY not configured.');
+            check('SMS', 'Kudosity', 'FAIL', 'BURST_API_KEY not configured.');
         } else {
             try {
                 const resp = UrlFetchApp.fetch('https://api.transmitsms.com/get-balance.json', {
@@ -1724,13 +1724,13 @@ function runDiagnostics() {
                 if (code === 200 && parsed.balance !== undefined) {
                     const bal = parsed.balance;
                     const status = bal > 1 ? 'PASS' : bal > 0 ? 'WARN' : 'FAIL';
-                    check('SMS', 'Burst SMS', status,
+                    check('SMS', 'Kudosity', status,
                         'Account verified. Balance: $' + bal +
                         (bal === 0 ? ' Top-up required — SMS will fail until credits are purchased.' : '') +
                         (bal > 0 && bal <= 1 ? ' Running low — consider topping up.' : '') +
                         '. From: ' + CONFIG.BURST_FROM);
                 } else {
-                    check('SMS', 'Burst SMS', 'FAIL',
+                    check('SMS', 'Kudosity', 'FAIL',
                         'HTTP ' + code + ': ' + resp.getContentText().substring(0, 200));
                 }
             } catch(e) { check('SMS', 'Burst SMS', 'FAIL', 'Request failed: ' + e.toString()); }
