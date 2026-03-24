@@ -813,11 +813,12 @@ function _logSmsResult_(to, body, parsed, isNetworkError) {
                     : '';
     const quotaLeft = (parsed && parsed.quotaRemaining !== undefined)
                     ? parsed.quotaRemaining : '';
+    const textId    = (parsed && parsed.textId) ? parsed.textId : '';
     const preview   = (body || '').substring(0, 120);
 
     // Always log full detail to the execution transcript.
     Logger.log('[SMS] to=' + to + ' status=' + status +
-               ' quota=' + quotaLeft + ' error="' + errorMsg +
+               ' textId=' + textId + ' quota=' + quotaLeft + ' error="' + errorMsg +
                '" body="' + preview + '"');
 
     // TEMPORARY DIAGNOSTIC: logging all results (success + failure) to sheet.
@@ -829,12 +830,12 @@ function _logSmsResult_(to, body, parsed, isNetworkError) {
         if (!logSheet) {
             logSheet = ss.insertSheet('SMS Log');
             logSheet.appendRow([
-                'Timestamp', 'To', 'Status', 'Quota Remaining', 'Error', 'Message Preview'
+                'Timestamp', 'To', 'Status', 'Quota Remaining', 'Text ID', 'Error', 'Message Preview'
             ]);
             logSheet.setFrozenRows(1);
         }
         logSheet.appendRow([
-            new Date(), to, status, quotaLeft, errorMsg, preview
+            new Date(), to, status, quotaLeft, textId, errorMsg, preview
         ]);
     } catch (sheetErr) {
         Logger.log('[SMS] Could not write to SMS Log sheet: ' + sheetErr.toString());
@@ -1101,7 +1102,7 @@ function triggerAlerts(p, type) {
             p['Escalation Contact Number'] || p['Escalation Contact Phone']
         ].map(n => _cleanPhone(n)).filter(n => n);
 
-        const smsBody = `🚨 ${statusLabel}\nWorker: ${workerName}\nSite: ${locationName}\nPhone: ${workerPhone}\n${gpsSmsTxt}`;
+        const smsBody = `ALERT: ${statusLabel}\nWorker: ${workerName}\nSite: ${locationName}\nPhone: ${workerPhone}\n${gpsSmsTxt}`;
         Logger.log('[SMS] Preparing to send. Body: "' + smsBody + '"');
         numbers.forEach(num => {
             try {
