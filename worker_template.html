@@ -620,25 +620,27 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  </h1>
  </div>
  <div class="flex items-center">
- <div class="flex items-center gap-3 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-sm">
+ <div class="flex items-center gap-1 px-2 py-1.5 rounded-full bg-black/40 backdrop-blur-sm">
  <!-- Settings -->
  <button onclick="navigate('settings')"
- class="text-xl text-white transition active:rotate-45"
+ class="text-xl text-white transition active:rotate-45 px-3 py-1"
  aria-label="Settings">
  ⚙️
  </button>
- <!-- GPS indicator -->
- <div class="flex flex-col items-center">
+ <div class="w-px h-5 bg-white/20 self-center"></div>
+ <!-- GPS indicator (tap to toggle method/accuracy display) -->
+ <button onclick="toggleGpsDisplay()" class="flex flex-col items-center active:scale-90 transition px-3 py-1" aria-label="Toggle GPS display">
  <div id="gpsIndicator" class="flex gap-1 items-end h-5">
  <div class="gps-bar" style="height:6px"></div>
  <div class="gps-bar" style="height:9px"></div>
  <div class="gps-bar" style="height:12px"></div>
  </div>
  <span id="gpsLabel" class="text-xs text-white font-bold mt-0.5">--</span>
- </div>
+ </button>
+ <div class="w-px h-5 bg-white/20 self-center"></div>
  <!-- Safety Hub -->
  <button onclick="openResourceHub()"
- class="text-xl text-white transition active:scale-90"
+ class="text-xl text-white transition active:scale-90 px-3 py-1"
  aria-label="Safety Hub"
  title="Safety Hub">
  🛡️
@@ -2530,26 +2532,34 @@ function updateGPSBars(pos) {
  const label = document.getElementById('gpsLabel');
  bars.forEach(b => b.classList.remove('active-red', 'active-amber', 'active-green'));
 
+ // Colour the bars by signal quality
  if (accuracy > 200) {
- // IP-level only — very rough
  bars[0]?.classList.add('active-red');
- if (label) label.textContent = 'IP';
  } else if (accuracy > 50) {
- // WiFi triangulation — usable but moderate accuracy
  bars[0]?.classList.add('active-amber');
  bars[1]?.classList.add('active-amber');
- if (label) label.textContent = 'WiFi';
  } else if (accuracy > 20) {
- // GPS coarse lock
  bars[0]?.classList.add('active-amber');
  bars[1]?.classList.add('active-amber');
  bars[2]?.classList.add('active-amber');
- if (label) label.textContent = 'GPS';
  } else {
- // GPS fine lock
  bars.forEach(b => b.classList.add('active-green'));
- if (label) label.textContent = 'GPS';
  }
+
+ // Label: method name or ±Xm depending on stored preference
+ if (label) {
+ const showAccuracy = localStorage.getItem('otg_gps_display') === 'accuracy';
+ if (showAccuracy) {
+ label.textContent = '\u00b1' + Math.round(accuracy) + 'm';
+ } else {
+ if (accuracy > 200) label.textContent = 'IP';
+ else if (accuracy > 50) label.textContent = 'WiFi';
+ else label.textContent = 'GPS';
+ }
+ }
+
+ // Cache last accuracy so toggleGpsDisplay() can re-render without waiting for a new fix
+ updateGPSBars._lastAccuracy = accuracy;
 
  // GPS accuracy badge on the locked screen.
  // Shown only when accuracy is poor (>100 m) — a fine lock stays silent.
@@ -2564,6 +2574,23 @@ function updateGPSBars(pos) {
  badge.classList.add('hidden');
  }
  }
+}
+
+/**
+ * Tap handler for the GPS pill section.
+ * Toggles the label between method name (IP/WiFi/GPS) and ±Xm accuracy.
+ * Preference is persisted to localStorage so it survives reloads.
+ */
+function toggleGpsDisplay() {
+ const current = localStorage.getItem('otg_gps_display') || 'method';
+ const next = current === 'method' ? 'accuracy' : 'method';
+ localStorage.setItem('otg_gps_display', next);
+ // Re-render immediately using cached accuracy if available
+ const cached = updateGPSBars._lastAccuracy;
+ if (typeof cached === 'number') {
+ updateGPSBars({ coords: { accuracy: cached } });
+ }
+ showToast(next === 'accuracy' ? 'GPS: showing accuracy' : 'GPS: showing method');
 }
 
 // Capture GPS for forms
