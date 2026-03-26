@@ -619,26 +619,31 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety App</span>
  </h1>
  </div>
- <div class="flex gap-4 items-center"> 
- <button onclick="openResourceHub()" 
- class="text-2xl opacity-60 hover:opacity-100 transition active:scale-90" 
- title="Resource Library" 
- aria-label="Resource Library">
- 📖
+ <div class="flex items-center">
+ <div class="flex items-center gap-3 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-sm">
+ <!-- Settings -->
+ <button onclick="navigate('settings')"
+ class="text-xl text-white transition active:rotate-45"
+ aria-label="Settings">
+ ⚙️
  </button>
+ <!-- GPS indicator -->
  <div class="flex flex-col items-center">
- <div id="gpsIndicator" class="flex gap-1 items-end h-5"> 
+ <div id="gpsIndicator" class="flex gap-1 items-end h-5">
  <div class="gps-bar" style="height:6px"></div>
  <div class="gps-bar" style="height:9px"></div>
  <div class="gps-bar" style="height:12px"></div>
  </div>
- <span id="gpsLabel" class="text-sm text-gray-300 font-bold mt-0.5">--</span>
-</div>
- <button onclick="navigate('settings')" 
- class="text-2xl text-gray-400 hover:text-white transition active:rotate-45" 
- aria-label="Settings">
- ⚙️
+ <span id="gpsLabel" class="text-xs text-white font-bold mt-0.5">--</span>
+ </div>
+ <!-- Safety Hub -->
+ <button onclick="openResourceHub()"
+ class="text-xl text-white transition active:scale-90"
+ aria-label="Safety Hub"
+ title="Safety Hub">
+ 🛡️
  </button>
+ </div>
  </div>
 </div>
  
@@ -651,13 +656,23 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="content-area">
 <div class="flex flex-col gap-1 mb-4">
  <div class="flex gap-2">
- <button onclick="forceSync(true)" id="btnSync" class="w-14 h-14 bg-gray-800 border border-gray-600 rounded-xl flex items-center justify-center text-blue-400 text-2xl shadow-lg active:scale-95 transition" aria-label="Sync database">
- ↻
+ <!-- Left half: Refresh + Add Site -->
+ <div class="flex gap-2 w-1/2">
+ <button onclick="forceSync(true)" id="btnSync"
+ class="flex-1 h-14 bg-gray-800 border border-gray-600 rounded-xl flex flex-col items-center justify-center text-blue-400 shadow-lg active:scale-95 transition gap-0.5"
+ aria-label="Refresh database">
+ <span class="text-xl leading-none">↻</span>
+ <span class="text-xs font-bold text-gray-300 leading-none">Refresh</span>
  </button>
- <button onclick="openAddLocationModal()" class="w-14 h-14 bg-gray-800 border border-gray-600 rounded-xl flex items-center justify-center text-green-400 text-2xl shadow-lg active:scale-95 transition" aria-label="Add destination">
- +
+ <button onclick="openAddLocationModal()"
+ class="flex-1 h-14 bg-gray-800 border border-gray-600 rounded-xl flex flex-col items-center justify-center text-green-400 shadow-lg active:scale-95 transition gap-0.5"
+ aria-label="Add site">
+ <span class="text-xl leading-none">+</span>
+ <span class="text-xs font-bold text-gray-300 leading-none">Add site</span>
  </button>
- <div id="travelRow" class="flex-1"></div>
+ </div>
+ <!-- Right half: Trip tile -->
+ <div id="travelRow" class="w-1/2"></div>
  </div>
  <div id="lastSyncLabel" class="text-sm text-gray-300 font-bold tracking-tighter ml-1">
  Last Sync: Never
@@ -726,7 +741,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="footer-bar">
  <!-- Critical Timing Mode Toggle -->
  <div class="flex justify-end items-center gap-2 mb-2">
- <span class="text-sm font-bold text-gray-300 tracking-widest" id="lblHighRisk">Critical timing mode</span>
+ <span class="text-sm font-bold tracking-widest" id="lblHighRisk" style="color: var(--text-on-primary)">Critical timing mode</span>
  <label class="relative inline-flex items-center cursor-pointer">
  <input type="checkbox" id="chkHighRisk" class="sr-only peer" onchange="toggleHighRiskUI()" aria-labelledby="lblHighRisk">
  <div class="w-9 h-5 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-600"></div>
@@ -2724,10 +2739,12 @@ function startTravellingPulse() {
 
 /**
  * Prepends Start Point and Destination fields to the Travel Report form.
+ * Destination: reverse-geocoded from lastGPS at the moment the form opens (i.e. actual trip
+ *   end location). Shows 'Locating…' while the Nominatim call is in flight. On success fills
+ *   with resolved address; on failure/timeout fills red 'ENTER DESTINATION!' for worker to edit.
  * Start address: read from state.activeVisit.startAddress (async geocode fired at trip start).
  *   - null: geocode still in flight — show 'Locating…' placeholder, poll every 500ms.
  *   - string: resolved address (or raw coords if Nominatim failed) — pre-fill directly.
- * Destination: locationName + locationAddress from state.activeVisit.
  * Both fields are editable text inputs with data-key so they are collected by submitReport().
  */
 function _injectTripEndpointFields(container) {
@@ -2751,11 +2768,44 @@ function _injectTripEndpointFields(container) {
     return { wrapper, input };
   };
 
-  // ── Destination ───────────────────────────────────────────────────────────
-  const destName = state.activeVisit.locationName || '';
-  const destAddr = state.activeVisit.locationAddress || '';
-  const destValue = destAddr ? `${destName} — ${destAddr}` : destName;
-  const dest = makeField('Destination', 'Trip Destination', destValue, 'Destination');
+  // ── Destination (reverse-geocoded from actual trip end GPS) ────────────────
+  // Shows 'Locating…' while Nominatim resolves the current GPS position.
+  // On success: fills with resolved address.
+  // On failure/timeout: fills red 'ENTER DESTINATION!' for worker to edit.
+  const dest = makeField('Destination', 'Trip Destination', '', 'Locating…');
+
+  (async () => {
+    const _destGps = (typeof lastGPS !== 'undefined' && lastGPS &&
+                      lastGPS !== '0,0' && lastGPS !== '0.0,0.0') ? lastGPS : null;
+    let _destResolved = null;
+    if (_destGps) {
+      try {
+        const _parts = _destGps.split(',').map(s => parseFloat(s.trim()));
+        const _url = `https://nominatim.openstreetmap.org/reverse?lat=${_parts[0]}&lon=${_parts[1]}&format=json`;
+        const _res = await Promise.race([
+          fetch(_url, { headers: { 'Accept-Language': 'en', 'User-Agent': 'OTGSafetyApp/1.0' } }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000))
+        ]);
+        if (_res.ok) {
+          const _data = await _res.json();
+          _destResolved = _data.display_name || null;
+        }
+      } catch (e) {
+        _destResolved = null;
+      }
+    }
+    if (_destResolved) {
+      dest.input.value = _destResolved;
+      dest.input.placeholder = '';
+      dest.input.style.color = '';
+    } else {
+      dest.input.value = 'ENTER DESTINATION!';
+      dest.input.placeholder = '';
+      dest.input.style.color = 'red';
+      // Clear red styling as soon as the worker starts editing
+      dest.input.addEventListener('input', () => { dest.input.style.color = ''; }, { once: true });
+    }
+  })();
 
   // ── Start Point ───────────────────────────────────────────────────────────
   const startAddr = state.activeVisit.startAddress;
@@ -2765,7 +2815,7 @@ function _injectTripEndpointFields(container) {
   container.insertBefore(dest.wrapper, container.firstChild);
   container.insertBefore(start.wrapper, container.firstChild);
 
-  // If geocode is still in flight, poll until it resolves (500ms interval, 30s timeout)
+  // If start geocode is still in flight, poll until it resolves (500ms interval, 30s timeout)
   if (startAddr === null) {
     let attempts = 0;
     const poll = setInterval(() => {
@@ -3701,9 +3751,6 @@ function iamSafe() {
     processUploadQueue(payload);
   }
 
-  // Audit trail
-  logSafety("USER_SAFE", "Worker entered PIN to cancel alarm state.");
-
   // Clear all alarm state
   _clearAlarmState();
 
@@ -3787,6 +3834,11 @@ function tick() {
  // Pre-arm GPS so a fix is ready when the alarm fires
  if (typeof startGPSMonitoring === 'function') startGPSMonitoring();
  }
+ } else {
+ // Critical Timing — no grace period. Fire alarm immediately at due time.
+ if (!state.activeVisit.criticalSent && !state.activeVisit.isSafeConfirmed) {
+ triggerGraceExpiryAlarm();
+ }
  }
  } else {
  // Normal Mode — warn only during grace period, approaching alarm fire time
@@ -3833,11 +3885,13 @@ function tick() {
  }, 5 * 60 * 1000);
  }
  }
- // Still check for 15m expiry in background.
+ // Critical Timing fires immediately at due time; normal mode waits for grace expiry.
  // isSafeConfirmed guard prevents re-triggering after worker clears the alarm.
- if (Math.abs(diffMins) >= escMins &&
- !state.activeVisit.criticalSent && !state.activeVisit.isSafeConfirmed) {
- triggerGraceExpiryAlarm();
+ const _shouldAlarm = isHighRiskActive
+   ? (remaining <= 0)
+   : (Math.abs(diffMins) >= escMins);
+ if (_shouldAlarm && !state.activeVisit.criticalSent && !state.activeVisit.isSafeConfirmed) {
+   triggerGraceExpiryAlarm();
  }
  }
  return; 
@@ -4413,8 +4467,8 @@ function createTravelTile() {
  <div class="flex items-center gap-2">
  <div class="text-xl">🚗</div>
  <div>
- <div class="text-sm font-bold text-white tracking-tight leading-none">Travel Mode</div>
- <div class="text-sm text-indigo-100 font-bold mt-0.5">${noReport ? 'Personal travel – no report' : 'Report required'}</div>
+ <div class="text-sm font-bold text-white tracking-tight leading-none">Trip</div>
+ <div class="text-xs text-indigo-100 font-bold mt-0.5">${noReport ? 'No report' : 'Report required'}</div>
  </div>
  </div>
  ${isActive ? `<button class="text-indigo-200 hover:text-white p-1 -mr-1 z-20 text-xl"
@@ -4931,7 +4985,7 @@ async function startVisit(isSkipCheck = false) {
  }
  processUploadQueue(buildPayload(arrivalPayload));
 
- announce(isTravelMode ? `Travelling to ${loc.name}.` : `${loc.name} started.`);
+  announce((isTravelMode ? `Travelling to ${loc.name}.` : `${loc.name} started.`) + (isHighRisk ? ` Critical timing mode activated.` : ``));
  
  // Wake lock is NOT held at visit start — phone should sleep normally between
  // interactions. It is acquired only when the alarm fires so the slide-to-
@@ -5679,7 +5733,6 @@ async function _evaluateDecoyPin(entered) {
       'Notes': 'Worker confirmed safe via decoy lock screen PIN.'
     });
     processUploadQueue(payload);
-    logSafety("USER_SAFE", "Worker entered PIN on decoy lock screen to cancel alarm state.");
     announce("Safety confirmed. Notifying contacts.");
     showToast("✅ Safety status confirmed");
     navigate('main');
@@ -8756,11 +8809,17 @@ function triggerGraceExpiryAlarm() {
   _startAlarmGpsPulse();
 
   // 1. Notify Backend
+  const _isCriticalTrip = state.activeVisit?.highRisk || false;
+  const _alarmNote = _isCriticalTrip
+    ? (navigator.onLine
+        ? 'Critical timing: due time elapsed. Emergency contacts notified.'
+        : 'Critical timing: due time elapsed. Device was offline — contacts not yet notified.')
+    : (navigator.onLine
+        ? `${CONFIG.escalationMinutes || 15}-minute grace period expired. Emergency contacts notified.`
+        : `${CONFIG.escalationMinutes || 15}-minute grace period expired. Device was offline — contacts not yet notified.`);
   processUploadQueue(buildPayload({
     'Alarm Status': 'OVERDUE ALARM',
-    'Notes': navigator.onLine
-      ? `${CONFIG.escalationMinutes || 15}-minute grace period expired. Emergency contacts notified.`
-      : `${CONFIG.escalationMinutes || 15}-minute grace period expired. Device was offline — contacts not yet notified.`,
+    'Notes': _alarmNote,
     'Last Known GPS': lastGPS || '0,0'
   }));
 
@@ -8768,9 +8827,14 @@ function triggerGraceExpiryAlarm() {
   // (worker is not in a covert situation; they simply missed their check-in)
   const _numContacts = [state.worker?.emgName, state.worker?.escName].filter(Boolean).length;
   const _contactWord = _numContacts === 1 ? 'contact has' : 'contacts have';
-  announce(navigator.onLine
-    ? `Safety Alarm Activated. Your emergency ${_contactWord} been notified.`
-    : 'Safety Alarm Activated. No signal — use the email or call buttons to reach your contacts.');
+  const _announceMsg = _isCriticalTrip
+    ? (navigator.onLine
+        ? `Safety Alarm Activated. Your emergency ${_contactWord} been notified.`
+        : 'Safety Alarm Activated. No signal — use the email or call buttons to reach your contacts.')
+    : (navigator.onLine
+        ? `Safety Alarm Activated. Your emergency ${_contactWord} been notified.`
+        : 'Safety Alarm Activated. No signal — use the email or call buttons to reach your contacts.');
+  announce(_announceMsg);
 
   showAlarmOverlay('panic');
 
