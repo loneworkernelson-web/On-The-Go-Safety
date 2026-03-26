@@ -2115,8 +2115,9 @@ function submitReport() {
  if (!isMidVisitUpdate) {
  stopTravelWatchPosition(); _gpsWatchPositionFailed = false;
  if (typeof stopGPSMonitoring === 'function') stopGPSMonitoring();
- const _gpsInd = document.getElementById('gpsIndicator');
- if (_gpsInd) _gpsInd.classList.add('hidden');
+ document.querySelectorAll('.gps-bar').forEach(b => b.classList.remove('active-red', 'active-amber', 'active-green'));
+ const _gpsLbl = document.getElementById('gpsLabel');
+ if (_gpsLbl) _gpsLbl.textContent = '--';
 
  const _concludedIsTravel = state.activeVisit && (state.activeVisit.isTravel || state.activeVisit.locationId === 'travel');
  state.activeVisit = null;
@@ -3384,8 +3385,9 @@ function directDepart() {
  // Clean up session
  stopTravelWatchPosition(); _gpsWatchPositionFailed = false;
  if (typeof stopGPSMonitoring === 'function') stopGPSMonitoring();
- const _gpsInd = document.getElementById('gpsIndicator');
- if (_gpsInd) _gpsInd.classList.add('hidden');
+ document.querySelectorAll('.gps-bar').forEach(b => b.classList.remove('active-red', 'active-amber', 'active-green'));
+ const _gpsLbl = document.getElementById('gpsLabel');
+ if (_gpsLbl) _gpsLbl.textContent = '--';
  state.activeVisit = null;
  state.selectedLocationId = null;
  state.visitDurationMinutes = 0;
@@ -7786,7 +7788,10 @@ function toggleAdvancedGPS(enabled) {
  stopGPSMonitoring();
  state.settings.isAdvanced = false;
  const gpsIndicator = document.getElementById('gpsIndicator');
- if (gpsIndicator) gpsIndicator.classList.add('hidden');
+ if (gpsIndicator) gpsIndicator.classList.add('hidden'); // kept for legacy advanced-GPS toggle
+ document.querySelectorAll('.gps-bar').forEach(b => b.classList.remove('active-red', 'active-amber', 'active-green'));
+ const gpsLabel = document.getElementById('gpsLabel');
+ if (gpsLabel) gpsLabel.textContent = '--';
  showToast('🔋 GPS throttled');
  }
  saveState();
