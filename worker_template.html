@@ -423,6 +423,11 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div id="saverBatteryBarHUD" class="absolute inset-y-0 left-0 bg-gray-700" style="width: 0%"></div>
  </div>
  </div>
+
+ <!-- GPS accuracy — shown only during travel visits -->
+ <div id="saverGpsAccuracyHUD" class="hidden">
+ <span class="text-amber-400 text-xs font-bold tracking-widest">GPS ±<span id="saverGpsAccuracyValue">?</span>m</span>
+ </div>
  </div>
 
  <div class="w-full max-w-xs space-y-8">
@@ -643,7 +648,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  class="text-xl text-white transition active:scale-90 px-3 py-1"
  aria-label="Safety Hub"
  title="Safety Hub">
- 🛡️
+ 📚
  </button>
  </div>
  </div>
@@ -2581,6 +2586,19 @@ function updateGPSBars(pos) {
  badge.classList.remove('hidden');
  } else {
  badge.classList.add('hidden');
+ }
+ }
+
+ // Battery saver GPS accuracy HUD — always visible during travel visits.
+ const saverHUD = document.getElementById('saverGpsAccuracyHUD');
+ const saverHUDVal = document.getElementById('saverGpsAccuracyValue');
+ if (saverHUD && saverHUDVal) {
+ const isTravel = !!(state?.activeVisit?.isTravel || state?.activeVisit?.locationId === 'travel');
+ if (isTravel) {
+ saverHUDVal.textContent = Math.round(accuracy);
+ saverHUD.classList.remove('hidden');
+ } else {
+ saverHUD.classList.add('hidden');
  }
  }
 }
