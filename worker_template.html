@@ -2115,6 +2115,8 @@ function submitReport() {
  if (!isMidVisitUpdate) {
  stopTravelWatchPosition(); _gpsWatchPositionFailed = false;
  if (typeof stopGPSMonitoring === 'function') stopGPSMonitoring();
+ const _gpsInd = document.getElementById('gpsIndicator');
+ if (_gpsInd) _gpsInd.classList.add('hidden');
 
  const _concludedIsTravel = state.activeVisit && (state.activeVisit.isTravel || state.activeVisit.locationId === 'travel');
  state.activeVisit = null;
@@ -3382,6 +3384,8 @@ function directDepart() {
  // Clean up session
  stopTravelWatchPosition(); _gpsWatchPositionFailed = false;
  if (typeof stopGPSMonitoring === 'function') stopGPSMonitoring();
+ const _gpsInd = document.getElementById('gpsIndicator');
+ if (_gpsInd) _gpsInd.classList.add('hidden');
  state.activeVisit = null;
  state.selectedLocationId = null;
  state.visitDurationMinutes = 0;
