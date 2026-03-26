@@ -193,38 +193,76 @@
                 <img id="mockLogo" src="" class="w-5 h-5 rounded-sm bg-white object-contain hidden">
                 <span id="mockOrgName" class="text-[10px] font-bold text-white truncate max-w-[100px]">Organisation</span>
             </div>
-            <div class="w-3 h-3 rounded-full bg-gray-700"></div>
+            <!-- Header pill: ⚙️ · GPS bars · 📚 -->
+            <div class="flex items-center bg-black/40 rounded-full px-0.5 py-0.5 gap-0">
+                <span class="text-[8px] px-1">⚙️</span>
+                <div class="w-px h-2.5 bg-white/20 flex-shrink-0"></div>
+                <div class="flex items-end gap-px px-1.5" style="height:12px">
+                    <div class="w-1 bg-green-400 rounded-sm" style="height:4px"></div>
+                    <div class="w-1 bg-green-400 rounded-sm" style="height:7px"></div>
+                    <div class="w-1 bg-green-400 rounded-sm" style="height:10px"></div>
+                </div>
+                <div class="w-px h-2.5 bg-white/20 flex-shrink-0"></div>
+                <span class="text-[8px] px-1">📚</span>
+            </div>
         </div>
 
-        <div class="p-4 space-y-3">
-            <!-- Location tiles: one inactive, one selected -->
+        <div class="p-3 space-y-2">
+            <!-- Action bar: Refresh + Add site | Trip tile -->
+            <div class="flex gap-1.5">
+                <div class="flex gap-1.5 w-1/2">
+                    <div class="flex-1 h-11 bg-gray-800 border border-gray-700 rounded-xl flex flex-col items-center justify-center gap-0.5">
+                        <span class="text-[11px] leading-none" style="color:#60a5fa;">↻</span>
+                        <span class="text-[6px] font-black text-gray-300">Refresh</span>
+                    </div>
+                    <div class="flex-1 h-11 bg-gray-800 border border-gray-700 rounded-xl flex flex-col items-center justify-center gap-0.5">
+                        <span class="text-[11px] leading-none" style="color:#4ade80;">+</span>
+                        <span class="text-[6px] font-black text-gray-300">Add site</span>
+                    </div>
+                </div>
+                <div id="mockTravelCard" class="w-1/2 h-11 rounded-xl border flex items-center px-2 gap-1.5 transition-colors duration-500" style="background:linear-gradient(to right,#1f2937,#1d4ed8);border-color:#374151;">
+                    <span class="text-sm">🚗</span>
+                    <div>
+                        <div class="text-[9px] font-black text-white leading-tight">Trip</div>
+                        <div class="text-[6px] font-bold" style="color:#bfdbfe;">Report required</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sort row -->
+            <div class="flex items-center justify-between">
+                <span class="text-[6px] font-bold text-gray-500">Last Sync: 9:38 AM</span>
+                <div class="flex items-center gap-1 bg-gray-700/60 border border-gray-600 rounded-full px-2 py-0.5">
+                    <span class="text-[7px]">🕐</span>
+                    <span class="text-[6px] font-black text-gray-300">Recent</span>
+                </div>
+            </div>
+
+            <!-- Location tiles -->
             <div class="space-y-1.5">
-                <div class="h-10 bg-gray-800 rounded-lg border border-gray-700 flex items-center px-2 gap-2">
-                    <div class="w-2 h-2 rounded-full bg-gray-600"></div>
+                <div class="h-9 bg-gray-800 rounded-lg border border-gray-700 flex items-center px-2 gap-2">
+                    <div class="w-2 h-2 rounded-full bg-gray-600 flex-shrink-0"></div>
                     <div class="h-1.5 w-16 bg-gray-600 rounded"></div>
                 </div>
-                <div id="mockAccentCard" class="h-10 rounded-lg border-2 flex items-center px-2 gap-2 shadow transition-colors duration-500">
-                    <div class="w-2 h-2 rounded-full bg-white opacity-60"></div>
+                <div id="mockAccentCard" class="h-9 rounded-lg border-2 flex items-center px-2 gap-2 shadow transition-colors duration-500">
+                    <div class="w-2 h-2 rounded-full bg-white opacity-60 flex-shrink-0"></div>
                     <div class="h-1.5 w-20 bg-white opacity-40 rounded"></div>
-                    <div class="ml-auto text-[7px] font-black text-white opacity-60 uppercase tracking-wide">Selected</div>
+                    <div class="ml-auto text-[6px] font-black text-white opacity-60 uppercase tracking-wide">Selected</div>
                 </div>
             </div>
 
-            <!-- Travel mode pill -->
-            <div id="mockTravelCard" class="w-full h-7 rounded-full border flex items-center justify-center gap-1 transition-colors duration-500">
-                <span class="text-[7px] font-black text-white opacity-50 uppercase tracking-widest">🚗 Travel Mode</span>
-            </div>
-
-            <!-- Duration preset buttons -->
-            <div>
-                <div class="text-[7px] text-gray-500 font-black uppercase tracking-widest mb-1.5">Expected Duration</div>
-                <div class="flex gap-1">
-                    <div class="flex-1 h-7 rounded-lg border border-gray-600 bg-gray-800 flex items-center justify-center text-[8px] font-black text-gray-500">15m</div>
-                    <div id="mockDurSelected" class="flex-1 h-7 rounded-lg border-2 flex items-center justify-center text-[8px] font-black text-white transition-colors duration-500">30m</div>
-                    <div class="flex-1 h-7 rounded-lg border border-gray-600 bg-gray-800 flex items-center justify-center text-[8px] font-black text-gray-500">1hr</div>
-                    <div class="flex-1 h-7 rounded-lg border border-gray-600 bg-gray-800 flex items-center justify-center text-[8px] font-black text-gray-500">2hr</div>
+            <!-- Duration selector -->
+            <div class="bg-gray-800 rounded-lg p-2 border border-gray-700">
+                <div class="flex justify-between items-center mb-1.5">
+                    <span class="text-[6px] font-black text-gray-400 uppercase tracking-widest">Expected Duration</span>
+                    <span class="text-[6px] font-black text-blue-400">Due: 2:45 PM</span>
                 </div>
-                <div class="text-[7px] text-gray-500 font-bold text-right mt-1">Due: 2:45 PM</div>
+                <div class="grid grid-cols-4 gap-1">
+                    <div class="h-5 rounded border border-gray-600 bg-gray-700/50 flex items-center justify-center text-[6px] font-black text-gray-500">15m</div>
+                    <div id="mockDurSelected" class="h-5 rounded border-2 flex items-center justify-center text-[6px] font-black text-white transition-colors duration-500">30m</div>
+                    <div class="h-5 rounded border border-gray-600 bg-gray-700/50 flex items-center justify-center text-[6px] font-black text-gray-500">1 hr</div>
+                    <div class="h-5 rounded border border-gray-600 bg-gray-700/50 flex items-center justify-center text-[6px] font-black text-gray-500">2 hr</div>
+                </div>
             </div>
         </div>
 
@@ -1029,7 +1067,6 @@ function applyPreset(p, a, el) {
     const mockTravelCard = document.getElementById('mockTravelCard');
     if(mockTravelCard) {
         mockTravelCard.style.borderColor = a + '4d';
-        mockTravelCard.style.backgroundColor = a + '1a';
     }
 
     const mockDurSelected = document.getElementById('mockDurSelected');
@@ -1135,7 +1172,6 @@ function updateMockupUI() {
     }
     if(travelCard) {
         travelCard.style.borderColor = accent + '4d'; // 30% opacity
-        travelCard.style.backgroundColor = accent + '1a'; // 10% opacity
     }
     const mockDurSelected = document.getElementById('mockDurSelected');
     if(mockDurSelected) {
