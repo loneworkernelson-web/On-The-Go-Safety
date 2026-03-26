@@ -266,12 +266,12 @@ function runMonthlyStats() {
 function generateWorkerTravelReport() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const visitsSheet = ss.getSheetByName('Visits');
-  if(!visitsSheet) { SpreadsheetApp.getUi().alert("Error: 'Visits' sheet not found."); return; }
+  if (!visitsSheet) { SpreadsheetApp.getUi().alert("Error: 'Visits' sheet not found."); return; }
 
   const ui = SpreadsheetApp.getUi();
   const resp = ui.prompt("Run Travel Report", "Enter Month (YYYY-MM):", ui.ButtonSet.OK_CANCEL);
   if (resp.getSelectedButton() !== ui.Button.OK) return;
-  
+
   const monthStr = resp.getResponseText().trim();
   if (!/^\d{4}-\d{2}$/.test(monthStr)) { ui.alert("Invalid format. Use YYYY-MM."); return; }
 
@@ -282,94 +282,132 @@ function generateWorkerTravelReport() {
 
   const data = visitsSheet.getDataRange().getValues();
   const headers = data.shift();
-  
+
   const col = {
-    worker: headers.indexOf("Worker Name"),
-    arrival: headers.indexOf("Timestamp"), 
-    depart: headers.indexOf("Anticipated Departure Time"),
-    report: headers.indexOf("Visit Report Data"),
-    location: headers.indexOf("Location Name")
+    worker:  headers.indexOf("Worker Name"),
+    arrival: headers.indexOf("Timestamp"),
+    report:  headers.indexOf("Visit Report Data")
   };
 
-  const start = new Date(monthStr + "-01");
-  const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
-  
-  const workerStats = {};
+  const tz    = Session.getScriptTimeZone();
+  const start = new Date(monthStr + "-01T00:00:00");
+  const end   = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59);
 
-  data.forEach(row => {
+  // Keys that are promoted to named columns — excluded from extra-fields discovery.
+  // Distance keys are matched by regex below so not listed here.
+  const SKIP_KEYS = new Set(['trip start point', 'trip destination', 'company name', 'company']);
+
+  // ── Pass 1: filter to Travel Report rows, discover extra field keys ──────────
+  const trips      = [];
+  const extraKeyOrder = []; // insertion-ordered unique extra keys
+  const extraKeySet   = new Set();
+
+  data.forEach(function(row) {
     const d = new Date(row[col.arrival]);
-    if (d >= start && d <= end) {
-        const worker = row[col.worker];
-        if (!worker) return;
-        if (!workerStats[worker]) workerStats[worker] = { trips: [], totalDist: 0, totalDurMs: 0 };
+    if (d < start || d > end) return;
+    const worker = String(row[col.worker] || '').trim();
+    if (!worker) return;
 
-        let distance = 0;
-        let reportJson = row[col.report];
-        
-        if (reportJson && reportJson.startsWith("{")) {
-            try {
-                const r = JSON.parse(reportJson);
-                for (let key in r) {
-                    if (/km|mil|dist/i.test(key)) { 
-                        let val = parseFloat(r[key]);
-                        if (!isNaN(val)) distance += val;
-                    }
-                }
-            } catch(e){}
-        }
-        
-        const distCol = headers.indexOf("Distance (km)");
-        if(distCol > -1 && row[distCol]) {
-             let val = parseFloat(row[distCol]);
-             if(!isNaN(val)) distance = val; 
-        }
+    const raw = row[col.report];
+    if (!raw || typeof raw !== 'string' || raw.charAt(0) !== '{') return;
 
-        workerStats[worker].trips.push({
-            date: d,
-            location: row[col.location],
-            distance: distance
-        });
-        
-        workerStats[worker].totalDist += distance;
+    var json;
+    try { json = JSON.parse(raw); } catch(e) { return; }
+
+    // Travel Report filter: presence of trip endpoint keys (only injected by _injectTripEndpointFields)
+    if (!json.hasOwnProperty('trip start point') && !json.hasOwnProperty('trip destination')) return;
+
+    // Extract standard fields
+    var company = String(json['company name'] || json['company'] || '').trim();
+    var from    = String(json['trip start point'] || '').trim();
+    var to      = String(json['trip destination']  || '').trim();
+
+    // Distance: first key matching /km|odo|dist/i (excluding endpoint keys)
+    var dist = '';
+    for (var k in json) {
+      if (SKIP_KEYS.has(k)) continue;
+      if (/km|odo|dist/i.test(k)) {
+        var v = parseFloat(json[k]);
+        if (!isNaN(v)) { dist = v; break; }
+      }
     }
+
+    // Collect remaining keys as extra columns (stable insertion order)
+    for (var ek in json) {
+      if (SKIP_KEYS.has(ek)) continue;
+      if (/km|odo|dist/i.test(ek)) continue;
+      if (!extraKeySet.has(ek)) {
+        extraKeySet.add(ek);
+        extraKeyOrder.push(ek);
+      }
+    }
+
+    trips.push({ date: d, worker: worker, company: company, from: from, to: to, dist: dist, json: json });
   });
 
-  let rowIdx = 1;
-  reportSheet.getRange(rowIdx, 1).setValue("Travel Report: " + monthStr).setFontWeight("bold").setFontSize(14);
-  rowIdx += 2;
+  if (trips.length === 0) {
+    ui.alert("No Travel Report submissions found for " + monthStr + ".");
+    ss.deleteSheet(reportSheet);
+    return;
+  }
 
-  const sortedWorkers = Object.keys(workerStats).sort();
+  // Sort chronologically, then alphabetically by worker within the same timestamp
+  trips.sort(function(a, b) { return a.date - b.date || a.worker.localeCompare(b.worker); });
 
-  sortedWorkers.forEach(worker => {
-      const data = workerStats[worker];
-      
-      reportSheet.getRange(rowIdx, 1).setValue(worker).setFontWeight("bold").setBackground("#e2e8f0");
-      reportSheet.getRange(rowIdx, 1, 1, 4).merge();
-      rowIdx++;
-      
-      const headerRange = reportSheet.getRange(rowIdx, 1, 1, 4);
-      headerRange.setValues([["Date", "Location", "Distance (km)", "Notes"]]);
-      headerRange.setFontWeight("bold").setBorder(false, false, true, false, false, false);
-      rowIdx++;
+  // Sort extra keys alphabetically for consistent column order
+  const extraKeys = extraKeyOrder.slice().sort();
 
-      data.trips.sort((a,b) => a.date - b.date).forEach(trip => {
-          reportSheet.getRange(rowIdx, 1, 1, 4).setValues([[
-              trip.date.toLocaleDateString() + " " + trip.date.toLocaleTimeString(),
-              trip.location,
-              trip.distance > 0 ? trip.distance : "-",
-              ""
-          ]]);
-          rowIdx++;
-      });
+  // Title-case helper for column headers
+  function toTitleCase(str) {
+    return str.replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+  }
 
-      const subTotalRow = reportSheet.getRange(rowIdx, 1, 1, 4);
-      subTotalRow.setValues([["TOTALS:", "", data.totalDist.toFixed(1), ""]]);
-      subTotalRow.setFontWeight("bold").setBorder(true, false, false, false, false, false);
-      rowIdx += 2; 
+  // ── Build header row ─────────────────────────────────────────────────────────
+  const FIXED_HEADERS = ["Worker Name", "Date", "Company", "From", "To", "Total km"];
+  const allHeaders    = FIXED_HEADERS.concat(extraKeys.map(toTitleCase));
+  const numCols       = allHeaders.length;
+
+  // Title
+  reportSheet.getRange(1, 1).setValue("Travel Report: " + monthStr)
+    .setFontWeight("bold").setFontSize(14);
+
+  // Header row
+  const headerRange = reportSheet.getRange(2, 1, 1, numCols);
+  headerRange.setValues([allHeaders])
+    .setFontWeight("bold")
+    .setBackground("#e2e8f0")
+    .setBorder(false, false, true, false, false, false);
+
+  // ── Data rows ────────────────────────────────────────────────────────────────
+  const rows = trips.map(function(t) {
+    var dateStr = Utilities.formatDate(t.date, tz, "dd/MM/yyyy HH:mm");
+    var fixed   = [t.worker, dateStr, t.company, t.from, t.to, t.dist !== '' ? t.dist : '-'];
+    var extra   = extraKeys.map(function(k) {
+      var val = t.json[k];
+      if (val === undefined || val === null || val === '') return '';
+      if (typeof val === 'boolean') return val ? 'Yes' : 'No';
+      return String(val);
+    });
+    return fixed.concat(extra);
   });
 
-  reportSheet.autoResizeColumns(1, 4);
-  ui.alert("Travel Report Generated!");
+  reportSheet.getRange(3, 1, rows.length, numCols).setValues(rows);
+
+  // ── Totals row ───────────────────────────────────────────────────────────────
+  var totalKm = trips.reduce(function(sum, t) {
+    return sum + (typeof t.dist === 'number' ? t.dist : 0);
+  }, 0);
+  var totalsRow = new Array(numCols).fill('');
+  totalsRow[0] = 'TOTAL (' + trips.length + ' trip' + (trips.length !== 1 ? 's' : '') + ')';
+  totalsRow[5] = totalKm > 0 ? totalKm.toFixed(1) : '-';
+
+  var totalsRange = reportSheet.getRange(3 + rows.length, 1, 1, numCols);
+  totalsRange.setValues([totalsRow])
+    .setFontWeight("bold")
+    .setBorder(true, false, false, false, false, false);
+
+  reportSheet.autoResizeColumns(1, numCols);
+  ui.alert("Travel Report generated — " + trips.length + " trip(s) for " + monthStr + ".");
 }
 
 // ==========================================
