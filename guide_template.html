@@ -338,6 +338,84 @@
             background: #059669;
         }
 
+        /* ── Header Pill (⚙️ · GPS · 📚) ── */
+        .mock-header-pill {
+            display: flex;
+            align-items: center;
+            background: rgba(0,0,0,0.4);
+            border-radius: 999px;
+            padding: 2px 0;
+        }
+        .mock-header-pill-item {
+            padding: 2px 6px;
+            font-size: 11px;
+            line-height: 1;
+        }
+        .mock-pill-sep {
+            width: 1px;
+            height: 14px;
+            background: rgba(255,255,255,0.2);
+            flex-shrink: 0;
+        }
+        .mock-header-pill .mock-gps-bars {
+            padding: 2px 5px;
+        }
+
+        /* ── Action Row (Refresh · Add Site | Trip) ── */
+        .mock-action-row {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 6px;
+        }
+        .mock-action-half {
+            display: flex;
+            gap: 5px;
+            width: 50%;
+        }
+        .mock-action-btn {
+            flex: 1;
+            background: #1f2937;
+            border: 1px solid #374151;
+            border-radius: 10px;
+            height: 44px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 2px;
+        }
+        .mock-action-icon { font-size: 13px; line-height: 1; }
+        .mock-action-label { font-size: 8px; color: #d1d5db; font-weight: 700; }
+        .mock-trip-tile {
+            width: 50%;
+            background: linear-gradient(to right, #1f2937, #1d4ed8);
+            border: 1px solid #374151;
+            border-radius: 10px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            gap: 7px;
+        }
+        .mock-sort-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+        .mock-sort-btn {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            background: rgba(55,65,81,0.6);
+            border: 1px solid #4b5563;
+            border-radius: 999px;
+            padding: 2px 8px;
+            font-size: 8px;
+            font-weight: 700;
+            color: #d1d5db;
+        }
+
         /* ── Platform Install Badges ── */
         .platform-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
         .platform-card {
@@ -449,20 +527,48 @@
 
     <div class="mock-with-text">
         <div>
-            <h3>GPS Signal Indicator</h3>
-            <p>The signal bars in the top-right corner show your GPS accuracy:</p>
-            <div class="gps-row"><div class="gps-dot g-green"></div><strong>Green (3 bars):</strong> Good signal — accurate within ~20 metres. Safe to start.</div>
+            <h3>The Header Bar</h3>
+            <p>The top-right of the header contains a <strong>pill panel</strong> with three controls:</p>
+            <ul>
+                <li><strong>⚙️ Settings</strong> — opens your personal configuration, visit history, and diagnostics.</li>
+                <li><strong>GPS bars</strong> — shows your current GPS signal strength. Tap to toggle between signal method (GPS / Network) and accuracy display.</li>
+                <li><strong>📚 Safety Hub</strong> — opens the shared resources and notice archive.</li>
+            </ul>
+            <div class="gps-row"><div class="gps-dot g-green"></div><strong>Green (3 bars):</strong> Good signal — accurate within ~20 metres.</div>
             <div class="gps-row"><div class="gps-dot g-amber"></div><strong>Amber (2 bars):</strong> Weak signal — location may be approximate.</div>
-            <div class="gps-row"><div class="gps-dot g-red"></div><strong>Red (1 bar):</strong> No GPS signal — try moving outdoors or near a window.</div>
+            <div class="gps-row"><div class="gps-dot g-red"></div><strong>Red (1 bar):</strong> No GPS — try moving outdoors or near a window.</div>
         </div>
         <div class="mock-wrap">
             <div class="mock-phone">
                 <div class="mock-statusbar"><span>9:41 AM</span><span>▐▐▐ 🔋</span></div>
                 <div class="mock-header">
                     <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
-                    <div class="mock-gps-bars"><span style="height:6px"></span><span style="height:10px"></span><span style="height:14px"></span></div>
+                    <div class="mock-header-pill">
+                        <span class="mock-header-pill-item">⚙️</span>
+                        <div class="mock-pill-sep"></div>
+                        <div class="mock-gps-bars mock-header-pill-item"><span style="height:6px"></span><span style="height:10px"></span><span style="height:14px"></span></div>
+                        <div class="mock-pill-sep"></div>
+                        <span class="mock-header-pill-item">📚</span>
+                    </div>
                 </div>
                 <div class="mock-body">
+                    <div class="mock-action-row">
+                        <div class="mock-action-half">
+                            <div class="mock-action-btn"><span class="mock-action-icon" style="color:#60a5fa;">↻</span><span class="mock-action-label">Refresh</span></div>
+                            <div class="mock-action-btn"><span class="mock-action-icon" style="color:#4ade80;">+</span><span class="mock-action-label">Add site</span></div>
+                        </div>
+                        <div class="mock-trip-tile">
+                            <span style="font-size:14px;">🚗</span>
+                            <div>
+                                <div style="font-size:10px;font-weight:800;color:white;line-height:1.1;">Trip</div>
+                                <div style="font-size:8px;color:#bfdbfe;font-weight:700;">Report required</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mock-sort-row">
+                        <span style="font-size:8px;color:#9ca3af;font-weight:700;">Last Sync: 9:38 AM</span>
+                        <div class="mock-sort-btn"><span>🕐</span><span>Recent</span></div>
+                    </div>
                     <div class="mock-location-tile active">
                         <div><div class="mock-tile-name">📍 City Library</div><div class="mock-tile-sub">123 Main St, Auckland</div></div>
                         <div class="mock-tile-info">ℹ</div>
@@ -471,24 +577,33 @@
                         <div><div class="mock-tile-name">🏢 Head Office</div><div class="mock-tile-sub">45 Queen St, Auckland</div></div>
                         <div class="mock-tile-info">ℹ</div>
                     </div>
-                    <div class="mock-travel-tile">
-                        <div class="mock-tile-name">🚗 Travelling</div>
-                        <div class="mock-tile-sub" style="color:#93c5fd;">Tap ℹ to configure travel settings</div>
-                    </div>
-                    <div style="background:#1f2937;border:1px dashed #374151;border-radius:10px;padding:10px;text-align:center;font-size:10px;color:#6b7280;margin-top:4px;">+ Add Manual Location</div>
                 </div>
             </div>
         </div>
     </div>
-    <p class="mock-caption">Main location list — City Library selected (highlighted blue)</p>
+    <p class="mock-caption">Main screen — action bar, sort toggle, and location tiles. City Library selected.</p>
 
-    <h3>Syncing the Location List</h3>
-    <p>Tap the <strong>Sync</strong> button to download the latest approved locations from your organisation. This requires an internet connection. Once synced, locations are available offline.</p>
+    <h3>The Action Bar</h3>
+    <p>Above the location list, a two-part action bar gives you fast access to the most common actions:</p>
+    <ul>
+        <li><strong>↻ Refresh</strong> — downloads the latest approved locations and form templates from your organisation. Use this after your manager adds or changes sites. Requires an internet connection; locations remain available offline once synced.</li>
+        <li><strong>+ Add site</strong> — adds a personal location not on the organisation list (e.g. a new client or one-off visit). See <em>Adding a Manual Location</em> below.</li>
+        <li><strong>🚗 Trip</strong> — on the right side of the action bar. Tap to select it for a travel trip. When selected, the tile highlights and a small <strong>ℹ️</strong> button appears — tap that to configure travel report settings. See <a href="#travel-mode">Section 8: Travel Mode</a>.</li>
+    </ul>
+
+    <h3>Sorting the Location List</h3>
+    <p>A sort toggle button sits just below the action bar, next to the last-sync timestamp. Tap it to cycle through three sort modes:</p>
+    <ul>
+        <li><strong>🕐 Recent</strong> — your most recently visited sites appear first, then the rest in alphabetical order. This is the default.</li>
+        <li><strong>🔤 Name</strong> — all sites sorted A–Z by site name.</li>
+        <li><strong>🏢 Company</strong> — sites grouped by company name A–Z, then sorted by site name within each company.</li>
+    </ul>
+    <p>Your chosen sort mode is remembered between sessions.</p>
 
     <h3>Adding a Manual Location</h3>
     <p>If you're visiting somewhere not on the list (e.g. a new client):</p>
     <ol class="step-list">
-        <li>Tap <strong>"+ Add Manual Location"</strong> at the bottom of the list.</li>
+        <li>Tap <strong>"+ Add site"</strong> in the action bar.</li>
         <li>Enter the <strong>Business Name</strong> and <strong>Site Name</strong> clearly.</li>
         <li>For the address: if you're already on-site, tap the <strong>📍 GPS</strong> button to fill it in automatically. Otherwise, type it manually.</li>
         <li>Set whether a <strong>Report is Required</strong> on departure (if applicable).</li>
@@ -496,7 +611,7 @@
     </ol>
 
     <h3>Editing a Location</h3>
-    <p>Tap the small <code>ℹ</code> button on any tile you created, or on the Travelling tile, to edit its settings. You cannot edit organisation-provided locations.</p>
+    <p>Tap the small <code>ℹ</code> button on any tile you created to edit its settings. You cannot edit organisation-provided locations. Personal sites always show the <code>ℹ</code> button even if no details have been filled in — this is how you reach the Delete option.</p>
 
     <h3>The Site Info Panel</h3>
     <p>Tap the <code>ℹ</code> button on any location tile to open the site info panel. This shows everything your organisation has recorded about that site and gives you quick access to contact the site and get directions.</p>
@@ -519,6 +634,13 @@
                 <div class="mock-statusbar"><span>9:41 AM</span><span>▐▐▐ 🔋</span></div>
                 <div class="mock-header">
                     <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
+                    <div class="mock-header-pill">
+                        <span class="mock-header-pill-item">⚙️</span>
+                        <div class="mock-pill-sep"></div>
+                        <div class="mock-gps-bars mock-header-pill-item"><span style="height:6px"></span><span style="height:10px"></span><span style="height:14px"></span></div>
+                        <div class="mock-pill-sep"></div>
+                        <span class="mock-header-pill-item">📚</span>
+                    </div>
                 </div>
                 <div class="mock-body-pad">
                     <div style="margin-bottom:6px;">
@@ -555,7 +677,7 @@
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2>4. The Safety Hub</h2>
 
-    <p>The <strong>Safety Hub</strong> is accessible at any time from the toolbar button (📚) at the top right of the main screen. It gives you quick access to shared resources and the notice archive — you do not need to be in an active visit to use it.</p>
+    <p>The <strong>Safety Hub</strong> is accessible at any time from the <strong>📚</strong> button in the header pill at the top right of the main screen. It gives you quick access to shared resources and the notice archive — you do not need to be in an active visit to use it.</p>
 
     <div class="mock-with-text">
         <div>
@@ -575,6 +697,13 @@
                 <div class="mock-statusbar"><span>9:41 AM</span><span>▐▐▐ 🔋</span></div>
                 <div class="mock-header">
                     <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
+                    <div class="mock-header-pill">
+                        <span class="mock-header-pill-item">⚙️</span>
+                        <div class="mock-pill-sep"></div>
+                        <div class="mock-gps-bars mock-header-pill-item"><span style="height:6px"></span><span style="height:10px"></span><span style="height:14px"></span></div>
+                        <div class="mock-pill-sep"></div>
+                        <span class="mock-header-pill-item">📚</span>
+                    </div>
                 </div>
                 <div class="mock-body-pad">
                     <div style="font-size:13px;font-weight:900;color:white;margin-bottom:8px;">Safety Hub</div>
@@ -628,7 +757,13 @@
                 <div class="mock-statusbar"><span>9:41 AM</span><span>▐▐▐ 🔋</span></div>
                 <div class="mock-header">
                     <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
-                    <div class="mock-gps-bars"><span style="height:6px"></span><span style="height:10px"></span><span style="height:14px"></span></div>
+                    <div class="mock-header-pill">
+                        <span class="mock-header-pill-item">⚙️</span>
+                        <div class="mock-pill-sep"></div>
+                        <div class="mock-gps-bars mock-header-pill-item"><span style="height:6px"></span><span style="height:10px"></span><span style="height:14px"></span></div>
+                        <div class="mock-pill-sep"></div>
+                        <span class="mock-header-pill-item">📚</span>
+                    </div>
                 </div>
                 <div class="mock-body">
                     <div class="mock-location-tile active" style="margin-bottom:10px;">
@@ -778,6 +913,13 @@
             <div class="mock-statusbar"><span>10:15 AM</span><span>▐▐▐ 🔋</span></div>
             <div class="mock-header">
                 <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
+                <div class="mock-header-pill">
+                    <span class="mock-header-pill-item">⚙️</span>
+                    <div class="mock-pill-sep"></div>
+                    <div class="mock-gps-bars mock-header-pill-item"><span style="height:6px"></span><span style="height:10px"></span><span style="height:14px"></span></div>
+                    <div class="mock-pill-sep"></div>
+                    <span class="mock-header-pill-item">📚</span>
+                </div>
             </div>
             <div class="mock-body-pad">
                 <div class="mock-toast">✅ Report sent successfully</div>
@@ -793,22 +935,22 @@
     <p class="mock-caption">Visit complete — green toast confirms the report was sent</p>
 
     <!-- ═══════════════════════════════════════════════════════ -->
-    <h2>8. Travel Mode</h2>
+    <h2 id="travel-mode">8. Travel Mode</h2>
 
-    <p>Use the <strong>Travelling</strong> tile for time spent in transit between locations.</p>
+    <p>Use the <strong>Trip</strong> tile — in the action bar above the location list — for time spent in transit between locations.</p>
 
     <h3>Personal Travel</h3>
-    <p>If you're travelling for personal reasons (not work-related), tap the <code>ℹ</code> button on the Travelling tile and set <strong>"Report Required"</strong> to <strong>No</strong>. The app will not ask for mileage or a report when you finish.</p>
+    <p>If you're travelling for personal reasons (not work-related), tap the <code>ℹ️</code> button on the Trip tile and set <strong>"Report Required"</strong> to <strong>No</strong>. The app will not ask for mileage or a report when you finish.</p>
 
     <h3>Business Travel</h3>
     <p>For work travel, ensure <strong>"Report Required"</strong> is set to <strong>Yes</strong>. When you end the trip, the app will calculate your distance and — if mileage tracking is enabled for your organisation — ask for your odometer reading.</p>
 
     <div class="tip">
-        <strong>💡 Travel settings persist:</strong> Your preferred setting for the Travelling tile is remembered between sessions unless your organisation mandates reports for all travel, in which case it cannot be changed.
+        <strong>💡 Travel settings persist:</strong> Your preferred setting for the Trip tile is remembered between sessions unless your organisation mandates reports for all travel, in which case it cannot be changed.
     </div>
 
     <h3>Pre-Departure Form</h3>
-    <p>Your organisation may require you to complete a short questionnaire <strong>before</strong> a travel visit begins — covering vehicle condition, route details, or a fit-to-drive confirmation. If this is configured, the form will appear automatically after you tap the Travelling tile and before your trip timer starts.</p>
+    <p>Your organisation may require you to complete a short questionnaire <strong>before</strong> a travel visit begins — covering vehicle condition, route details, or a fit-to-drive confirmation. If this is configured, the form will appear automatically after you tap the Trip tile and before your trip timer starts.</p>
     <p>You must submit the form to proceed. The answers are sent to your organisation as part of the visit record. If you close the form without completing it, the trip will not start.</p>
 
     <h3>Travel Report — Start Point &amp; Destination</h3>
@@ -840,7 +982,7 @@
                     <div style="color:#60a5fa;font-weight:900;font-size:8px;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Mon 17 Mar 2026</div>
                     <div style="display:flex;justify-content:space-between;color:var(--app-text);margin-bottom:3px;"><span>📍 City Library</span><span style="color:#22c55e;">✔ Sent</span></div>
                     <div style="display:flex;justify-content:space-between;color:#9ca3af;font-size:8px;margin-bottom:6px;"><span>Arrived 9:02 AM · Departed 9:48 AM</span></div>
-                    <div style="display:flex;justify-content:space-between;color:var(--app-text);margin-bottom:3px;"><span>🚗 Travelling</span><span style="color:#22c55e;">✔ Sent</span></div>
+                    <div style="display:flex;justify-content:space-between;color:var(--app-text);margin-bottom:3px;"><span>🚗 Trip</span><span style="color:#22c55e;">✔ Sent</span></div>
                     <div style="display:flex;justify-content:space-between;color:#9ca3af;font-size:8px;"><span>Started 10:02 AM · Ended 10:31 AM</span></div>
                 </div>
                 <div style="background:var(--app-surface);border:1px solid var(--app-border);border-radius:8px;padding:8px;font-size:9px;">
@@ -916,6 +1058,13 @@
             <div style="background:#ea580c;color:white;font-size:9px;font-weight:900;padding:7px 14px;text-align:center;letter-spacing:0.04em;">⚠️ Vehicle Check Overdue — Tap to Complete</div>
             <div class="mock-header">
                 <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
+                <div class="mock-header-pill">
+                    <span class="mock-header-pill-item">⚙️</span>
+                    <div class="mock-pill-sep"></div>
+                    <div class="mock-gps-bars mock-header-pill-item"><span style="height:6px"></span><span style="height:10px"></span><span style="height:14px"></span></div>
+                    <div class="mock-pill-sep"></div>
+                    <span class="mock-header-pill-item">📚</span>
+                </div>
             </div>
             <div class="mock-body">
                 <div class="mock-location-tile">
@@ -942,6 +1091,13 @@
             <div class="mock-statusbar"><span>9:41 AM</span><span>▐▐▐ 🔋</span></div>
             <div class="mock-header">
                 <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
+                <div class="mock-header-pill">
+                    <span class="mock-header-pill-item">⚙️</span>
+                    <div class="mock-pill-sep"></div>
+                    <div class="mock-gps-bars mock-header-pill-item"><span style="height:6px"></span><span style="height:10px"></span><span style="height:14px"></span></div>
+                    <div class="mock-pill-sep"></div>
+                    <span class="mock-header-pill-item">📚</span>
+                </div>
             </div>
             <div class="mock-body">
                 <div class="mock-modal-overlay">
@@ -1273,7 +1429,7 @@
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Raise alarm — volume buttons (Android)</td><td style="padding:10px;border:1px solid #e5e7eb;">Press volume ×5 within 3 sec → press ×3 more to confirm</td></tr>
             <tr><td style="padding:10px;border:1px solid #e5e7eb;">Cancel alarm (you're safe)</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap any button → enter <strong>Safety PIN</strong></td></tr>
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Cancel alarm under duress</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap any button → enter <strong>Duress PIN</strong> (silent DURESS alert sent)</td></tr>
-            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Sync new locations</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap Sync button on main screen</td></tr>
+            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Sync new locations</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap <strong>↻ Refresh</strong> in the action bar at the top of the location list</td></tr>
         </tbody>
     </table>
 
