@@ -676,8 +676,16 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <!-- Right half: Trip tile -->
  <div id="travelRow" class="w-1/2"></div>
  </div>
- <div id="lastSyncLabel" class="text-sm text-gray-300 font-bold tracking-tighter ml-1">
- Last Sync: Never
+ <div class="flex items-center justify-between mt-1">
+  <div id="lastSyncLabel" class="text-sm text-gray-300 font-bold tracking-tighter ml-1">
+   Last Sync: Never
+  </div>
+  <button id="siteSortBtn" onclick="cycleSiteSort()"
+   class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-gray-700/60 border border-gray-600 text-xs font-bold text-gray-300 active:scale-95 transition-all"
+   aria-label="Change site sort order">
+   <span id="siteSortIcon">🕐</span>
+   <span id="siteSortLabel">Recent</span>
+  </button>
  </div>
 </div>
  <!-- Site search — shown automatically when site count exceeds 15 -->
@@ -1694,6 +1702,7 @@ document.addEventListener('DOMContentLoaded', loadConfig);
 // GLOBALS AND STATE INITIALIZATION
 // ============================================================================
 let state; // Declared but not initialized until onload
+let siteSortMode = localStorage.getItem('otg_site_sort') || 'recent'; // 'recent' | 'name' | 'company'
 let formExecutionContext = null;
 let dimTimer;
 let isBatterySaverActive = false; // Single source of truth for battery saver state
@@ -3996,6 +4005,31 @@ function _warmAudio() {
 }
 
 // ============================================================================
+// SITE SORT
+// ============================================================================
+const SITE_SORT_MODES = [
+  { key: 'recent',  icon: '🕐', label: 'Recent'  },
+  { key: 'name',    icon: '🔤', label: 'Name'    },
+  { key: 'company', icon: '🏢', label: 'Company' },
+];
+
+function updateSiteSortBtn() {
+  const mode = SITE_SORT_MODES.find(m => m.key === siteSortMode) || SITE_SORT_MODES[0];
+  const icon  = document.getElementById('siteSortIcon');
+  const label = document.getElementById('siteSortLabel');
+  if (icon)  icon.textContent  = mode.icon;
+  if (label) label.textContent = mode.label;
+}
+
+function cycleSiteSort() {
+  const idx  = SITE_SORT_MODES.findIndex(m => m.key === siteSortMode);
+  siteSortMode = SITE_SORT_MODES[(idx + 1) % SITE_SORT_MODES.length].key;
+  localStorage.setItem('otg_site_sort', siteSortMode);
+  updateSiteSortBtn();
+  renderLocations();
+}
+
+// ============================================================================
 // ENHANCED RENDER LOCATIONS (Layout Corrected)
 // ============================================================================
 function renderLocations() {
@@ -4049,13 +4083,21 @@ function renderLocations() {
 
  if (searchRow) searchRow.classList.toggle('hidden', !showSearch);
 
- // ── 4. Sort: last-visited first, then alphabetical ───────────────────────
+ // ── 4. Sort ──────────────────────────────────────────────────────────────
  const lastId = state.lastVisitedLocationId;
  const searchTerm = showSearch
  ? (document.getElementById('siteSearch')?.value || '').toLowerCase().trim()
  : '';
 
  const sorted = [...sites].sort((a, b) => {
+ if (siteSortMode === 'name') {
+ return (a.name || '').localeCompare(b.name || '');
+ }
+ if (siteSortMode === 'company') {
+ const cmp = (a.companyName || '').localeCompare(b.companyName || '');
+ return cmp !== 0 ? cmp : (a.name || '').localeCompare(b.name || '');
+ }
+ // 'recent' (default): last-visited first, then alphabetical
  if (a.id === lastId && b.id !== lastId) return -1;
  if (b.id === lastId && a.id !== lastId) return 1;
  return (a.name || '').localeCompare(b.name || '');
@@ -4270,6 +4312,7 @@ async function saveWizard() {
 
  // 3. UI Initialisation
  renderLocations();
+ updateSiteSortBtn();
  setupHoldToStart();
  updateArrivedButtonState();
 
@@ -4534,7 +4577,7 @@ function createLocationTile(loc) {
  if (loc.name && loc.name.toLowerCase().includes("home")) icon = "🏠";
  
  // Check if there is any information to show
- const hasInfo = !!(loc.address || loc.notes || loc.contactName || loc.contactPhone || loc.contactEmail);
+ const hasInfo = loc.id.startsWith('loc_') || !!(loc.address || loc.notes || loc.contactName || loc.contactPhone || loc.contactEmail);
  
  tile.innerHTML = `
  <div class="flex justify-between items-start">
@@ -4584,7 +4627,7 @@ function createLocationRow(loc) {
  Critical: '#ef4444' // red-500
  }[loc.riskLevel] || 'transparent';
 
- const hasInfo = !!(loc.address || loc.notes || loc.contactName || loc.contactPhone || loc.contactEmail);
+ const hasInfo = loc.id.startsWith('loc_') || !!(loc.address || loc.notes || loc.contactName || loc.contactPhone || loc.contactEmail);
 
  const row = document.createElement('div');
  row.className = [
@@ -6311,7 +6354,8 @@ function _initApp() {
  } else {
  navigate(state.activeVisit ? 'locked' : 'main');
  showVerificationCard();
- renderLocations(); 
+ renderLocations();
+ updateSiteSortBtn();
  setupHoldToStart(); 
  checkVehicleStatus();
  checkWofOnLoad(); // Show WOF reminder if expiring within 14 days
