@@ -5264,6 +5264,7 @@ async function outboxEnqueue(payload) {
  const record = {
  idempotencyKey,
  payload: { ...payload, idempotencyKey }, // key travels to backend with every attempt
+ targetUrl: CONFIG.url,                   // locked to the active deployment's backend at enqueue time
  status: 'pending',
  createdAt: new Date().toISOString(),
  sentAt: null,
@@ -5315,7 +5316,7 @@ async function outboxProcess() {
  for (const k in record.payload) fd.append(k, record.payload[k]);
 
  try {
- await fetch(CONFIG.url, { method: 'POST', body: fd, mode: 'no-cors' });
+ await fetch(record.targetUrl || CONFIG.url, { method: 'POST', body: fd, mode: 'no-cors' });
 
  // Mark sent — keep the record permanently for the device-side audit trail.
  await new Promise(resolve => {
