@@ -2153,8 +2153,8 @@ function submitReport() {
  }
 
  if (typeof updateArrivedButtonState === 'function') updateArrivedButtonState();
- isSubmitting = false;
  announce(_concludedIsTravel ? 'Travel concluded.' : 'Visit concluded.');
+ isSubmitting = false;
  showToast('✅ Safety Session Completed');
  } else {
  navigate(state.activeVisit ? 'locked' : 'main'); 
@@ -3644,7 +3644,7 @@ function updateDepartLabel() {
  label.textContent = 'End Visit';
  if (sub) sub.textContent = 'No report — direct exit';
  } else {
- label.textContent = 'Proceed to Report';
+ label.textContent = 'Enter Report';
  if (sub) sub.textContent = '📋 Complete your visit report next';
  }
 }
@@ -5079,7 +5079,7 @@ async function startVisit(isSkipCheck = false) {
  }
  processUploadQueue(buildPayload(arrivalPayload));
 
-  announce((isTravelMode ? `Travelling to ${loc.name}.` : `${loc.name} started.`) + (isHighRisk ? ` Critical timing mode activated.` : ``));
+  announce(((isTravelMode && loc.id !== 'travel') ? `Travelling to ${loc.name}.` : isTravelMode ? 'Travel started.' : `${loc.name} started.`) + (isHighRisk ? ` Critical timing mode activated.` : ``));
  
  // Wake lock is NOT held at visit start — phone should sleep normally between
  // interactions. It is acquired only when the alarm fires so the slide-to-
