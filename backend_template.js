@@ -284,14 +284,28 @@ function generateWorkerTravelReport() {
   const headers = data.shift();
 
   const col = {
-    worker:  headers.indexOf("Worker Name"),
-    arrival: headers.indexOf("Timestamp"),
-    report:  headers.indexOf("Visit Report Data")
+    worker:   headers.indexOf("Worker Name"),
+    arrival:  headers.indexOf("Timestamp"),
+    report:   headers.indexOf("Visit Report Data"),
+    location: headers.indexOf("Location Name")
   };
 
   const tz    = Session.getScriptTimeZone();
   const start = new Date(monthStr + "-01T00:00:00");
   const end   = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59);
+
+  // ── Build site name → company lookup from Sites sheet ────────────────────────
+  const siteCompanyMap = {};
+  const sitesSheet = ss.getSheetByName('Sites');
+  if (sitesSheet && sitesSheet.getLastRow() > 1) {
+    const sData = sitesSheet.getRange(2, 1, sitesSheet.getLastRow() - 1, 4).getValues();
+    sData.forEach(function(r) {
+      // Sites sheet: A=Assigned To, B=Template Name, C=Company Name, D=Site Name
+      const siteName    = String(r[3] || '').trim();
+      const companyName = String(r[2] || '').trim();
+      if (siteName) siteCompanyMap[siteName] = companyName;
+    });
+  }
 
   // Keys that are promoted to named columns — excluded from extra-fields discovery.
   // Distance keys are matched by regex below so not listed here.
@@ -322,7 +336,11 @@ function generateWorkerTravelReport() {
     if (!json.hasOwnProperty('trip start point') && !json.hasOwnProperty('trip destination')) return;
 
     // Extract standard fields
-    var company = String(json['company name'] || json['company'] || '').trim();
+    // Site name comes from the Visits sheet Location Name column (most reliable source).
+    var site    = col.location > -1 ? String(row[col.location] || '').trim() : '';
+    // Company: look up from Sites sheet using site name; fall back to JSON fields if present.
+    var company = (site && siteCompanyMap[site]) ? siteCompanyMap[site]
+                : String(json['company name'] || json['company'] || '').trim();
     var from    = String(json['trip start point'] || '').trim();
     var to      = String(json['trip destination']  || '').trim();
 
@@ -346,7 +364,7 @@ function generateWorkerTravelReport() {
       }
     }
 
-    trips.push({ date: d, worker: worker, company: company, from: from, to: to, dist: dist, json: json });
+    trips.push({ date: d, worker: worker, site: site, company: company, from: from, to: to, dist: dist, json: json });
   });
 
   if (trips.length === 0) {
@@ -367,7 +385,7 @@ function generateWorkerTravelReport() {
   }
 
   // ── Build header row ─────────────────────────────────────────────────────────
-  const FIXED_HEADERS = ["Worker Name", "Date", "Company", "From", "To", "Total km"];
+  const FIXED_HEADERS = ["Worker Name", "Date", "Site Name", "Company", "From", "To", "Total km"];
   const allHeaders    = FIXED_HEADERS.concat(extraKeys.map(toTitleCase));
   const numCols       = allHeaders.length;
 
@@ -385,7 +403,7 @@ function generateWorkerTravelReport() {
   // ── Data rows ────────────────────────────────────────────────────────────────
   const rows = trips.map(function(t) {
     var dateStr = Utilities.formatDate(t.date, tz, "dd/MM/yyyy HH:mm");
-    var fixed   = [t.worker, dateStr, t.company, t.from, t.to, t.dist !== '' ? t.dist : '-'];
+    var fixed   = [t.worker, dateStr, t.site, t.company, t.from, t.to, t.dist !== '' ? t.dist : '-'];
     var extra   = extraKeys.map(function(k) {
       var val = t.json[k];
       if (val === undefined || val === null || val === '') return '';
@@ -403,7 +421,7 @@ function generateWorkerTravelReport() {
   }, 0);
   var totalsRow = new Array(numCols).fill('');
   totalsRow[0] = 'TOTAL (' + trips.length + ' trip' + (trips.length !== 1 ? 's' : '') + ')';
-  totalsRow[5] = totalKm > 0 ? totalKm.toFixed(1) : '-';
+  totalsRow[6] = totalKm > 0 ? totalKm.toFixed(1) : '-';
 
   var totalsRange = reportSheet.getRange(3 + rows.length, 1, 1, numCols);
   totalsRange.setValues([totalsRow])
