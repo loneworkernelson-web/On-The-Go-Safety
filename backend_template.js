@@ -312,7 +312,11 @@ function generateWorkerTravelReport() {
     if (!raw || typeof raw !== 'string' || raw.charAt(0) !== '{') return;
 
     var json;
-    try { json = JSON.parse(raw); } catch(e) { return; }
+    try {
+      var _raw = JSON.parse(raw);
+      json = {};
+      for (var _k in _raw) { json[_k.toLowerCase()] = _raw[_k]; }
+    } catch(e) { return; }
 
     // Travel Report filter: presence of trip endpoint keys (only injected by _injectTripEndpointFields)
     if (!json.hasOwnProperty('trip start point') && !json.hasOwnProperty('trip destination')) return;
