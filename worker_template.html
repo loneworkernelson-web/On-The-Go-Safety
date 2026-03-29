@@ -681,7 +681,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <!-- Right half: Trip tile -->
  <div id="travelRow" class="w-1/2"></div>
  </div>
- <div class="flex items-center justify-between mt-1">
+ <div id="sortRow" class="flex items-center justify-between mt-1">
   <div id="lastSyncLabel" class="text-sm text-gray-300 font-bold tracking-tighter ml-1">
    Last Sync: Never
   </div>
@@ -691,6 +691,11 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
    <span id="siteSortIcon">🕐</span>
    <span id="siteSortLabel">Recent</span>
   </button>
+ </div>
+ <div id="travellingToLabel" class="hidden flex items-center gap-2 mt-1">
+  <div class="flex-1 h-px bg-indigo-900/50"></div>
+  <span class="text-xs font-bold text-indigo-400 tracking-widest">Travelling to</span>
+  <div class="flex-1 h-px bg-indigo-900/50"></div>
  </div>
 </div>
  <!-- Site search — shown automatically when site count exceeds 15 -->
@@ -754,51 +759,72 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div id="locationList" class="grid grid-cols-2 gap-3"></div>
  </div>
  <div class="footer-bar">
- <!-- Critical Timing Mode Toggle -->
- <div class="flex justify-end items-center gap-2 mb-2">
- <span class="text-sm font-bold tracking-widest" id="lblHighRisk" style="color: var(--text-on-primary)">Critical timing mode</span>
- <label class="relative inline-flex items-center cursor-pointer">
- <input type="checkbox" id="chkHighRisk" class="sr-only peer" onchange="toggleHighRiskUI()" aria-labelledby="lblHighRisk">
- <div class="w-9 h-5 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-600"></div>
- </label>
- </div>
- 
-<!-- Welfare Check Interval Selector — only shown when checkinEnabled is true -->
-<div id="welfareIntervalRow" class="hidden mb-3 bg-gray-800 rounded-lg px-3 py-2 border border-teal-900/50">
- <div class="flex justify-between items-center mb-2">
- <span class="text-teal-400 text-xs font-black tracking-widest">🔔 Welfare Check Interval</span>
- <span id="welfareIntervalHint" class="text-xs text-gray-500 font-bold italic"></span>
- </div>
- <div class="grid grid-cols-5 gap-1.5">
- <button onclick="setVisitWelfare(10)" class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="10 minute welfare check">10m</button>
- <button onclick="setVisitWelfare(15)" class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="15 minute welfare check">15m</button>
- <button onclick="setVisitWelfare(30)" class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="30 minute welfare check">30m</button>
- <button onclick="setVisitWelfare(60)" class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="1 hour welfare check">1 hr</button>
- <button onclick="setVisitWelfare(120)" class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="2 hour welfare check">2 hr</button>
- </div>
-</div>
+ <!-- Selection banner — hidden until a selection is made, content set by updateArrivedButtonState() -->
+ <div id="selectionBanner" class="hidden mb-3"></div>
 
-<!-- Duration Selector -->
-<div class="mb-4 bg-gray-800 rounded-lg p-3 border border-gray-700">
- <div class="flex justify-between items-center mb-2">
- <span class="text-gray-400 text-xs font-black">Expected Duration</span>
- <span id="durationDue" class="text-blue-400 font-black text-sm"></span>
+ <!-- Hint — shown when nothing is selected -->
+ <div id="footerHint" class="text-center py-2 mb-3 text-xs font-bold text-gray-600 tracking-widest">Select a site or tap Trip to continue</div>
+
+ <!-- Expandable section — revealed once a selection is made -->
+ <div id="footerExpandable" class="hidden">
+  <!-- Critical Timing Mode Toggle -->
+  <div class="flex justify-end items-center gap-2 mb-3">
+  <span class="text-sm font-bold tracking-widest" id="lblHighRisk" style="color: var(--text-on-primary)">Critical timing mode</span>
+  <label class="relative inline-flex items-center cursor-pointer">
+  <input type="checkbox" id="chkHighRisk" class="sr-only peer" onchange="toggleHighRiskUI()" aria-labelledby="lblHighRisk">
+  <div class="w-9 h-5 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-600"></div>
+  </label>
+  </div>
+
+  <!-- No Report toggle — trip mode only -->
+  <div id="noReportRow" class="hidden flex justify-between items-center mb-3 bg-gray-800/60 border border-indigo-900/50 rounded-xl px-3 py-2.5">
+  <div>
+   <div class="text-indigo-200 text-xs font-black tracking-widest">No report required</div>
+   <div class="text-indigo-900 text-xs font-bold">Skip the travel report for this trip</div>
+  </div>
+  <label class="relative inline-flex items-center cursor-pointer">
+   <input type="checkbox" id="chkTravelNoReport" class="sr-only peer" onchange="toggleTravelNoReport(this.checked)" aria-label="No report required for this trip">
+   <div class="w-9 h-5 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+  </label>
+  </div>
+
+  <!-- Welfare Check Interval Selector — only shown when checkinEnabled is true and not in trip mode -->
+  <div id="welfareIntervalRow" class="hidden mb-3 bg-gray-800 rounded-lg px-3 py-2 border border-teal-900/50">
+  <div class="flex justify-between items-center mb-2">
+  <span class="text-teal-400 text-xs font-black tracking-widest">🔔 Welfare Check Interval</span>
+  <span id="welfareIntervalHint" class="text-xs text-gray-500 font-bold italic"></span>
+  </div>
+  <div class="grid grid-cols-5 gap-1.5">
+  <button onclick="setVisitWelfare(10)" class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="10 minute welfare check">10m</button>
+  <button onclick="setVisitWelfare(15)" class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="15 minute welfare check">15m</button>
+  <button onclick="setVisitWelfare(30)" class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="30 minute welfare check">30m</button>
+  <button onclick="setVisitWelfare(60)" class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="1 hour welfare check">1 hr</button>
+  <button onclick="setVisitWelfare(120)" class="welfare-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="2 hour welfare check">2 hr</button>
+  </div>
+  </div>
+
+  <!-- Duration Selector -->
+  <div class="mb-4 bg-gray-800 rounded-lg p-3 border border-gray-700">
+  <div class="flex justify-between items-center mb-2">
+  <span class="text-gray-400 text-xs font-black">Expected Duration</span>
+  <span id="durationDue" class="text-blue-400 font-black text-sm"></span>
+  </div>
+  <div class="grid grid-cols-4 gap-1.5">
+  <button onclick="setQuickDuration(15)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="15 minutes">15m</button>
+  <button onclick="setQuickDuration(30)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="30 minutes">30m</button>
+  <button onclick="setQuickDuration(45)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="45 minutes">45m</button>
+  <button onclick="setQuickDuration(60)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="1 hour">1 hr</button>
+  <button onclick="setQuickDuration(90)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="1 hour 30 minutes">1½ hr</button>
+  <button onclick="setQuickDuration(120)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="2 hours">2 hr</button>
+  <button onclick="setQuickDuration(180)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="3 hours">3 hr</button>
+  <button onclick="setQuickDuration(240)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="4 hours">4 hr</button>
+  </div>
+  </div>
  </div>
- <div class="grid grid-cols-4 gap-1.5">
- <button onclick="setQuickDuration(15)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="15 minutes">15m</button>
- <button onclick="setQuickDuration(30)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="30 minutes">30m</button>
- <button onclick="setQuickDuration(45)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="45 minutes">45m</button>
- <button onclick="setQuickDuration(60)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="1 hour">1 hr</button>
- <button onclick="setQuickDuration(90)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="1 hour 30 minutes">1½ hr</button>
- <button onclick="setQuickDuration(120)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="2 hours">2 hr</button>
- <button onclick="setQuickDuration(180)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="3 hours">3 hr</button>
- <button onclick="setQuickDuration(240)" class="dur-btn py-1.5 rounded text-xs font-black border border-gray-600 bg-gray-700/50 text-gray-400" aria-label="4 hours">4 hr</button>
- </div>
-</div>
- 
- <!-- Forms Button + Slide to Begin Visit Pill -->
-<div class="flex gap-3 h-16 items-stretch">
- <button id="btnForms" onclick="openFormsLibrary()" 
+
+ <!-- Forms Button + Slide to Begin Visit Pill — always visible -->
+ <div class="flex gap-3 h-16 items-stretch">
+ <button id="btnForms" onclick="openFormsLibrary()"
  class="w-1/4 bg-indigo-950 text-indigo-300 font-black rounded-2xl border border-indigo-700/50 shadow-lg active:scale-95 transition text-xs tracking-tighter leading-none">
  Forms
  </button>
@@ -811,7 +837,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <span id="slideStartLabel" class="text-xs font-black text-gray-400 tracking-[0.2em] transition-opacity duration-200 text-center leading-tight">Select a Site</span>
  </div>
  </div>
-</div>
+ </div>
  </div>
 </div>
 
@@ -4069,6 +4095,12 @@ function renderLocations() {
  list.innerHTML = '';
  travelRow.innerHTML = '';
 
+ // ── 0. Sort row / "Travelling to" label ──────────────────────────────────
+ const sortRow = document.getElementById('sortRow');
+ const travellingToLabel = document.getElementById('travellingToLabel');
+ if (sortRow) sortRow.classList.toggle('hidden', !!state.isTravelActive);
+ if (travellingToLabel) travellingToLabel.classList.toggle('hidden', !state.isTravelActive);
+
  // ── 1. Travel tile ───────────────────────────────────────────────────────
  if (CONFIG.mileageEnabled) {
  travelRow.classList.remove('hidden');
@@ -4591,11 +4623,15 @@ function createTravelTile() {
 function createLocationTile(loc) {
  const isSel = state && state.selectedLocationId === loc.id;
  const isCritical = loc.isCritical || false;
- 
+ const isTripMode = !!(state && state.isTravelActive);
+ const isFaded = isTripMode && !isSel;
+
  const tile = document.createElement('div');
  tile.className = `p-3 rounded-lg border-2 cursor-pointer flex flex-col justify-between h-24 transition-all ${
- isSel ? 'border-blue-500 bg-blue-900/40' : (isCritical ? 'border-red-900/50 bg-red-950/20' : 'border-gray-700 bg-gray-800 hover:bg-gray-750')
- }`;
+  isSel
+   ? (isTripMode ? 'border-indigo-500 bg-indigo-900/30' : 'border-blue-500 bg-blue-900/40')
+   : (isCritical ? 'border-red-900/50 bg-red-950/20' : 'border-gray-700 bg-gray-800 hover:bg-gray-750')
+ }${isFaded ? ' opacity-30' : ''}`;
  
  let icon = "🏢";
  if (loc.name && loc.name.toLowerCase().includes("home")) icon = "🏠";
@@ -4606,7 +4642,10 @@ function createLocationTile(loc) {
  tile.innerHTML = `
  <div class="flex justify-between items-start">
  <span class="text-2xl">${icon}</span>
- ${hasInfo ? `<button class="text-gray-300 hover:text-white p-1 -mt-1 -mr-1 z-20 text-xl" aria-label="Site safety information" onclick="showSiteInfo('${escapeHtml(loc.id)}', event)">ℹ️</button>` : ''}
+ ${isTripMode && isSel
+  ? `<span class="text-[9px] font-black text-indigo-300 bg-indigo-900 border border-indigo-700 rounded px-1.5 py-0.5 leading-none">Dest</span>`
+  : (hasInfo ? `<button class="text-gray-300 hover:text-white p-1 -mt-1 -mr-1 z-20 text-xl" aria-label="Site safety information" onclick="showSiteInfo('${escapeHtml(loc.id)}', event)">ℹ️</button>` : '')
+ }
  </div>
  <div>
  ${loc.companyName ? `<div class="text-xs font-bold text-gray-400 truncate leading-none mb-1">${escapeHtml(loc.companyName)}</div>` : ''}
@@ -4642,6 +4681,8 @@ function createLocationTile(loc) {
 function createLocationRow(loc) {
  const isSel = state && state.selectedLocationId === loc.id;
  const isLast = state && loc.id === state.lastVisitedLocationId;
+ const isTripMode = !!(state && state.isTravelActive);
+ const isFaded = isTripMode && !isSel;
 
  // Left-edge risk bar colour — matches the colours used in the welfare hint
  const riskBarColour = {
@@ -4657,8 +4698,9 @@ function createLocationRow(loc) {
  row.className = [
  'flex items-center gap-3 pl-2 pr-3 rounded-xl border-2 cursor-pointer transition-all',
  'min-h-[52px]',
+ isFaded ? 'opacity-30' : '',
  isSel
- ? 'border-blue-500 bg-blue-900/40'
+ ? (isTripMode ? 'border-indigo-500 bg-indigo-900/30' : 'border-blue-500 bg-blue-900/40')
  : (loc.isCritical
  ? 'border-red-900/50 bg-red-950/20 hover:bg-red-950/40'
  : 'border-gray-700 bg-gray-800 hover:bg-gray-700/70 active:scale-[0.99]')
@@ -4795,6 +4837,13 @@ function clearSiteWelfareOverride(locId) {
  if (state.selectedLocationId === locId) updateWelfareSelector(locId);
 }
 
+function toggleTravelNoReport(checked) {
+ state.travelNoReport = checked;
+ saveState();
+ // Keep the travel tile subtitle in sync
+ renderLocations();
+}
+
 function openTravelSettings(event) {
  if (event) event.stopPropagation();
 
@@ -4834,44 +4883,99 @@ function saveTravelSettings() {
 }
 
 function updateArrivedButtonState() {
- const pill = document.getElementById('btnStart');
- const label = document.getElementById('slideStartLabel');
+ const pill    = document.getElementById('btnStart');
+ const label   = document.getElementById('slideStartLabel');
  if (!pill || !label) return;
 
- const hasLocation = !!state.selectedLocationId;
- const durationMins = state.visitDurationMinutes || 0;
- const hasDuration = durationMins > 0;
+ const hasLocation   = !!state.selectedLocationId;
+ const durationMins  = state.visitDurationMinutes || 0;
+ const hasDuration   = durationMins > 0;
+ const isTripMode    = !!state.isTravelActive;
 
- // Reset state
+ // ── Footer expandable ────────────────────────────────────────────────────
+ // Expand when: trip mode active (with or without destination), OR site selected.
+ const shouldExpand = isTripMode || hasLocation;
+ const expandable = document.getElementById('footerExpandable');
+ const hint       = document.getElementById('footerHint');
+ const banner     = document.getElementById('selectionBanner');
+ const noReportRow = document.getElementById('noReportRow');
+
+ if (expandable) expandable.classList.toggle('hidden', !shouldExpand);
+ if (hint)       hint.classList.toggle('hidden', shouldExpand);
+
+ // ── No-report row — trip mode only ──────────────────────────────────────
+ if (noReportRow) noReportRow.classList.toggle('hidden', !isTripMode);
+ if (isTripMode) {
+  const nrChk = document.getElementById('chkTravelNoReport');
+  if (nrChk) nrChk.checked = !!(state && state.travelNoReport);
+ }
+
+ // ── Welfare row — site visits only, not trips ────────────────────────────
+ const welfareRow = document.getElementById('welfareIntervalRow');
+ if (welfareRow && isTripMode) welfareRow.classList.add('hidden');
+
+ // ── Selection banner ─────────────────────────────────────────────────────
+ if (banner) {
+  if (!shouldExpand) {
+   banner.classList.add('hidden');
+   banner.innerHTML = '';
+  } else if (isTripMode) {
+   const loc = state.locations && state.locations.find(l => l.id === state.selectedLocationId);
+   const destName = loc ? escapeHtml(loc.name) : 'No destination set';
+   banner.classList.remove('hidden');
+   banner.innerHTML = `
+    <div class="flex items-center gap-2 bg-indigo-950/60 border border-indigo-800/50 rounded-xl px-3 py-2">
+     <span class="text-base">🚗</span>
+     <svg class="w-3 h-3 text-indigo-600 flex-shrink-0" fill="none" stroke="#6366f1" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7"/></svg>
+     <div class="flex-1 min-w-0">
+      <div class="text-[9px] font-black text-indigo-600 tracking-widest uppercase">Destination</div>
+      <div class="text-xs font-black text-indigo-200 truncate">${destName}</div>
+     </div>
+    </div>`;
+  } else {
+   const loc = state.locations && state.locations.find(l => l.id === state.selectedLocationId);
+   const siteName = loc ? escapeHtml(loc.name) : 'Selected site';
+   banner.classList.remove('hidden');
+   banner.innerHTML = `
+    <div class="flex items-center gap-2 bg-green-950/40 border border-green-800/30 rounded-xl px-3 py-2">
+     <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="#4ade80" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+     <div class="flex-1 min-w-0">
+      <div class="text-[9px] font-black text-green-700 tracking-widest uppercase">Selected</div>
+      <div class="text-xs font-black text-green-300 truncate">${siteName}</div>
+     </div>
+     <div class="text-[9px] font-black text-green-700 tracking-widest">Now set duration</div>
+    </div>`;
+  }
+ }
+
+ // ── Slide pill ───────────────────────────────────────────────────────────
  pill.classList.remove('pill-disabled');
  pill.removeAttribute('aria-disabled');
  pill.style.borderColor = '';
 
- // TRAVEL LOGIC: Time is mandatory, Site is optional
- if (state.isTravelActive) {
- if (!hasDuration) {
- label.textContent = 'Select Travel Time';
- pill.classList.add('pill-disabled');
- pill.setAttribute('aria-disabled', 'true');
- } else {
- const loc = state.locations && state.locations.find(l => l.id === state.selectedLocationId);
- label.textContent = loc ? `Travel to ${loc.name}` : 'Start Travel';
- pill.style.borderColor = 'var(--accent, #3b82f6)';
- }
- }
- // STANDARD LOGIC: Both Time and Site mandatory
- else if (hasLocation && hasDuration) {
- const loc = state.locations && state.locations.find(l => l.id === state.selectedLocationId);
- label.textContent = loc ? `Begin — ${loc.name}` : 'Begin Visit';
- pill.style.borderColor = 'var(--accent, #3b82f6)';
+ if (isTripMode) {
+  // Trip: duration mandatory, destination optional
+  if (!hasDuration) {
+   label.textContent = 'Select Travel Time';
+   pill.classList.add('pill-disabled');
+   pill.setAttribute('aria-disabled', 'true');
+  } else {
+   const loc = state.locations && state.locations.find(l => l.id === state.selectedLocationId);
+   label.textContent = loc ? `Travel to ${loc.name}` : 'Start Travel';
+   pill.style.borderColor = 'var(--accent, #3b82f6)';
+  }
+ } else if (hasLocation && hasDuration) {
+  const loc = state.locations && state.locations.find(l => l.id === state.selectedLocationId);
+  label.textContent = loc ? `Begin — ${loc.name}` : 'Begin Visit';
+  pill.style.borderColor = 'var(--accent, #3b82f6)';
  } else if (!hasLocation) {
- label.textContent = 'Select a Site First';
- pill.classList.add('pill-disabled');
- pill.setAttribute('aria-disabled', 'true');
+  label.textContent = 'Select a Site First';
+  pill.classList.add('pill-disabled');
+  pill.setAttribute('aria-disabled', 'true');
  } else {
- label.textContent = 'Select a Duration';
- pill.classList.add('pill-disabled');
- pill.setAttribute('aria-disabled', 'true');
+  label.textContent = 'Select a Duration';
+  pill.classList.add('pill-disabled');
+  pill.setAttribute('aria-disabled', 'true');
  }
 }
 
