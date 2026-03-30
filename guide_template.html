@@ -588,7 +588,7 @@
     <ul>
         <li><strong>↻ Refresh</strong> — downloads the latest approved locations and form templates from your organisation. Use this after your manager adds or changes sites. Requires an internet connection; locations remain available offline once synced.</li>
         <li><strong>+ Add site</strong> — adds a personal location not on the organisation list (e.g. a new client or one-off visit). See <em>Adding a Manual Location</em> below.</li>
-        <li><strong>🚗 Trip</strong> — on the right side of the action bar. Tap to select it for a travel trip. When selected, the tile highlights and a small <strong>ℹ️</strong> button appears — tap that to configure travel report settings. See <a href="#travel-mode">Section 8: Travel Mode</a>.</li>
+        <li><strong>🚗 Trip</strong> — on the right side of the action row. Tap to enter travel mode. See <a href="#travel-mode">Section 8: Travel Mode</a>.</li>
     </ul>
 
     <h3>Sorting the Location List</h3>
@@ -937,29 +937,46 @@
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2 id="travel-mode">8. Travel Mode</h2>
 
-    <p>Use the <strong>Trip</strong> tile — in the action bar above the location list — for time spent in transit between locations.</p>
+    <p>Use Travel Mode — started via the <strong>Trip</strong> button in the action row — whenever you are in transit between locations. It logs your journey under safety monitoring and, if your organisation uses travel reports, records your route and estimated distance.</p>
 
-    <h3>Personal Travel</h3>
-    <p>If you're travelling for personal reasons (not work-related), tap the <code>ℹ️</code> button on the Trip tile and set <strong>"Report Required"</strong> to <strong>No</strong>. The app will not ask for mileage or a report when you finish.</p>
-
-    <h3>Business Travel</h3>
-    <p>For work travel, ensure <strong>"Report Required"</strong> is set to <strong>Yes</strong>. When you end the trip, the app will calculate your distance and — if mileage tracking is enabled for your organisation — ask for your odometer reading.</p>
+    <h3>Starting a trip</h3>
+    <ol class="step-list">
+        <li><strong>Tap Trip</strong> in the action row (the three buttons above the location list). The Trip button activates and a <strong>General</strong> button appears alongside it. The location tiles remain fully visible so you can choose your destination.</li>
+        <li><strong>Choose your destination:</strong>
+            <ul>
+                <li><strong>Travelling to a specific site</strong> — tap its tile in the location list. The tile highlights and a confirmation banner appears above the footer showing the destination name.</li>
+                <li><strong>General travel</strong> — tap the <strong>General</strong> button if you're not heading to a listed site (e.g. a one-off address or personal errand). A banner confirms "General travel" is selected.</li>
+            </ul>
+        </li>
+        <li>Once a destination is confirmed, the footer expands to show your options — set the <strong>expected duration</strong> of your trip, and optionally tick <strong>"No report required"</strong> if this is personal travel (see below).</li>
+        <li>Slide the <strong>Begin</strong> pill to start the trip. If your organisation requires a pre-departure form, it will appear at this point — complete and submit it to proceed.</li>
+    </ol>
 
     <div class="tip">
-        <strong>💡 Travel settings persist:</strong> Your preferred setting for the Trip tile is remembered between sessions unless your organisation mandates reports for all travel, in which case it cannot be changed.
+        <strong>💡 General vs named destination:</strong> If you tap a named tile after selecting General, General deselects and the tile becomes your destination. You can switch freely before sliding to begin.
     </div>
 
+    <h3>GPS tracking during travel</h3>
+    <p>While a trip is active, the app sends your GPS location to the safety monitor at regular intervals — more frequently than during a static site visit. <strong>Keep the app open on the locked screen</strong> for the duration of your journey to ensure continuous tracking. Locking your phone (screen off) is fine; closing the app entirely or switching away while battery saver is not active may interrupt updates depending on your device.</p>
+
+    <h3>Personal travel — no report required</h3>
+    <p>If you're travelling for personal reasons and no report is needed, tick the <strong>"No report required"</strong> checkbox in the expanded footer before you begin. The trip will still be safety-monitored, but you will not be asked to submit a report when you finish. If your organisation mandates reports for all travel, this checkbox will not be available.</p>
+
     <h3>Pre-Departure Form</h3>
-    <p>Your organisation may require you to complete a short questionnaire <strong>before</strong> a travel visit begins — covering vehicle condition, route details, or a fit-to-drive confirmation. If this is configured, the form will appear automatically after you tap the Trip tile and before your trip timer starts.</p>
+    <p>Your organisation may require you to complete a short questionnaire <strong>before</strong> a travel visit begins — covering vehicle condition, route details, or a fit-to-drive confirmation. If this is configured, the form will appear automatically after you slide to begin and before your trip timer starts.</p>
     <p>You must submit the form to proceed. The answers are sent to your organisation as part of the visit record. If you close the form without completing it, the trip will not start.</p>
 
-    <h3>Travel Report — Start Point &amp; Destination</h3>
-    <p>When you end a travel trip and the <strong>Travel Report</strong> template loads, two fields are automatically filled in at the top of the form:</p>
+    <h3>Travel Report — pre-filled fields</h3>
+    <p>When you end a travel trip and the <strong>Travel Report</strong> template loads, several fields at the top of the form are filled in automatically:</p>
     <ul>
-        <li><strong>Start Point</strong> — the address where your trip began, resolved automatically from your GPS location at trip start. While the app is looking up the address, the field shows <em>"Locating…"</em> — it will fill in within a few seconds once resolved. If GPS or network was unavailable at the time, raw coordinates are shown instead.</li>
-        <li><strong>Destination</strong> — the name and address of the location you visited, composed from your selected site details.</li>
+        <li><strong>Start Point</strong> — the address where your trip began, resolved from your GPS location at trip start. The field may briefly show <em>"Locating…"</em> while the address is being looked up. If GPS or network was unavailable, raw coordinates are shown instead.</li>
+        <li><strong>Destination</strong> — the name and address of your selected site, or "General travel" if you chose no specific destination.</li>
+        <li><strong>Estimated distance</strong> — a distance figure calculated from your GPS track during the journey.</li>
     </ul>
-    <p>Both fields are fully editable before you submit — correct them if the auto-filled information is wrong (for example, if you diverted from the planned destination). Both are included in the report sent to your organisation.</p>
+
+    <div class="warning">
+        <strong>Always check the pre-filled fields before submitting.</strong> The start point, destination, and distance are calculated automatically and are usually accurate — but GPS drift, poor signal, or a diverted route can affect them. Correct anything that looks wrong before you slide to submit.
+    </div>
 
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2>9. Settings &amp; Preferences</h2>
