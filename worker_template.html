@@ -686,8 +686,6 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
    <span class="text-xs font-bold text-gray-300 leading-none">General</span>
   </button>
  </div>
- <!-- lastSyncLabel kept in DOM (hidden) so updateLastSyncUI() does not error -->
- <div id="lastSyncLabel" class="hidden"></div>
  <div id="sortRow" class="flex items-center justify-between mt-1">
   <div id="lastSyncDisplay" class="text-xs text-gray-600 font-bold ml-1">Last sync: Never</div>
   <button id="siteSortBtn" onclick="cycleSiteSort()"
@@ -7601,7 +7599,6 @@ function forceSync(showUI) {
 }
 
 function updateLastSyncUI() {
- const label = document.getElementById('lastSyncLabel'); // hidden, kept for compat
  const display = document.getElementById('lastSyncDisplay');
  if (!state.lastSyncTime) return;
 
@@ -7627,7 +7624,6 @@ function updateLastSyncUI() {
  }
 
  const cls = 'text-xs font-bold tracking-tighter ml-1 px-2 py-0.5 rounded-full border inline-block ' + classes;
- if (label) { label.className = cls; label.innerText = text; }
  if (display) { display.className = cls; display.innerText = text; }
 }
  
