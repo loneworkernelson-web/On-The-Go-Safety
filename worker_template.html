@@ -662,29 +662,34 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  
  <div class="content-area">
 <div class="flex flex-col gap-1 mb-4">
+ <!-- Action row: Add Site | Trip | General (equal thirds) -->
  <div class="flex gap-2">
- <!-- Left half: Refresh + Add Site -->
- <div class="flex gap-2 w-1/2">
- <button onclick="forceSync(true)" id="btnSync"
- class="flex-1 h-14 bg-gray-800 border border-gray-600 rounded-xl flex flex-col items-center justify-center text-blue-400 shadow-lg active:scale-95 transition gap-0.5"
- aria-label="Refresh database">
- <span class="text-xl leading-none">↻</span>
- <span class="text-xs font-bold text-gray-300 leading-none">Refresh</span>
- </button>
- <button onclick="openAddLocationModal()"
- class="flex-1 h-14 bg-gray-800 border border-gray-600 rounded-xl flex flex-col items-center justify-center text-green-400 shadow-lg active:scale-95 transition gap-0.5"
- aria-label="Add site">
- <span class="text-xl leading-none">+</span>
- <span class="text-xs font-bold text-gray-300 leading-none">Add site</span>
- </button>
+  <button onclick="openAddLocationModal()"
+   class="flex-1 h-14 bg-gray-800 border border-gray-600 rounded-xl flex flex-col items-center justify-center text-green-400 shadow-lg active:scale-95 transition gap-0.5"
+   aria-label="Add site">
+   <span class="text-xl leading-none">+</span>
+   <span class="text-xs font-bold text-gray-300 leading-none">Add site</span>
+  </button>
+  <button id="btnTrip" onclick="toggleTripMode()"
+   class="flex-1 h-14 rounded-xl flex items-center justify-center gap-2 border-2 border-gray-700 bg-gray-800 shadow-lg active:scale-95 transition"
+   aria-label="Start a trip">
+   <span class="text-xl leading-none">🚗</span>
+   <div class="text-left leading-tight">
+    <div id="btnTripLabel" class="text-sm font-bold text-white leading-none">Trip</div>
+    <div id="btnTripSub" class="text-xs text-gray-400 leading-none mt-0.5">Report required</div>
+   </div>
+  </button>
+  <button id="btnGeneral" onclick="selectGeneralDest()"
+   class="flex-1 h-14 rounded-xl flex flex-col items-center justify-center border-2 border-gray-700 bg-gray-800 shadow-lg active:scale-95 transition gap-0.5 opacity-40 pointer-events-none"
+   aria-label="Travel to unspecified destination" aria-disabled="true">
+   <span class="text-xl leading-none">🗺️</span>
+   <span class="text-xs font-bold text-gray-300 leading-none">General</span>
+  </button>
  </div>
- <!-- Right half: Trip tile -->
- <div id="travelRow" class="w-1/2"></div>
- </div>
+ <!-- lastSyncLabel kept in DOM (hidden) so updateLastSyncUI() does not error -->
+ <div id="lastSyncLabel" class="hidden"></div>
  <div id="sortRow" class="flex items-center justify-between mt-1">
-  <div id="lastSyncLabel" class="text-sm text-gray-300 font-bold tracking-tighter ml-1">
-   Last Sync: Never
-  </div>
+  <div id="lastSyncDisplay" class="text-xs text-gray-600 font-bold ml-1">Last sync: Never</div>
   <button id="siteSortBtn" onclick="cycleSiteSort()"
    class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-gray-700/60 border border-gray-600 text-xs font-bold text-gray-300 active:scale-95 transition-all"
    aria-label="Change site sort order">
@@ -2148,6 +2153,7 @@ function submitReport() {
  const _concludedIsTravel = state.activeVisit && (state.activeVisit.isTravel || state.activeVisit.locationId === 'travel');
  state.activeVisit = null;
  state.selectedLocationId = null;
+ state.isGeneralDest = false;
  state.visitDurationMinutes = 0;
  state.photoStore = {}; 
  
@@ -3416,6 +3422,7 @@ function directDepart() {
  if (_gpsLbl) _gpsLbl.textContent = '--';
  state.activeVisit = null;
  state.selectedLocationId = null;
+ state.isGeneralDest = false;
  state.visitDurationMinutes = 0;
  state.photoStore = {};
  // Reset per-trip no-report flag now that the trip is over.
@@ -4084,32 +4091,23 @@ function cycleSiteSort() {
 // ============================================================================
 function renderLocations() {
  const list = document.getElementById('locationList');
- const travelRow = document.getElementById('travelRow');
  const searchRow = document.getElementById('siteSearchRow');
 
- if (!list || !travelRow) {
- console.error('UI Error: Location containers missing.');
+ if (!list) {
+ console.error('UI Error: locationList missing.');
  return;
  }
 
  list.innerHTML = '';
- travelRow.innerHTML = '';
 
- // ── 0. Sort row / "Travelling to" label ──────────────────────────────────
+ // ── 0. Trip buttons + sort row / "Travelling to" label ───────────────────
+ _updateTripButtons();
  const sortRow = document.getElementById('sortRow');
  const travellingToLabel = document.getElementById('travellingToLabel');
  if (sortRow) sortRow.classList.toggle('hidden', !!state.isTravelActive);
  if (travellingToLabel) travellingToLabel.classList.toggle('hidden', !state.isTravelActive);
 
- // ── 1. Travel tile ───────────────────────────────────────────────────────
- if (CONFIG.mileageEnabled) {
- travelRow.classList.remove('hidden');
- travelRow.appendChild(createTravelTile());
- } else {
- travelRow.classList.add('hidden');
- }
-
- // ── 2. Filter to named sites ─────────────────────────────────────────────
+ // ── 1. Filter to named sites ─────────────────────────────────────────────
  const sites = state.locations.filter(loc => loc && loc.id !== 'travel' && loc.name !== '_travel');
 
  if (sites.length === 0) {
@@ -4571,52 +4569,93 @@ function toggleHighRiskUI() {
 }
 
 /**
- * Travel Tile: Toggles Travel Mode.
- * Info button (only visible when tile is selected) opens the travel settings panel.
+ * _updateTripButtons — refreshes the visual state of the Trip and General
+ * header buttons to reflect current state. Called from renderLocations().
  */
-function createTravelTile() {
- const isActive = state && state.isTravelActive;
- // Per-trip toggle lives in state so it resets automatically after each visit
- const noReport = !!(state && state.travelNoReport);
+function _updateTripButtons() {
+ const btnTrip    = document.getElementById('btnTrip');
+ const btnGeneral = document.getElementById('btnGeneral');
+ const tripSub    = document.getElementById('btnTripSub');
+ if (!btnTrip || !btnGeneral) return;
 
- const tile = document.createElement('div');
- tile.className = [
- 'w-full h-14 rounded-xl shadow-lg flex items-center justify-between px-4',
- 'cursor-pointer transition-all border-2',
- isActive ? 'border-white scale-[1.02]' : 'border-gray-700 hover:border-white/20'
- ].join(' ');
- // Gradient uses theme vars: surface → accent, so it looks right across all colour schemes
- tile.style.background = `linear-gradient(to right, var(--surface), var(--accent))`;
- if (isActive) tile.style.boxShadow = '0 0 0 2px var(--accent)';
+ const isActive    = !!(state && state.isTravelActive);
+ const isGeneral   = !!(state && state.isGeneralDest);
+ const noReport    = !!(state && state.travelNoReport);
 
- tile.innerHTML = `
- <div class="flex items-center gap-2">
- <div class="text-xl">🚗</div>
- <div>
- <div class="text-sm font-bold text-white tracking-tight leading-none">Trip</div>
- <div class="text-xs text-indigo-100 font-bold mt-0.5">${noReport ? 'No report' : 'Report required'}</div>
- </div>
- </div>
- ${isActive ? `<button class="text-indigo-200 hover:text-white p-1 -mr-1 z-20 text-xl"
- aria-label="Travel settings"
- onclick="openTravelSettings(event)">ℹ️</button>` : ''}
- `;
+ // Trip button — active state uses theme accent border + subtle glow
+ if (isActive) {
+  btnTrip.style.background = `linear-gradient(to right, var(--surface, #1e1e3e), var(--accent, #3b82f6))`;
+  btnTrip.className = btnTrip.className
+   .replace('border-gray-700', 'border-white')
+   .replace(/\bborder-\S+/g, '') + ' border-2 border-white';
+  btnTrip.style.boxShadow = '0 0 0 2px var(--accent, #3b82f6)';
+ } else {
+  btnTrip.style.background = '';
+  btnTrip.style.boxShadow = '';
+  btnTrip.className = 'flex-1 h-14 rounded-xl flex items-center justify-center gap-2 border-2 border-gray-700 bg-gray-800 shadow-lg active:scale-95 transition';
+ }
+ if (tripSub) tripSub.textContent = noReport ? 'No report' : 'Report required';
 
- tile.onclick = (e) => {
- // Don't toggle when the info button is tapped
- if (e.target.closest('button')) return;
- state.isTravelActive = !state.isTravelActive;
- // Reset per-trip no-report flag when deselecting
- if (!state.isTravelActive) state.travelNoReport = false;
- state.visitDurationMinutes = 0;
- updateDurationDisplay();
- renderLocations();
- updateArrivedButtonState();
- };
- return tile;
+ // General button — only interactive when trip is active
+ if (isActive) {
+  const baseClass = 'flex-1 h-14 rounded-xl flex flex-col items-center justify-center border-2 shadow-lg active:scale-95 transition gap-0.5';
+  if (isGeneral) {
+   btnGeneral.className = baseClass + ' border-indigo-500 bg-indigo-900/40';
+   btnGeneral.style.opacity = '1';
+   btnGeneral.style.pointerEvents = 'auto';
+   btnGeneral.removeAttribute('aria-disabled');
+  } else {
+   btnGeneral.className = baseClass + ' border-gray-600 bg-gray-800/60';
+   btnGeneral.style.opacity = '1';
+   btnGeneral.style.pointerEvents = 'auto';
+   btnGeneral.removeAttribute('aria-disabled');
+  }
+ } else {
+  btnGeneral.className = 'flex-1 h-14 rounded-xl flex flex-col items-center justify-center border-2 border-gray-700 bg-gray-800 shadow-lg transition gap-0.5';
+  btnGeneral.style.opacity = '0.4';
+  btnGeneral.style.pointerEvents = 'none';
+  btnGeneral.setAttribute('aria-disabled', 'true');
+ }
 }
 
- 
+/** Toggles trip mode on/off from the Trip header button. */
+function toggleTripMode() {
+ state.isTravelActive = !state.isTravelActive;
+ if (!state.isTravelActive) {
+  // Full reset when deselecting trip
+  state.isGeneralDest   = false;
+  state.travelNoReport  = false;
+  state.selectedLocationId = null;
+  state.visitDurationMinutes = 0;
+  updateDurationDisplay();
+ } else {
+  // Entering trip mode — clear any previously selected site tile
+  state.selectedLocationId = null;
+  state.isGeneralDest = false;
+ }
+ renderLocations();
+ updateArrivedButtonState();
+}
+
+/** Selects (or deselects) "General" as the trip destination. */
+function selectGeneralDest() {
+ if (!state.isTravelActive) return;
+ state.isGeneralDest = !state.isGeneralDest;
+ if (state.isGeneralDest) {
+  // General and a named tile are mutually exclusive
+  state.selectedLocationId = null;
+ }
+ renderLocations();
+ updateArrivedButtonState();
+}
+
+/**
+ * @deprecated — kept as a no-op so any lingering callers don't throw.
+ * Trip button is now a plain <button> in the HTML; createTravelTile() is no longer used.
+ */
+function createTravelTile() { return document.createElement('div'); }
+
+
 /**
  * UPDATED: Location Tile with Information Button
  */
@@ -4656,7 +4695,8 @@ function createLocationTile(loc) {
  
  tile.onclick = () => {
  state.selectedLocationId = (state.selectedLocationId === loc.id) ? null : loc.id;
- updateWelfareSelector(state.selectedLocationId); // update welfare interval selector for this site
+ if (state.selectedLocationId) state.isGeneralDest = false; // named tile overrides General
+ updateWelfareSelector(state.selectedLocationId);
  renderLocations();
  updateArrivedButtonState();
  };
@@ -4721,6 +4761,7 @@ function createLocationRow(loc) {
  row.onclick = (e) => {
  if (e.target.closest('button')) return;
  state.selectedLocationId = (state.selectedLocationId === loc.id) ? null : loc.id;
+ if (state.selectedLocationId) state.isGeneralDest = false;
  updateWelfareSelector(state.selectedLocationId);
  renderLocations();
  updateArrivedButtonState();
@@ -4888,16 +4929,19 @@ function updateArrivedButtonState() {
  if (!pill || !label) return;
 
  const hasLocation   = !!state.selectedLocationId;
+ const isGeneralDest = !!(state && state.isGeneralDest);
+ const hasDestination = hasLocation || isGeneralDest;  // named tile OR General button
  const durationMins  = state.visitDurationMinutes || 0;
  const hasDuration   = durationMins > 0;
  const isTripMode    = !!state.isTravelActive;
 
  // ── Footer expandable ────────────────────────────────────────────────────
- // Expand when: trip mode active (with or without destination), OR site selected.
- const shouldExpand = isTripMode || hasLocation;
- const expandable = document.getElementById('footerExpandable');
- const hint       = document.getElementById('footerHint');
- const banner     = document.getElementById('selectionBanner');
+ // Trip mode: expand only after a destination is confirmed (tile OR General).
+ // Visit mode: expand as soon as a site tile is selected.
+ const shouldExpand = isTripMode ? hasDestination : hasLocation;
+ const expandable  = document.getElementById('footerExpandable');
+ const hint        = document.getElementById('footerHint');
+ const banner      = document.getElementById('selectionBanner');
  const noReportRow = document.getElementById('noReportRow');
 
  if (expandable) expandable.classList.toggle('hidden', !shouldExpand);
@@ -4920,13 +4964,15 @@ function updateArrivedButtonState() {
    banner.classList.add('hidden');
    banner.innerHTML = '';
   } else if (isTripMode) {
-   const loc = state.locations && state.locations.find(l => l.id === state.selectedLocationId);
-   const destName = loc ? escapeHtml(loc.name) : 'No destination set';
+   const loc = hasLocation
+    ? (state.locations && state.locations.find(l => l.id === state.selectedLocationId))
+    : null;
+   const destName = loc ? escapeHtml(loc.name) : 'General travel';
    banner.classList.remove('hidden');
    banner.innerHTML = `
     <div class="flex items-center gap-2 bg-indigo-950/60 border border-indigo-800/50 rounded-xl px-3 py-2">
      <span class="text-base">🚗</span>
-     <svg class="w-3 h-3 text-indigo-600 flex-shrink-0" fill="none" stroke="#6366f1" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7"/></svg>
+     <svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="#6366f1" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7"/></svg>
      <div class="flex-1 min-w-0">
       <div class="text-[9px] font-black text-indigo-600 tracking-widest uppercase">Destination</div>
       <div class="text-xs font-black text-indigo-200 truncate">${destName}</div>
@@ -4954,13 +5000,15 @@ function updateArrivedButtonState() {
  pill.style.borderColor = '';
 
  if (isTripMode) {
-  // Trip: duration mandatory, destination optional
+  // Trip: duration mandatory, destination already confirmed before footer expanded
   if (!hasDuration) {
    label.textContent = 'Select Travel Time';
    pill.classList.add('pill-disabled');
    pill.setAttribute('aria-disabled', 'true');
   } else {
-   const loc = state.locations && state.locations.find(l => l.id === state.selectedLocationId);
+   const loc = hasLocation
+    ? (state.locations && state.locations.find(l => l.id === state.selectedLocationId))
+    : null;
    label.textContent = loc ? `Travel to ${loc.name}` : 'Start Travel';
    pill.style.borderColor = 'var(--accent, #3b82f6)';
   }
@@ -5133,6 +5181,7 @@ async function startVisit(isSkipCheck = false) {
  };
 
  state.isTravelActive = false;
+ state.isGeneralDest = false;
  isPanicActive = false;   // Reset stale flag so a new visit never inherits a previous alarm state
  isDuressActive = false;  // Same for duress escalation state
  _stopAlarmGpsPulse();    // Ensure no alarm GPS interval carries over
@@ -7552,8 +7601,9 @@ function forceSync(showUI) {
 }
 
 function updateLastSyncUI() {
- const label = document.getElementById('lastSyncLabel');
- if (!label || !state.lastSyncTime) return;
+ const label = document.getElementById('lastSyncLabel'); // hidden, kept for compat
+ const display = document.getElementById('lastSyncDisplay');
+ if (!state.lastSyncTime) return;
 
  const lastSync = new Date(state.lastSyncTime);
  const diffMs = Date.now() - lastSync.getTime();
@@ -7576,8 +7626,9 @@ function updateLastSyncUI() {
  classes = 'bg-red-900/60 text-red-200 border-red-600/50 animate-pulse';
  }
 
- label.className = 'text-xs font-bold tracking-tighter ml-1 px-2 py-0.5 rounded-full border inline-block ' + classes;
- label.innerText = text;
+ const cls = 'text-xs font-bold tracking-tighter ml-1 px-2 py-0.5 rounded-full border inline-block ' + classes;
+ if (label) { label.className = cls; label.innerText = text; }
+ if (display) { display.className = cls; display.innerText = text; }
 }
  
 // ============================================================================
@@ -8265,6 +8316,7 @@ function initAllActionPills() {
  const durationMins = state.visitDurationMinutes || 0;
  if (durationMins <= 0) return showToast('⏳ Select a duration first');
  if (!state.isTravelActive && !state.selectedLocationId) return showToast('📍 Select a site first');
+ if (state.isTravelActive && !state.selectedLocationId && !state.isGeneralDest) return showToast('📍 Select a destination or tap General');
  startVisit();
  });
 
