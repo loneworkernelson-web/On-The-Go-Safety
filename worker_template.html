@@ -936,7 +936,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 <div id="reportPage" class="page">
  <div class="header-bar">
  <h1 id="reportTitle" class="text-xl font-bold">Visit Report</h1>
- <button onclick="navigate(state.activeVisit ? 'locked' : 'main')" aria-label="Close" class="text-3xl text-gray-400 hover:text-white px-2">×</button>
+ <button onclick="cancelReportForm()" aria-label="Close" class="text-3xl text-gray-400 hover:text-white px-2">×</button>
  </div>
  <div id="formLocationBanner" class="hidden mx-4 mt-1 mb-1 px-4 py-2 bg-blue-900/40 border border-blue-700/50 rounded-xl flex items-center gap-2">
  <span class="text-blue-400 text-sm flex-shrink-0">📍</span>
@@ -946,10 +946,10 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div id="reportFields"></div>
  </div>
  <div class="footer-bar flex gap-3">
- <button onclick="navigate(state.activeVisit ? 'locked' : 'main')" 
- class="flex-1 py-4 bg-gray-700 text-gray-300 rounded-xl font-bold tracking-widest">
- Cancel
- </button>
+ <button onclick="cancelReportForm()" 
+            class="flex-1 py-4 bg-gray-700 text-gray-300 rounded-xl font-bold tracking-widest">
+            Cancel
+        </button>
  <button id="btnSubmitRep" class="flex-[2] py-4 bg-green-600 text-white rounded-xl font-bold shadow-lg">
  Submit Report
  </button>
@@ -3655,6 +3655,20 @@ function getVisitPhase() {
  * a report is required for the current visit. Called when the locked screen
  * opens and whenever noReport status changes (site info toggle, travel settings).
  */
+// Called by the Cancel button and × close button on the report page.
+// Re-enables the depart pill if we're returning to the locked screen,
+// preventing it from being stuck in pill-disabled after a GPS wait that
+// was interrupted by the worker cancelling the form.
+function cancelReportForm() {
+  const dest = state.activeVisit ? 'locked' : 'main';
+  navigate(dest);
+  if (dest === 'locked') {
+    const btnDepart = document.getElementById('btnDepart');
+    if (btnDepart) btnDepart.classList.remove('pill-disabled');
+    updateDepartLabel();
+  }
+}
+
 function updateDepartLabel() {
  const label = document.getElementById('slideDepartLabel');
  const sub = document.getElementById('slideDepartSub');
