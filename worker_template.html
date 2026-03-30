@@ -4661,7 +4661,8 @@ function createLocationTile(loc) {
  const isSel = state && state.selectedLocationId === loc.id;
  const isCritical = loc.isCritical || false;
  const isTripMode = !!(state && state.isTravelActive);
- const isFaded = isTripMode && !isSel;
+ const hasConfirmedDest = !!(state && (state.selectedLocationId || state.isGeneralDest));
+ const isFaded = isTripMode && hasConfirmedDest && !isSel;
 
  const tile = document.createElement('div');
  tile.className = `p-3 rounded-lg border-2 cursor-pointer flex flex-col justify-between h-24 transition-all ${
@@ -4720,7 +4721,8 @@ function createLocationRow(loc) {
  const isSel = state && state.selectedLocationId === loc.id;
  const isLast = state && loc.id === state.lastVisitedLocationId;
  const isTripMode = !!(state && state.isTravelActive);
- const isFaded = isTripMode && !isSel;
+ const hasConfirmedDest = !!(state && (state.selectedLocationId || state.isGeneralDest));
+ const isFaded = isTripMode && hasConfirmedDest && !isSel;
 
  // Left-edge risk bar colour — matches the colours used in the welfare hint
  const riskBarColour = {
