@@ -1328,10 +1328,10 @@
     </div>
 
     <h3>Ways to trigger an alarm</h3>
-    <p>There are three independent ways to raise an alarm, any of which can be used covertly:</p>
+    <p>There are three independent ways to raise an alarm, any of which can be used covertly. <strong>Shake works anywhere in the app</strong> — including the home screen, before a visit has started. The SOS button and volume button method are only available during an active visit.</p>
 
     <h4>1. SOS Button — tap 3 times</h4>
-    <p>Tap the red <strong>SOS button 3 times rapidly</strong> (within about 2 seconds). This is the primary method and works at any time during an active visit.</p>
+    <p>Tap the red <strong>SOS button 3 times rapidly</strong> (within about 2 seconds). Available during an active visit when the screen is on.</p>
 
     <div class="mock-wrap">
         <div class="mock-phone" style="width:260px;">
@@ -1355,7 +1355,7 @@
     <p class="mock-caption">SOS button — tap rapidly 3 times to trigger</p>
 
     <h4>2. Shake — shake vigorously, then shake again</h4>
-    <p>Shake your phone vigorously for about a second. A full-screen red confirmation modal appears with a 5-second countdown. <strong>Shake again</strong> to confirm — the alarm fires. If you do not shake again within 5 seconds, the screen dismisses automatically and nothing is sent.</p>
+    <p>Shake your phone vigorously for about a second. A full-screen red confirmation modal appears with a 5-second countdown. <strong>Shake again</strong> to confirm — the alarm fires. If you do not shake again within 5 seconds, the screen dismisses automatically and nothing is sent. This is the only trigger that works <strong>anywhere in the app</strong>, including the home screen before a visit has started.</p>
 
     <div class="mock-wrap">
         <div class="mock-phone" style="width:260px;background:#450a0a;border-color:#7f1d1d;">
@@ -1391,13 +1391,14 @@
     <p class="mock-caption">Volume panic — Android only; press 3 more times within 5 seconds to confirm</p>
 
     <div class="tip">
-        <strong>💡 All three methods send the same alarm.</strong> SOS, shake, and volume buttons all send a PANIC alert to your contacts and monitor — the alarm behaviour and the way you cancel it is identical regardless of which trigger you used.
+        <strong>💡 All three methods send the same alarm.</strong> SOS, shake, and volume buttons all send a PANIC alert to your contacts and monitor via push notification, email, and SMS (if SMS is enabled for your organisation) — the alarm behaviour and the way you cancel it is identical regardless of which trigger you used.
     </div>
 
     <h3>What your contacts receive</h3>
     <p>When any alarm fires, your contacts receive:</p>
     <ul>
         <li>An instant push notification via ntfy (if configured) — straight to their lock screen</li>
+        <li>An SMS message with your name, location, and a GPS link — if SMS is enabled for your organisation</li>
         <li>An email showing the alarm type, your name and phone number, your site and its address, and a GPS link</li>
         <li>A <strong>what3words address</strong> (e.g. <code>///filled.count.soap</code>) in the emergency email, if that feature is configured</li>
     </ul>
@@ -1424,12 +1425,13 @@
             <tr><td style="padding:10px;border:1px solid #e5e7eb;">Wake from Battery Saver</td><td style="padding:10px;border:1px solid #e5e7eb;">Slide the <strong>Wake</strong> pill right</td></tr>
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">View site safety information</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap <strong>ℹ</strong> on location tile → <strong>🛡️ VIEW SITE SAFETY INFORMATION</strong></td></tr>
             <tr><td style="padding:10px;border:1px solid #e5e7eb;">Welfare check-in</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap green <strong>✅ I'm OK</strong> button when prompted (within 2 min)</td></tr>
-            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Raise alarm — SOS button</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap red SOS button <strong>3 times rapidly</strong></td></tr>
-            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Raise alarm — shake</td><td style="padding:10px;border:1px solid #e5e7eb;">Shake vigorously → shake again within 5 sec to confirm</td></tr>
-            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Raise alarm — volume buttons (Android)</td><td style="padding:10px;border:1px solid #e5e7eb;">Press volume ×5 within 3 sec → press ×3 more to confirm</td></tr>
+            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Raise alarm — SOS button</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap red SOS button <strong>3 times rapidly</strong> (active visit only)</td></tr>
+            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Raise alarm — shake</td><td style="padding:10px;border:1px solid #e5e7eb;">Shake vigorously → shake again within 5 sec to confirm (works anywhere in app)</td></tr>
+            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Raise alarm — volume buttons (Android)</td><td style="padding:10px;border:1px solid #e5e7eb;">Press volume ×5 within 3 sec → press ×3 more to confirm (active visit; works screen-off)</td></tr>
+            <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">When alarm fires — contacts notified by</td><td style="padding:10px;border:1px solid #e5e7eb;">Push notification (ntfy) + SMS (if enabled) + email</td></tr>
             <tr><td style="padding:10px;border:1px solid #e5e7eb;">Cancel alarm (you're safe)</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap any button → enter <strong>Safety PIN</strong></td></tr>
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Cancel alarm under duress</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap any button → enter <strong>Duress PIN</strong> (silent DURESS alert sent)</td></tr>
-            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Sync new locations</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap <strong>↻ Refresh</strong> in the action bar at the top of the location list</td></tr>
+            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Sync new locations</td><td style="padding:10px;border:1px solid #e5e7eb;">Syncs automatically on app open — or tap ⚙️ Settings → Diagnostics → Force Sync</td></tr>
         </tbody>
     </table>
 
