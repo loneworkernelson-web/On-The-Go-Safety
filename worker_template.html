@@ -809,7 +809,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
   <!-- Duration Selector -->
   <div class="mb-4 bg-gray-800 rounded-lg p-3 border border-gray-700">
   <div class="flex justify-between items-center mb-2">
-  <span class="text-gray-400 text-xs font-black">Expected Duration</span>
+  <span id="lblDuration" class="text-gray-400 text-xs font-black">Expected Duration</span>
   <span id="durationDue" class="text-blue-400 font-black text-sm"></span>
   </div>
   <div class="grid grid-cols-4 gap-1.5">
@@ -4959,7 +4959,20 @@ function updateArrivedButtonState() {
  const noReportRow = document.getElementById('noReportRow');
 
  if (expandable) expandable.classList.toggle('hidden', !shouldExpand);
- if (hint)       hint.classList.toggle('hidden', shouldExpand);
+ if (hint) {
+  hint.classList.toggle('hidden', shouldExpand);
+  hint.textContent = isTripMode
+   ? 'Select a destination or tap General to continue'
+   : 'Select a site or tap Trip to continue';
+ }
+
+ // ── Duration label ───────────────────────────────────────────────────────
+ const lblDuration = document.getElementById('lblDuration');
+ if (lblDuration) {
+  lblDuration.textContent = hasDuration
+   ? 'Expected Duration'
+   : (isTripMode ? 'Tap an estimated time for your trip' : 'Tap an estimated time for your visit');
+ }
 
  // ── No-report row — trip mode only ──────────────────────────────────────
  if (noReportRow) noReportRow.classList.toggle('hidden', !isTripMode);
