@@ -152,7 +152,7 @@ This function must be triggered by a time-driven trigger (recommended frequency:
 1. **OVERDUE — 15 min:** Sends an overdue notification email.
 2. **OVERDUE — 30 min:** Sends a follow-up overdue notification.
 3. **OVERDUE — 45 min:** Sends a final overdue notification.
-4. **EMERGENCY — 60 min breach:** Triggers full emergency email + SMS via TextBelt + ntfy push notification to all nominated contacts.
+4. **EMERGENCY — 60 min breach:** Triggers full emergency email + SMS via the configured SMS provider + ntfy push notification to all nominated contacts.
 
 `OVERDUE ALARM` status (sent when a worker's grace period expires on-device) is treated as an immediate alert trigger — the same path as `EMERGENCY`, `PANIC`, and `DURESS`.
 
@@ -228,11 +228,25 @@ Active visits progress through a sequence of phases defined in `VISIT_PHASES`. T
 
 The current phase is stored in `state.activeVisit.phase` and read via `getVisitPhase()`.
 
-### 3.5 Pre-Visit Forms (Travel Mode)
+### 3.5 Travel Mode
+
+Workers initiate travel visits from the home screen, which has three equal-width action buttons: **Add Site**, **Trip**, and **General**.
+
+- **Trip mode:** Tapping **Trip** activates travel mode. Workers then select a named destination tile from their location list. Once a destination is confirmed, the footer expands to show the duration selector and trip options.
+- **General mode:** Tapping **General** sets an unnamed destination — used for ad-hoc journeys where no pre-configured site exists. The footer expands on General confirmation without requiring a named tile selection.
+- **Footer expansion:** The `#footerExpandable` panel only expands once a destination is confirmed (named tile or General). Tapping Trip alone does not expand it.
+- **Footer options (trip mode only):**
+  - **Duration selector** — estimated trip time; used by the watchdog to set the anticipated return time.
+  - **Skip report** pill (`#chkTravelNoReport`) — suppresses the Travel Report form at trip end for this journey.
+  - **Critical timing** pill (`#chkHighRisk`) — activates High-Risk (Zero Tolerance) mode, triggering immediate escalation at timer expiry rather than the standard overdue tiers.
+- **GPS during travel:** Uses `GPS_MIN_INTERVAL_TRAVEL_MS` (1 minute), tighter than the 2-minute non-travel minimum. A battery saver GPS HUD (`#saverGpsAccuracyHUD`) is shown during travel when the screen dims.
+- **State variables:** `state.isTravelActive` (boolean), `state.isGeneralDest` (boolean), `state.travelNoReport` (boolean). All must be cleared at visit teardown and at `startVisit()`.
+
+### 3.6 Pre-Visit Forms (Travel Mode)
 
 Travel visits can be configured to require a pre-departure questionnaire. The `_travel` sentinel row in the Sites sheet (a row named `_travel` with `TRUE` in column L) is filtered from the location tile grid but is read by `startVisit()` to overlay `preVisitForm: true` onto travel visits. The form uses the same template-driven builder as all other forms.
 
-### 3.6 Travel Report — Trip Endpoint Auto-Fill
+### 3.7 Travel Report — Trip Endpoint Auto-Fill
 
 When the active template is `Travel Report`, `_injectTripEndpointFields()` prepends two auto-filled fields to `#reportFields` before the form is shown:
 
@@ -241,11 +255,11 @@ When the active template is `Travel Report`, `_injectTripEndpointFields()` prepe
 
 Both fields use `data-key` attributes and are collected by `submitReport()` alongside all other form answers. Workers can edit either field before submitting if the auto-filled value is incorrect.
 
-### 3.7 Back-Navigation Trap
+### 3.8 Back-Navigation Trap
 
 To prevent workers from accidentally leaving the app mid-visit by pressing the Android back button, `window._armBackTrap()` pushes an `{ otgTrap: true }` history entry as a sentinel. The `popstate` handler re-pushes the sentinel and shows a toast warning if `state.activeVisit` is set. The trap is armed at visit start (`startVisit()`) and on page reload when an active visit is detected (`_initApp()`).
 
-### 3.8 Form Builder Syntax
+### 3.9 Form Builder Syntax
 
 The app dynamically builds forms based on column headers in the `Templates` sheet using a prefix parser.
 
@@ -270,15 +284,15 @@ The app dynamically builds forms based on column headers in the `Templates` shee
 
 **Form timing** is controlled by column AI of the Templates sheet. It determines whether the form is presented at visit start, visit end, or both.
 
-### 3.9 Visit History
+### 3.10 Visit History
 
 Workers can view a log of their recent visits from the app's history screen. `populateVisitHistory()` reads the IndexedDB outbox for `ARRIVED` and `TRAVELLING` records, caps results at 30 entries, and groups them by NZ-locale calendar date.
 
-### 3.10 what3words (Panic Screen)
+### 3.11 what3words (Panic Screen)
 
 When `CONFIG.w3wApiKey` is set, `fetchW3wForPanic()` fires on panic activation and on overdue alarm expiry. It fetches the what3words address for `lastGPS` (falling back to `startGPS`) and displays it in emerald green in the `#w3wDisplay` element on the locked alarm screen. This gives emergency contacts a precise three-word location they can relay to response teams. The display is cleared and hidden when `iamSafe()` resets the UI.
 
-### 3.11 Volume Button Panic (Android Only)
+### 3.12 Volume Button Panic (Android Only)
 
 Workers can trigger a panic alarm using the hardware volume buttons — useful when operating the touchscreen discreetly is not possible.
 
@@ -347,9 +361,11 @@ The transactional database. One row per visit session (updated in-place while th
 - **Col B (Date):** YYYY-MM-DD. Used for archiving and monthly reporting.
 - **Col C (Worker Name):** The primary key for session matching.
 - **Col K (Alarm Status):** The state variable.
-  - *Active:* `ARRIVED`, `ON SITE`, `TRAVELLING`, `PRE_VISIT`
+  - *Active:* `ARRIVED`, `ON SITE`, `TRAVELLING`, `PRE_VISIT`, `ALARM_GPS_PULSE`
   - *Closed:* `DEPARTED`, `USER_SAFE`, `COMPLETED`, `DATA_ENTRY_ONLY`, `NOTICE_ACK`
   - *Alert:* `OVERDUE`, `OVERDUE ALARM`, `EMERGENCY`, `PANIC`, `DURESS`
+
+  > `ALARM_GPS_PULSE` is a transient status posted every 2 minutes during any active alarm (`_startAlarmGpsPulse()`). It keeps the backend's Last Known GPS current while the worker is in an alarm state. The next worker heartbeat immediately supersedes it. It is excluded from the `CLOSED_VISIT_STATUSES` guard so that open-session matching is not broken during an alarm.
 - **Col L (Pre-Visit Form Data):** JSON string of pre-visit questionnaire answers (travel visits).
 - **Col O (Last Known GPS):** Format `lat,lng`. Parsed by the Monitor map.
 - **Col T (Visit Report Data):** JSON string containing all form answers.
@@ -429,7 +445,7 @@ The system includes a longitudinal reporting module to analyse trends over time.
 
 ### 7.2 API Security
 
-- **TextBelt:** The backend normalises all phone numbers to E.164 format (removing leading zeros, adding country prefix) and sends the payload as `application/json`.
+- **SMS providers:** Phone numbers are normalised to E.164 format (removing leading zeros, adding country prefix) before dispatch. The active provider is selected per-deployment in the Factory based on region: Twilio (NZ, UK, CA), Kudosity/Burst SMS (AU), Textbelt (US). The dispatcher is `_sendSms_(to, body)`. Credentials are validated by Run System Diagnostics without sending a live SMS.
 - **Web App:** The Google Script accepts POST requests from "Anyone", but the first line of processing checks `if (e.parameter.key !== CONFIG.WORKER_KEY) return 403;`. This prevents unauthorised data injection.
 
 ---
@@ -440,7 +456,9 @@ The system includes a longitudinal reporting module to analyse trends over time.
 | :--- | :--- | :--- | :--- |
 | **OpenRouteService** | Calculates driving distance for travel reports | API Key | Version-probed at runtime (`/v2/`, `/v3/`). Falls back to crow-flight + speed floor if unavailable. |
 | **Google Gemini** | Proofreads worker notes and summarises reports | API Key | Non-destructive — sheet keeps raw data. Model selected dynamically via ListModels API. |
-| **TextBelt** | Sends SMS for emergency escalations | API Key | Free tier: 1 SMS/day/IP. |
+| **Twilio** | Sends SMS for emergency escalations (NZ, UK, CA) | API Key + Account SID | Recommended for NZ/UK/CA deployments. |
+| **Kudosity (Burst SMS)** | Sends SMS for emergency escalations (AU) | API Key | Recommended for AU deployments. Credit balance checked by diagnostics. |
+| **Textbelt** | Sends SMS for emergency escalations (US) | API Key | Free tier: 1 SMS/day/IP. NZ routing unreliable — not recommended for NZ deployments. |
 | **ntfy** | Push notifications for emergency alerts | Topic URL | Supports self-hosted server for greater privacy. Topics stored in Staff sheet; written on every worker POST. |
 | **Healthchecks.io** | Dead man's switch — pings after each watchdog run | Ping URL | Optional. Alerts you if the watchdog stops running (e.g. trigger misconfiguration). |
 | **Nominatim** | Reverse geocoding for SMS bodies and monitor map | None (open) | Returns `"Road, Suburb"` for SMS; used as geocoding fallback for ARRIVED workers on monitor. OpenStreetMap data. |
