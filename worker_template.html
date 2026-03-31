@@ -1501,6 +1501,23 @@ const CONFIG = {
 };
 
 // =============================================================================
+// STORAGE NAMESPACE — prevents cross-PWA contamination when two deployments
+// share the same browser origin (e.g. both served from the same localhost or
+// file:// path during testing). In production each org has its own subdomain
+// so this is a testing-environment safeguard only.
+//
+// _storageNs is set to a stable 8-char slug derived from the backend URL in
+// applyConfig() (the first place CONFIG.url is known). It defaults to
+// 'default' until then so that module-scope code that runs before config is
+// loaded always has a valid (if generic) value.
+//
+// _sk(key) — wraps every localStorage key and the IndexedDB DB name with the
+// namespace slug. All storage access MUST go through this helper.
+// =============================================================================
+let _storageNs = 'default';
+function _sk(key) { return _storageNs + '_' + key; }
+
+// =============================================================================
 // CONFIG BOOT — fetch ./config.json, populate CONFIG, apply theme, then init
 // =============================================================================
 
@@ -1528,6 +1545,15 @@ function applyTheme(theme) {
  * elements that need config values set before app initialization.
  */
 function applyConfig(cfg) {
+ // Establish storage namespace first — must happen before any localStorage
+ // access so that config-version checks below use the correct namespaced key.
+ _storageNs = (function() {
+   try {
+     const slug = btoa(cfg.backendUrl || '').replace(/[^a-zA-Z0-9]/g, '').slice(-8);
+     return slug || 'default';
+   } catch(e) { return 'default'; }
+ })();
+
  // Core
  CONFIG.url = cfg.backendUrl || '';
  CONFIG.org = cfg.orgName || '';
@@ -1585,7 +1611,7 @@ function applyConfig(cfg) {
 
  // Check for config version change — if version differs from last known,
  // update localStorage and nudge the SW to refresh on next foreground load.
- const storedVersion = localStorage.getItem('otg_config_version');
+ const storedVersion = localStorage.getItem(_sk('otg_config_version'));
  if (storedVersion && storedVersion !== CONFIG.buildVersion) {
  console.log(`[OTG] Config version changed: ${storedVersion} → ${CONFIG.buildVersion}. Flagging for SW update.`);
  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
@@ -1594,7 +1620,7 @@ function applyConfig(cfg) {
  });
  }
  }
- localStorage.setItem('otg_config_version', CONFIG.buildVersion);
+ localStorage.setItem(_sk('otg_config_version'), CONFIG.buildVersion);
 
  // Inject org-branded manifest for correct PWA install name
  _injectDynamicManifest(cfg);
@@ -1741,7 +1767,7 @@ document.addEventListener('DOMContentLoaded', loadConfig);
 // GLOBALS AND STATE INITIALIZATION
 // ============================================================================
 let state; // Declared but not initialized until onload
-let siteSortMode = localStorage.getItem('otg_site_sort') || 'recent'; // 'recent' | 'name' | 'company'
+let siteSortMode = 'recent'; // 'recent' | 'name' | 'company' — loaded from namespaced storage in _initApp
 let formExecutionContext = null;
 let dimTimer;
 let isBatterySaverActive = false; // Single source of truth for battery saver state
@@ -1848,7 +1874,7 @@ document.addEventListener('touchstart', initAudio, { once: true });
 // ============================================================================
 function loadState() {
  try {
- const saved = localStorage.getItem('loneWorkerState');
+ const saved = localStorage.getItem(_sk('loneWorkerState'));
  if (saved) {
  return JSON.parse(saved);
  }
@@ -1860,7 +1886,7 @@ function loadState() {
 
 function saveState() {
  try {
- localStorage.setItem('loneWorkerState', JSON.stringify(state));
+ localStorage.setItem(_sk('loneWorkerState'), JSON.stringify(state));
  } catch (e) {
  console.error('Save state failed:', e);
  }
@@ -2259,12 +2285,15 @@ function setupLongPress(target, duration, callback) {
 function activateBatterySaver() {
  if (!state || !state.activeVisit) return;
 
- // Gates: don't dim during report, modal, overdue/panic
+ // Gates: don't dim during report, modal, or panic.
+ // NOTE: remaining <= 0 (overdue) is intentionally NOT a gate — battery saver
+ // must re-engage when the worker is overdue. updateBatterySaverHUD() has its
+ // own three-way branch that renders the overdue state correctly (red OVERDUE
+ // label, no countdown pulse), so dimming is safe in that state.
  const isReportActive = document.getElementById('reportPage')?.classList.contains('active');
  const activeModal = document.querySelector('[id$="Modal"]:not(.hidden)');
- if (isReportActive || activeModal) return;
+ if (isReportActive || activeModal || state.activeVisit.isPanic) return;
  const remaining = state.activeVisit.duration - (Date.now() - state.activeVisit.startTime) / 1000;
- if (remaining <= 0 || state.activeVisit.isPanic) return;
 
  const saver = document.getElementById('batterySaver');
  const main = document.getElementById('lockedPage');
@@ -2600,7 +2629,7 @@ function updateGPSBars(pos) {
 
  // Label: method name or ±Xm depending on stored preference
  if (label) {
- const showAccuracy = localStorage.getItem('otg_gps_display') === 'accuracy';
+ const showAccuracy = localStorage.getItem(_sk('otg_gps_display')) === 'accuracy';
  if (showAccuracy) {
  label.textContent = '\u00b1' + Math.round(accuracy) + 'm';
  } else {
@@ -2647,9 +2676,9 @@ function updateGPSBars(pos) {
  * Preference is persisted to localStorage so it survives reloads.
  */
 function toggleGpsDisplay() {
- const current = localStorage.getItem('otg_gps_display') || 'method';
+ const current = localStorage.getItem(_sk('otg_gps_display')) || 'method';
  const next = current === 'method' ? 'accuracy' : 'method';
- localStorage.setItem('otg_gps_display', next);
+ localStorage.setItem(_sk('otg_gps_display'), next);
  // Re-render immediately using cached accuracy if available
  const cached = updateGPSBars._lastAccuracy;
  if (typeof cached === 'number') {
@@ -4120,7 +4149,7 @@ function updateSiteSortBtn() {
 function cycleSiteSort() {
   const idx  = SITE_SORT_MODES.findIndex(m => m.key === siteSortMode);
   siteSortMode = SITE_SORT_MODES[(idx + 1) % SITE_SORT_MODES.length].key;
-  localStorage.setItem('otg_site_sort', siteSortMode);
+  localStorage.setItem(_sk('otg_site_sort'), siteSortMode);
   updateSiteSortBtn();
   renderLocations();
 }
@@ -4431,7 +4460,7 @@ function checkIosInstall() {
  window.navigator.standalone === true ||
  document.referrer.includes('android-app://');
  
- if (isIos && !isStandalone && !localStorage.getItem('otg_install_dismissed')) {
+ if (isIos && !isStandalone && !localStorage.getItem(_sk('otg_install_dismissed'))) {
  const modal = document.getElementById('iosInstallModal');
  if (modal) modal.classList.remove('hidden');
  }
@@ -4485,7 +4514,7 @@ window.addEventListener('beforeinstallprompt', e => {
  deferredPrompt = e;
  
  // 3. Show your custom banner if the user hasn't dismissed it previously
- if (!localStorage.getItem('install_dismissed')) {
+ if (!localStorage.getItem(_sk('otg_install_dismissed'))) {
  const banner = document.getElementById('installBanner');
  if (banner) banner.classList.remove('hidden');
  }
@@ -5408,7 +5437,7 @@ let _outboxRetryDelay = 2000;
 function _outboxDB() {
  if (_outboxDbInstance) return Promise.resolve(_outboxDbInstance);
  return new Promise((resolve, reject) => {
- const req = indexedDB.open('otg-outbox', 1);
+ const req = indexedDB.open('otg-outbox-' + _storageNs, 1);
  req.onupgradeneeded = e => {
  const db = e.target.result;
  if (!db.objectStoreNames.contains('events')) {
@@ -6359,10 +6388,10 @@ function clearSig(id, event) {
 
 // Helper: Get Device ID
 function getDeviceID() {
- let id = localStorage.getItem('otg_device_id');
+ let id = localStorage.getItem(_sk('otg_device_id'));
  if (!id) {
  id = 'dev_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now().toString(36);
- localStorage.setItem('otg_device_id', id);
+ localStorage.setItem(_sk('otg_device_id'), id);
  console.log('New device ID generated:', id);
  }
  return id;
@@ -6536,6 +6565,8 @@ function _initApp() {
  });
  }
  // 1. Establish State Integrity
+ // Load persisted UI preferences now that _storageNs is set by applyConfig.
+ siteSortMode = localStorage.getItem(_sk('otg_site_sort')) || 'recent';
  state = loadState() || {
  currentWizStep: 1,
  worker: {},
@@ -8069,7 +8100,7 @@ function dismissInstall(type) {
  if (banner) banner.classList.add('hidden');
  }
  // UNIFIED KEY: Matches the check in checkIosInstall()
- localStorage.setItem('otg_install_dismissed', 'true');
+ localStorage.setItem(_sk('otg_install_dismissed'), 'true');
 }
 // Feature 8: Enhanced Form Builder with all field types
 
@@ -8943,7 +8974,7 @@ function checkActiveNotice() {
  if (!state.meta || !state.meta.activeNotice) return;
  
  const notice = state.meta.activeNotice;
- const ackList = JSON.parse(localStorage.getItem('otg_acknowledged_notices') || '[]');
+ const ackList = JSON.parse(localStorage.getItem(_sk('otg_acknowledged_notices')) || '[]');
  if (ackList.includes(notice.id)) return;
 
  const modal = document.getElementById('noticeModal');
@@ -8992,10 +9023,10 @@ async function acknowledgeNotice() {
  closeModal('notice'); 
 
  // 2. PERSIST LOCALLY
- const ackList = JSON.parse(localStorage.getItem('otg_acknowledged_notices') || '[]');
+ const ackList = JSON.parse(localStorage.getItem(_sk('otg_acknowledged_notices')) || '[]');
  if (!ackList.includes(notice.id)) {
  ackList.push(notice.id);
- localStorage.setItem('otg_acknowledged_notices', JSON.stringify(ackList));
+ localStorage.setItem(_sk('otg_acknowledged_notices'), JSON.stringify(ackList));
  }
 
  // 3. LOG TO BACKEND
