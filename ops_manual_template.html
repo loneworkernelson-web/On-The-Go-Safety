@@ -390,7 +390,25 @@
                 <li>Paste and click <strong>Save</strong> (disk icon).</li>
             </ol>
 
-            <h4 style="margin-top:16px;">B. Deploy as a Web App</h4>
+            <h4 style="margin-top:16px;">B. Grant OAuth Permissions (appsscript.json)</h4>
+            <p>Google Apps Script does not automatically grant mail-sending scope. You must explicitly declare the required OAuth scopes by pasting the generated <code>appsscript.json</code> into your project settings.</p>
+            <ol>
+                <li>In the Factory, click <strong>"📋 Copy appsscript.json"</strong> (Step 3 — Grant Permissions block).</li>
+                <li>In the Apps Script editor, click the <strong>⚙ Project Settings</strong> gear icon (left sidebar).</li>
+                <li>Scroll to <strong>"Show 'appsscript.json' manifest file in editor"</strong> and tick the checkbox.</li>
+                <li>Return to the <strong>Editor</strong> tab — you will now see <code>appsscript.json</code> in the file list.</li>
+                <li>Click it, select all, and <strong>replace the entire contents</strong> with what you copied from the Factory.</li>
+                <li>Click <strong>Save</strong>.</li>
+                <li>Deploy or re-deploy the Web App. When prompted for authorisation, click <strong>Review Permissions</strong> → choose your Google account → <strong>Allow</strong>.</li>
+            </ol>
+            <div class="info-box" style="margin-top:12px;">
+                <strong>What this unlocks:</strong> The Factory-generated <code>appsscript.json</code> declares all required scopes: Sheets, Drive, MailApp, Gmail, external requests, script management, and user identity. Without the mail scopes, <code>MailApp.sendEmail</code> will fail with a permissions error even though your script appears to run normally.
+            </div>
+            <div class="warning-box" style="margin-top:12px;">
+                <strong>Re-authorisation required after scope changes:</strong> Any time you paste a new version of <code>Code.gs</code> or <code>appsscript.json</code> that adds a scope not previously granted, the script will throw a permissions error on the next run. The fix is the same — paste the new <code>appsscript.json</code> and re-authorise when prompted after deploying.
+            </div>
+
+            <h4 style="margin-top:16px;">C. Deploy as a Web App</h4>
             <ol>
                 <li>Click <strong>Deploy</strong> (blue button) → <strong>New Deployment</strong>.</li>
                 <li>Click the gear icon ⚙ next to "Select type" → choose <strong>Web App</strong>.</li>
@@ -400,7 +418,7 @@
                 <li><strong>Copy the Web App URL</strong> — you'll need it in Step 3 of the Factory.</li>
             </ol>
 
-            <h4 style="margin-top:16px;">C. Set Up Triggers (Automated Tasks)</h4>
+            <h4 style="margin-top:16px;">D. Set Up Triggers (Automated Tasks)</h4>
             <p>Triggers are the automation engine — without them, overdue detection and alerting will not work. Set up all five:</p>
 
             <div class="trigger-grid">
@@ -440,7 +458,7 @@
                 <strong>How to add triggers:</strong> In the Apps Script editor, click the <strong>Alarm Clock icon</strong> in the left sidebar → <strong>+ Add Trigger</strong> (bottom right). Set the function name, source (Time-driven), and interval as shown above for each trigger.
             </div>
 
-            <h4 style="margin-top:16px;">D. Paste the Web App URL Back into the Factory</h4>
+            <h4 style="margin-top:16px;">E. Paste the Web App URL Back into the Factory</h4>
             <p>Return to the Factory, go to <strong>Step 3</strong>, paste your Web App URL into the URL field, then click <strong>"📡 Test System Connection"</strong>. A green "System Link Established" response confirms everything is working before you proceed.</p>
         </div>
     </div>
@@ -703,6 +721,17 @@
         </ol>
     </div>
 
+    <div class="warning-box">
+        <h3>⚠️ Re-Authorisation After Scope Changes</h3>
+        <p>If you deploy updated backend code that adds new OAuth scopes (or paste a new <code>appsscript.json</code>), the script will throw a permissions error on its next run until re-authorised. To re-authorise:</p>
+        <ol>
+            <li>Open your Google Sheet → <strong>Extensions → Apps Script</strong>.</li>
+            <li>Deploy → Manage Deployments → Edit → <strong>New version</strong> → Deploy.</li>
+            <li>When prompted, click <strong>Review Permissions</strong> → choose your Google account → <strong>Allow</strong>.</li>
+        </ol>
+        <p>You will only see the permissions prompt if a new scope has been added. If the prompt does not appear, the existing authorisation already covers all declared scopes.</p>
+    </div>
+
     <h3>Modifying the Backend Logic (Advanced)</h3>
     <p>You can edit <code>Code.gs</code> directly to change system behaviour — email formatting, AI prompts, alert thresholds, etc.</p>
     <ul>
@@ -881,7 +910,11 @@ const prompt = `Read these notes: "${safeNotes}".
                 <td>Check your Apps Script deployment URL, update it in the Factory, regenerate and redeploy <code>config.json</code>.</td>
             </tr>
             <tr>
-                <td><strong>Code changes ignored</strong> — backend behaviour unchanged</td>
+                <td><strong>"You do not have permission" or "Specified permissions are not sufficient"</strong> in Apps Script execution log — emails not sending</td>
+                <td>The <code>appsscript.json</code> OAuth scopes have not been declared, or re-authorisation has not been completed after a scope change</td>
+                <td>In the Factory, click <strong>"📋 Copy appsscript.json"</strong> (Step 3 — Grant Permissions). Paste it into the Apps Script editor's <code>appsscript.json</code> file (enable it first via ⚙ Project Settings → Show manifest file). Save, then deploy a new version. When prompted, click <strong>Review Permissions → Allow</strong>. See Part 2, Step 3B for full instructions.</td>
+            </tr>
+            <tr>
                 <td>The "New Version" trap — you saved but didn't deploy</td>
                 <td>Deploy → Manage Deployments → Edit → New version → Deploy.</td>
             </tr>
