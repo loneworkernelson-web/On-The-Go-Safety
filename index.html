@@ -445,8 +445,22 @@
               <div id="codeContainer" class="hidden mt-4"><pre id="codeDisplay" class="code-scroll">Generating...</pre></div>
           </div>
 
+          <div class="bg-gray-900 p-8 rounded-3xl border border-yellow-600/50 space-y-6 shadow-2xl">
+              <h3 class="font-black text-yellow-400 text-xl uppercase tracking-widest">2. Grant Permissions (appsscript.json)</h3>
+              <p class="text-sm text-white font-black italic">This manifest file declares the Google permissions the backend requires — including the ability to send email alerts. Without it, email alerts will fail.</p>
+              <div class="space-y-3">
+                  <div class="checklist-item" onclick="toggleCheck(this)"><input type="checkbox" class="checklist-checkbox" aria-label="In the Apps Script editor, click the Settings cog"><span class="text-sm text-white font-black uppercase tracking-tighter">In the Apps Script editor, click the <strong>⚙️ Project Settings</strong> cog.</span></div>
+                  <div class="checklist-item" onclick="toggleCheck(this)"><input type="checkbox" class="checklist-checkbox" aria-label="Enable Show appsscript.json manifest file in editor"><span class="text-sm text-white font-black uppercase tracking-tighter">Tick <strong>Show "appsscript.json" manifest file in editor</strong>.</span></div>
+                  <div class="checklist-item" onclick="toggleCheck(this)"><input type="checkbox" class="checklist-checkbox" aria-label="Click appsscript.json in the file list"><span class="text-sm text-white font-black uppercase tracking-tighter">Click <strong>appsscript.json</strong> in the file list on the left.</span></div>
+                  <div class="checklist-item" onclick="toggleCheck(this)"><input type="checkbox" class="checklist-checkbox" aria-label="Replace all content with the copied JSON"><span class="text-sm text-white font-black uppercase tracking-tighter"><strong>Select all</strong>, then paste the copied content below.</span></div>
+                  <div class="checklist-item" onclick="toggleCheck(this)"><input type="checkbox" class="checklist-checkbox" aria-label="Save and re-authorise if prompted"><span class="text-sm text-white font-black uppercase tracking-tighter">Click <strong>Save</strong>. Re-authorise the script if prompted — you must accept all permissions.</span></div>
+              </div>
+              <button onclick="copyAppsScriptJson()" class="btn bg-yellow-600 text-white w-full font-black shadow-2xl py-4 uppercase tracking-widest text-lg">📋 COPY APPSSCRIPT.JSON</button>
+              <div id="appsscriptContainer" class="hidden mt-4"><pre id="appsscriptDisplay" class="code-scroll">Generating...</pre></div>
+          </div>
+
           <div class="bg-gray-900 p-8 rounded-3xl border border-purple-600/50 space-y-6 shadow-2xl">
-              <h3 class="font-black text-purple-400 text-xl uppercase tracking-widest">2. Set the Watchdog Alarms (Triggers)</h3>
+              <h3 class="font-black text-purple-400 text-xl uppercase tracking-widest">3. Set the Watchdog Alarms (Triggers)</h3>
               <p class="text-sm text-white font-black italic leading-relaxed uppercase tracking-tighter">Follow these steps exactly to automate your safety checks:</p>
               <div class="grid md:grid-cols-2 gap-8">
                   <div class="bg-gray-800 p-6 rounded-3xl border border-purple-500/30 shadow-lg">
@@ -837,6 +851,10 @@ self.addEventListener('message', event => {
         Visits: `Timestamp\tDate\tWorker Name\tWorker Phone Number\tEmergency Contact Name\tEmergency Contact Number\tEmergency Contact Email\tEscalation Contact Name\tEscalation Contact Number\tEscalation Contact Email\tAlarm Status\tNotes\tLocation Name\tLocation Address\tLast Known GPS\tGPS Timestamp\tBattery Level\tPhoto 1\tDistance (km)\tVisit Report Data\tAnticipated Departure Time\tSignature\tPhoto 2\tPhoto 3\tPhoto 4`,
         Staff: `Name\tRole\tStatus\tToken\tDeviceID\tLastVehCheck\tWOFExpiry`,
         Sites: `Assigned To\tTemplate Name\tCompany Name\tSite Name\tAddress\tContact Name\tContact Phone\tContact Email\tSite Notes\tEmergency Procedures\tRisk Level\tPre-Visit Form`,
+                // Type (col A): FORM or REPORT — admin readability only. Originally intended to distinguish
+        // standalone forms (FORM) from visit-conclusion reports (REPORT), but both types now appear
+        // in the Forms Library so retrospective submissions are always possible. The app does not
+        // filter or route on this value; the column is retained for human reference only.
         Templates: `Type\tTemplate Name\tAssigned To (Worker Names or ALL)\tEmail Recipient\tQuestion 1\tQuestion 2\t[Questions 3-30]\tForm Timing\nFORM\tAccident Report\tALL\tsafety@org.com\t[HEADING] Incident Details\t[TEXT] What happened?\t[PHOTO] Evidence\t\t\tpre-visit\nREPORT\tStandard Visit\t\t\t[TEXT] Visit Notes\t[PHOTO] Site Photo\t[YESNO] Hazards Identified?\t\t\t`,
     };
     let TEMPLATES = {};
@@ -1159,6 +1177,40 @@ function applyPreset(p, a, el) {
             .replace(/%%HEALTHCHECK_URL%%/g, document.getElementById('healthcheckUrl').value)
             .replace(/%%NTFY_SERVER%%/g, document.getElementById('ntfyServer').value || 'https://ntfy.sh')
             .replace(/%%BACKEND_VERSION%%/g, 'v82 · ' + buildTimestamp);
+        buildAppsScriptJson();
+    }
+
+    function buildAppsScriptJson() {
+        const tz = document.getElementById('timezoneVal').value || 'Pacific/Auckland';
+        const manifest = {
+            timeZone: tz,
+            dependencies: {},
+            exceptionLogging: 'STACKDRIVER',
+            runtimeVersion: 'V8',
+            webapp: {
+                executeAs: 'USER_DEPLOYING',
+                access: 'ANYONE_ANONYMOUS'
+            },
+            oauthScopes: [
+                'https://www.googleapis.com/auth/spreadsheets',
+                'https://www.googleapis.com/auth/drive',
+                'https://www.googleapis.com/auth/script.send_mail',
+                'https://www.googleapis.com/auth/gmail.send',
+                'https://www.googleapis.com/auth/script.external_request',
+                'https://www.googleapis.com/auth/script.scriptapp'
+            ]
+        };
+        const el = document.getElementById('appsscriptDisplay');
+        if (el) el.textContent = JSON.stringify(manifest, null, 2);
+    }
+
+    function copyAppsScriptJson() {
+        buildAppsScriptJson();
+        const content = document.getElementById('appsscriptDisplay').textContent;
+        navigator.clipboard.writeText(content);
+        const container = document.getElementById('appsscriptContainer');
+        if (container) container.classList.remove('hidden');
+        alert('Copied!');
     }
 
    // NEW: Logic to sync the UI Mockup with user inputs
