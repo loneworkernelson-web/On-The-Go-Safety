@@ -4015,18 +4015,40 @@ function tick() {
 
  if (remaining <= 0) {
  const isAlarmed = state.activeVisit.criticalSent;
+ const isSafeConfirmed = state.activeVisit.isSafeConfirmed;
 
- if (overdueLabel) overdueLabel.classList.remove('hidden');
- if (timerEl) {
- timerEl.textContent = formatCountdown(remaining);
- timerEl.classList.add('text-red-500', 'animate-pulse');
+ if (isSafeConfirmed) {
+  // Worker declared safe but hasn't ended the visit yet — show calm state.
+  if (overdueLabel) {
+   overdueLabel.classList.remove('hidden');
+   overdueLabel.innerText = 'MARKED SAFE';
+   overdueLabel.classList.remove('text-red-500', 'border-red-500');
+   overdueLabel.classList.add('text-green-400', 'border-green-500');
+  }
+  if (timerEl) {
+   timerEl.textContent = formatCountdown(remaining);
+   timerEl.classList.remove('text-red-500', 'animate-pulse');
+   timerEl.classList.add('text-green-400');
+  }
+ } else {
+  if (overdueLabel) {
+   overdueLabel.classList.remove('hidden');
+   overdueLabel.innerText = 'OVERDUE';
+   overdueLabel.classList.add('text-red-500', 'border-red-500');
+   overdueLabel.classList.remove('text-green-400', 'border-green-500');
+  }
+  if (timerEl) {
+   timerEl.textContent = formatCountdown(remaining);
+   timerEl.classList.add('text-red-500', 'animate-pulse');
+   timerEl.classList.remove('text-green-400');
+  }
  }
- 
+
  // 15-MINUTE GRACE EXPIRY CHECK
  // isSafeConfirmed prevents re-triggering on every tick after the worker
  // clears the alarm — without it, resetting criticalSent in iamSafe()
  // causes an immediate re-fire, creating an infinite alarm loop.
- if (Math.abs(diffMins) >= (CONFIG.escalationMinutes || 15) && !isAlarmed && !state.activeVisit.isSafeConfirmed) {
+ if (Math.abs(diffMins) >= (CONFIG.escalationMinutes || 15) && !isAlarmed && !isSafeConfirmed) {
  triggerGraceExpiryAlarm();
  }
 
@@ -4036,11 +4058,11 @@ function tick() {
  const btnExtend = document.getElementById('btnExtend');
 
  if (isAlarmed) {
- if (btnSafe) btnSafe.classList.remove('hidden');
- if (btnDepart) btnDepart.classList.add('hidden');
+  if (btnSafe) btnSafe.classList.remove('hidden');
+  if (btnDepart) btnDepart.classList.add('hidden');
  } else {
- if (btnSafe) btnSafe.classList.add('hidden');
- if (btnDepart) btnDepart.classList.remove('hidden');
+  if (btnSafe) btnSafe.classList.add('hidden');
+  if (btnDepart) btnDepart.classList.remove('hidden');
  }
  } else {
  // NORMAL UI STATE
@@ -9323,7 +9345,10 @@ function updateBatterySaverHUD() {
  timeHUD.innerHTML = `<span class="text-5xl font-mono font-bold text-gray-300">${minsUp}</span><br><span class="text-sm font-bold text-gray-400 tracking-widest">${label}</span>`;
  } else {
  const isAlarmed = state.activeVisit.criticalSent;
- if (isAlarmed) {
+ const isSafeConfirmed = state.activeVisit.isSafeConfirmed;
+ if (isSafeConfirmed) {
+ timeHUD.innerHTML = `<span class="text-2xl font-bold text-green-400">MARKED SAFE</span><br><span class="text-sm font-bold text-green-600 tracking-wide">End visit when ready</span>`;
+ } else if (isAlarmed) {
  timeHUD.innerHTML = `<span class="text-3xl font-bold text-red-500 animate-pulse">ALARM ACTIVATED</span>`;
  } else {
  const minsUntil = Math.max(0, Math.ceil((CONFIG.escalationMinutes || 15) - Math.abs(remainingSecs) / 60));
