@@ -581,7 +581,12 @@ function handleWorkerPost(p) {
                     if (!isClosed) {
                         const targetRow = startRow + i;
                         sheet.getRange(targetRow, 1).setValue(ts.toISOString()); 
-                        sheet.getRange(targetRow, 11).setValue(p['Alarm Status']); 
+                        // Only update alarm status if this is not a background GPS pulse.
+                        // ALARM_GPS_PULSE must not overwrite the alarm state (OVERDUE ALARM,
+                        // PANIC, etc.) that the monitor depends on for the full-screen overlay.
+                        if (p['Alarm Status'] !== 'ALARM_GPS_PULSE') {
+                            sheet.getRange(targetRow, 11).setValue(p['Alarm Status']); 
+                        }
                         if (distanceValue && distColIdx > -1) sheet.getRange(targetRow, distColIdx + 1).setValue(distanceValue);
                         if (polishedNotes && polishedNotes !== rowData[11]) {
                              const oldNotes = sheet.getRange(targetRow, 12).getValue();
@@ -2104,7 +2109,19 @@ function getDashboardData() {
     const startRow = Math.max(2, lastRow - 500); 
     const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, 25).getValues();
     const headers = ["Timestamp", "Date", "Worker Name", "Worker Phone Number", "Emergency Contact Name", "Emergency Contact Number", "Emergency Contact Email", "Escalation Contact Name", "Escalation Contact Number", "Escalation Contact Email", "Alarm Status", "Notes", "Location Name", "Location Address", "Last Known GPS", "GPS Timestamp", "Battery Level", "Photo 1", "Distance (km)", "Visit Report Data", "Anticipated Departure Time", "Signature", "Photo 2", "Photo 3", "Photo 4"];
-    const workers = data.map(r => { let obj = {}; headers.forEach((h, i) => obj[h] = r[i]); return obj; });
+    // Phone number columns (indices 3, 5, 8) must be coerced to strings.
+    // Google Sheets getValues() returns numeric cells as JS numbers, silently
+    // dropping any leading zero (e.g. 021234567 → 21234567). Stringifying here
+    // ensures the JSON payload preserves the raw digit sequence so the monitor
+    // can recover the correct local format.
+    const PHONE_INDICES = new Set([3, 5, 8]);
+    const workers = data.map(r => {
+        let obj = {};
+        headers.forEach((h, i) => {
+            obj[h] = PHONE_INDICES.has(i) ? String(r[i] || '') : r[i];
+        });
+        return obj;
+    });
     if(staffSheet) {
         const sData = staffSheet.getDataRange().getValues();
         workers.forEach(w => { for(let i=1; i<sData.length; i++) { if(sData[i][0] === w['Worker Name']) { w['WOFExpiry'] = sData[i][6]; } } });
@@ -2506,6 +2523,12 @@ function getSyncData(workerName, deviceId) {
             if (isAuthorised(tData[i][2], wNameSafe, workerGroups)) {
                 const questions = [];
                 for (let q = 4; q < 34; q++) { if (tData[i][q]) questions.push(tData[i][q]); }
+                // Col A (type) is read and passed through but not acted on by the worker or backend.
+                // Originally intended to distinguish REPORT (submitted at visit conclusion) from
+                // FORM (standalone, via the Forms Library). That distinction collapsed because REPORT
+                // templates also need to appear in the Forms Library for retrospective gap-filling
+                // (e.g. a visit or trip that wasn't recorded at the time). Both types now follow the
+                // same rendering and submission path. The column is retained for admin readability only.
                 forms.push({name: tData[i][1], type: tData[i][0], questions: questions, formTiming: (tData[i][34] || '').toString().trim().toLowerCase()});
                 cachedTemplates[tData[i][1]] = questions;
             }
