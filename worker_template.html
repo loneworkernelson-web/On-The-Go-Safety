@@ -3487,7 +3487,7 @@ function preDepart() {
  // SAFETY GATE 1: Force PIN if an alarm is active
  if (getVisitPhase() === VISIT_PHASES.ALARMING) {
  showToast("⚠️ Clear alarm with PIN first");
- iamSafe(); 
+ _alarmPinPrompt();
  return;
  }
 
@@ -3497,7 +3497,7 @@ function preDepart() {
  // cannot be made without the PIN being entered.
  if (getVisitPhase() === VISIT_PHASES.WARNING) {
  showToast("⚠️ Safety PIN required — alarm imminent");
- iamSafe();
+ _alarmPinPrompt();
  return;
  }
  
@@ -3774,7 +3774,7 @@ function enterLockedScreen() {
  if (btnExtend) setupLongPress(btnExtend, 1500, () => showModal('extend'));
  
  const btnSafe = document.getElementById('btnSafe');
- if (btnSafe) setupLongPress(btnSafe, 1500, iamSafe);
+ if (btnSafe) setupLongPress(btnSafe, 1500, _alarmPinPrompt);
  
  // Start the countdown timer. Always clear first to avoid duplicate intervals,
  // then start fresh. The old timerInt guard caused tick() to never start
