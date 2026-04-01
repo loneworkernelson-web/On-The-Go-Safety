@@ -857,6 +857,7 @@ function processWorkers(rows) {
                 // Shorthand aliases (for system logic)
                 name,
                 status:   r['Alarm Status'] || r['Status'] || "Unknown",
+                notes:    r['Notes'] || r['notes'] || "",
                 gps:      r['Last Known GPS'] || r['gps'],
                 phone:    r['Worker Phone Number'],
                 battery:  r['Battery Level'],
@@ -1050,9 +1051,11 @@ function renderGrid() {
                             isStale   ? 'text-amber-400 font-black' :
                                         'text-blue-400';
 
-        const statusLabel = isAlert   ? ('⚠️ ' + status) :
-                            isOverdue ? '⏰ OVERDUE' :
-                                        status;
+        const hasCriticalTiming = (w.notes || '').includes('[CRITICAL_TIMING]');
+        const criticalTimingSuffix = hasCriticalTiming ? ' ⚡ CRITICAL TIMING' : '';
+        const statusLabel = isAlert   ? ('⚠️ ' + status + (hasCriticalTiming ? ' ⚡ CRITICAL TIMING' : '')) :
+                            isOverdue ? ('⏰ OVERDUE' + criticalTimingSuffix) :
+                                        (status + criticalTimingSuffix);
 
         const cardBorder = isAlert   ? 'border-purple-500 shadow-[0_0_15px_rgba(217,70,239,0.3)] bg-purple-900/10' :
                            isStale   ? 'border-amber-600 bg-amber-900/10' :
@@ -1061,7 +1064,7 @@ function renderGrid() {
 
         const bat   = w['Battery Level'] || w.battery || '--';
         const loc   = escapeHtml(w['Location Name'] || w.location || 'Unknown');
-        const phone = w['Worker Phone Number'] || w.phone || '';
+        const phone = formatPhoneForCall(w['Worker Phone Number'] || w.phone || '');
 
         return `
             <div class="p-4 bg-slate-800/50 border ${cardBorder} rounded-xl transition-all">
@@ -1170,6 +1173,24 @@ function escapeHtml(text) {
         ? String(text).replace(/&/g,"&amp;").replace(/</g,"&lt;")
                       .replace(/>/g,"&gt;").replace(/"/g,"&quot;")
         : "";
+}
+
+/**
+ * Normalises a phone number for use in a tel: link.
+ * Google Sheets getValues() treats cells formatted as numbers as JS numbers,
+ * silently dropping any leading zero (e.g. 021234567 → 21234567).
+ * This function recovers the leading zero for local-format numbers so that
+ * tel: links dial correctly on mobile devices.
+ * Numbers that already start with 0 or + are returned unchanged.
+ */
+function formatPhoneForCall(raw) {
+    const s = String(raw || '').trim().replace(/[\s\-()]/g, '');
+    if (!s) return '';
+    // Already has country prefix or local leading zero — use as-is
+    if (s.startsWith('+') || s.startsWith('0')) return s;
+    // Pure digits without a leading zero — Sheets stripped it; restore it
+    if (/^\d+$/.test(s)) return '0' + s;
+    return s;
 }
 
 /**
