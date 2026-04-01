@@ -689,7 +689,11 @@ if (!rowUpdated) {
         } catch(e) { console.error("Email Error: " + e); }
     }
 
-    if(p['Alarm Status'].includes("EMERGENCY") || p['Alarm Status'].includes("PANIC") || p['Alarm Status'].includes("DURESS") || p['Alarm Status'].includes("OVERDUE ALARM")) {
+    // OVERDUE ALARM is intentionally excluded here — checkOverdueVisits() is the sole
+    // authority for firing escalation alerts (dead-man's switch principle). The worker
+    // sending OVERDUE ALARM updates col K for sheet state only; the backend reads that
+    // state independently and decides when to escalate.
+    if(p['Alarm Status'].includes("EMERGENCY") || p['Alarm Status'].includes("PANIC") || p['Alarm Status'].includes("DURESS")) {
         triggerAlerts(p, "IMMEDIATE");
     }
 }
