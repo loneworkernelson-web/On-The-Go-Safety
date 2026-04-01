@@ -425,8 +425,8 @@
                 <div class="trigger-card">
                     <h5>A. Safety Watchdog <span class="trigger-badge badge-required">Required</span></h5>
                     <div class="fn">checkOverdueVisits</div>
-                    <div class="schedule">⏱ Time-driven · Every 10 minutes</div>
-                    <p style="font-size:11px;color:#94a3b8;margin-top:8px;margin-bottom:0;">Scans for workers who haven't checked out or confirmed safety within the grace period. Fires email + SMS alerts.</p>
+                    <div class="schedule">⏱ Time-driven · Every 1 minute</div>
+                    <p style="font-size:11px;color:#94a3b8;margin-top:8px;margin-bottom:0;">Scans for workers who haven't checked out or confirmed safety within the grace period. Fires email + SMS alerts. <strong>Must be 1 minute</strong> — a 10-minute interval causes Critical Timing (High-Risk mode) alarms to fire up to 10 minutes late.</p>
                 </div>
                 <div class="trigger-card">
                     <h5>B. Privacy Shredder <span class="trigger-badge badge-required">Required</span></h5>
@@ -596,7 +596,7 @@
         <tbody>
             <tr><td style="background:#d1fae5;font-weight:700;">🟢 Green</td><td>Active visit in progress, within time</td><td>None — monitoring only</td></tr>
             <tr><td style="background:#fef3c7;font-weight:700;">🟠 Amber</td><td>Visit is overdue — worker has not checked out</td><td>Attempt to contact the worker; follow your escalation protocol</td></tr>
-            <tr><td style="background:#fee2e2;font-weight:700;">🔴 Red (pulsing)</td><td>SOS alarm raised</td><td>Follow emergency response protocol; acknowledge in monitor</td></tr>
+            <tr><td style="background:#fee2e2;font-weight:700;">🔴 Red (pulsing)</td><td>SOS alarm raised, or EMERGENCY (Critical Timing / 60-min breach)</td><td>Follow emergency response protocol; acknowledge in monitor</td></tr>
             <tr><td style="background:#f3e8ff;font-weight:700;">🟣 Purple</td><td>Duress alarm (worker entered duress PIN)</td><td>Follow emergency response protocol without contacting worker directly</td></tr>
         </tbody>
     </table>
@@ -604,6 +604,16 @@
     <div class="warning-box">
         <strong>⚠️ Duress protocol:</strong> A Duress alarm means the worker may be under coercion. Do not call the worker directly — this could put them in greater danger. Contact emergency services and follow your organisation's incident protocol.
     </div>
+
+    <h3>Worker Card Details</h3>
+    <p>Each worker card on the dashboard shows additional contextual information beyond basic status:</p>
+    <table>
+        <thead><tr><th>Field</th><th>When shown</th><th>Notes</th></tr></thead>
+        <tbody>
+            <tr><td><strong>Due Out</strong></td><td>Whenever a valid anticipated departure time exists and the worker has not yet departed</td><td>Turns red with a pulsing animation when the worker is overdue. Useful at a glance to see how overdue a worker is.</td></tr>
+            <tr><td><strong>ICE Panel</strong> (Emergency &amp; Escalation contacts)</td><td>Only when the worker is in an alarm state (SOS, PANIC, DURESS, OVERDUE ALARM, or EMERGENCY)</td><td>Shows contact names and phone numbers as tappable call links — so the supervisor can call the nominated contact directly from the dashboard during an incident. Escalation contact is only shown if one has been configured by the worker.</td></tr>
+        </tbody>
+    </table>
 
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2 id="admin">Part 4: Daily Administration</h2>
@@ -777,9 +787,9 @@ const prompt = `Read these notes: "${safeNotes}".
     <p>The backend's escalation engine runs every ~15 minutes via a trigger. If that trigger silently stops firing (a known Google Apps Script limitation), workers could reach overdue status without any alarm. Healthchecks.io catches this.</p>
     <ul>
         <li>Sign up free at <a href="https://healthchecks.io" style="color:var(--accent);">healthchecks.io</a></li>
-        <li>Create one check with a <strong>20-minute period</strong> and <strong>15-minute grace</strong></li>
+        <li>Create one check with a <strong>5-minute period</strong> and <strong>3-minute grace</strong></li>
         <li>Copy the ping URL and paste it into the <strong>Healthchecks.io Ping URL</strong> field in Factory Step 1</li>
-        <li>The backend pings this URL after every successful escalation check. If it goes silent for ~35 minutes, Healthchecks.io emails you — before any worker reaches overdue status</li>
+        <li>The backend pings this URL after every successful escalation check. If it goes silent for ~8 minutes, Healthchecks.io emails you — well before any worker could reach overdue status</li>
     </ul>
     <div class="success-box">
         <strong>Strongly recommended</strong> for any organisation where worker safety is critical. The free tier supports up to 20 checks.
@@ -931,7 +941,7 @@ const prompt = `Read these notes: "${safeNotes}".
             <tr>
                 <td><strong>Overdue alerts not firing</strong></td>
                 <td>The Safety Watchdog trigger (Trigger A) is not running</td>
-                <td>Check Apps Script → Triggers. Confirm <code>checkOverdueVisits</code> exists and is set to run every 10 minutes. Check the Executions log for errors.</td>
+                <td>Check Apps Script → Triggers. Confirm <code>checkOverdueVisits</code> exists and is set to run every <strong>1 minute</strong>. A 10-minute interval is incorrect and will cause Critical Timing alarms to fire late. Check the Executions log for errors.</td>
             </tr>
             <tr>
                 <td><strong>Worker receives "Access Denied" on sync</strong> — previously worked fine</td>
@@ -952,6 +962,11 @@ const prompt = `Read these notes: "${safeNotes}".
                 <td><strong>"All Clear" notification never received</strong> after resolving a panic alarm</td>
                 <td>Running an older backend version with the All Clear sequencing bug</td>
                 <td>Ensure your backend is v85.0 or later. The bug caused the sheet scan to run after the visit row had already been updated, making it appear no alarm had been sent. Deploy a new version from Apps Script.</td>
+            </tr>
+            <tr>
+                <td><strong>"All Clear" not sent when supervisor uses "Mark Safe" in the Monitor</strong></td>
+                <td>Monitor <code>submitResolution()</code> does not currently include contact email fields in its payload, so the backend has no addresses to send All Clear emails to when a monitor operator manually resolves an alarm</td>
+                <td>Known pending fix. As a workaround, contact the worker's emergency contacts directly to confirm the all-clear after using the Mark Safe function. A code fix to pass contact fields through <code>submitResolution()</code> is on the development backlog.</td>
             </tr>
             <tr>
                 <td><strong>Worker can't install PWA</strong> on iPhone</td>
