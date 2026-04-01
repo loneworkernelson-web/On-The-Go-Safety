@@ -854,6 +854,11 @@ function processWorkers(rows) {
                 "Battery Level":            r['Battery Level'],
                 "Anticipated Departure Time": r['Anticipated Departure Time'],
                 "Site GPS":                 r['Site GPS'] || '',
+                "Emergency Contact Name":   r['Emergency Contact Name'] || '',
+                "Emergency Contact Number": r['Emergency Contact Number'] || '',
+                "Emergency Contact Email":  r['Emergency Contact Email'] || '',
+                "Escalation Contact Name":  r['Escalation Contact Name'] || '',
+                "Escalation Contact Number": r['Escalation Contact Number'] || '',
                 "timestamp":                timestamp,
                 // Shorthand aliases (for system logic)
                 name,
@@ -889,6 +894,14 @@ function handleData(response) {
     if (lastUpdateEl) lastUpdateEl.textContent = new Date().toLocaleTimeString();
 
     // Use shorthand .status/.name aliases for alert filtering
+    // Clear acknowledgement for any worker whose status has returned to a non-alarm state.
+    // Without this, a worker who triggers a second alarm in the same browser session
+    // would never show the overlay because their name remains in acknowledgedAlerts.
+    workerData.forEach(w => {
+        const s = (w.status || '').toUpperCase();
+        const isStillAlarming = ALERT_STATUSES.some(a => s.includes(a));
+        if (!isStillAlarming) acknowledgedAlerts.delete(w.name);
+    });
     const unackedDuress = workerData.filter(w =>
         w.status.toUpperCase().includes("DURESS") && !acknowledgedAlerts.has(w.name));
     const unackedAlert  = workerData.filter(w =>
@@ -947,7 +960,7 @@ function acknowledgeAlert() {
 /**
  * Alarm status strings used throughout for consistency.
  */
-const ALERT_STATUSES = ['SOS', 'DURESS', 'PANIC', 'OVERDUE ALARM'];
+const ALERT_STATUSES = ['SOS', 'DURESS', 'PANIC', 'OVERDUE ALARM', 'EMERGENCY'];
 
 /**
  * Formats elapsed milliseconds as a human-readable "Xm ago" / "Xh Xm ago" string.
@@ -1022,6 +1035,9 @@ function renderGrid() {
         const isOverdue = dueTime.getTime() > 0 && dueTime < now &&
                           !['DEPARTED','DURESS','SOS','PANIC'].some(s => statusUp.includes(s));
         const isAlert   = ALERT_STATUSES.some(s => statusUp.includes(s));
+        const dueLabel  = (!isSafe && dueTime.getTime() > 0)
+            ? dueTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : null;
 
         // Last Pulse Watchdog — age of most recent data from this worker
         const pulseAge   = now - (w.timestamp || now);
@@ -1088,6 +1104,11 @@ function renderGrid() {
                         <span class="text-sm text-slate-300">Location</span>
                         <span class="text-slate-300 truncate w-32 text-right">${loc}</span>
                     </div>
+                    ${dueLabel ? `
+                    <div class="flex justify-between text-sm tracking-tighter">
+                        <span class="text-sm text-slate-300 uppercase">Due Out</span>
+                        <span class="${isOverdue ? 'text-red-400 font-bold animate-pulse' : 'text-slate-300'}">${isOverdue ? '⚠ ' : ''}${dueLabel}</span>
+                    </div>` : ''}
                     ${pulseLabel ? `
                     <div class="flex justify-between text-sm tracking-tighter">
                         <span class="text-sm text-slate-300 uppercase">Last Pulse</span>
@@ -1112,6 +1133,13 @@ function renderGrid() {
                 </div>` : ''}
 
                 ${isAlert ? `
+                    <div class="mt-3 p-2 rounded-lg bg-red-900/30 border border-red-500/40 text-xs space-y-1">
+                        <div class="text-red-400 font-bold uppercase tracking-wide mb-1">🆘 Emergency Contacts</div>
+                        ${w['Emergency Contact Name'] ? `<div class="flex justify-between"><span class="text-slate-400">Contact 1</span><span class="text-white font-bold">${escapeHtml(w['Emergency Contact Name'])}</span></div>` : ''}
+                        ${w['Emergency Contact Number'] ? `<div class="flex justify-between"><span class="text-slate-400">Phone</span><a href="tel:${escapeHtml(formatPhoneForCall(w['Emergency Contact Number']))}" class="text-blue-400 font-bold">${escapeHtml(formatPhoneForCall(w['Emergency Contact Number']))}</a></div>` : ''}
+                        ${w['Escalation Contact Name'] ? `<div class="flex justify-between"><span class="text-slate-400">Contact 2</span><span class="text-white font-bold">${escapeHtml(w['Escalation Contact Name'])}</span></div>` : ''}
+                        ${w['Escalation Contact Number'] ? `<div class="flex justify-between"><span class="text-slate-400">Phone</span><a href="tel:${escapeHtml(formatPhoneForCall(w['Escalation Contact Number']))}" class="text-blue-400 font-bold">${escapeHtml(formatPhoneForCall(w['Escalation Contact Number']))}</a></div>` : ''}
+                    </div>
                     <button onclick="openResolve('${attrName}')"
                             class="mt-2 w-full bg-green-600 hover:bg-green-500 py-2 rounded text-xs font-bold text-white shadow-lg active:scale-95 transition-transform">
                         ✅ RESOLVE ALERT
