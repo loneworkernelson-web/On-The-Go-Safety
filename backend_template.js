@@ -605,11 +605,18 @@ function handleWorkerPost(p) {
                     if (!isClosed) {
                         const targetRow = startRow + i;
                         sheet.getRange(targetRow, 1).setValue(ts.toISOString()); 
-                        // Only update alarm status if this is not a background GPS pulse.
-                        // ALARM_GPS_PULSE must not overwrite the alarm state (OVERDUE ALARM,
-                        // PANIC, etc.) that the monitor depends on for the full-screen overlay.
-                        if (p['Alarm Status'] !== 'ALARM_GPS_PULSE') {
-                            sheet.getRange(targetRow, 11).setValue(p['Alarm Status']); 
+                        // Guard col K against downgrades.
+                        // HIGH_SEVERITY statuses (EMERGENCY, PANIC, DURESS, OVERDUE ALARM) must
+                        // never be overwritten by lower-priority statuses (OVERDUE, ALARM_GPS_PULSE).
+                        // triggerEscalation() appends a new row with the high-severity status;
+                        // subsequent GPS pulses updating the original row must not clobber it.
+                        const _existingStatus = String(rowData[10]).toUpperCase();
+                        const HIGH_SEVERITY = ['EMERGENCY', 'PANIC', 'DURESS', 'OVERDUE ALARM'];
+                        const LOW_PRIORITY  = ['ALARM_GPS_PULSE', 'OVERDUE'];
+                        const _existingIsHigh = HIGH_SEVERITY.some(s => _existingStatus.includes(s));
+                        const _incomingIsLow  = LOW_PRIORITY.some(s => (p['Alarm Status'] || '').toUpperCase().includes(s));
+                        if (!(_existingIsHigh && _incomingIsLow)) {
+                            sheet.getRange(targetRow, 11).setValue(p['Alarm Status']);
                         }
                         if (distanceValue && distColIdx > -1) sheet.getRange(targetRow, distColIdx + 1).setValue(distanceValue);
                         if (polishedNotes && polishedNotes !== rowData[11]) {
@@ -1060,6 +1067,9 @@ function triggerAlerts(p, type) {
     const locationAddr  = p['Location Address'] || '';
     const battery       = p['Battery Level']  || 'Unknown';
     const notes         = p['Notes']          || '';
+    // Detect critical timing mode from either status string or Notes tag.
+    // The [CRITICAL_TIMING] tag is injected by the worker PWA at visit start.
+    const isCriticalTiming = status.includes('CRITICAL TIMING') || notes.includes('[CRITICAL_TIMING]');
     const sentAt        = Utilities.formatDate(
                               new Date(), CONFIG.TIMEZONE, "dd/MM/yyyy, HH:mm:ss");
 
@@ -1098,6 +1108,18 @@ function triggerAlerts(p, type) {
             <li>Once contact is made, ask them to clear the alarm using their app PIN</li>`;
         noteToContact = `This alarm was triggered manually by the worker pressing the SOS button. It should be treated as a genuine alert unless confirmed otherwise.`;
     }
+    else if (status.includes('CRITICAL TIMING') || (status.includes('EMERGENCY') && isCriticalTiming)) {
+        headerColour  = '#dc2626';
+        statusLabel   = 'EMERGENCY — CRITICAL TIMING BREACH';
+        ntfyPriority  = 'urgent';
+        ntfyTags      = 'rotating_light,red_circle';
+        whatHappened  = `This worker <strong>did not check out at the scheduled time and had activated Critical Timing Mode</strong> before their visit. Critical Timing Mode is used when a worker has specific concern about the importance of timely contact — it bypasses the normal grace period and triggers an immediate alert. <strong>Please treat this as a genuine emergency.</strong>`;
+        actionSteps   = `
+            <li>Try to <strong>call ${workerFirst}</strong> on ${workerPhone} immediately</li>
+            <li>If there is no answer, contact someone at the site to check on the worker's welfare</li>
+            <li>If unreachable, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong> and provide the location above</li>`;
+        noteToContact = `This alert was triggered immediately at the worker's scheduled check-out time because they had activated Critical Timing Mode — indicating they had a specific concern about timing. Treat it with the same urgency as a manual panic alarm.`;
+    }
     else if (status.includes('EMERGENCY')) {
         headerColour  = '#dc2626';
         statusLabel   = 'EMERGENCY — SIGNIFICANTLY OVERDUE';
@@ -1111,16 +1133,20 @@ function triggerAlerts(p, type) {
         noteToContact = `Before escalating to police, consider that the worker may be out of mobile data coverage, may have closed the app, or may have a flat battery. Try calling, texting, and checking with the site first.`;
     }
     else if (status.includes('OVERDUE') || status.includes('CRITICAL ESCALATION') || status.includes('OVERDUE WARNING')) {
-        headerColour  = '#d97706';  // amber — concern, not yet emergency
-        statusLabel   = 'OVERDUE — MISSED CHECK-IN';
-        ntfyPriority  = 'high';
-        ntfyTags      = 'warning,yellow_circle';
-        whatHappened  = `This worker <strong>has not checked out as scheduled</strong>. They may be delayed, unreachable, or in difficulty.`;
+        headerColour  = isCriticalTiming ? '#dc2626' : '#d97706';  // red if critical timing, amber otherwise
+        statusLabel   = isCriticalTiming ? 'OVERDUE — CRITICAL TIMING MODE ACTIVE' : 'OVERDUE — MISSED CHECK-IN';
+        ntfyPriority  = isCriticalTiming ? 'urgent' : 'high';
+        ntfyTags      = isCriticalTiming ? 'rotating_light,red_circle' : 'warning,yellow_circle';
+        whatHappened  = isCriticalTiming
+            ? `This worker <strong>has not checked out as scheduled and had activated Critical Timing Mode</strong> before their visit. Critical Timing Mode is used when a worker has specific concern about the importance of timely contact. <strong>Please act on this promptly.</strong>`
+            : `This worker <strong>has not checked out as scheduled</strong>. They may be delayed, unreachable, or in difficulty.`;
         actionSteps   = `
             <li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhone}</li>
             <li>If you cannot reach them, contact someone at the site and ask them to check on the worker's safety</li>
             <li>If they remain unreachable and you have concerns, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>`;
-        noteToContact = `Before escalating to police, consider that the worker may be running late, out of coverage, or have a flat battery. Try calling, texting, and other contact methods first.`;
+        noteToContact = isCriticalTiming
+            ? `This worker had activated Critical Timing Mode before their visit, indicating a specific concern about timing. Treat this alert with higher urgency than a standard missed check-in.`
+            : `Before escalating to police, consider that the worker may be running late, out of coverage, or have a flat battery. Try calling, texting, and other contact methods first.`;
     }
     else if (status.includes('TEST_ALERT')) {
         headerColour  = '#1d4ed8';  // blue — not a real emergency
