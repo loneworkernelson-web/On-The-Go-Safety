@@ -57,6 +57,7 @@ function onOpen() {
       .addSeparator()
       .addItem('Send Health Email Now', 'sendHealthEmail')
       .addItem('Run System Diagnostics', 'runDiagnostics')
+      .addItem('Geocode Site Locations', 'geocodeSiteLocations')
       .addItem('Force Sync Forms', 'getGlobalForms')
       .addToUi();
 }
@@ -1701,10 +1702,121 @@ function sendHealthEmail() {
  * ntfy test: posts to a derived diagnostics topic — subscribe to it once in the ntfy app
  * to verify push delivery end-to-end. Topic format: [org-slug]-otg-diag
  */
+
+// ==========================================
+// SITE GPS GEOCODING
+// ==========================================
+
+/**
+ * Geocodes site addresses from the Sites sheet and stores resolved coordinates
+ * in column M ("Site GPS") for use by the monitor dashboard map.
+ *
+ * - Skips rows that already have a value in column M (including "FAILED").
+ * - Writes "lat,lng" on success, "FAILED" if Nominatim cannot resolve the address.
+ * - Sleeps 1.1 seconds between calls to respect Nominatim's rate limit policy.
+ * - Creates the "Site GPS" column header in row 1 if absent.
+ * - Safe to run repeatedly — only processes unresolved rows.
+ *
+ * Triggered: weekly time-based trigger (recommended: Sunday early morning).
+ * Can also be run manually from OTG Admin → Geocode Site Locations,
+ * or is called automatically at the start of runDiagnostics().
+ *
+ * Returns a summary object { attempted, resolved, failed, skipped } for use
+ * by runDiagnostics().
+ */
+function geocodeSiteLocations() {
+    const ss         = SpreadsheetApp.getActiveSpreadsheet();
+    const siteSheet  = ss.getSheetByName('Sites');
+    const summary    = { attempted: 0, resolved: 0, failed: 0, skipped: 0 };
+
+    if (!siteSheet || siteSheet.getLastRow() < 2) return summary;
+
+    const lastRow   = siteSheet.getLastRow();
+    const lastCol   = Math.max(siteSheet.getLastColumn(), 13); // ensure we read at least col M
+    const allData   = siteSheet.getRange(1, 1, lastRow, lastCol).getValues();
+
+    // ── Ensure column M header exists ─────────────────────────────────────
+    const GPS_COL   = 13; // 1-based column M
+    const GPS_IDX   = 12; // 0-based index
+    if (!allData[0][GPS_IDX] || allData[0][GPS_IDX].toString().trim() === '') {
+        siteSheet.getRange(1, GPS_COL).setValue('Site GPS');
+    }
+
+    // ── Process each site row ─────────────────────────────────────────────
+    // Sites sheet: A=Assigned To, B=Template, C=Company, D=Site Name, E=Address
+    const ADDRESS_IDX = 4; // 0-based column E
+
+    for (let i = 1; i < allData.length; i++) {
+        const existing = allData[i][GPS_IDX] ? allData[i][GPS_IDX].toString().trim() : '';
+        if (existing !== '') {
+            // Already resolved or previously failed — skip
+            summary.skipped++;
+            continue;
+        }
+
+        const address = allData[i][ADDRESS_IDX] ? allData[i][ADDRESS_IDX].toString().trim() : '';
+        if (!address) {
+            // No address to geocode
+            summary.skipped++;
+            continue;
+        }
+
+        summary.attempted++;
+
+        try {
+            const url  = 'https://nominatim.openstreetmap.org/search?q=' +
+                         encodeURIComponent(address) +
+                         '&format=json&limit=1';
+            const resp = UrlFetchApp.fetch(url, {
+                method:            'get',
+                muteHttpExceptions: true,
+                headers:           { 'User-Agent': 'OTG-AppSuite/1.0 (lone-worker-safety)' }
+            });
+
+            if (resp.getResponseCode() === 200) {
+                const data = JSON.parse(resp.getContentText());
+                if (data && data.length > 0) {
+                    const coords = parseFloat(data[0].lat).toFixed(6) + ',' +
+                                   parseFloat(data[0].lon).toFixed(6);
+                    siteSheet.getRange(i + 1, GPS_COL).setValue(coords);
+                    summary.resolved++;
+                    Logger.log('[geocodeSiteLocations] Resolved "' + address + '" → ' + coords);
+                } else {
+                    siteSheet.getRange(i + 1, GPS_COL).setValue('FAILED');
+                    summary.failed++;
+                    Logger.log('[geocodeSiteLocations] No result for "' + address + '" — wrote FAILED');
+                }
+            } else {
+                siteSheet.getRange(i + 1, GPS_COL).setValue('FAILED');
+                summary.failed++;
+                Logger.log('[geocodeSiteLocations] HTTP ' + resp.getResponseCode() +
+                           ' for "' + address + '" — wrote FAILED');
+            }
+        } catch (e) {
+            siteSheet.getRange(i + 1, GPS_COL).setValue('FAILED');
+            summary.failed++;
+            Logger.log('[geocodeSiteLocations] Exception for "' + address + '": ' + e.toString());
+        }
+
+        // Respect Nominatim's 1 request/second rate limit
+        if (i < allData.length - 1) Utilities.sleep(1100);
+    }
+
+    Logger.log('[geocodeSiteLocations] Done — attempted: ' + summary.attempted +
+               ', resolved: ' + summary.resolved +
+               ', failed: ' + summary.failed +
+               ', skipped (already set): ' + summary.skipped);
+    return summary;
+}
+
 function runDiagnostics() {
     const results = [];
     const tz  = CONFIG.TIMEZONE || 'UTC';
     const now = new Date();
+
+    // ── 0. GEOCODE SITE LOCATIONS (run first so the Sites check below is current) ──
+    Logger.log('── GEOCODING SITE LOCATIONS ──');
+    const _geocodeSummary = geocodeSiteLocations();
 
     // ── Helper — record a result and log it immediately ───────────────────
     const check = (category, name, status, detail) => {
@@ -1757,6 +1869,38 @@ function runDiagnostics() {
                     : 'No active workers found. Workers with Status = "Inactive" cannot sync.');
         }
     } catch(e) { check('Sheets', 'Staff — Active workers', 'FAIL', e.toString()); }
+
+    // ── Sites GPS — check for FAILED geocode entries ───────────────────────
+    try {
+        const siteSheet = ss.getSheetByName('Sites');
+        if (siteSheet && siteSheet.getLastRow() > 1) {
+            const sData     = siteSheet.getRange(2, 1, siteSheet.getLastRow() - 1, 13).getValues();
+            const failedSites = sData
+                .filter(r => (r[12] || '').toString().trim() === 'FAILED' && (r[3] || '').toString().trim())
+                .map(r => r[3].toString().trim());  // column D = Site Name
+            const missSites = sData
+                .filter(r => (r[12] || '').toString().trim() === '' && (r[3] || '').toString().trim() && (r[4] || '').toString().trim())
+                .map(r => r[3].toString().trim());
+
+            if (failedSites.length > 0) {
+                check('Sites', 'GPS geocoding', 'WARN',
+                    failedSites.length + ' site(s) could not be geocoded — address may be incorrect or too vague. ' +
+                    'Check address details in the Sites sheet for: ' + failedSites.join(', ') + '. ' +
+                    'Clear the "FAILED" value in column M to retry on the next geocode run.');
+            } else if (missSites.length > 0) {
+                check('Sites', 'GPS geocoding', 'WARN',
+                    missSites.length + ' site(s) have no GPS coordinates yet. ' +
+                    'Run OTG Admin → Geocode Site Locations to resolve them now, ' +
+                    'or they will be resolved on the next weekly trigger run.');
+            } else if (_geocodeSummary.resolved > 0) {
+                check('Sites', 'GPS geocoding', 'PASS',
+                    'All sites geocoded. ' + _geocodeSummary.resolved + ' new coordinate(s) resolved this run.');
+            } else {
+                check('Sites', 'GPS geocoding', 'PASS',
+                    'All sites with addresses have stored GPS coordinates.');
+            }
+        }
+    } catch(e) { check('Sites', 'GPS geocoding', 'FAIL', e.toString()); }
 
     // ── 3. PHOTOS FOLDER ──────────────────────────────────────────────────
     Logger.log('── PHOTOS FOLDER ──');
@@ -2026,6 +2170,13 @@ function runDiagnostics() {
             label:    'Visit archiver',
             required: false,
             note:     'Recommended — run weekly to keep the Visits sheet performant.'
+        },
+        {
+            fn:       'geocodeSiteLocations',
+            label:    'Site GPS geocoder',
+            required: false,
+            note:     'Recommended — run weekly to resolve site addresses to GPS coordinates for the monitor map. ' +
+                      'Can also be triggered manually from OTG Admin → Geocode Site Locations.'
         }
     ];
 
@@ -2173,6 +2324,29 @@ function getDashboardData() {
         const sData = staffSheet.getDataRange().getValues();
         workers.forEach(w => { for(let i=1; i<sData.length; i++) { if(sData[i][0] === w['Worker Name']) { w['WOFExpiry'] = sData[i][6]; } } });
     }
+
+    // ── Attach resolved site GPS from Sites sheet column M ─────────────────
+    // Provides the monitor map with stored coordinates for named-site visits
+    // where the worker GPS is 0,0 (workers at fixed sites don't send live GPS).
+    try {
+        const siteSheet = ss.getSheetByName('Sites');
+        if (siteSheet && siteSheet.getLastRow() > 1) {
+            const sData      = siteSheet.getRange(2, 1, siteSheet.getLastRow() - 1, 13).getValues();
+            const siteGpsMap = {};
+            sData.forEach(r => {
+                const name = (r[3] || '').toString().trim();   // column D — Site Name
+                const gps  = (r[12] || '').toString().trim();  // column M — Site GPS
+                if (name && gps && gps !== 'FAILED') siteGpsMap[name] = gps;
+            });
+            workers.forEach(w => {
+                const siteName = (w['Location Name'] || '').toString().trim();
+                if (siteName && siteGpsMap[siteName]) w['Site GPS'] = siteGpsMap[siteName];
+            });
+        }
+    } catch(e) {
+        Logger.log('[getDashboardData] Could not attach site GPS: ' + e.toString());
+    }
+
     return {workers: workers, escalation_limit: CONFIG.ESCALATION_MINUTES};
 }
 
