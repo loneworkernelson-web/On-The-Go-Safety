@@ -1,6 +1,28 @@
 /**
  * OTG APPSUITE - MASTER BACKEND %%BACKEND_VERSION%%
  * FIXED: SOS Map URLs, SMS Payloads, and GAS Environment Stability
+ *
+ * ── SINGLE-ROW-PER-VISIT PRINCIPLE ──────────────────────────────────────────
+ * Every visit produces exactly ONE row in the Visits sheet for its entire
+ * lifecycle: ARRIVED → escalation → USER_SAFE_CONFIRMED → DEPARTED.
+ *
+ * triggerEscalation() MUST update the existing row in place (cols A, K, L).
+ * It MUST NEVER call sheet.appendRow(). Appending creates a second row that
+ * handleWorkerPost() cannot match when writing DEPARTED (because the original
+ * row, now USER_SAFE_CONFIRMED, appears closed), forcing a spurious third row.
+ *
+ * handleWorkerPost() MUST treat USER_SAFE_CONFIRMED as open (matchable) when
+ * the incoming payload is DEPARTED. After PIN confirmation the worker submits
+ * their report; that DEPARTED must land on the same row. USER_SAFE_CONFIRMED
+ * IS treated as closed for all other incoming statuses, preventing stale GPS
+ * pulses or outbox retries from re-opening a resolved row.
+ *
+ * ── DEAD-MAN'S SWITCH PRINCIPLE ─────────────────────────────────────────────
+ * checkOverdueVisits() is the sole authority for firing escalation alerts.
+ * handleWorkerPost() MUST NOT call triggerAlerts() for OVERDUE ALARM — that
+ * payload updates col K for sheet state only. The backend reads that state
+ * independently and decides when to escalate.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 
 const CONFIG = {
@@ -600,7 +622,14 @@ function handleWorkerPost(p) {
                 const rowData = data[i];
                 if (rowData[2] === workerName) {
                     const status = String(rowData[10]);
-                    const isClosed = status.includes('DEPARTED') || status.includes('COMPLETED') || status.includes('DATA_ENTRY_ONLY') || status.includes('USER_SAFE') || status.includes('NOTICE_ACK') || status.includes('PRE_VISIT');
+                    // SINGLE-ROW PRINCIPLE: USER_SAFE_CONFIRMED is NOT treated as closed
+                    // when the incoming status is DEPARTED. After a worker confirms safe via
+                    // PIN, their row holds USER_SAFE_CONFIRMED. The worker then submits their
+                    // departure report — that DEPARTED payload must update the same row, not
+                    // create a new one. Treating USER_SAFE_CONFIRMED as closed for all other
+                    // payloads prevents stale GPS pulses or retries from re-opening a resolved row.
+                    const incomingIsDeparted = (p['Alarm Status'] === 'DEPARTED');
+                    const isClosed = status.includes('DEPARTED') || status.includes('COMPLETED') || status.includes('DATA_ENTRY_ONLY') || (status.includes('USER_SAFE') && !incomingIsDeparted) || status.includes('NOTICE_ACK') || status.includes('PRE_VISIT');
                     
                     if (!isClosed) {
                         const targetRow = startRow + i;
@@ -608,7 +637,7 @@ function handleWorkerPost(p) {
                         // Guard col K against downgrades.
                         // HIGH_SEVERITY statuses (EMERGENCY, PANIC, DURESS, OVERDUE ALARM) must
                         // never be overwritten by lower-priority statuses (OVERDUE, ALARM_GPS_PULSE).
-                        // triggerEscalation() appends a new row with the high-severity status;
+                        // triggerEscalation() updates the existing row in place (never appends);
                         // subsequent GPS pulses updating the original row must not clobber it.
                         const _existingStatus = String(rowData[10]).toUpperCase();
                         const HIGH_SEVERITY = ['EMERGENCY', 'PANIC', 'DURESS', 'OVERDUE ALARM'];
@@ -1503,22 +1532,22 @@ function checkOverdueVisits() {
 
                 // 1. CRITICAL TIMING: Immediate Dual Alert at 0 mins
                 if (isCritical && diffMins >= 0 && !status.includes("EMERGENCY")) {
-                    triggerEscalation(sheet, entry, "EMERGENCY - CRITICAL TIMING BREACH", true);
+                    triggerEscalation(sheet, entry, "EMERGENCY - CRITICAL TIMING BREACH", true, latest[worker].r);
                     return; 
                 }
 
                 // 2. STANDARD: 15/30/45/60 min escalations
                 if (!isCritical && diffMins >= 15 && diffMins < 30 && !status.includes('15MIN')) {
-                    triggerEscalation(sheet, entry, "OVERDUE - 15MIN ALERT", false);
+                    triggerEscalation(sheet, entry, "OVERDUE - 15MIN ALERT", false, latest[worker].r);
                 }
                 else if (diffMins >= 30 && diffMins < 45 && !status.includes('30MIN')) {
-                    triggerEscalation(sheet, entry, "OVERDUE - 30MIN ALERT", false);
+                    triggerEscalation(sheet, entry, "OVERDUE - 30MIN ALERT", false, latest[worker].r);
                 }
                 else if (diffMins >= 45 && diffMins < 60 && !status.includes('45MIN')) {
-                    triggerEscalation(sheet, entry, "OVERDUE - 45MIN ALERT", false);
+                    triggerEscalation(sheet, entry, "OVERDUE - 45MIN ALERT", false, latest[worker].r);
                 }
                 else if (diffMins >= 60 && !status.includes("EMERGENCY")) {
-                    triggerEscalation(sheet, entry, "EMERGENCY - 60MIN BREACH", true);
+                    triggerEscalation(sheet, entry, "EMERGENCY - 60MIN BREACH", true, latest[worker].r);
                 }
             }
         } catch (err) { console.error(`Escalation Error: ${err.toString()}`); }
@@ -2737,12 +2766,20 @@ function handleNoticeAck(p) {
  * HELPER: Unified Escalation Handler
  * Logic: Appends row and routes to Primary (isDual=false) or Both (isDual=true).
  */
-function triggerEscalation(sheet, entry, newStatus, isDual) {
-    const newRow = [...entry];
-    newRow[0] = new Date().toISOString(); 
-    newRow[10] = newStatus; 
-    newRow[11] = entry[11] + ` [AUTO-${newStatus}]`;
-    sheet.appendRow(newRow);
+function triggerEscalation(sheet, entry, newStatus, isDual, rowNum) {
+    // SINGLE-ROW PRINCIPLE: Update the existing visit row in place.
+    // One row per visit — always. Never append a new escalation row.
+    // The worker's report submission (DEPARTED) follows their safe confirmation
+    // and must be able to update the same row. If a new row were appended here,
+    // handleWorkerPost() would have no open row to write DEPARTED into and would
+    // create a spurious third row. rowNum is passed by checkOverdueVisits() from
+    // latest[worker].r — the actual 1-indexed sheet row number.
+    if (rowNum) {
+        const escalationNote = (String(entry[11] || '') + ` [AUTO-${newStatus}]`).trim();
+        sheet.getRange(rowNum, 1).setValue(new Date().toISOString());
+        sheet.getRange(rowNum, 11).setValue(newStatus);
+        sheet.getRange(rowNum, 12).setValue(escalationNote);
+    }
 
     // Look up ntfy topics from the Staff sheet — they are not stored in Visits rows.
     // Silently degrades to empty strings if the sheet is missing or the row isn't found.
