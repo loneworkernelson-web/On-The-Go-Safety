@@ -1044,6 +1044,7 @@ function renderGrid() {
         const hasRealGps   = gps !== '0,0' && gps !== '0.0,0.0' && gps.includes(',');
         const address  = w['Location Address'] || w['Location Name'] || "";
         const mapQuery = (statusIsGps && hasRealGps) ? gps : address;
+        const siteGps  = w['Site GPS'] || '';
         // mapUrl intentionally removed — Map button now opens Leaflet directly.
 
         const statusClass = isAlert   ? 'text-purple-400 font-black animate-pulse' :
@@ -1072,7 +1073,7 @@ function renderGrid() {
                     <div class="flex items-center gap-2">
                         <span class="w-3 h-3 rounded-full flex-shrink-0 ${getStatusDot(status, isOverdue, isStale)}"></span>
                         <h3 class="font-bold text-white truncate max-w-[150px] cursor-pointer hover:text-blue-400 transition"
-                            onclick="focusWorkerOrMap('${gps}','${escapeHtml(address)}',${statusIsGps && hasRealGps})">${safeName}</h3>
+                            onclick="focusWorkerOrMap('${gps}','${escapeHtml(address)}',${statusIsGps && hasRealGps},'${siteGps}')">${safeName}</h3>
                     </div>
                     <div class="text-sm text-slate-300 font-bold flex-shrink-0 ml-2">🔋 ${formatBattery(bat)}</div>
                 </div>
@@ -1094,7 +1095,7 @@ function renderGrid() {
                 </div>
 
                 <div class="grid grid-cols-2 gap-2">
-                    <button onclick="focusWorkerOrMap('${gps}','${escapeHtml(address)}',${statusIsGps && hasRealGps})"
+                    <button onclick="focusWorkerOrMap('${gps}','${escapeHtml(address)}',${statusIsGps && hasRealGps},'${siteGps}')"
                             class="bg-slate-700 text-white py-2 rounded text-xs font-bold hover:bg-slate-600 transition text-center w-full"
                             title="${(statusIsGps && hasRealGps) ? 'Live GPS position' : 'Site on map'}">
                         ${(statusIsGps && hasRealGps) ? '📡' : '📍'} Map
@@ -1269,7 +1270,40 @@ function renderMap() {
                             && (() => { const [a,b] = gps.split(',').map(Number); return !isNaN(a) && !isNaN(b); })();
 
         if (!hasValidGps) {
-            // Geocoding fallback — ARRIVED workers only, never TRAVELLING.
+            const workerName    = escapeHtml(w.name || w['Worker Name']);
+            const workerStatus  = escapeHtml(w.status || w.Status);
+            const locationLabel = escapeHtml(w['Location Name'] || w['Location Address'] || '');
+
+            // ── Prefer pre-resolved Site GPS from the backend ──────────────
+            // The backend geocodes site addresses weekly and stores lat,lng in
+            // the Sites sheet column M, then attaches it as w['Site GPS'].
+            // This avoids a live Nominatim call per render cycle.
+            const siteGps = w['Site GPS'] ? w['Site GPS'].toString().trim() : '';
+            const siteGpsParts = siteGps ? siteGps.split(',').map(Number) : null;
+            const hasSiteGps   = siteGpsParts && siteGpsParts.length === 2 &&
+                                 !isNaN(siteGpsParts[0]) && !isNaN(siteGpsParts[1]);
+
+            if (hasSiteGps) {
+                const pinSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="27" viewBox="0 0 20 27">
+                    <path d="M10 0C4.477 0 0 4.477 0 10c0 7.5 10 17 10 17s10-9.5 10-17C20 4.477 15.523 0 10 0z" fill="#f59e0b"/>
+                    <circle cx="10" cy="10" r="4" fill="#1e293b"/>
+                </svg>`;
+                const estimatedIcon = L.divIcon({
+                    className: '',
+                    html: `<span class="map-estimated-pin">${pinSvg}</span>`,
+                    iconSize:   [20, 27],
+                    iconAnchor: [10, 27]
+                });
+                L.marker([siteGpsParts[0], siteGpsParts[1]], { icon: estimatedIcon })
+                 .bindPopup(`<b>${workerName}</b><br>${workerStatus}<br>📍 ${locationLabel}<br><em>Site location — no live GPS</em>`)
+                 .addTo(markersLayer);
+                return;
+            }
+
+            // ── Nominatim fallback for ARRIVED workers only ────────────────
+            // Used when the site has no pre-resolved GPS (e.g. newly added site
+            // not yet picked up by the weekly geocode run). Not used for alarm
+            // or travel statuses where 0,0 indicates a genuine GPS failure.
             if (statusUp !== 'ARRIVED') return;
             const address = w['Location Address'] || w['Location Name'] || '';
             if (!address) return;
@@ -1282,21 +1316,18 @@ function renderMap() {
             if (cached === 'pending' || cached === 'failed') return;
 
             // Place estimated-position pin marker.
-            const workerName   = escapeHtml(w.name || w['Worker Name']);
-            const workerStatus = escapeHtml(w.status || w.Status);
-            const locationLabel = escapeHtml(w['Location Name'] || address);
-            const pinSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="27" viewBox="0 0 20 27">
+            const pinSvg2 = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="27" viewBox="0 0 20 27">
                 <path d="M10 0C4.477 0 0 4.477 0 10c0 7.5 10 17 10 17s10-9.5 10-17C20 4.477 15.523 0 10 0z" fill="#f59e0b"/>
                 <circle cx="10" cy="10" r="4" fill="#1e293b"/>
             </svg>`;
-            const estimatedIcon = L.divIcon({
+            const estimatedIcon2 = L.divIcon({
                 className: '',
-                html: `<span class="map-estimated-pin">${pinSvg}</span>`,
+                html: `<span class="map-estimated-pin">${pinSvg2}</span>`,
                 iconSize:   [20, 27],
                 iconAnchor: [10, 27]
             });
-            L.marker([cached.lat, cached.lng], { icon: estimatedIcon })
-             .bindPopup(`<b>${workerName}</b><br>${workerStatus}<br>📍 ${locationLabel}<br><em>Estimated — no GPS yet</em>`)
+            L.marker([cached.lat, cached.lng], { icon: estimatedIcon2 })
+             .bindPopup(`<b>${workerName}</b><br>${workerStatus}<br>📍 ${locationLabel}<br><em>Estimated — address geocoded, no GPS yet</em>`)
              .addTo(markersLayer);
             return;
         }
@@ -1434,17 +1465,29 @@ async function geocodeAddress(address) {
 
 /**
  * Universal map handler — never opens Google Maps.
- * With live GPS: fly to exact coordinates.
- * Without GPS: switch to map view (marker already placed for site visits).
+ * Priority: live GPS → pre-resolved site GPS → popup content search.
+ * @param {string}  gps        Live GPS string ("lat,lng" or "0,0")
+ * @param {string}  address    Location address or name
+ * @param {boolean} hasLiveGps True when live GPS is valid
+ * @param {string}  siteGps   Pre-resolved site GPS from Sites sheet ("lat,lng" or "")
  */
-function focusWorkerOrMap(gps, address, hasLiveGps) {
+function focusWorkerOrMap(gps, address, hasLiveGps, siteGps) {
     toggleView('MAP');
     setTimeout(() => {
+        // 1. Live GPS — most accurate, use when available
         if (hasLiveGps && gps && gps !== '0,0' && mapInstance) {
             const [lat, lng] = gps.split(',').map(Number);
             if (!isNaN(lat)) { mapInstance.flyTo([lat, lng], 17); return; }
         }
-        // No live GPS — search markers for one matching this site address
+        // 2. Pre-resolved site GPS from Sites sheet
+        if (siteGps && mapInstance) {
+            const parts = siteGps.split(',').map(Number);
+            if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                mapInstance.flyTo([parts[0], parts[1]], 16);
+                return;
+            }
+        }
+        // 3. Fallback — search existing markers by popup content
         if (markersLayer && mapInstance) {
             markersLayer.eachLayer(layer => {
                 try {
