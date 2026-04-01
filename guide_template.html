@@ -1273,7 +1273,7 @@
     <p class="mock-caption">Alarm active — subtle amber border overlay; screen stays normal for bystanders</p>
 
     <h3>Confirming you are safe</h3>
-    <p>While an alarm is active, <strong>every button tap</strong> on the locked screen is intercepted and asks for your PIN before doing anything else. This protects against someone forcing you to cancel the alarm.</p>
+    <p>While an alarm is active, <strong>every button tap</strong> on the locked screen is intercepted and asks for your PIN before doing anything else. This protects against someone forcing you to cancel the alarm. PIN entry is the only valid path to clearing any alarm — this applies whether the alarm was triggered by SOS, shake, volume buttons, an overdue timer, or a Critical Timing breach. There are no shortcut buttons that bypass PIN verification.</p>
     <ol class="step-list">
         <li>Tap <strong>any button</strong> on the screen. A PIN entry modal appears immediately.</li>
         <li>Enter your <strong>standard 4-digit Safety PIN</strong>.</li>
@@ -1390,6 +1390,9 @@
 
     <h4>3. Volume buttons — Android only</h4>
     <p>Press either volume button <strong>5 times within 3 seconds</strong>. A confirmation screen appears — press any volume button 3 more times within 5 seconds to confirm. This method works even when the screen is off or locked.</p>
+    <div class="tip">
+        <strong>💡 Audio must have been used at least once:</strong> Volume button detection requires Android Chrome to have registered an active audio session. This happens automatically the first time you start a visit (you'll hear a brief audio cue). If you've never started a visit on this device, volume detection may not be active yet. Once you've started your first visit, it works reliably for all subsequent ones.
+    </div>
 
     <div class="mock-wrap">
         <div class="mock-phone" style="width:260px;background:#431407;border-color:#7c2d12;">
