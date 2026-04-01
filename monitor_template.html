@@ -859,6 +859,7 @@ function processWorkers(rows) {
                 "Emergency Contact Email":  r['Emergency Contact Email'] || '',
                 "Escalation Contact Name":  r['Escalation Contact Name'] || '',
                 "Escalation Contact Number": r['Escalation Contact Number'] || '',
+                "Escalation Contact Email":  r['Escalation Contact Email'] || '',
                 "timestamp":                timestamp,
                 // Shorthand aliases (for system logic)
                 name,
@@ -1475,7 +1476,7 @@ async function geocodeAddress(address) {
     if (!address) { geocodeCache.set(address, 'failed'); return; }
     geocodeCache.set(address, 'pending');
     try {
-        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1`;
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&countrycode=nz`;
         const res = await fetch(url, { headers: { 'Accept': 'application/json', 'User-Agent': 'OTG-AppSuite-Monitor/1.0' } });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
@@ -1596,6 +1597,8 @@ function submitResolution() {
     if (targetName !== typedName) { showToast("❌ Name does not match exactly — please try again."); return; }
     if (note.length < 5)          { showToast("❌ Please enter a resolution note (min 5 characters)."); return; }
 
+    const worker = workerData.find(w => w['Worker Name'] === targetName) || {};
+
     const formData = new FormData();
     formData.append('action',       'resolve');
     formData.append('key',          API_KEY);
@@ -1604,6 +1607,10 @@ function submitResolution() {
     formData.append('Notes',        `[HQ RESOLVED]: ${note}`);
     formData.append('Battery Level', 'N/A');
     formData.append('Location Name', 'HQ Manual Resolution');
+    formData.append('Emergency Contact Name',   worker['Emergency Contact Name']   || '');
+    formData.append('Emergency Contact Email',  worker['Emergency Contact Email']  || '');
+    formData.append('Escalation Contact Name',  worker['Escalation Contact Name']  || '');
+    formData.append('Escalation Contact Email', worker['Escalation Contact Email'] || '');
 
     fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: formData })
         .then(() => {
