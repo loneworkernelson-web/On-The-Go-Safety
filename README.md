@@ -141,7 +141,7 @@ The system does not simply append every request as a new row. It attempts to mai
 
 ### 2.3 Tiered Escalation Watchdog (`checkOverdueVisits`)
 
-This function must be triggered by a time-driven trigger (recommended frequency: 10 minutes).
+This function must be triggered by a time-driven trigger (**required frequency: 1 minute**).
 
 **State machine:**
 - **Input:** Iterates through all active rows in `Visits`.
@@ -155,6 +155,8 @@ This function must be triggered by a time-driven trigger (recommended frequency:
 4. **EMERGENCY — 60 min breach:** Triggers full emergency email + SMS via the configured SMS provider + ntfy push notification to all nominated contacts.
 
 `OVERDUE ALARM` status (sent when a worker's grace period expires on-device) is treated as an immediate alert trigger — the same path as `EMERGENCY`, `PANIC`, and `DURESS`.
+
+> **Critical Timing and trigger frequency:** When a worker activates High-Risk mode, the watchdog skips all overdue tiers and escalates directly to `EMERGENCY` at the moment `Diff ≥ 0` — i.e. the exact second the timer expires. The reliability of this fast path is entirely dependent on trigger frequency. A 10-minute trigger interval means the Critical Timing alarm may fire up to 10 minutes late. **The trigger must be set to a 1-minute interval** to achieve near-immediate Critical Timing escalation.
 
 ### 2.4 Photo Handling & Sub-folders
 
@@ -349,6 +351,21 @@ When `W3W_API_KEY` is configured, each worker tile with a valid GPS fix displays
 
 The browser's autoplay policy requires audio to be initialised within a user gesture. `toggleAudioInit()` is called from within the login button's click handler, before any `await`, to satisfy this requirement. This ensures alarm audio fires correctly without any additional user interaction after login.
 
+### 4.7 Worker Card Features
+
+Each worker tile in the dashboard grid displays the following contextual information:
+
+- **Anticipated Departure ("Due Out"):** Shown as a "Due Out" row on the card. Conditionally rendered — only displayed when a valid departure time exists and the worker has not yet departed. Turns red with a pulsing animation when the worker is overdue.
+- **ICE Panel (In Case of Emergency):** Displayed only when the worker is in an alarm state (`isAlert`). Shows Emergency Contact and Escalation Contact names, with tappable `tel:` links for direct calling from the dashboard. The Escalation Contact is conditionally rendered only if one is present.
+
+### 4.8 `ALERT_STATUSES` and Alarm Behaviour
+
+`ALERT_STATUSES = ['SOS', 'DURESS', 'PANIC', 'OVERDUE ALARM', 'EMERGENCY']` is the canonical array driving the main siren (`updateAlarmAudio`), card border styles, status dot colours, map icon colours, and `acknowledgedAlerts` clearing logic. All five status strings must be present. Omitting `'EMERGENCY'` silently prevents the siren from firing on Critical Timing alarms.
+
+`acknowledgedAlerts` is cleared per-worker in `handleData()` when the worker's status is no longer in `ALERT_STATUSES`. This allows the alarm overlay to re-appear if the same worker triggers a second alarm in the same browser session.
+
+> **`processWorkers()` — fixed property list:** Any field attached by `getDashboardData()` must be explicitly added to the worker object constructed inside `processWorkers()`, or it is silently discarded before reaching `renderMap()`, `renderGrid()`, or any other consumer. Fields currently preserved include all four ICE contact fields (`Emergency Contact Name/Number/Email`, `Escalation Contact Name/Number`) and `Site GPS`.
+
 ---
 
 ## 5. Database Schema (Google Sheets)
@@ -457,7 +474,7 @@ The system includes a longitudinal reporting module to analyse trends over time.
 | **OpenRouteService** | Calculates driving distance for travel reports | API Key | Version-probed at runtime (`/v2/`, `/v3/`). Falls back to crow-flight + speed floor if unavailable. |
 | **Google Gemini** | Proofreads worker notes and summarises reports | API Key | Non-destructive — sheet keeps raw data. Model selected dynamically via ListModels API. |
 | **Twilio** | Sends SMS for emergency escalations (NZ, UK, CA) | API Key + Account SID | Recommended for NZ/UK/CA deployments. |
-| **Kudosity (Burst SMS)** | Sends SMS for emergency escalations (AU) | API Key | Recommended for AU deployments. Credit balance checked by diagnostics. |
+| **Kudosity (Burst SMS)** | Sends SMS for emergency escalations (AU) | API Key (`x-api-key` header) | Recommended for AU deployments. V2 API (`api.transmitmessage.com`). No balance endpoint in V2 — diagnostics use a `/v2/senders` connectivity probe instead. V2 migration pending. |
 | **Textbelt** | Sends SMS for emergency escalations (US) | API Key | Free tier: 1 SMS/day/IP. NZ routing unreliable — not recommended for NZ deployments. |
 | **ntfy** | Push notifications for emergency alerts | Topic URL | Supports self-hosted server for greater privacy. Topics stored in Staff sheet; written on every worker POST. |
 | **Healthchecks.io** | Dead man's switch — pings after each watchdog run | Ping URL | Optional. Alerts you if the watchdog stops running (e.g. trigger misconfiguration). |
