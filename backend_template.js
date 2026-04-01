@@ -465,6 +465,23 @@ function handleResolvePost(p) {
                 }
             }
         }
+
+        // CRITICAL: Close any remaining open rows for this worker (e.g. the original
+        // ARRIVED row that triggerEscalation() appended beyond, leaving it unclosed).
+        // Without this, the next visit's handleWorkerPost() scan finds the stale open
+        // row and appends to it rather than creating a fresh row.
+        if (rowUpdated) {
+            const OPEN_STATUSES = ['ARRIVED', 'TRAVELLING', 'OVERDUE', 'ALARM_GPS_PULSE'];
+            for (let i = data.length - 1; i >= 0; i--) {
+                const rowData = data[i];
+                if (rowData[2] === workerName) {
+                    const status = String(rowData[10]);
+                    if (OPEN_STATUSES.some(s => status.includes(s))) {
+                        sheet.getRange(startRow + i, 11).setValue(p['Alarm Status']);
+                    }
+                }
+            }
+        }
     }
     
     // Fallback: If no active visit is found, log the resolution as a new entry
@@ -567,8 +584,15 @@ function handleWorkerPost(p) {
         const lastRow = sheet.getLastRow();
         const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
         const distColIdx = headers.indexOf("Distance (km)");
-        
-        if (lastRow > 1) {
+
+        // CRITICAL: ARRIVED and TRAVELLING always start a fresh row.
+        // Never match an existing open row — doing so would contaminate a previous
+        // visit's row with data from a new session. handleResolvePost() is responsible
+        // for closing all open rows when a worker declares safe; any open row remaining
+        // at this point is stale and must not be reused.
+        const isNewVisit = (p['Alarm Status'] === 'ARRIVED' || p['Alarm Status'] === 'TRAVELLING');
+
+        if (lastRow > 1 && !isNewVisit) {
             const startRow = Math.max(2, lastRow - 50); 
             const numRows = lastRow - startRow + 1;
             const data = sheet.getRange(startRow, 1, numRows, 11).getValues(); 
