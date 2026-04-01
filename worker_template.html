@@ -5848,6 +5848,11 @@ function _clearAlarmState() {
   isPanicActive = false;
   isDuressActive = false;
   _stopAlarmGpsPulse();
+  // Also stop the overdue OVERDUE-status pulse. Without this, the 5-min
+  // arrivedPulseInterval continues posting OVERDUE payloads after the worker
+  // has confirmed safe, which can arrive at the backend after DEPARTED has been
+  // written and make the monitor think the visit is still open.
+  if (arrivedPulseInterval) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; }
   _disarmAlarmInterceptor();
   hideAlarmOverlay();
 
