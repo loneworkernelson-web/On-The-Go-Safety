@@ -139,7 +139,8 @@
 <div id="fullScreenAlert" class="hidden fixed inset-0 flex flex-col items-center justify-center text-center p-8 backdrop-blur-sm z-[500]" role="alertdialog" aria-modal="true" aria-labelledby="alertTitle" aria-live="assertive">
     <div class="text-9xl mb-4" id="alertIcon" aria-hidden="true">🚨</div>
     <h1 class="text-6xl font-black text-white mb-4 drop-shadow-md" id="alertTitle">EMERGENCY ALERT</h1>
-    <h2 id="alertNames" class="text-4xl font-bold text-white bg-black/30 px-6 py-2 rounded mb-8">Worker</h2>
+    <h2 id="alertNames" class="text-4xl font-bold text-white bg-black/30 px-6 py-2 rounded mb-4">Worker</h2>
+    <div id="alertContacts" class="hidden text-left bg-black/40 rounded-xl px-6 py-4 mb-8 max-w-sm w-full text-sm space-y-1"></div>
     <button onclick="acknowledgeAlert()" class="bg-white text-gray-900 font-black text-2xl py-6 px-12 rounded-full shadow-2xl border-4 border-gray-900">
         ACKNOWLEDGE ALARM
     </button>
@@ -912,6 +913,31 @@ function handleData(response) {
          w.status.toUpperCase().includes("OVERDUE ALARM")) && !acknowledgedAlerts.has(w.name));
 
     const alertBox = document.getElementById('fullScreenAlert');
+    const contactsEl = document.getElementById('alertContacts');
+
+    function renderAlertContacts(workers) {
+        if (!contactsEl) return;
+        const lines = [];
+        workers.forEach(w => {
+            const loc = w['Location Name'] || w.location || '';
+            if (loc) lines.push(`<div class="text-gray-300 mb-1">📍 <span class="font-bold text-white">${escapeHtml(loc)}</span></div>`);
+            if (w['Emergency Contact Name'] || w['Emergency Contact Number']) {
+                const num = formatPhoneForCall(w['Emergency Contact Number'] || '');
+                lines.push(`<div class="text-red-300 font-bold">🆘 ${escapeHtml(w['Emergency Contact Name'] || 'Emergency Contact')}${num ? ` — <a href="tel:${escapeHtml(num)}" class="text-blue-300 underline">${escapeHtml(num)}</a>` : ''}</div>`);
+            }
+            if (w['Escalation Contact Name'] || w['Escalation Contact Number']) {
+                const num = formatPhoneForCall(w['Escalation Contact Number'] || '');
+                lines.push(`<div class="text-orange-300 font-bold">⬆️ ${escapeHtml(w['Escalation Contact Name'] || 'Escalation Contact')}${num ? ` — <a href="tel:${escapeHtml(num)}" class="text-blue-300 underline">${escapeHtml(num)}</a>` : ''}</div>`);
+            }
+        });
+        if (lines.length > 0) {
+            contactsEl.innerHTML = lines.join('');
+            contactsEl.classList.remove('hidden');
+        } else {
+            contactsEl.classList.add('hidden');
+        }
+    }
+
     if (unackedDuress.length > 0) {
         alertBox.classList.remove('hidden', 'alert-red');
         alertBox.classList.add('alert-purple');
@@ -919,6 +945,7 @@ function handleData(response) {
         document.getElementById('alertIcon').textContent  = "🥷";
         _pendingAlertNames = unackedDuress.map(w => w.name);
         document.getElementById('alertNames').textContent = _pendingAlertNames.join(", ");
+        renderAlertContacts(unackedDuress);
         startAlertLoop();
     } else if (unackedAlert.length > 0) {
         alertBox.classList.remove('hidden', 'alert-purple');
@@ -927,9 +954,11 @@ function handleData(response) {
         document.getElementById('alertIcon').textContent  = "🚨";
         _pendingAlertNames = unackedAlert.map(w => w.name);
         document.getElementById('alertNames').textContent = _pendingAlertNames.join(", ");
+        renderAlertContacts(unackedAlert);
         startAlertLoop();
     } else {
         alertBox.classList.add('hidden');
+        if (contactsEl) contactsEl.classList.add('hidden');
         stopAlertLoop();
     }
 
@@ -961,7 +990,7 @@ function acknowledgeAlert() {
 /**
  * Alarm status strings used throughout for consistency.
  */
-const ALERT_STATUSES = ['SOS', 'DURESS', 'PANIC', 'OVERDUE ALARM', 'EMERGENCY'];
+const ALERT_STATUSES = ['SOS', 'DURESS', 'PANIC', 'OVERDUE ALARM', 'OVERDUE -', 'EMERGENCY'];
 
 /**
  * Formats elapsed milliseconds as a human-readable "Xm ago" / "Xh Xm ago" string.
