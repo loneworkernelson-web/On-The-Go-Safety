@@ -1465,6 +1465,17 @@ function _pingHealthcheck() {
 }
 
 function checkOverdueVisits() {
+    // Guard against concurrent executions. With a 1-minute trigger, GAS can launch a new
+    // instance before the previous one finishes (e.g. if ntfy/Nominatim calls run long).
+    // Both instances would read the same un-escalated status and fire duplicate alerts.
+    // tryLock(0) exits immediately if another instance holds the lock — no queuing.
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(0)) {
+        console.log('[checkOverdueVisits] Skipped — another instance is already running.');
+        return;
+    }
+    try {
+
     // Record successful trigger execution time for health email reporting
     try { sp.setProperty('LAST_TRIGGER_TIME', new Date().toISOString()); } catch(e) {}
 
@@ -1522,6 +1533,10 @@ function checkOverdueVisits() {
     // Only fires here (after the loop) so a crash or early return leaves Healthchecks
     // without a ping, which it correctly interprets as a system failure.
     _pingHealthcheck();
+
+    } finally {
+        lock.releaseLock();
+    }
 }
 
 /**
