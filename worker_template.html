@@ -2846,8 +2846,17 @@ function startTravellingPulse() {
  // FIX: was checking activeVisit.status === 'TRAVELLING' which is never set
  // on the visit object (it's only sent as payload field). Correct flag is .isTravel.
  if (state && state.activeVisit && state.activeVisit.isTravel) {
- // Send periodic location pulse
- logSafety('TRAVELLING', 'Location pulse');
+   // CRITICAL FIX: must use ALARM_GPS_PULSE, not 'TRAVELLING'.
+   // 'TRAVELLING' triggers isNewVisit in handleWorkerPost, appending a fresh row
+   // every 2 minutes. That new row has no [CRITICAL_TIMING] in Notes, so
+   // checkOverdueVisits loses critical timing mode and falls back to the standard
+   // 15/30/45/60 min ladder. ALARM_GPS_PULSE updates the existing row in place,
+   // preserving the original [CRITICAL_TIMING] tag in col L.
+   processUploadQueue(buildPayload({
+     'Alarm Status': 'ALARM_GPS_PULSE',
+     'Notes': 'GPS pulse — travel in progress.',
+     'Last Known GPS': typeof lastGPS !== 'undefined' ? lastGPS : '0,0'
+   }));
  }
  }, 120000); // 2 minutes
 }
@@ -7954,15 +7963,20 @@ function haversine(p1, p2) {
 async function getDistance(p1, p2, trail = []) {
   if (!_isValidGPS(p1) || !_isValidGPS(p2)) return { km: 0, type: 'none' };
 
-  // Speed-accumulator floor (Option 2).
-  // _speedAccumM is maintained by _takeSingleGPSFix() during travel using
-  // pos.coords.speed (Doppler-derived m/s — more accurate than position-derived speed).
-  // If the accumulator has a meaningful value we use it as a floor: whichever of
-  // ORS / Haversine / accumulator is highest wins. This protects workers against
-  // ORS under-reporting on winding or GPS-sparse routes with no battery cost.
+  // Speed-accumulator floor — only applied to A→B fallbacks (Tier 3 and Tier 4).
+  // _speedAccumM is maintained by _takeSingleGPSFix() / startTravelWatchPosition()
+  // using pos.coords.speed (instantaneous Doppler-derived m/s at fix time).
+  //
+  // The floor is intentionally NOT applied to Tier 1 (trail ORS) or Tier 2
+  // (Haversine segments), because those methods are already accurate along the
+  // actual path driven. Applying the floor to them caused over-reporting:
+  // speed × elapsed-time between fixes overstates distance whenever the worker
+  // was decelerating, stopped at lights, or cornering during a long fix interval.
+  // The floor protects only against A→B under-reporting on winding routes where
+  // no trail data is available — its original purpose.
   const speedFloorKm = (_speedAccumM > 0) ? _speedAccumM / 1000 : 0;
 
-  // Helper: apply floor and return result object
+  // Helper: apply floor — used by Tier 3 and Tier 4 only
   const withFloor = (result) => {
     if (speedFloorKm > 0 && parseFloat(result.km) < speedFloorKm) {
       return { km: speedFloorKm.toFixed(2), type: result.type + '+speed-floor' };
@@ -7973,6 +7987,7 @@ async function getDistance(p1, p2, trail = []) {
   // TIER 1: ORS road routing with breadcrumb waypoints — most accurate.
   // Sends the actual intermediate positions taken during the trip so ORS
   // snaps to the road network along the path the worker really drove.
+  // No speed floor — trail ORS is already accurate; floor would only inflate.
   if (navigator.onLine && CONFIG.url && trail.length >= 3) {
     try {
       const validTrail = trail.filter(p => _isValidGPS(`${p.lat},${p.lng}`));
@@ -7982,7 +7997,7 @@ async function getDistance(p1, p2, trail = []) {
       const response = await fetch(url);
       const data = await response.json();
       if (data.status === 'success' && data.km) {
-        return withFloor({ km: data.km, type: 'road-trail' });
+        return { km: data.km, type: 'road-trail' };
       }
     } catch (e) {
       console.warn('Trail ORS failed, falling back:', e);
@@ -7991,17 +8006,19 @@ async function getDistance(p1, p2, trail = []) {
     // TIER 2: Sum of Haversine segments along actual breadcrumbs.
     // Less accurate than ORS (crow-flies between each reading) but still
     // far better than a single A→B estimate for indirect journeys.
+    // No speed floor — segment Haversine is already path-accurate.
     const cleanTrail = trail.filter(p => _isValidGPS(`${p.lat},${p.lng}`));
     let totalM = 0;
     for (let i = 1; i < cleanTrail.length; i++) {
       totalM += _gpsHaversineMetres(cleanTrail[i-1].lat, cleanTrail[i-1].lng, cleanTrail[i].lat, cleanTrail[i].lng);
     }
     if (totalM > 0) {
-      return withFloor({ km: (totalM / 1000).toFixed(2), type: 'trail-crow' });
+      return { km: (totalM / 1000).toFixed(2), type: 'trail-crow' };
     }
   }
 
   // TIER 3: Standard ORS A→B road routing (no waypoints).
+  // Speed floor applied here — A→B on a winding route may under-report.
   if (navigator.onLine && CONFIG.url) {
     try {
       const url = `${CONFIG.url}?action=getDistance&start=${p1}&end=${p2}&key=${CONFIG.key}`;
@@ -8016,6 +8033,7 @@ async function getDistance(p1, p2, trail = []) {
   }
 
   // TIER 4: Haversine A→B — always available, works offline.
+  // Speed floor applied here — straight-line will always under-report on real roads.
   const dist = haversine(p1, p2);
   return withFloor({ km: dist.toFixed(2), type: 'crow' });
 }
