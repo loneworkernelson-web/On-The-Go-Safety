@@ -1065,9 +1065,23 @@ function triggerAlerts(p, type) {
     const locationAddr  = p['Location Address'] || '';
     const battery       = p['Battery Level']  || 'Unknown';
     const notes         = p['Notes']          || '';
-    // Detect critical timing mode from either status string or Notes tag.
-    // The [CRITICAL_TIMING] tag is injected by the worker PWA at visit start.
-    const isCriticalTiming = status.includes('CRITICAL TIMING') || notes.includes('[CRITICAL_TIMING]');
+    const visitNotes    = p['Visit Notes']    || '';
+    // Detect critical timing mode from either status string or original visit Notes tag.
+    // The [CRITICAL_TIMING] tag is injected by the worker PWA at visit start and preserved
+    // in col L (Notes). visitNotes carries that original row value via triggerEscalation.
+    const isCriticalTiming = status.includes('CRITICAL TIMING') || visitNotes.includes('[CRITICAL_TIMING]');
+
+    // Detect travel visit and extract start GPS from [START_GPS:...] tag in visit notes.
+    // visitNotes contains the original TRAVELLING row Notes:
+    // e.g. "Travel to Wellington Office started. Duration: 60m [CRITICAL_TIMING] [START_GPS:-36.84,174.76]"
+    const isTravel       = visitNotes.includes('Travel to');
+    const startGPSMatch  = visitNotes.match(/\[START_GPS:([^\]]+)\]/);
+    const startGPS       = startGPSMatch ? startGPSMatch[1].trim() : null;
+    const travelDestAddr = locationAddr ? ` (${locationAddr})` : '';
+    const travelFromLine = (startGPS && startGPS !== '0,0')
+        ? `Started from: <a href="https://www.google.com/maps?q=${encodeURIComponent(startGPS)}" style="color:#93c5fd;">${startGPS} (map)</a>.`
+        : null;
+
     const sentAt        = Utilities.formatDate(
                               new Date(), CONFIG.TIMEZONE, "dd/MM/yyyy, HH:mm:ss");
 
@@ -1108,43 +1122,70 @@ function triggerAlerts(p, type) {
     }
     else if (status.includes('CRITICAL TIMING') || (status.includes('EMERGENCY') && isCriticalTiming)) {
         headerColour  = '#dc2626';
-        statusLabel   = 'EMERGENCY — CRITICAL TIMING BREACH';
+        statusLabel   = isTravel ? 'EMERGENCY — OVERDUE TRAVEL (CRITICAL TIMING)' : 'EMERGENCY — CRITICAL TIMING BREACH';
         ntfyPriority  = 'urgent';
         ntfyTags      = 'rotating_light,red_circle';
-        whatHappened  = `This worker <strong>did not check out at the scheduled time and had activated Critical Timing Mode</strong> before their visit. Critical Timing Mode is used when a worker has specific concern about the importance of timely contact — it bypasses the normal grace period and triggers an immediate alert. <strong>Please treat this as a genuine emergency.</strong>`;
-        actionSteps   = `
-            <li>Try to <strong>call ${workerFirst}</strong> on ${workerPhone} immediately</li>
+        whatHappened  = isTravel
+            ? `This worker was <strong>travelling to ${locationName}${travelDestAddr}</strong> and <strong>has not arrived at the scheduled time</strong>. They had activated Critical Timing Mode before departing — this bypasses the normal grace period and triggers an immediate alert. <strong>Please treat this as a genuine emergency.</strong>${travelFromLine ? ` ${travelFromLine}` : ''}`
+            : `This worker <strong>did not check out at the scheduled time and had activated Critical Timing Mode</strong> before their visit. Critical Timing Mode is used when a worker has specific concern about the importance of timely contact — it bypasses the normal grace period and triggers an immediate alert. <strong>Please treat this as a genuine emergency.</strong>`;
+        actionSteps   = isTravel
+            ? `<li>Try to <strong>call ${workerFirst}</strong> on ${workerPhone} immediately</li>
+            <li>If there is no answer, check whether they have arrived at <strong>${locationName}</strong> — contact someone there if possible</li>
+            <li>If unreachable, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong> and provide the departure point and intended destination above</li>`
+            : `<li>Try to <strong>call ${workerFirst}</strong> on ${workerPhone} immediately</li>
             <li>If there is no answer, contact someone at the site to check on the worker's welfare</li>
             <li>If unreachable, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong> and provide the location above</li>`;
-        noteToContact = `This alert was triggered immediately at the worker's scheduled check-out time because they had activated Critical Timing Mode — indicating they had a specific concern about timing. Treat it with the same urgency as a manual panic alarm.`;
+        noteToContact = isTravel
+            ? `This alert was triggered immediately at the worker's scheduled arrival time because they had activated Critical Timing Mode before departing. Treat it with the same urgency as a manual panic alarm.`
+            : `This alert was triggered immediately at the worker's scheduled check-out time because they had activated Critical Timing Mode — indicating they had a specific concern about timing. Treat it with the same urgency as a manual panic alarm.`;
     }
     else if (status.includes('EMERGENCY')) {
         headerColour  = '#dc2626';
-        statusLabel   = 'EMERGENCY — SIGNIFICANTLY OVERDUE';
+        statusLabel   = isTravel ? 'EMERGENCY — OVERDUE TRAVEL' : 'EMERGENCY — SIGNIFICANTLY OVERDUE';
         ntfyPriority  = 'urgent';
         ntfyTags      = 'rotating_light,red_circle';
-        whatHappened  = `This worker is <strong>significantly overdue</strong> and we have not been able to confirm their safety. Their grace period has expired.`;
-        actionSteps   = `
-            <li>Try to <strong>call ${workerFirst}</strong> on ${workerPhone} immediately</li>
+        whatHappened  = isTravel
+            ? `This worker was <strong>travelling to ${locationName}${travelDestAddr}</strong> and is <strong>significantly overdue</strong>. We have not been able to confirm their safety.${travelFromLine ? ` ${travelFromLine}` : ''}`
+            : `This worker is <strong>significantly overdue</strong> and we have not been able to confirm their safety. Their grace period has expired.`;
+        actionSteps   = isTravel
+            ? `<li>Try to <strong>call ${workerFirst}</strong> on ${workerPhone} immediately</li>
+            <li>Check whether they have arrived at <strong>${locationName}</strong> — contact someone there if possible</li>
+            <li>If unreachable after a reasonable effort, <strong>consider contacting emergency services (${EMERGENCY_NUMBER})</strong> and providing the departure point and intended destination above</li>`
+            : `<li>Try to <strong>call ${workerFirst}</strong> on ${workerPhone} immediately</li>
             <li>Contact someone at the site to check on the worker's welfare</li>
             <li>If unreachable after a reasonable effort, <strong>consider contacting emergency services (${EMERGENCY_NUMBER})</strong> and providing the location above</li>`;
-        noteToContact = `Before escalating to police, consider that the worker may be out of mobile data coverage, may have closed the app, or may have a flat battery. Try calling, texting, and checking with the site first.`;
+        noteToContact = isTravel
+            ? `Before escalating to police, consider that the worker may still be en route, out of coverage, or have a flat battery. Try calling, texting, and checking with the destination first.`
+            : `Before escalating to police, consider that the worker may be out of mobile data coverage, may have closed the app, or may have a flat battery. Try calling, texting, and checking with the site first.`;
     }
     else if (status.includes('OVERDUE') || status.includes('CRITICAL ESCALATION') || status.includes('OVERDUE WARNING')) {
         headerColour  = isCriticalTiming ? '#dc2626' : '#d97706';  // red if critical timing, amber otherwise
-        statusLabel   = isCriticalTiming ? 'OVERDUE — CRITICAL TIMING MODE ACTIVE' : 'OVERDUE — MISSED CHECK-IN';
+        statusLabel   = isTravel
+            ? (isCriticalTiming ? 'OVERDUE TRAVEL — CRITICAL TIMING MODE ACTIVE' : 'OVERDUE TRAVEL — NOT YET ARRIVED')
+            : (isCriticalTiming ? 'OVERDUE — CRITICAL TIMING MODE ACTIVE' : 'OVERDUE — MISSED CHECK-IN');
         ntfyPriority  = isCriticalTiming ? 'urgent' : 'high';
         ntfyTags      = isCriticalTiming ? 'rotating_light,red_circle' : 'warning,yellow_circle';
-        whatHappened  = isCriticalTiming
-            ? `This worker <strong>has not checked out as scheduled and had activated Critical Timing Mode</strong> before their visit. Critical Timing Mode is used when a worker has specific concern about the importance of timely contact. <strong>Please act on this promptly.</strong>`
-            : `This worker <strong>has not checked out as scheduled</strong>. They may be delayed, unreachable, or in difficulty.`;
-        actionSteps   = `
-            <li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhone}</li>
+        whatHappened  = isTravel
+            ? (isCriticalTiming
+                ? `This worker was <strong>travelling to ${locationName}${travelDestAddr}</strong> and <strong>has not arrived as scheduled</strong>. They had activated Critical Timing Mode before departing. <strong>Please act on this promptly.</strong>${travelFromLine ? ` ${travelFromLine}` : ''}`
+                : `This worker was <strong>travelling to ${locationName}${travelDestAddr}</strong> and <strong>has not arrived as scheduled</strong>. They may be delayed, unreachable, or in difficulty.${travelFromLine ? ` ${travelFromLine}` : ''}`)
+            : (isCriticalTiming
+                ? `This worker <strong>has not checked out as scheduled and had activated Critical Timing Mode</strong> before their visit. Critical Timing Mode is used when a worker has specific concern about the importance of timely contact. <strong>Please act on this promptly.</strong>`
+                : `This worker <strong>has not checked out as scheduled</strong>. They may be delayed, unreachable, or in difficulty.`);
+        actionSteps   = isTravel
+            ? `<li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhone}</li>
+            <li>Check whether they have arrived at <strong>${locationName}</strong> — contact someone there if possible</li>
+            <li>If they remain unreachable and you have concerns, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>`
+            : `<li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhone}</li>
             <li>If you cannot reach them, contact someone at the site and ask them to check on the worker's safety</li>
             <li>If they remain unreachable and you have concerns, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>`;
-        noteToContact = isCriticalTiming
-            ? `This worker had activated Critical Timing Mode before their visit, indicating a specific concern about timing. Treat this alert with higher urgency than a standard missed check-in.`
-            : `Before escalating to police, consider that the worker may be running late, out of coverage, or have a flat battery. Try calling, texting, and other contact methods first.`;
+        noteToContact = isTravel
+            ? (isCriticalTiming
+                ? `This worker had activated Critical Timing Mode before departing, indicating a specific concern about timing. Treat this alert with higher urgency than a standard overdue travel notification.`
+                : `Before escalating to police, consider that the worker may be running late, out of coverage, or have a flat battery. Try calling, texting, and checking with the destination first.`)
+            : (isCriticalTiming
+                ? `This worker had activated Critical Timing Mode before their visit, indicating a specific concern about timing. Treat this alert with higher urgency than a standard missed check-in.`
+                : `Before escalating to police, consider that the worker may be running late, out of coverage, or have a flat battery. Try calling, texting, and other contact methods first.`);
     }
     else if (status.includes('TEST_ALERT')) {
         headerColour  = '#1d4ed8';  // blue — not a real emergency
@@ -2961,6 +3002,7 @@ function triggerEscalation(sheet, entry, newStatus, isDual, rowNum) {
         'Escalation Contact Ntfy':   isDual ? escNtfy : "",
         'Alarm Status':              newStatus,
         'Notes':                     `Alert: Worker is ${newStatus}.`,
+        'Visit Notes':               String(entry[11] || ''),
         'Location Name':             entry[12],
         'Location Address':          entry[13],
         'Last Known GPS':            entry[14],
