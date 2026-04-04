@@ -605,7 +605,7 @@ function handleWorkerPost(p) {
                         // triggerEscalation() updates the existing row in place (one-row-per-visit);
                         // subsequent GPS pulses must not clobber the escalation status it wrote.
                         const _existingStatus = String(rowData[10]).toUpperCase();
-                        const HIGH_SEVERITY = ['EMERGENCY', 'PANIC', 'DURESS', 'OVERDUE ALARM'];
+                        const HIGH_SEVERITY = ['EMERGENCY', 'PANIC', 'DURESS', 'OVERDUE ALARM', 'OVERDUE -'];
                         const LOW_PRIORITY  = ['ALARM_GPS_PULSE', 'OVERDUE'];
                         const _existingIsHigh = HIGH_SEVERITY.some(s => _existingStatus.includes(s));
                         const _incomingIsLow  = LOW_PRIORITY.some(s => (p['Alarm Status'] || '').toUpperCase().includes(s));
@@ -3065,13 +3065,37 @@ function handleSafetyResolution(p) {
     }
 
     // 5. ntfy push — All Clear notification to both contacts
+    // Prefer Staff sheet topics (col H/I) — the same source used by triggerEscalation.
+    // This is more reliable than the payload fields, which can be blank if state.worker
+    // was partially restored on the worker device. Fall back to payload values if the
+    // Staff lookup fails or returns empty strings.
+    let allClearEmgNtfy = (p['Emergency Contact Ntfy'] || '').toString().trim();
+    let allClearEscNtfy = (p['Escalation Contact Ntfy'] || '').toString().trim();
+    try {
+        const _ss = SpreadsheetApp.getActiveSpreadsheet();
+        const _staffSheet = _ss.getSheetByName('Staff');
+        if (_staffSheet) {
+            const _staffData = _staffSheet.getDataRange().getValues();
+            const _workerName = (p['Worker Name'] || '').toString().trim();
+            for (let _j = 1; _j < _staffData.length; _j++) {
+                if ((_staffData[_j][0] || '').toString().trim() === _workerName) {
+                    const _sEmg = (_staffData[_j][7] || '').toString().trim(); // col H
+                    const _sEsc = (_staffData[_j][8] || '').toString().trim(); // col I
+                    if (_sEmg) allClearEmgNtfy = _sEmg;
+                    if (_sEsc) allClearEscNtfy = _sEsc;
+                    break;
+                }
+            }
+        }
+    } catch (_e) { console.warn('All Clear ntfy Staff lookup failed: ' + _e.toString()); }
+
     const allClearMsg = [
         `Worker: ${p['Worker Name'] || 'Unknown'} · ${p['Worker Phone Number'] || ''}`,
         `Location: ${p['Location Name'] || 'Unknown'}`,
         `Cleared: ${resolvedAt}`
     ].filter(Boolean).join('\n');
 
-    [p['Emergency Contact Ntfy'], p['Escalation Contact Ntfy']]
+    [allClearEmgNtfy, allClearEscNtfy]
         .filter(t => t && t.trim())
         .forEach(topic => {
             _sendNtfy(topic, `✅ ALL CLEAR — ${p['Worker Name'] || 'Worker'} is safe`, allClearMsg, 'default', 'white_check_mark,green_circle');
