@@ -609,7 +609,14 @@ function handleWorkerPost(p) {
                         const LOW_PRIORITY  = ['ALARM_GPS_PULSE', 'OVERDUE'];
                         const _existingIsHigh = HIGH_SEVERITY.some(s => _existingStatus.includes(s));
                         const _incomingIsLow  = LOW_PRIORITY.some(s => (p['Alarm Status'] || '').toUpperCase().includes(s));
-                        if (!(_existingIsHigh && _incomingIsLow)) {
+                        const _isGpsPulse     = (p['Alarm Status'] || '').toUpperCase().includes('ALARM_GPS_PULSE');
+                        // ALARM_GPS_PULSE must never update col K — it is a location-only update.
+                        // Writing ALARM_GPS_PULSE to col K replaces TRAVELLING, causing the monitor's
+                        // processWorkers to see an unrecognised status in neither JOURNEY_START_STATUSES
+                        // nor JOURNEY_CLOSED_STATUSES — the journey enters limbo and the worker
+                        // disappears from the map. All other non-pulse payloads: guard against
+                        // HIGH_SEVERITY downgrades only.
+                        if (!_isGpsPulse && !(_existingIsHigh && _incomingIsLow)) {
                             sheet.getRange(targetRow, 11).setValue(p['Alarm Status']);
                         }
                         if (distanceValue && distColIdx > -1) sheet.getRange(targetRow, distColIdx + 1).setValue(distanceValue);
@@ -617,7 +624,10 @@ function handleWorkerPost(p) {
                              const oldNotes = sheet.getRange(targetRow, 12).getValue();
                              if (!oldNotes.includes(polishedNotes)) sheet.getRange(targetRow, 12).setValue((oldNotes + "\n" + polishedNotes).trim());
                         }
-                        if (p['Last Known GPS']) sheet.getRange(targetRow, 15).setValue(p['Last Known GPS']);
+                        if (p['Last Known GPS']) {
+                            sheet.getRange(targetRow, 15).setValue(p['Last Known GPS']); // col O: Last Known GPS
+                            sheet.getRange(targetRow, 16).setValue(ts.toISOString());    // col P: GPS Timestamp
+                        }
                         if (p['Visit Report Data']) sheet.getRange(targetRow, headers.indexOf("Visit Report Data") + 1).setValue(p['Visit Report Data']);
                         const deptCol = headers.indexOf("Anticipated Departure Time");
                         if (p['Anticipated Departure Time'] && deptCol > -1) sheet.getRange(targetRow, deptCol + 1).setValue(p['Anticipated Departure Time']);
