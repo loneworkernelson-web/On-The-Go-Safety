@@ -2472,15 +2472,21 @@ function _takeSingleGPSFix() {
  // At trip end, getDistance() takes the higher of ORS-trail and speed-accumulator,
  // protecting workers against under-reporting on sparse or winding routes.
  if (state && state.activeVisit && state.activeVisit.isTravel) {
+   const accuracy = pos.coords.accuracy; // metres; lower = better
    const last = gpsTrail[gpsTrail.length - 1];
-   if (!last || _gpsHaversineMetres(last.lat, last.lng, lat, lng) > 50) {
+   // Accuracy gate: skip breadcrumb if fix is poor (>50m) — GPS drift at this
+   // level of inaccuracy can exceed the 50m movement filter and add phantom points.
+   // Also skip if the position hasn't moved meaningfully since the last breadcrumb.
+   if (accuracy <= 50 && (!last || _gpsHaversineMetres(last.lat, last.lng, lat, lng) > 50)) {
      gpsTrail.push({ lat, lng });
    }
 
-   // Speed accumulator — only when speed is a valid positive number
-   const spd = pos.coords.speed; // m/s, or null on unsupported devices
+   // Speed accumulator — threshold of 0.5 m/s (~1.8 km/h) filters GPS noise.
+   // Many GPS chips report 0.1–0.5 m/s when stationary; without this gate a
+   // 60-minute stationary test accumulates ~1 km of phantom distance.
+   const spd = pos.coords.speed; // m/s, Doppler-derived, or null on unsupported devices
    const now = Date.now();
-   if (typeof spd === 'number' && spd > 0 && _speedAccumLastTs !== null) {
+   if (typeof spd === 'number' && spd > 0.5 && _speedAccumLastTs !== null) {
      const elapsedS = (now - _speedAccumLastTs) / 1000;
      // Cap elapsed to 3× GPS_MAX_INTERVAL_MS to discard stale gaps
      // (e.g. after a long GPS failure) that would inflate the total.
@@ -2570,15 +2576,19 @@ function startTravelWatchPosition() {
       updateGPSBars(pos);
       _consecutiveGPSFailures = 0;
 
-      // Breadcrumb trail — only append if meaningfully different from last point
+      // Breadcrumb trail — accuracy gate + minimum movement filter.
+      // Skip poor fixes (>50m accuracy) to prevent GPS drift from accumulating
+      // phantom distance in the trail.
+      const accuracy = pos.coords.accuracy;
       const last = gpsTrail[gpsTrail.length - 1];
-      if (!last || _gpsHaversineMetres(last.lat, last.lng, lat, lng) > 50) {
+      if (accuracy <= 50 && (!last || _gpsHaversineMetres(last.lat, last.lng, lat, lng) > 50)) {
         gpsTrail.push({ lat, lng });
       }
 
-      // Speed accumulator — Doppler-derived speed as independent distance signal
+      // Speed accumulator — threshold of 0.5 m/s (~1.8 km/h) filters GPS noise.
+      // Without this, stationary GPS noise (~0.1–0.5 m/s) accumulates ~1 km/hr.
       const spd = pos.coords.speed; // m/s, or null on unsupported devices
-      if (typeof spd === 'number' && spd > 0 && _speedAccumLastTs !== null) {
+      if (typeof spd === 'number' && spd > 0.5 && _speedAccumLastTs !== null) {
         const elapsedS = (now - _speedAccumLastTs) / 1000;
         // Cap elapsed to 3× GPS_MAX_INTERVAL_MS to discard stale gaps after a failure
         if (elapsedS < (GPS_MAX_INTERVAL_MS / 1000) * 3) {
