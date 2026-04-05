@@ -1078,9 +1078,52 @@ function triggerAlerts(p, type) {
     const startGPSMatch  = visitNotes.match(/\[START_GPS:([^\]]+)\]/);
     const startGPS       = startGPSMatch ? startGPSMatch[1].trim() : null;
     const travelDestAddr = locationAddr ? ` (${locationAddr})` : '';
-    const travelFromLine = (startGPS && startGPS !== '0,0')
-        ? `Started from: <a href="https://www.google.com/maps?q=${encodeURIComponent(startGPS)}" style="color:#93c5fd;">${startGPS} (map)</a>.`
+
+    // Three-location block for travel overdue messages.
+    // GPS strings are stored as "lat, lng" (with space) — strip for URL use.
+    const _gpsUrl = (gps) => gps ? gps.replace(/\s/g, '') : null;
+    const currentGPS      = (p['Last Known GPS'] || '').trim();
+    const currentGPSTs    = p['GPS Timestamp'] ? Utilities.formatDate(new Date(p['GPS Timestamp']), CONFIG.TIMEZONE, "dd/MM/yyyy HH:mm") : null;
+    const startGPSClean   = startGPS   ? _gpsUrl(startGPS)   : null;
+    const currentGPSClean = currentGPS ? _gpsUrl(currentGPS) : null;
+
+    // Individual map links
+    const startMapLink   = startGPSClean
+        ? `<a href="https://www.google.com/maps?q=${startGPSClean}" style="color:#93c5fd;">${startGPS} (map)</a>`
         : null;
+    const currentMapLink = currentGPSClean && currentGPSClean !== '0,0'
+        ? `<a href="https://www.google.com/maps?q=${currentGPSClean}" style="color:#93c5fd;">${currentGPS}${currentGPSTs ? ` at ${currentGPSTs}` : ''} (map)</a>`
+        : null;
+    const destMapLink    = locationAddr
+        ? `<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(locationAddr)}" style="color:#93c5fd;">${locationName}${travelDestAddr} (map)</a>`
+        : `<strong>${locationName}</strong>`;
+
+    // Combined three-point Google Maps directions URL: start → current → destination.
+    // Format: maps/dir/lat,lng/lat,lng/lat,lng — gives responders a route overview.
+    const _threePointMapUrl = (() => {
+        const pts = [startGPSClean, currentGPSClean, locationAddr ? encodeURIComponent(locationAddr) : null].filter(Boolean);
+        return pts.length >= 2
+            ? `https://www.google.com/maps/dir/${pts.join('/')}`
+            : null;
+    })();
+
+    // Three-location HTML block — inserted into travel overdue message bodies.
+    const travelLocationBlock = isTravel ? `
+        <table style="width:100%;border-collapse:collapse;margin:12px 0;font-size:13px;">
+            <tr style="background:#1e293b;">
+                <td style="padding:8px 10px;border:1px solid #334155;color:#94a3b8;font-weight:bold;width:38%;">Started at</td>
+                <td style="padding:8px 10px;border:1px solid #334155;color:#e2e8f0;">${startMapLink || '<em style="color:#64748b;">Not recorded</em>'}</td>
+            </tr>
+            <tr style="background:#0f172a;">
+                <td style="padding:8px 10px;border:1px solid #334155;color:#94a3b8;font-weight:bold;">Most recent location</td>
+                <td style="padding:8px 10px;border:1px solid #334155;color:#e2e8f0;">${currentMapLink || '<em style="color:#64748b;">Not yet reported</em>'}</td>
+            </tr>
+            <tr style="background:#1e293b;">
+                <td style="padding:8px 10px;border:1px solid #334155;color:#94a3b8;font-weight:bold;">Intended destination</td>
+                <td style="padding:8px 10px;border:1px solid #334155;color:#e2e8f0;">${destMapLink}</td>
+            </tr>
+            ${_threePointMapUrl ? `<tr style="background:#0f172a;"><td colspan="2" style="padding:8px 10px;border:1px solid #334155;text-align:center;"><a href="${_threePointMapUrl}" style="color:#38bdf8;font-weight:bold;">📍 View all three locations on Google Maps →</a></td></tr>` : ''}
+        </table>` : '';
 
     const sentAt        = Utilities.formatDate(
                               new Date(), CONFIG.TIMEZONE, "dd/MM/yyyy, HH:mm:ss");
@@ -1126,7 +1169,7 @@ function triggerAlerts(p, type) {
         ntfyPriority  = 'urgent';
         ntfyTags      = 'rotating_light,red_circle';
         whatHappened  = isTravel
-            ? `This worker was <strong>travelling to ${locationName}${travelDestAddr}</strong> and <strong>has not arrived at the scheduled time</strong>. They had activated Critical Timing Mode before departing — this bypasses the normal grace period and triggers an immediate alert. <strong>Please treat this as a genuine emergency.</strong>${travelFromLine ? ` ${travelFromLine}` : ''}`
+            ? `This worker was <strong>travelling to ${locationName}${travelDestAddr}</strong> and <strong>has not arrived at the scheduled time</strong>. They had activated Critical Timing Mode before departing — this bypasses the normal grace period and triggers an immediate alert. <strong>Please treat this as a genuine emergency.</strong>`
             : `This worker <strong>did not check out at the scheduled time and had activated Critical Timing Mode</strong> before their visit. Critical Timing Mode is used when a worker has specific concern about the importance of timely contact — it bypasses the normal grace period and triggers an immediate alert. <strong>Please treat this as a genuine emergency.</strong>`;
         actionSteps   = isTravel
             ? `<li>Try to <strong>call ${workerFirst}</strong> on ${workerPhone} immediately</li>
@@ -1145,7 +1188,7 @@ function triggerAlerts(p, type) {
         ntfyPriority  = 'urgent';
         ntfyTags      = 'rotating_light,red_circle';
         whatHappened  = isTravel
-            ? `This worker was <strong>travelling to ${locationName}${travelDestAddr}</strong> and is <strong>significantly overdue</strong>. We have not been able to confirm their safety.${travelFromLine ? ` ${travelFromLine}` : ''}`
+            ? `This worker was <strong>travelling to ${locationName}${travelDestAddr}</strong> and is <strong>significantly overdue</strong>. We have not been able to confirm their safety.`
             : `This worker is <strong>significantly overdue</strong> and we have not been able to confirm their safety. Their grace period has expired.`;
         actionSteps   = isTravel
             ? `<li>Try to <strong>call ${workerFirst}</strong> on ${workerPhone} immediately</li>
@@ -1167,8 +1210,8 @@ function triggerAlerts(p, type) {
         ntfyTags      = isCriticalTiming ? 'rotating_light,red_circle' : 'warning,yellow_circle';
         whatHappened  = isTravel
             ? (isCriticalTiming
-                ? `This worker was <strong>travelling to ${locationName}${travelDestAddr}</strong> and <strong>has not arrived as scheduled</strong>. They had activated Critical Timing Mode before departing. <strong>Please act on this promptly.</strong>${travelFromLine ? ` ${travelFromLine}` : ''}`
-                : `This worker was <strong>travelling to ${locationName}${travelDestAddr}</strong> and <strong>has not arrived as scheduled</strong>. They may be delayed, unreachable, or in difficulty.${travelFromLine ? ` ${travelFromLine}` : ''}`)
+                ? `This worker was <strong>travelling to ${locationName}${travelDestAddr}</strong> and <strong>has not arrived as scheduled</strong>. They had activated Critical Timing Mode before departing. <strong>Please act on this promptly.</strong>`
+                : `This worker was <strong>travelling to ${locationName}${travelDestAddr}</strong> and <strong>has not arrived as scheduled</strong>. They may be delayed, unreachable, or in difficulty.`)
             : (isCriticalTiming
                 ? `This worker <strong>has not checked out as scheduled and had activated Critical Timing Mode</strong> before their visit. Critical Timing Mode is used when a worker has specific concern about the importance of timely contact. <strong>Please act on this promptly.</strong>`
                 : `This worker <strong>has not checked out as scheduled</strong>. They may be delayed, unreachable, or in difficulty.`);
@@ -1285,8 +1328,8 @@ function triggerAlerts(p, type) {
           <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Phone:</td><td style="padding:4px 0">${workerPhone}</td></tr>
         </table>
 
-        <h2 style="font-size:14px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:8px;margin:24px 0 12px">Last Known Location</h2>
-        <table cellpadding="0" cellspacing="0">${locationBlock}</table>
+        <h2 style="font-size:14px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:8px;margin:24px 0 12px">${isTravel ? 'Travel Locations' : 'Last Known Location'}</h2>
+        ${isTravel ? travelLocationBlock : `<table cellpadding="0" cellspacing="0">${locationBlock}</table>`}
 
         <h2 style="font-size:14px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:8px;margin:24px 0 12px">What You Should Do Now</h2>
         <ol style="margin:0 0 0 20px;padding:0;line-height:1.8">${actionSteps}</ol>
@@ -3006,6 +3049,7 @@ function triggerEscalation(sheet, entry, newStatus, isDual, rowNum) {
         'Location Name':             entry[12],
         'Location Address':          entry[13],
         'Last Known GPS':            entry[14],
+        'GPS Timestamp':             entry[15] || '',
         'Battery Level':             entry[16]
     };
     triggerAlerts(payload, isDual ? "CRITICAL ESCALATION" : "OVERDUE WARNING");
