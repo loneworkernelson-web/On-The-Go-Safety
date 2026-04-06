@@ -2908,9 +2908,6 @@ function _injectTripEndpointFields(container) {
   };
 
   // ── Destination (reverse-geocoded from actual trip end GPS) ────────────────
-  // Shows 'Locating…' while Nominatim resolves the current GPS position.
-  // On success: fills with resolved address.
-  // On failure/timeout: fills red 'ENTER DESTINATION!' for worker to edit.
   const dest = makeField('Destination', 'Trip Destination', '', 'Locating…');
 
   (async () => {
@@ -2941,7 +2938,6 @@ function _injectTripEndpointFields(container) {
       dest.input.value = 'ENTER DESTINATION!';
       dest.input.placeholder = '';
       dest.input.style.color = 'red';
-      // Clear red styling as soon as the worker starts editing
       dest.input.addEventListener('input', () => { dest.input.style.color = ''; }, { once: true });
     }
   })();
@@ -2950,7 +2946,6 @@ function _injectTripEndpointFields(container) {
   const startAddr = state.activeVisit.startAddress;
   const start = makeField('Start Point', 'Trip Start Point', startAddr || '', startAddr === null ? 'Locating…' : '');
 
-  // If start geocode is still in flight, poll until it resolves (500ms interval, 30s timeout)
   if (startAddr === null) {
     let attempts = 0;
     const poll = setInterval(() => {
@@ -2960,46 +2955,67 @@ function _injectTripEndpointFields(container) {
         start.input.value = resolved;
         start.input.placeholder = '';
         clearInterval(poll);
-      } else if (attempts >= 60) { // 30s timeout — give up gracefully
+      } else if (attempts >= 60) {
         start.input.placeholder = 'Address unavailable';
         clearInterval(poll);
       }
     }, 500);
   }
 
-  // ── Distance (km) — always injected so it always lands in the JSON payload ─
-  // calculatedDist is set by getDistance() at depart time before loadFormAndShow()
-  // is called. Pre-fill and style green if available; leave blank for manual entry
-  // if GPS was unavailable. Field is editable so the worker can correct it.
-  const distVal   = (typeof calculatedDist !== 'undefined' && calculatedDist && calculatedDist.km)
-                    ? String(calculatedDist.km) : '';
-  const distField = makeField('Distance (km)', 'Distance (km)', distVal, 'Enter distance');
-  if (distVal) {
-    distField.input.style.border = '2px solid #4ade80';
-    distField.input.classList.add('bg-green-900/20');
+  // ── Distance (km) ──────────────────────────────────────────────────────────
+  // If the template already rendered a distance field, pre-fill it in place
+  // rather than injecting a duplicate. If no such field exists, inject one.
+  // Match on data-key containing distance, km, or odo (case-insensitive).
+  const distVal = (typeof calculatedDist !== 'undefined' && calculatedDist && calculatedDist.km)
+                  ? String(calculatedDist.km) : '';
+
+  const _existingDistInput = Array.from(
+    container.querySelectorAll('input[data-key], textarea[data-key]')
+  ).find(el => /distance|km|odo/i.test(el.getAttribute('data-key') || ''));
+
+  let distWrapper;
+  if (_existingDistInput) {
+    // Pre-fill the template field in place
+    if (distVal) {
+      _existingDistInput.value = distVal;
+      _existingDistInput.style.border = '2px solid #4ade80';
+      _existingDistInput.classList.add('bg-green-900/20');
+      _existingDistInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    distWrapper = _existingDistInput.closest('div') || _existingDistInput.parentNode;
+  } else {
+    // No template distance field — inject one
+    const distField = makeField('Distance (km)', 'Distance (km)', distVal, 'Enter distance');
+    if (distVal) {
+      distField.input.style.border = '2px solid #4ade80';
+      distField.input.classList.add('bg-green-900/20');
+    }
+    // Appended after Start/Dest are prepended, so it sits third from top
+    container.insertBefore(distField.wrapper, container.firstChild);
+    distWrapper = distField.wrapper;
   }
 
-  // Crow-flies advisory — attach below distance field when road routing unavailable
+  // Crow-flies advisory — attach below whichever distance element we used
   if (typeof calculatedDist !== 'undefined' && calculatedDist && calculatedDist.type &&
       calculatedDist.type.includes('crow')) {
     const crowNote = document.createElement('div');
     crowNote.className = 'p-3 bg-amber-900/20 border-l-4 border-amber-500 rounded-r-xl text-xs text-amber-100 font-medium italic leading-relaxed mt-2';
     crowNote.setAttribute('role', 'note');
     crowNote.textContent = '⚠️ Distance is a straight-line estimate (as the crow flies) — road distance could not be calculated. Check this figure and correct if needed.';
-    distField.wrapper.appendChild(crowNote);
+    distWrapper.appendChild(crowNote);
   }
 
-  // GPS watch failure warning — attach below distance field
+  // GPS watch failure warning — attach below distance element
   if (typeof _gpsWatchPositionFailed !== 'undefined' && _gpsWatchPositionFailed) {
     const gpsNote = document.createElement('div');
     gpsNote.className = 'p-3 bg-amber-900/20 border-l-4 border-amber-500 rounded-r-xl text-xs text-amber-100 font-medium italic leading-relaxed mt-2';
     gpsNote.setAttribute('role', 'note');
     gpsNote.textContent = '⚠️ A GPS tracking issue occurred during this trip — distance may be inaccurate. Correct the value above if needed.';
-    distField.wrapper.appendChild(gpsNote);
+    distWrapper.appendChild(gpsNote);
   }
 
-  // Prepend in order: Start Point (top), Destination, Distance (km)
-  container.insertBefore(distField.wrapper, container.firstChild);
+  // Prepend Start Point and Destination at top (Distance is either already in
+  // template position or was prepended above — either way it sits below these two)
   container.insertBefore(dest.wrapper, container.firstChild);
   container.insertBefore(start.wrapper, container.firstChild);
 }
