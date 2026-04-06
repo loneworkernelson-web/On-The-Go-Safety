@@ -2950,10 +2950,6 @@ function _injectTripEndpointFields(container) {
   const startAddr = state.activeVisit.startAddress;
   const start = makeField('Start Point', 'Trip Start Point', startAddr || '', startAddr === null ? 'Locating…' : '');
 
-  // Prepend: Start Point first (top), then Destination below it
-  container.insertBefore(dest.wrapper, container.firstChild);
-  container.insertBefore(start.wrapper, container.firstChild);
-
   // If start geocode is still in flight, poll until it resolves (500ms interval, 30s timeout)
   if (startAddr === null) {
     let attempts = 0;
@@ -2970,6 +2966,42 @@ function _injectTripEndpointFields(container) {
       }
     }, 500);
   }
+
+  // ── Distance (km) — always injected so it always lands in the JSON payload ─
+  // calculatedDist is set by getDistance() at depart time before loadFormAndShow()
+  // is called. Pre-fill and style green if available; leave blank for manual entry
+  // if GPS was unavailable. Field is editable so the worker can correct it.
+  const distVal   = (typeof calculatedDist !== 'undefined' && calculatedDist && calculatedDist.km)
+                    ? String(calculatedDist.km) : '';
+  const distField = makeField('Distance (km)', 'Distance (km)', distVal, 'Enter distance');
+  if (distVal) {
+    distField.input.style.border = '2px solid #4ade80';
+    distField.input.classList.add('bg-green-900/20');
+  }
+
+  // Crow-flies advisory — attach below distance field when road routing unavailable
+  if (typeof calculatedDist !== 'undefined' && calculatedDist && calculatedDist.type &&
+      calculatedDist.type.includes('crow')) {
+    const crowNote = document.createElement('div');
+    crowNote.className = 'p-3 bg-amber-900/20 border-l-4 border-amber-500 rounded-r-xl text-xs text-amber-100 font-medium italic leading-relaxed mt-2';
+    crowNote.setAttribute('role', 'note');
+    crowNote.textContent = '⚠️ Distance is a straight-line estimate (as the crow flies) — road distance could not be calculated. Check this figure and correct if needed.';
+    distField.wrapper.appendChild(crowNote);
+  }
+
+  // GPS watch failure warning — attach below distance field
+  if (typeof _gpsWatchPositionFailed !== 'undefined' && _gpsWatchPositionFailed) {
+    const gpsNote = document.createElement('div');
+    gpsNote.className = 'p-3 bg-amber-900/20 border-l-4 border-amber-500 rounded-r-xl text-xs text-amber-100 font-medium italic leading-relaxed mt-2';
+    gpsNote.setAttribute('role', 'note');
+    gpsNote.textContent = '⚠️ A GPS tracking issue occurred during this trip — distance may be inaccurate. Correct the value above if needed.';
+    distField.wrapper.appendChild(gpsNote);
+  }
+
+  // Prepend in order: Start Point (top), Destination, Distance (km)
+  container.insertBefore(distField.wrapper, container.firstChild);
+  container.insertBefore(dest.wrapper, container.firstChild);
+  container.insertBefore(start.wrapper, container.firstChild);
 }
 
 function buildReportForm(templateName, fieldArea) {
@@ -3292,50 +3324,6 @@ function loadFormAndShow(templateName, context = null) {
  });
  }, 300); 
  
- /**
- * ROCKET-LOADER SAFE: Distance Pre-fill
- */
- if (calculatedDist) {
- const allInputs = document.querySelectorAll('input[data-key], textarea[data-key]');
- const distInput = Array.from(allInputs).find(input => {
- const key = (input.getAttribute('data-key') || '').toLowerCase();
- return key.includes('distance') || key.includes('km') || key.includes('odo');
- });
-
- if (distInput) {
- distInput.value = calculatedDist.km;
- distInput.style.border = '2px solid #4ade80';
- distInput.classList.add('bg-green-900/20');
- distInput.dispatchEvent(new Event('input', { bubbles: true })); 
- }
-
- // Crow-flies advisory — shown when road routing was unavailable.
- // Uses .includes() to handle the '+speed-floor' suffix that withFloor() may append.
- if (calculatedDist.type.includes('crow')) {
- const crowNote = document.createElement('div');
- crowNote.className = 'p-4 bg-amber-900/20 border-l-4 border-amber-500 rounded-r-xl text-xs text-amber-100 font-medium italic leading-relaxed mt-2';
- crowNote.setAttribute('role', 'note');
- crowNote.textContent = '⚠️ Distance is a straight-line estimate (as the crow flies) — road distance could not be calculated. Check this figure and add a note if needed.';
- const fc = document.getElementById('reportFields');
- if (fc) fc.appendChild(crowNote);
- }
-
- // GPS watch failure warning — injected into the first editable text/textarea
- // field in the travel report. The worker may use this field for a trip purpose
- // note; the pre-filled warning prompts them to verify the distance.
- if (_gpsWatchPositionFailed) {
-   const allInputs = document.querySelectorAll('#reportFields input[data-key], #reportFields textarea[data-key]');
-   const firstText = Array.from(allInputs).find(el =>
-     el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && el.type === 'text')
-   );
-   if (firstText && !firstText.value) {
-     firstText.value = 'Note: A GPS tracking issue occurred during this trip — distance may be inaccurate. Overwrite distance if incorrect.';
-     firstText.style.border = '2px solid #f59e0b';
-     firstText.dispatchEvent(new Event('input', { bubbles: true }));
-   }
- }
- }
-
  /**
  * 2. REFINED AUTO-POPULATION LOGIC
  */
