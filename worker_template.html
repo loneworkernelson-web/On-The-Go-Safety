@@ -2088,14 +2088,25 @@ function submitReport() {
  }
  });
  
- // 3. BUILD PAYLOAD
+ // 3. INJECT TRAVEL DISTANCE DIAGNOSTICS
+ // Only added for travel reports (calculatedDist is null for standard visits).
+ // These fields land in the Visit Report Data JSON for post-trip analysis.
+ // Once distance calculation is proven reliable, only _distMethod need be retained.
+ if (calculatedDist !== null) {
+   d.jsonPayload['_distMethod']       = calculatedDist ? calculatedDist.type : 'none';
+   d.jsonPayload['_distBreadcrumbs']  = gpsTrail.length;
+   d.jsonPayload['_distSpeedAccumKm'] = (_speedAccumM / 1000).toFixed(3);
+   d.jsonPayload['_distWatchFailed']  = _gpsWatchPositionFailed ? 'yes' : 'no';
+ }
+
+ // 4. BUILD PAYLOAD
  const fd = {
  ...d.custom,
  "Visit Report Data": JSON.stringify(d.jsonPayload),
  "Template Name": currentActiveTemplate
  };
  
- // 4. EXTRACT DISTANCE (For travel logs)
+ // 5. EXTRACT DISTANCE (For travel logs)
  for (let key in d.custom) {
  if (/km|odo|dist/i.test(key)) {
  const val = parseFloat(d.custom[key]);
@@ -2103,11 +2114,11 @@ function submitReport() {
  }
  }
  
- // 5. ATTACH MEDIA: Explicitly adds photos and signature to the flat payload
+ // 6. ATTACH MEDIA: Explicitly adds photos and signature to the flat payload
  Object.entries(photoMap).forEach(([k, v]) => { fd[k] = v; });
  if (d.sig) fd["Signature"] = d.sig; 
  
- // 6. GOLDEN ROUTING: Determine if this submission closes the session
+ // 7. GOLDEN ROUTING: Determine if this submission closes the session
  let alarmStatus;
  let backendAction = 'logVisit';
 
