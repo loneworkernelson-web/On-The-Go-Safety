@@ -907,6 +907,25 @@ function _cleanPhone(num) {
 }
 
 /**
+ * Formats a phone number for human-readable display in emails.
+ * Applies the same country-code logic as _cleanPhone(), then adds spacing.
+ * Examples: "226854709" → "+64 22 685 4709", "0211234567" → "+64 21 123 4567"
+ */
+function _formatPhoneDisplay(num) {
+    if (!num) return 'Not provided';
+    const cleaned = _cleanPhone(num.toString());
+    if (!cleaned) return num.toString();
+    // +64 XX XXX XXXX  (NZ 8-digit local e.g. mobiles)
+    const m = cleaned.match(/^(\+\d{2})(\d{2})(\d{3})(\d{4})$/);
+    if (m) return `${m[1]} ${m[2]} ${m[3]} ${m[4]}`;
+    // +64 X XXX XXXX  (NZ 7-digit local)
+    const m2 = cleaned.match(/^(\+\d{2})(\d{1})(\d{3})(\d{4})$/);
+    if (m2) return `${m2[1]} ${m2[2]} ${m2[3]} ${m2[4]}`;
+    // Fallback — add a space after the country code at minimum
+    return cleaned.replace(/^(\+\d{2})(\d+)$/, '$1 $2');
+}
+
+/**
  * Logs Textbelt SMS send results.
  * Always writes to Logger.log (every send, success or failure).
  * Appends a row to the 'SMS Log' sheet only on failure, so failures persist
@@ -1070,11 +1089,23 @@ function triggerAlerts(p, type) {
     const status        = (p['Alarm Status'] || '').toUpperCase();
     const workerName    = p['Worker Name']    || 'The worker';
     const workerFirst   = workerName.split(' ')[0];
-    const workerPhone   = p['Worker Phone Number'] || 'Not provided';
+    const workerPhone    = _formatPhoneDisplay(p['Worker Phone Number']);
+    // Clean tel: number (no spaces) for href — used in HTML email links only.
+    // Plain text uses workerPhone; ntfy/SMS also use workerPhone (not the link).
+    const workerPhoneTel  = _cleanPhone((p['Worker Phone Number'] || '').toString()) || '';
+    const workerPhoneLink = workerPhoneTel
+        ? `<a href="tel:${workerPhoneTel}" style="color:inherit;font-weight:bold;text-decoration:none;">${workerPhone}</a>`
+        : `<strong>${workerPhone}</strong>`;
     const locationName  = p['Location Name']  || 'Unknown location';
     const locationAddr  = p['Location Address'] || '';
-    const battery       = p['Battery Level']  || 'Unknown';
-    const notes         = p['Notes']          || '';
+    // Format battery: stored as decimal (0.79) — display as percentage (79%)
+    const _rawBattery   = p['Battery Level'];
+    const _batteryNum   = parseFloat(_rawBattery);
+    const battery       = isNaN(_batteryNum) ? (_rawBattery || 'Unknown')
+                        : Math.round(_batteryNum <= 1 ? _batteryNum * 100 : _batteryNum) + '%';
+    // Suppress internal alert strings that may have leaked into the Notes field
+    const _rawNotes     = p['Notes'] || '';
+    const notes         = /^Alert:|EMERGENCY|OVERDUE|ALARM|BREACH/i.test(_rawNotes) ? '' : _rawNotes;
     const visitNotes    = p['Visit Notes']    || '';
     // Detect critical timing mode from either status string or original visit Notes tag.
     // The [CRITICAL_TIMING] tag is injected by the worker PWA at visit start and preserved
@@ -1097,27 +1128,44 @@ function triggerAlerts(p, type) {
     const startGPSClean   = startGPS   ? _gpsUrl(startGPS)   : null;
     const currentGPSClean = currentGPS ? _gpsUrl(currentGPS) : null;
 
-    // Individual map links
+    // Individual map links — use friendly labels rather than raw coordinates.
     const startMapLink   = startGPSClean
-        ? `<a href="https://www.google.com/maps?q=${startGPSClean}" style="color:#93c5fd;">${startGPS} (map)</a>`
+        ? `<a href="https://www.google.com/maps?q=${startGPSClean}" style="color:#93c5fd;">Departure point (map)</a>`
         : null;
     const currentMapLink = currentGPSClean && currentGPSClean !== '0,0'
-        ? `<a href="https://www.google.com/maps?q=${currentGPSClean}" style="color:#93c5fd;">${currentGPS}${currentGPSTs ? ` at ${currentGPSTs}` : ''} (map)</a>`
+        ? `<a href="https://www.google.com/maps?q=${currentGPSClean}" style="color:#93c5fd;">Last known position${currentGPSTs ? `, ${currentGPSTs}` : ''} (map)</a>`
         : null;
     const destMapLink    = locationAddr
         ? `<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(locationAddr)}" style="color:#93c5fd;">${locationName}${travelDestAddr} (map)</a>`
         : `<strong>${locationName}</strong>`;
 
-    // Combined three-point Google Maps directions URL: start → current → destination.
-    // Format: maps/dir/lat,lng/lat,lng/lat,lng — gives responders a route overview.
+    // Combined multi-point Google Maps URL using the ?api=1 format, which reliably
+    // renders labelled pins (A = departure, B = last known, C = destination).
+    // Falls back gracefully when points are missing.
     const _threePointMapUrl = (() => {
-        const pts = [startGPSClean, currentGPSClean, locationAddr ? encodeURIComponent(locationAddr) : null].filter(Boolean);
-        return pts.length >= 2
-            ? `https://www.google.com/maps/dir/${pts.join('/')}`
-            : null;
+        if (!startGPSClean) return null;
+        const waypoint = (currentGPSClean && currentGPSClean !== '0,0') ? currentGPSClean : null;
+        const dest     = locationAddr ? encodeURIComponent(locationAddr)
+                       : (waypoint ? waypoint : null);
+        if (!dest) return null;
+        let url = `https://www.google.com/maps/dir/?api=1&origin=${startGPSClean}&destination=${dest}`;
+        // Only add waypoint if it's distinct from both origin and destination
+        if (waypoint && waypoint !== startGPSClean && waypoint !== dest) {
+            url += `&waypoints=${waypoint}`;
+        }
+        return url;
+    })();
+    // Label for the map button — reflects how many distinct points are included.
+    const _mapBtnLabel = (() => {
+        const hasCurrent = currentGPSClean && currentGPSClean !== '0,0';
+        const hasDest    = !!(locationAddr);
+        if (hasCurrent && hasDest) return '📍 View all three locations on Google Maps →';
+        if (hasCurrent || hasDest) return '📍 View route on Google Maps →';
+        return '📍 View on Google Maps →';
     })();
 
     // Three-location HTML block — inserted into travel overdue message bodies.
+    // The combined map link uses A/B/C labelled pins: A = departure, B = last known, C = destination.
     const travelLocationBlock = isTravel ? `
         <table style="width:100%;border-collapse:collapse;margin:12px 0;font-size:13px;">
             <tr style="background:#1e293b;">
@@ -1132,7 +1180,7 @@ function triggerAlerts(p, type) {
                 <td style="padding:8px 10px;border:1px solid #334155;color:#94a3b8;font-weight:bold;">Intended destination</td>
                 <td style="padding:8px 10px;border:1px solid #334155;color:#e2e8f0;">${destMapLink}</td>
             </tr>
-            ${_threePointMapUrl ? `<tr style="background:#0f172a;"><td colspan="2" style="padding:8px 10px;border:1px solid #334155;text-align:center;"><a href="${_threePointMapUrl}" style="color:#38bdf8;font-weight:bold;">📍 View all three locations on Google Maps →</a></td></tr>` : ''}
+            ${_threePointMapUrl ? `<tr style="background:#0f172a;"><td colspan="2" style="padding:8px 10px;border:1px solid #334155;text-align:center;"><a href="${_threePointMapUrl}" style="color:#38bdf8;font-weight:bold;">${_mapBtnLabel}</a><div style="font-size:11px;color:#64748b;margin-top:4px;">A = Departure &nbsp;·&nbsp; B = Last known &nbsp;·&nbsp; C = Destination</div></td></tr>` : ''}
         </table>` : '';
 
     const sentAt        = Utilities.formatDate(
@@ -1154,7 +1202,7 @@ function triggerAlerts(p, type) {
         ntfyTags      = 'rotating_light,purple_circle';
         whatHappened  = `This worker has activated a <strong>DURESS signal</strong>. This may mean they are under threat and unable to speak freely. <strong>Please treat this as a real emergency.</strong>`;
         actionSteps   = `
-            <li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhone}</li>
+            <li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhoneLink}</li>
             <li>If there is no answer within a few minutes, contact someone at the site and ask them to check on the worker's safety</li>
             <li>If you believe they are in danger, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>
             <li>Once contact is made, ask them to resolve the alert using their safety app or call their Safety Manager</li>`;
@@ -1167,7 +1215,7 @@ function triggerAlerts(p, type) {
         ntfyTags      = 'rotating_light,red_circle';
         whatHappened  = `This worker has <strong>manually triggered a SOS panic alarm</strong>. They may be in immediate danger.`;
         actionSteps   = `
-            <li>Try to <strong>call ${workerFirst}</strong> on ${workerPhone} immediately</li>
+            <li>Try to <strong>call ${workerFirst}</strong> on ${workerPhoneLink} immediately</li>
             <li>If there is no answer, contact someone at the site to check on the worker</li>
             <li>If you believe they are in danger, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>
             <li>Once contact is made, ask them to clear the alarm using their app PIN</li>`;
@@ -1182,10 +1230,10 @@ function triggerAlerts(p, type) {
             ? `This worker was <strong>travelling to ${locationName}${travelDestAddr}</strong> and <strong>has not arrived at the scheduled time</strong>. They had activated Critical Timing Mode before departing — this bypasses the normal grace period and triggers an immediate alert. <strong>Please treat this as a genuine emergency.</strong>`
             : `This worker <strong>did not check out at the scheduled time and had activated Critical Timing Mode</strong> before their visit. Critical Timing Mode is used when a worker has specific concern about the importance of timely contact — it bypasses the normal grace period and triggers an immediate alert. <strong>Please treat this as a genuine emergency.</strong>`;
         actionSteps   = isTravel
-            ? `<li>Try to <strong>call ${workerFirst}</strong> on ${workerPhone} immediately</li>
+            ? `<li>Try to <strong>call ${workerFirst}</strong> on ${workerPhoneLink} immediately</li>
             <li>If there is no answer, check whether they have arrived at <strong>${locationName}</strong> — contact someone there if possible</li>
             <li>If unreachable, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong> and provide the departure point and intended destination above</li>`
-            : `<li>Try to <strong>call ${workerFirst}</strong> on ${workerPhone} immediately</li>
+            : `<li>Try to <strong>call ${workerFirst}</strong> on ${workerPhoneLink} immediately</li>
             <li>If there is no answer, contact someone at the site to check on the worker's welfare</li>
             <li>If unreachable, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong> and provide the location above</li>`;
         noteToContact = isTravel
@@ -1201,10 +1249,10 @@ function triggerAlerts(p, type) {
             ? `This worker was <strong>travelling to ${locationName}${travelDestAddr}</strong> and is <strong>significantly overdue</strong>. We have not been able to confirm their safety.`
             : `This worker is <strong>significantly overdue</strong> and we have not been able to confirm their safety. Their grace period has expired.`;
         actionSteps   = isTravel
-            ? `<li>Try to <strong>call ${workerFirst}</strong> on ${workerPhone} immediately</li>
+            ? `<li>Try to <strong>call ${workerFirst}</strong> on ${workerPhoneLink} immediately</li>
             <li>Check whether they have arrived at <strong>${locationName}</strong> — contact someone there if possible</li>
             <li>If unreachable after a reasonable effort, <strong>consider contacting emergency services (${EMERGENCY_NUMBER})</strong> and providing the departure point and intended destination above</li>`
-            : `<li>Try to <strong>call ${workerFirst}</strong> on ${workerPhone} immediately</li>
+            : `<li>Try to <strong>call ${workerFirst}</strong> on ${workerPhoneLink} immediately</li>
             <li>Contact someone at the site to check on the worker's welfare</li>
             <li>If unreachable after a reasonable effort, <strong>consider contacting emergency services (${EMERGENCY_NUMBER})</strong> and providing the location above</li>`;
         noteToContact = isTravel
@@ -1226,10 +1274,10 @@ function triggerAlerts(p, type) {
                 ? `This worker <strong>has not checked out as scheduled and had activated Critical Timing Mode</strong> before their visit. Critical Timing Mode is used when a worker has specific concern about the importance of timely contact. <strong>Please act on this promptly.</strong>`
                 : `This worker <strong>has not checked out as scheduled</strong>. They may be delayed, unreachable, or in difficulty.`);
         actionSteps   = isTravel
-            ? `<li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhone}</li>
+            ? `<li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhoneLink}</li>
             <li>Check whether they have arrived at <strong>${locationName}</strong> — contact someone there if possible</li>
             <li>If they remain unreachable and you have concerns, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>`
-            : `<li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhone}</li>
+            : `<li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhoneLink}</li>
             <li>If you cannot reach them, contact someone at the site and ask them to check on the worker's safety</li>
             <li>If they remain unreachable and you have concerns, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>`;
         noteToContact = isTravel
@@ -1249,13 +1297,13 @@ function triggerAlerts(p, type) {
         actionSteps   = `
             <li>No action required — this confirms your emergency contact details are correct and alerts are reaching your inbox</li>
             <li>Please check that this email did not land in your spam folder</li>
-            <li>If you did <em>not</em> expect this test, contact ${workerName} on ${workerPhone} to confirm it was sent intentionally</li>`;
+            <li>If you did <em>not</em> expect this test, contact ${workerName} on ${workerPhoneLink} to confirm it was sent intentionally</li>`;
         noteToContact = '';
     }
     else {
         // Fallback for any other status (CRITICAL TIMING, LOW BATTERY, etc.)
         whatHappened  = `A safety event has been recorded for this worker. Status: <strong>${status}</strong>.`;
-        actionSteps   = `<li>Try to contact <strong>${workerFirst}</strong> on ${workerPhone}</li>
+        actionSteps   = `<li>Try to contact <strong>${workerFirst}</strong> on ${workerPhoneLink}</li>
                          <li>If you have concerns about their safety, contact emergency services (${EMERGENCY_NUMBER})</li>`;
         noteToContact = '';
     }
@@ -1335,7 +1383,7 @@ function triggerAlerts(p, type) {
         <h2 style="font-size:14px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:8px;margin:24px 0 12px">Worker Details</h2>
         <table cellpadding="0" cellspacing="0">
           <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Name:</td><td style="padding:4px 0"><strong>${workerName}</strong></td></tr>
-          <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Phone:</td><td style="padding:4px 0">${workerPhone}</td></tr>
+          <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Phone:</td><td style="padding:4px 0">${workerPhoneLink}</td></tr>
         </table>
 
         <h2 style="font-size:14px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:8px;margin:24px 0 12px">${isTravel ? 'Travel Locations' : 'Last Known Location'}</h2>
@@ -3106,8 +3154,12 @@ function handleSafetyResolution(p) {
     // 2. Draft the Resolution Messages
     const subject    = `✅ ALL CLEAR — ${p['Worker Name']} is safe`;
     const workerName = p['Worker Name'] || 'The worker';
-    const workerPhone = p['Worker Phone Number'] || 'Not provided';
+    const workerPhone = _formatPhoneDisplay(p['Worker Phone Number']);
     const resolvedAt  = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "dd/MM/yyyy, HH:mm:ss");
+    const workerPhoneTel2  = _cleanPhone((p['Worker Phone Number'] || '').toString()) || '';
+    const workerPhoneLink2 = workerPhoneTel2
+        ? `<a href="tel:${workerPhoneTel2}" style="color:inherit;font-weight:bold;text-decoration:none;">${workerPhone}</a>`
+        : `<strong>${workerPhone}</strong>`;
 
     const buildAllClearHtml = (recipientName) => {
         const salutation = recipientName ? `Dear ${recipientName.split(' ')[0]},` : 'Dear Emergency Contact,';
@@ -3126,11 +3178,11 @@ function handleSafetyResolution(p) {
         <p style="margin:0 0 20px"><strong>${workerName}</strong> has confirmed they are safe. The previous safety alert is now resolved. <strong>No further action is required.</strong></p>
         <table cellpadding="0" cellspacing="0" style="font-size:13px;color:#374151">
           <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Worker:</td><td>${workerName}</td></tr>
-          <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Phone:</td><td>${workerPhone}</td></tr>
+          <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Phone:</td><td>${workerPhoneLink2}</td></tr>
           <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Location:</td><td>${p['Location Name'] || 'Unknown'}</td></tr>
           <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Cleared at:</td><td>${resolvedAt}</td></tr>
         </table>
-        <p style="margin:20px 0 0;font-size:13px;color:#6b7280">If you have any concerns, please contact the worker directly on ${workerPhone}.</p>
+        <p style="margin:20px 0 0;font-size:13px;color:#6b7280">If you have any concerns, please contact the worker directly on ${workerPhoneLink2}.</p>
       </td></tr>
     </table>
   </td></tr>
