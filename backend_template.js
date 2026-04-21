@@ -901,7 +901,13 @@ function _cleanPhone(num) {
     if (n.startsWith('0')) { 
         return (CONFIG.COUNTRY_CODE || "+64") + n.substring(1); 
     }
-    
+
+    // Handle bare local numbers where leading '0' was stripped by Sheets number formatting
+    // (e.g., 226854709 stored as a number → treat as local, prepend country code)
+    if (n.length <= 9) {
+        return (CONFIG.COUNTRY_CODE || "+64") + n;
+    }
+
     // Ensure the '+' prefix is present for Textbelt
     return n.startsWith('+') ? n : "+" + n;
 }
