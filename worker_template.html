@@ -5272,7 +5272,14 @@ async function startVisit(isSkipCheck = false) {
  }
  // For regular site visits lastGPS stays as whatever it was from a prior session;
  // reset it so any later alarm GPS is clearly fresh rather than stale.
- if (!isTravelMode && locId !== 'travel') lastGPS = null;
+ if (!isTravelMode && locId !== 'travel') {
+   lastGPS = null;
+   // Start background GPS monitoring immediately so lastGPS is populated well
+   // before any overdue pulse fires — even in critical timing mode where overdue
+   // triggers instantly. The adaptive poller backs off to 10 min when stationary,
+   // so battery cost for office/site visits is negligible.
+   if (typeof startGPSMonitoring === 'function') startGPSMonitoring();
+ }
 
  const startTime = Date.now();
  const durationSec = durationMins * 60;
@@ -9092,10 +9099,13 @@ async function acknowledgeNotice() {
  }
 
  // 3. LOG TO BACKEND
+ // Alarm Status is deliberately NOT included — a broadcast acknowledgement is
+ // not a visit lifecycle event and must never overwrite col K (Alarm Status) in
+ // the Visits sheet. The backend logs the ack to the Notices sheet and appends
+ // an audit note to the current visit row Notes only.
  const payload = buildPayload({
  "action": "acknowledgeNotice",
  "noticeId": notice.id,
- "Alarm Status": "NOTICE_ACK",
  "Notes": `Confirmed: ${notice.title}`
  });
 
