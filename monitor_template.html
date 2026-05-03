@@ -796,7 +796,7 @@ window.onload = () => {
  * (for rendering) and shorthand aliases (for system logic).
  *
  * Journey boundary detection: a new journey starts on ARRIVED or the first
- * TRAVELLING row after any DEPARTED/COMPLETED/NOTICE_ACK row (or after the
+ * TRAVELLING row after any DEPARTED/COMPLETED row (or after the
  * history is empty). When a boundary is found the GPS trail is reset, so the
  * map never shows waypoints from previous journeys.
  */
@@ -1020,8 +1020,8 @@ function renderGrid() {
     workerData.forEach(w => {
         const s       = (w.Status || "").toUpperCase();
         // USER_SAFE means the alarm was resolved but the visit is still ongoing — treat as active.
-        // Only DEPARTED / COMPLETED / NOTICE_ACK indicate the worker has truly left the site.
-        const isSafe  = ['DEPARTED', 'COMPLETED', 'NOTICE_ACK'].includes(s);
+        // Only DEPARTED / COMPLETED indicate the worker has truly left the site.
+        const isSafe  = ['DEPARTED', 'COMPLETED'].includes(s);
         const isAlert = ALERT_STATUSES.some(a => s.includes(a));
         const isStale = !isSafe && (now - (w.timestamp || 0)) > STALE_THRESHOLD_MS;
         if (!isSafe) activeC++;
@@ -1032,7 +1032,7 @@ function renderGrid() {
     // ── Filter ────────────────────────────────────────────────────────────────
     let filtered = workerData.filter(w => {
         const s      = (w.Status || "").toUpperCase();
-        const isSafe = ['DEPARTED', 'COMPLETED', 'NOTICE_ACK'].includes(s);
+        const isSafe = ['DEPARTED', 'COMPLETED'].includes(s);
         const isAlert = ALERT_STATUSES.some(a => s.includes(a));
         const name   = (w['Worker Name'] || "").toLowerCase();
         if (search && !name.includes(search)) return false;
@@ -1044,7 +1044,7 @@ function renderGrid() {
     filtered.sort((a, b) => {
         const rank = w => {
             const s      = (w.Status || "").toUpperCase();
-            const isSafe = ['DEPARTED','COMPLETED','NOTICE_ACK'].includes(s);
+            const isSafe = ['DEPARTED','COMPLETED'].includes(s);
             if (ALERT_STATUSES.some(x => s.includes(x))) return 1;
             const isStale = !isSafe && (now - (w.timestamp || 0)) > STALE_THRESHOLD_MS;
             if (isStale) return 2;
@@ -1066,7 +1066,7 @@ function renderGrid() {
         const statusUp = status.toUpperCase();
 
         const dueTime   = new Date(w['Anticipated Departure Time']);
-        const isSafe    = ['DEPARTED','COMPLETED','NOTICE_ACK'].includes(statusUp);
+        const isSafe    = ['DEPARTED','COMPLETED'].includes(statusUp);
         const isOverdue = dueTime.getTime() > 0 && dueTime < now &&
                           !['DEPARTED','DURESS','SOS','PANIC'].some(s => statusUp.includes(s));
         const isAlert   = ALERT_STATUSES.some(s => statusUp.includes(s));
