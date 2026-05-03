@@ -594,7 +594,7 @@ function handleWorkerPost(p) {
                     // incoming statuses, USER_SAFE_CONFIRMED is treated as closed (prevents
                     // GPS pulses or OVERDUE payloads reopening a resolved row).
                     const incomingIsDeparted = (p['Alarm Status'] || '').includes('DEPARTED');
-                    const isClosed = status.includes('DEPARTED') || status.includes('COMPLETED') || status.includes('DATA_ENTRY_ONLY') || status.includes('NOTICE_ACK') || status.includes('PRE_VISIT') || (status.includes('USER_SAFE') && !incomingIsDeparted);
+                    const isClosed = status.includes('DEPARTED') || status.includes('COMPLETED') || status.includes('DATA_ENTRY_ONLY') || status.includes('PRE_VISIT') || (status.includes('USER_SAFE') && !incomingIsDeparted);
                     
                     if (!isClosed) {
                         const targetRow = startRow + i;
@@ -901,13 +901,7 @@ function _cleanPhone(num) {
     if (n.startsWith('0')) { 
         return (CONFIG.COUNTRY_CODE || "+64") + n.substring(1); 
     }
-
-    // Handle bare local numbers where leading '0' was stripped by Sheets number formatting
-    // (e.g., 226854709 stored as a number → treat as local, prepend country code)
-    if (n.length <= 9) {
-        return (CONFIG.COUNTRY_CODE || "+64") + n;
-    }
-
+    
     // Ensure the '+' prefix is present for Textbelt
     return n.startsWith('+') ? n : "+" + n;
 }
@@ -1647,7 +1641,7 @@ function checkOverdueVisits() {
             const entry = latest[worker].rowData;
             const status = String(entry[10]); 
             const dueTimeStr = entry[20]; 
-            const isClosed = status.includes("DEPARTED") || status.includes("COMPLETED") || status.includes("DATA_ENTRY_ONLY") || status.includes("USER_SAFE") || status.includes("NOTICE_ACK");
+            const isClosed = status.includes("DEPARTED") || status.includes("COMPLETED") || status.includes("DATA_ENTRY_ONLY") || status.includes("USER_SAFE");
             
             if(!isClosed && dueTimeStr) {
                 const due = new Date(dueTimeStr);
@@ -1714,7 +1708,7 @@ function sendHealthEmail() {
     const stalledVisits = []; // Open visits that started > 24h ago
 
     const ESCALATION_STATUSES = ['OVERDUE', 'EMERGENCY', 'PANIC', 'SOS', 'DURESS'];
-    const CLOSED_STATUSES     = ['DEPARTED', 'COMPLETED', 'DATA_ENTRY_ONLY', 'USER_SAFE', 'NOTICE_ACK'];
+    const CLOSED_STATUSES     = ['DEPARTED', 'COMPLETED', 'DATA_ENTRY_ONLY', 'USER_SAFE'];
 
     if (sheet && sheet.getLastRow() > 1) {
         const data = sheet.getDataRange().getValues();
@@ -3039,27 +3033,61 @@ function updateSiteEmergencyProcedures(payload) {
  * Appends worker name to Column I of the Notices tab.
  */
 function handleNoticeAck(p) {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ss.getSheetByName('Notices');
+    const ss       = SpreadsheetApp.getActiveSpreadsheet();
+    const noticesSheet = ss.getSheetByName('Notices');
     const noticeId = p.noticeId;
-    const worker = p['Worker Name'];
+    const worker   = p['Worker Name'];
 
-    if (!sheet) return { status: "error", message: "Notices tab missing" };
-    
-    const data = sheet.getDataRange().getValues();
-    // Logic: Find the row by ID and update the 'Acknowledged By' column (Index 8 / Column I)
-    for (let i = 1; i < data.length; i++) {
-        if (data[i][1] === noticeId) {
-            let currentAcks = data[i][8] ? data[i][8].toString().split(',').map(s => s.trim()) : [];
+    if (!noticesSheet) return { status: "error", message: "Notices tab missing" };
+
+    // 1. Update the Notices sheet Acknowledged By column (col I, index 8)
+    const noticeData = noticesSheet.getDataRange().getValues();
+    let noticeLabel  = noticeId; // fallback identifier for the audit note
+    for (let i = 1; i < noticeData.length; i++) {
+        if (noticeData[i][1] === noticeId) {
+            // Col A (index 0) holds the notice title if present
+            if (noticeData[i][0]) noticeLabel = String(noticeData[i][0]);
+            let currentAcks = noticeData[i][8]
+                ? noticeData[i][8].toString().split(',').map(s => s.trim())
+                : [];
             if (!currentAcks.includes(worker)) {
                 currentAcks.push(worker);
-                sheet.getRange(i + 1, 9).setValue(currentAcks.join(', '));
+                noticesSheet.getRange(i + 1, 9).setValue(currentAcks.join(', '));
             }
             break;
         }
     }
-    // Record in the Visits tab for audit history
-    handleWorkerPost(p); 
+
+    // 2. Append an audit note to the current open visit row in the Visits sheet.
+    // Deliberately does NOT call handleWorkerPost() and does NOT touch col K
+    // (Alarm Status). A broadcast acknowledgement is not a visit lifecycle event —
+    // writing NOTICE_ACK to col K caused checkOverdueVisits() to treat the visit
+    // as closed and stop escalation while the worker was still overdue.
+    try {
+        const visitsSheet = ss.getSheetByName('Visits');
+        if (visitsSheet && visitsSheet.getLastRow() > 1) {
+            const vData = visitsSheet.getDataRange().getValues();
+            const CLOSED_PREFIXES = ['DEPARTED', 'COMPLETED', 'DATA_ENTRY_ONLY', 'USER_SAFE', 'PRE_VISIT'];
+            // Walk rows in reverse — most recent open visit for this worker
+            for (let r = vData.length - 1; r >= 1; r--) {
+                if (vData[r][2] === worker) { // col C (index 2) = Worker Name
+                    const st       = String(vData[r][10]); // col K (index 10) = Alarm Status
+                    const isClosed = CLOSED_PREFIXES.some(pfx => st.includes(pfx));
+                    if (!isClosed) {
+                        const existing = vData[r][11] ? String(vData[r][11]) : ''; // col L = Notes
+                        visitsSheet.getRange(r + 1, 12).setValue(
+                            existing + ` [NOTICE_ACK: ${noticeLabel}]`
+                        );
+                        break;
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        // Non-fatal — the Notices sheet update above already succeeded
+        Logger.log('handleNoticeAck: visit note append failed: ' + e.message);
+    }
+
     return { status: "success" };
 }
 
