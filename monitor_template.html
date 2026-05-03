@@ -820,9 +820,12 @@ function processWorkers(rows) {
         const statusRaw  = (r['Alarm Status'] || r['Status'] || '').toUpperCase();
 
         // ── Journey boundary ────────────────────────────────────────────────
-        // Reset trail when we see a journey-start status after either:
-        //   (a) a closed status in the previous row, or
-        //   (b) no history at all yet (first row for this worker)
+        // ARRIVED always resets the trail unconditionally — it definitively
+        // marks a new visit regardless of how the previous one ended. This
+        // prevents GPS from a prior visit (e.g. one resolved via USER_SAFE_CONFIRMED
+        // or alarm PIN) bleeding into the current visit's map trail.
+        // TRAVELLING resets only when the previous journey was properly closed,
+        // preserving the trail during an active travel leg.
         const isClosed = JOURNEY_CLOSED_STATUSES.includes(statusRaw);
         const isStart  = JOURNEY_START_STATUSES.includes(statusRaw);
 
@@ -831,8 +834,10 @@ function processWorkers(rows) {
             journeyClosed[name]  = false;
         }
 
-        if (isStart && (journeyClosed[name] || journeyHistory[name].length === 0)) {
-            journeyHistory[name] = []; // reset trail for new journey
+        if (statusRaw === 'ARRIVED') {
+            journeyHistory[name] = []; // ARRIVED always starts a fresh trail
+        } else if (isStart && (journeyClosed[name] || journeyHistory[name].length === 0)) {
+            journeyHistory[name] = []; // TRAVELLING resets only after a closed journey
         }
 
         if (isClosed) journeyClosed[name] = true;
@@ -1632,7 +1637,7 @@ function submitResolution() {
     formData.append('action',       'resolve');
     formData.append('key',          API_KEY);
     formData.append('Worker Name',  targetName);
-    formData.append('Alarm Status', 'SAFE - MANUALLY CLEARED');
+    formData.append('Alarm Status', 'USER_SAFE - HQ RESOLVED');
     formData.append('Notes',        `[HQ RESOLVED]: ${note}`);
     formData.append('Battery Level', 'N/A');
     formData.append('Location Name', 'HQ Manual Resolution');
