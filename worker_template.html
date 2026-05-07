@@ -9230,7 +9230,8 @@ function triggerGraceExpiryAlarm() {
   processUploadQueue(buildPayload({
     'Alarm Status': 'OVERDUE ALARM',
     'Notes': _alarmNote,
-    'Last Known GPS': lastGPS || '0,0'
+    'Last Known GPS': lastGPS || '0,0',
+    'Critical Timing': _isCriticalTrip ? 'true' : ''
   }));
 
   // 2. Audio alert + overlay — grace expiry is a loud alarm on the device
