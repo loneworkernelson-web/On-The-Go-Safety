@@ -693,11 +693,15 @@ if (!rowUpdated) {
         } catch(e) { console.error("Email Error: " + e); }
     }
 
-    // OVERDUE ALARM is intentionally excluded here — checkOverdueVisits() is the sole
-    // authority for firing escalation alerts (dead-man's switch principle). The worker
-    // sending OVERDUE ALARM updates col K for sheet state only; the backend reads that
-    // state independently and decides when to escalate.
+    // OVERDUE ALARM is intentionally excluded from the dead-man’s switch path —
+    // checkOverdueVisits() is the sole authority for standard escalation alerts.
+    // EXCEPTION: Critical Timing visits fire ntfy immediately via doPost because
+    // the time-based trigger uses a shared GAS IP that cannot reliably reach ntfy.sh.
+    // The worker flags critical timing via 'Critical Timing': 'true' in the payload.
+    // PANIC and DURESS always fire immediately regardless.
     if(p['Alarm Status'].includes("EMERGENCY") || p['Alarm Status'].includes("PANIC") || p['Alarm Status'].includes("DURESS")) {
+        triggerAlerts(p, "IMMEDIATE");
+    } else if (p['Alarm Status'].includes("OVERDUE ALARM") && p['Critical Timing'] === 'true') {
         triggerAlerts(p, "IMMEDIATE");
     }
 }
