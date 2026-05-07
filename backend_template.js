@@ -693,15 +693,16 @@ if (!rowUpdated) {
         } catch(e) { console.error("Email Error: " + e); }
     }
 
-    // OVERDUE ALARM is intentionally excluded from the dead-man’s switch path —
-    // checkOverdueVisits() is the sole authority for standard escalation alerts.
-    // EXCEPTION: Critical Timing visits fire ntfy immediately via doPost because
-    // the time-based trigger uses a shared GAS IP that cannot reliably reach ntfy.sh.
-    // The worker flags critical timing via 'Critical Timing': 'true' in the payload.
-    // PANIC and DURESS always fire immediately regardless.
+    // OVERDUE ALARM is intentionally excluded here — checkOverdueVisits() is the sole
+    // authority for firing escalation alerts (dead-man's switch principle). The worker
+    // sending OVERDUE ALARM updates col K for sheet state only; the backend reads that
+    // state independently and decides when to escalate.
     if(p['Alarm Status'].includes("EMERGENCY") || p['Alarm Status'].includes("PANIC") || p['Alarm Status'].includes("DURESS")) {
         triggerAlerts(p, "IMMEDIATE");
     } else if (p['Alarm Status'].includes("OVERDUE ALARM") && p['Critical Timing'] === 'true') {
+        // Critical timing OVERDUE ALARM — fire ntfy immediately via the doPost execution context,
+        // which can reach ntfy.sh. Standard (non-critical) OVERDUE ALARM escalation continues to
+        // rely solely on checkOverdueVisits() (dead-man's switch principle preserved).
         triggerAlerts(p, "IMMEDIATE");
     }
 }
@@ -1572,7 +1573,7 @@ function _sendNtfy(topic, title, message, priority, tags) {
         : 'https://ntfy.sh';
     const url = `${server}/${topic.trim()}`;
     try {
-        UrlFetchApp.fetch(url, {
+        const response = UrlFetchApp.fetch(url, {
             method: 'post',
             headers: {
                 'Title':    title,
@@ -1582,7 +1583,12 @@ function _sendNtfy(topic, title, message, priority, tags) {
             payload:            message,
             muteHttpExceptions: true
         });
-        console.log(`ntfy push sent to topic: ${topic}`);
+        const code = response.getResponseCode();
+        if (code >= 200 && code < 300) {
+            console.log(`ntfy push sent to topic: ${topic}`);
+        } else {
+            console.warn(`ntfy push rejected for topic "${topic}": HTTP ${code}`);
+        }
     } catch (e) {
         console.error(`ntfy push failed for topic "${topic}": ${e.toString()}`);
     }
