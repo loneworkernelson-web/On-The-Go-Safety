@@ -30,6 +30,8 @@ const CONFIG = {
   HEALTH_EMAIL: "%%HEALTH_EMAIL%%",   // Optional: override recipient for daily health email. Leave blank to use script owner.
   HEALTHCHECK_URL: "%%HEALTHCHECK_URL%%",  // Optional: Healthchecks.io ping URL. Pinged after each successful checkOverdueVisits() run.
   NTFY_SERVER: "%%NTFY_SERVER%%",      // ntfy push notification server. Defaults to https://ntfy.sh (hosted). Replace with self-hosted URL for higher privacy.
+  NTFY_PROXY_URL:    "%%NTFY_PROXY_URL%%",     // Optional: URL of your PHP ntfy proxy script. Set if trigger-path ntfy pushes are blocked (see IT Advisor Overview §6.5).
+  NTFY_PROXY_SECRET: "%%NTFY_PROXY_SECRET%%",  // Optional: shared secret matching PROXY_SECRET in proxy_ntfy.php. Must match exactly.
   W3W_API_KEY: "%%W3W_API_KEY%%"       // Optional: what3words API key. Free for registered charities — see what3words.com/select-plan. Leave blank to disable.
 };
 
@@ -1577,21 +1579,33 @@ function _sendNtfy(topic, title, message, priority, tags) {
     const server = (CONFIG.NTFY_SERVER && !CONFIG.NTFY_SERVER.includes('%%'))
         ? CONFIG.NTFY_SERVER.replace(/\/$/, '')
         : 'https://ntfy.sh';
-    const url = `${server}/${topic.trim()}`;
+
+    // Proxy routing: if NTFY_PROXY_URL is configured, route through the PHP proxy
+    // (which has a clean IP not subject to ntfy.sh fail2ban on the trigger path).
+    // Self-hosted ntfy users set NTFY_SERVER instead and leave these blank.
+    const proxyUrl    = (CONFIG.NTFY_PROXY_URL    && !CONFIG.NTFY_PROXY_URL.includes('%%'))
+        ? CONFIG.NTFY_PROXY_URL.replace(/\/$/, '')    : '';
+    const proxySecret = (CONFIG.NTFY_PROXY_SECRET && !CONFIG.NTFY_PROXY_SECRET.includes('%%'))
+        ? CONFIG.NTFY_PROXY_SECRET : '';
+
+    const fetchUrl     = proxyUrl ? `${proxyUrl}/${topic.trim()}` : `${server}/${topic.trim()}`;
+    const extraHeaders = (proxyUrl && proxySecret) ? { 'X-Proxy-Secret': proxySecret } : {};
+
     try {
-        const response = UrlFetchApp.fetch(url, {
+        const response = UrlFetchApp.fetch(fetchUrl, {
             method: 'post',
             headers: {
                 'Title':    title,
                 'Priority': priority || 'default',
-                'Tags':     tags    || 'bell'
+                'Tags':     tags    || 'bell',
+                ...extraHeaders
             },
             payload:            message,
             muteHttpExceptions: true
         });
         const code = response.getResponseCode();
         if (code >= 200 && code < 300) {
-            console.log(`ntfy push sent to topic: ${topic}`);
+            console.log(`ntfy push sent to topic: ${topic}${proxyUrl ? ' (via proxy)' : ''}`);
         } else {
             console.warn(`ntfy push rejected for topic "${topic}": HTTP ${code}`);
         }
