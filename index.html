@@ -402,6 +402,19 @@
                 <input type="url" id="ntfyServer" class="input-field py-2 text-xs font-mono font-bold" placeholder="https://ntfy.sh (default — leave blank to use hosted service)" oninput="saveInput(this)">
                 <p class="help-text italic leading-tight">Enables instant push notifications to contacts' phones the moment an alarm fires — no polling, no email delay. Leave blank to use the free hosted ntfy.sh service. For higher privacy, self-host ntfy (open source, runs in Docker) and paste your server URL here. Workers add their contacts' ntfy topic names during setup; contacts install the free ntfy app and subscribe to their topic. A subscribe link is included automatically in every test alert email.</p>
             </div>
+            <div class="pt-4 border-t border-gray-700">
+                <div class="flex justify-between items-end mb-1">
+                    <label for="ntfyProxyUrl" class="text-[11px] font-black text-teal-300 uppercase tracking-widest">ntfy Proxy URL <span class="text-gray-500 font-normal normal-case tracking-normal">(optional)</span></label>
+                    <a href="#" onclick="return false;" class="link text-gray-500 cursor-default">Advanced</a>
+                </div>
+                <input type="url" id="ntfyProxyUrl" class="input-field py-2 text-xs font-mono font-bold" placeholder="https://yoursite.com/proxy_ntfy.php (leave blank if not needed)" oninput="saveInput(this)">
+                <p class="help-text italic leading-tight">If overdue-alert ntfy pushes are not arriving, Google's shared trigger-path IPs may be blocked by ntfy.sh. Upload <code>proxy_ntfy.php</code> to your cPanel hosting and paste its URL here — the backend routes trigger-path notifications through your proxy's clean IP instead. Not required if you self-host ntfy or use an ntfy.sh paid plan. See the IT Advisor Overview for details.</p>
+            </div>
+            <div class="pt-4 border-t border-gray-700">
+                <label for="ntfyProxySecret" class="text-[11px] font-black text-teal-300 uppercase tracking-widest block mb-1">ntfy Proxy Secret <span class="text-gray-500 font-normal normal-case tracking-normal">(optional)</span></label>
+                <input type="password" id="ntfyProxySecret" class="input-field py-2 text-xs font-mono font-bold" placeholder="Must match PROXY_SECRET in proxy_ntfy.php" oninput="saveInput(this)">
+                <p class="help-text italic leading-tight">A shared secret that prevents your proxy endpoint being used by third parties. Set this to any long random string, then paste the same value into <code>PROXY_SECRET</code> in <code>proxy_ntfy.php</code>. Required when Proxy URL is set.</p>
+            </div>
         </div>
     </div>
 </div>
@@ -1142,7 +1155,7 @@ function applyPreset(p, a, el) {
     function copyData(k) { navigator.clipboard.writeText(BLUEPRINTS[k]); alert(k + " Blueprint Copied!"); }
     function openMagicLink() { window.open(MASTER_SHEET_URL, '_blank'); }
     function toggleCheck(el) { el.classList.toggle('checked'); el.querySelector('input').checked = el.classList.contains('checked'); }
-    function loadPersistedData() { ['orgName', 'secretKey', 'workerKey', 'webAppUrl', 'geminiKey', 'orsKey', 'w3wKey', 'textbeltKey', 'twilioSid', 'twilioToken', 'twilioFrom', 'burstKey', 'burstSecret', 'burstFrom', 'smsProvider', 'folderId', 'healthEmail', 'healthcheckUrl', 'ntfyServer', 'escalationMins', 'countrySelect', 'appName', 'checkinMins'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v) { const el = document.getElementById(id); if(el) el.value = v; } }); ['chkRedaction', 'chkVehicle', 'chkCheckin', 'chkTravelReport', 'chkMileage'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v !== null) document.getElementById(id).checked = (v === 'true'); }); updateSmsProviderUI(); }
+    function loadPersistedData() { ['orgName', 'secretKey', 'workerKey', 'webAppUrl', 'geminiKey', 'orsKey', 'w3wKey', 'textbeltKey', 'twilioSid', 'twilioToken', 'twilioFrom', 'burstKey', 'burstSecret', 'burstFrom', 'smsProvider', 'folderId', 'healthEmail', 'healthcheckUrl', 'ntfyServer', 'ntfyProxyUrl', 'ntfyProxySecret', 'escalationMins', 'countrySelect', 'appName', 'checkinMins'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v) { const el = document.getElementById(id); if(el) el.value = v; } }); ['chkRedaction', 'chkVehicle', 'chkCheckin', 'chkTravelReport', 'chkMileage'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v !== null) document.getElementById(id).checked = (v === 'true'); }); updateSmsProviderUI(); }
     function updateSmsProviderUI() {
         const val = document.getElementById('smsProvider').value;
         saveInput(document.getElementById('smsProvider'));
@@ -1191,6 +1204,8 @@ function applyPreset(p, a, el) {
             .replace(/%%HEALTH_EMAIL%%/g, document.getElementById('healthEmail').value)
             .replace(/%%HEALTHCHECK_URL%%/g, document.getElementById('healthcheckUrl').value)
             .replace(/%%NTFY_SERVER%%/g, document.getElementById('ntfyServer').value || 'https://ntfy.sh')
+            .replace(/%%NTFY_PROXY_URL%%/g,    document.getElementById('ntfyProxyUrl').value    || '')
+            .replace(/%%NTFY_PROXY_SECRET%%/g, document.getElementById('ntfyProxySecret').value || '')
             .replace(/%%BACKEND_VERSION%%/g, 'v82 · ' + buildTimestamp);
         buildAppsScriptJson();
     }
