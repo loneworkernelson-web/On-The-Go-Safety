@@ -120,7 +120,7 @@
         <input type="text" id="secretKey" 
                class="input-field text-yellow-400 font-mono text-sm py-2" 
                placeholder="e.g. kauri-harbour-ember-summit-47-rimu"
-               oninput="updateKeyCounter(); saveInput(this); validateKey();">
+               oninput="updateKeyCounter(); saveInput(this); validateKey(); syncProxySecret();">
         <button onclick="generateSecureKey('secretKey')" class="btn bg-gray-700 hover:bg-gray-600 text-white py-2">🔄</button>
     </div>
     <p class="help-text italic">Used by administrators to access the spreadsheet. <strong>Do not share.</strong></p>
@@ -412,8 +412,12 @@
             </div>
             <div class="pt-4 border-t border-gray-700">
                 <label for="ntfyProxySecret" class="text-[11px] font-black text-teal-300 uppercase tracking-widest block mb-1">ntfy Proxy Secret <span class="text-gray-500 font-normal normal-case tracking-normal">(optional)</span></label>
-                <input type="password" id="ntfyProxySecret" class="input-field py-2 text-xs font-mono font-bold" placeholder="Must match PROXY_SECRET in proxy_ntfy.php" oninput="saveInput(this)">
-                <p class="help-text italic leading-tight">A shared secret that prevents your proxy endpoint being used by third parties. Set this to any long random string, then paste the same value into <code>PROXY_SECRET</code> in <code>proxy_ntfy.php</code>. Required when Proxy URL is set.</p>
+                <input type="password" id="ntfyProxySecret" class="input-field py-2 text-xs font-mono font-bold" placeholder="Must match PROXY_SECRET in proxy_ntfy.php" oninput="this.dataset.auto='false'; saveInput(this);">
+                <p class="help-text italic leading-tight">Prevents your proxy endpoint being used by third parties. <strong class="text-teal-300">Defaults to your Master Key</strong> — change only if you need a separate secret.</p>
+            </div>
+            <div class="pt-4 border-t border-gray-700">
+                <p class="help-text italic leading-tight mb-2">Download a ready-to-upload <code>proxy_ntfy.php</code> with your proxy secret and ntfy server already embedded — no manual editing required. Enter the downloaded file's public URL in the Proxy URL field above after uploading it to your hosting.</p>
+                <button onclick="downloadProxyPhp()" class="btn bg-teal-800 hover:bg-teal-700 text-white text-xs font-black uppercase tracking-widest py-2 px-4">⬇ Download Configured proxy_ntfy.php</button>
             </div>
         </div>
     </div>
@@ -910,6 +914,7 @@ self.addEventListener('message', event => {
         updateMockupUI();
         if(!document.getElementById('secretKey').value) generateSecureKey('secretKey');
         if(!document.getElementById('workerKey').value) generateSecureKey('workerKey');
+        syncProxySecret();
         updateRegionInfo();
         setupDragDrop();
         for (const [k, f] of Object.entries(FILES)) { 
@@ -1155,7 +1160,12 @@ function applyPreset(p, a, el) {
     function copyData(k) { navigator.clipboard.writeText(BLUEPRINTS[k]); alert(k + " Blueprint Copied!"); }
     function openMagicLink() { window.open(MASTER_SHEET_URL, '_blank'); }
     function toggleCheck(el) { el.classList.toggle('checked'); el.querySelector('input').checked = el.classList.contains('checked'); }
-    function loadPersistedData() { ['orgName', 'secretKey', 'workerKey', 'webAppUrl', 'geminiKey', 'orsKey', 'w3wKey', 'textbeltKey', 'twilioSid', 'twilioToken', 'twilioFrom', 'burstKey', 'burstSecret', 'burstFrom', 'smsProvider', 'folderId', 'healthEmail', 'healthcheckUrl', 'ntfyServer', 'ntfyProxyUrl', 'ntfyProxySecret', 'escalationMins', 'countrySelect', 'appName', 'checkinMins'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v) { const el = document.getElementById(id); if(el) el.value = v; } }); ['chkRedaction', 'chkVehicle', 'chkCheckin', 'chkTravelReport', 'chkMileage'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v !== null) document.getElementById(id).checked = (v === 'true'); }); updateSmsProviderUI(); }
+    function loadPersistedData() { ['orgName', 'secretKey', 'workerKey', 'webAppUrl', 'geminiKey', 'orsKey', 'w3wKey', 'textbeltKey', 'twilioSid', 'twilioToken', 'twilioFrom', 'burstKey', 'burstSecret', 'burstFrom', 'smsProvider', 'folderId', 'healthEmail', 'healthcheckUrl', 'ntfyServer', 'ntfyProxyUrl', 'ntfyProxySecret', 'escalationMins', 'countrySelect', 'appName', 'checkinMins'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v) { const el = document.getElementById(id); if(el) el.value = v; } }); ['chkRedaction', 'chkVehicle', 'chkCheckin', 'chkTravelReport', 'chkMileage'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v !== null) document.getElementById(id).checked = (v === 'true'); }); updateSmsProviderUI();
+        // Establish proxy secret sync state: if proxy secret is empty or matches the master key, mark as auto-synced.
+        const _psEl = document.getElementById('ntfyProxySecret');
+        const _skEl = document.getElementById('secretKey');
+        if (_psEl && _skEl) { _psEl.dataset.auto = (!_psEl.value || _psEl.value === _skEl.value) ? 'true' : 'false'; }
+    }
     function updateSmsProviderUI() {
         const val = document.getElementById('smsProvider').value;
         saveInput(document.getElementById('smsProvider'));
@@ -1834,7 +1844,110 @@ function generateSecureKey(id) {
         input.value = [pick(), pick(), pick(), pick(), num, pick()].join('-');
     }
     saveInput(input);
-    if (id === 'secretKey') validateKey();
+    if (id === 'secretKey') { validateKey(); syncProxySecret(); }
+}
+
+/**
+ * PROXY SECRET SYNC: Keeps ntfyProxySecret in step with the master key unless
+ * the user has manually set a different value (tracked via data-auto attribute).
+ */
+function syncProxySecret() {
+    const skEl = document.getElementById('secretKey');
+    const psEl = document.getElementById('ntfyProxySecret');
+    if (!skEl || !psEl) return;
+    if (psEl.dataset.auto !== 'false') {
+        psEl.value = skEl.value;
+        psEl.dataset.auto = 'true';
+        saveInput(psEl);
+    }
+}
+
+/**
+ * PROXY DOWNLOAD: Generates a fully-configured proxy_ntfy.php and triggers a
+ * browser download. The proxy secret and ntfy server are substituted in-place —
+ * the file is ready to upload to cPanel hosting with no manual editing required.
+ */
+function downloadProxyPhp() {
+    const secret    = document.getElementById('ntfyProxySecret').value.trim();
+    const ntfySrv   = (document.getElementById('ntfyServer').value.trim()) || 'https://ntfy.sh';
+    if (!secret) { alert('Enter a Proxy Secret (or generate your Master Key) before downloading.'); return; }
+    const template = `<?php
+/**
+ * OTG AppSuite — ntfy Proxy (pre-configured by Factory App)
+ * ============================================================
+ * Upload this file to your cPanel hosting (public_html or any
+ * subdirectory with a public HTTPS URL), then enter its URL in
+ * the ntfy Proxy URL field in the OTG Factory App and redeploy
+ * your backend.
+ *
+ * VERIFY — visit the file URL in a browser. You should receive
+ * a 403 Forbidden response. This is correct — the secret header
+ * is absent. Then run OTG Admin → Run System Diagnostics and
+ * check the GAS log for "ntfy push sent to topic: X (via proxy)".
+ *
+ * No manual editing required — secret and ntfy server are already
+ * configured below.
+ * ============================================================
+ */
+
+define('PROXY_SECRET', '${secret}');
+define('NTFY_SERVER',  '${ntfySrv}');
+
+// ============================================================
+// — No changes needed below this line —
+// ============================================================
+
+$secret = $_SERVER['HTTP_X_PROXY_SECRET'] ?? '';
+if ($secret !== PROXY_SECRET) {
+    http_response_code(403);
+    exit('Forbidden');
+}
+
+$path  = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
+$topic = basename($path);
+
+if ($topic === '' || $topic === 'proxy_ntfy.php') {
+    http_response_code(400);
+    exit('Bad Request: no topic');
+}
+
+$body = file_get_contents('php://input');
+
+$headers = ['Content-Type: text/plain; charset=utf-8'];
+foreach (['Title', 'Priority', 'Tags'] as $h) {
+    $key = 'HTTP_' . strtoupper(str_replace('-', '_', $h));
+    if (!empty($_SERVER[$key])) {
+        $headers[] = "$h: {$_SERVER[$key]}";
+    }
+}
+
+$ch = curl_init(NTFY_SERVER . '/' . $topic);
+curl_setopt_array($ch, [
+    CURLOPT_POST           => true,
+    CURLOPT_POSTFIELDS     => $body,
+    CURLOPT_HTTPHEADER     => $headers,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_TIMEOUT        => 10,
+]);
+$response = curl_exec($ch);
+$code     = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+$err      = curl_error($ch);
+curl_close($ch);
+
+if ($err) {
+    http_response_code(502);
+    exit('Proxy error: ' . $err);
+}
+
+http_response_code($code);
+echo $response;
+`;
+    const blob = new Blob([template], { type: 'application/octet-stream' });
+    const a    = document.createElement('a');
+    a.href     = URL.createObjectURL(blob);
+    a.download = 'proxy_ntfy.php';
+    a.click();
+    URL.revokeObjectURL(a.href);
 }
 
 /**
