@@ -1591,6 +1591,7 @@ function _sendNtfy(topic, title, message, priority, tags) {
     const fetchUrl     = proxyUrl ? `${proxyUrl}/${topic.trim()}` : `${server}/${topic.trim()}`;
     const extraHeaders = (proxyUrl && proxySecret) ? { 'X-Proxy-Secret': proxySecret } : {};
 
+    const via = proxyUrl ? 'proxy' : 'direct';
     try {
         const response = UrlFetchApp.fetch(fetchUrl, {
             method: 'post',
@@ -1606,11 +1607,14 @@ function _sendNtfy(topic, title, message, priority, tags) {
         const code = response.getResponseCode();
         if (code >= 200 && code < 300) {
             console.log(`ntfy push sent to topic: ${topic}${proxyUrl ? ' (via proxy)' : ''}`);
+            return { ok: true,  code, via };
         } else {
             console.warn(`ntfy push rejected for topic "${topic}": HTTP ${code}`);
+            return { ok: false, code, via };
         }
     } catch (e) {
         console.error(`ntfy push failed for topic "${topic}": ${e.toString()}`);
+        return { ok: false, code: null, via, error: e.toString() };
     }
 }
 
@@ -2210,9 +2214,6 @@ function runDiagnostics() {
 
     // ── 6. NTFY PUSH ──────────────────────────────────────────────────────
     Logger.log('── NTFY PUSH ──');
-    const ntfyServer = (CONFIG.NTFY_SERVER && !CONFIG.NTFY_SERVER.includes('%%'))
-        ? CONFIG.NTFY_SERVER.replace(/\/$/, '')
-        : 'https://ntfy.sh';
     const orgSlug = (CONFIG.ORG_NAME || 'otg')
         .toLowerCase()
         .replace(/[^a-z0-9]/g, '-')
@@ -2220,27 +2221,33 @@ function runDiagnostics() {
         .replace(/^-|-$/g, '')
         .substring(0, 24);
     const diagTopic = orgSlug + '-otg-diag';
-    try {
-        const resp = UrlFetchApp.fetch(ntfyServer + '/' + diagTopic, {
-            method: 'post',
-            headers: { 'Title': '🔧 OTG Diagnostics Test', 'Priority': 'default', 'Tags': 'test_tube' },
-            payload: 'OTG system diagnostic ran at ' +
-                     Utilities.formatDate(now, tz, 'dd MMM yyyy HH:mm z') +
-                     '. If you received this, ntfy push notifications are working correctly.' +
-                     ' Topic: ' + diagTopic,
-            muteHttpExceptions: true
-        });
-        const code = resp.getResponseCode();
-        if (code >= 200 && code < 300) {
-            check('ntfy Push', 'Diagnostic send', 'PASS',
-                'Message posted to topic "' + diagTopic + '" on ' + ntfyServer + ' (HTTP ' + code + '). ' +
-                'Subscribe to this topic in the ntfy app to confirm end-to-end delivery.');
-        } else {
-            check('ntfy Push', 'Diagnostic send', 'FAIL',
-                ntfyServer + ' returned HTTP ' + code + ': ' +
-                resp.getContentText().substring(0, 300));
-        }
-    } catch(e) { check('ntfy Push', 'Diagnostic send', 'FAIL', 'Request failed: ' + e.toString()); }
+    // Route through _sendNtfy() so the proxy is used when configured — the same
+    // path that real alerts take. Previous versions called UrlFetchApp.fetch() directly,
+    // bypassing the proxy and giving a misleading result.
+    const ntfyResult = _sendNtfy(
+        diagTopic,
+        '🔧 OTG Diagnostics Test',
+        'OTG system diagnostic ran at ' +
+            Utilities.formatDate(now, tz, 'dd MMM yyyy HH:mm z') +
+            '. If you received this, ntfy push notifications are working correctly.' +
+            ' Topic: ' + diagTopic,
+        'default',
+        'test_tube'
+    );
+    if (ntfyResult && ntfyResult.ok) {
+        check('ntfy Push', 'Diagnostic send', 'PASS',
+            'Message posted to topic "' + diagTopic + '" (HTTP ' + ntfyResult.code + ')' +
+            (ntfyResult.via === 'proxy' ? ' via proxy' : ' direct') +
+            '. Subscribe to this topic in the ntfy app to confirm end-to-end delivery.');
+    } else if (ntfyResult && ntfyResult.code) {
+        check('ntfy Push', 'Diagnostic send', 'FAIL',
+            'Server returned HTTP ' + ntfyResult.code +
+            (ntfyResult.via === 'proxy' ? ' (via proxy)' : ' (direct)') + '.');
+    } else {
+        check('ntfy Push', 'Diagnostic send', 'FAIL',
+            'Request failed' + (ntfyResult && ntfyResult.via === 'proxy' ? ' (via proxy)' : '') +
+            ': ' + (ntfyResult && ntfyResult.error ? ntfyResult.error : 'unknown error'));
+    }
 
     // ── 7. HEALTHCHECKS.IO ────────────────────────────────────────────────
     Logger.log('── HEALTHCHECKS.IO ──');
