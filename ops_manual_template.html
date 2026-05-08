@@ -764,13 +764,22 @@ const prompt = `Read these notes: "${safeNotes}".
     <h3>ntfy Push Notifications</h3>
     <p><a href="https://ntfy.sh" style="color:var(--accent);">ntfy</a> is a free, open-source push notification service that delivers instant alerts directly to contacts' phones the moment an alarm fires — no email delay, no polling required.</p>
     <ul>
-        <li><strong>Admin setup:</strong> Enter your ntfy server URL in Factory Step 1 (leave blank to use the free hosted <code>ntfy.sh</code> service). For higher privacy, self-host ntfy using Docker and paste your server URL.</li>
+        <li><strong>Admin setup:</strong> Enter your ntfy server URL in Factory Step 1 (leave blank to use the free hosted <code>ntfy.sh</code> service). For improved privacy and reliability, ask your IT Advisor to set up a self-hosted ntfy server — it runs on an inexpensive VPS and requires no changes to the OTG AppSuite itself. Simply paste your server URL here once it is ready.</li>
         <li><strong>Worker setup:</strong> Workers enter their contacts' ntfy topic names in the app setup wizard (or later via Settings). The app automatically stores these topics in columns H and I of the Staff sheet — the escalation engine reads them from there when sending overdue alerts, so no manual data entry is required from the administrator.</li>
         <li><strong>Contact setup:</strong> Contacts install the ntfy app and follow the setup steps in the Worker Guide (Section 12). The most important steps for reliability are enabling Instant Delivery (Android) and granting Time-Sensitive notification permissions (iOS). See the Worker Guide for full instructions.</li>
         <li><strong>Verify with diagnostics:</strong> Use <strong>OTG Admin → Run System Diagnostics</strong> to confirm ntfy is reachable. Subscribe to the diagnostics topic (shown in the diagnostic email) to confirm end-to-end push delivery from your server to the ntfy app.</li>
     </ul>
     <div class="info-box">
         <strong>iOS limitation:</strong> The ntfy iOS app does not currently support Critical Alerts — the notification tier that overrides the physical mute switch. iPhone contacts should leave their mute switch off if they are on-call as an emergency contact.
+    </div>
+    <div class="warning-box">
+        <strong>Not receiving ntfy alerts during overdue escalations?</strong> This is a known issue with the free ntfy.sh service. Google's time-based trigger scripts run from a shared pool of IP addresses; if that pool has been rate-limited by ntfy.sh, push notifications sent during overdue checks will fail silently (the diagnostic and immediate-alarm paths use different IPs and are unaffected). Two solutions are available — choose one:
+        <ul style="margin-top:0.5em;">
+            <li><strong>Proxy (recommended for existing cPanel hosting):</strong> Upload the included <code>proxy_ntfy.php</code> script to your shared hosting, then enter the proxy URL and secret in Factory Step 1 and redeploy the backend. The backend will route trigger-path ntfy calls through your hosting's clean IP. See the IT Advisor Overview (Section 6.5) for full setup steps.</li>
+            <li><strong>Self-hosted ntfy:</strong> Run your own ntfy server on a VPS. Your server's IP is clean and not subject to shared-pool rate limiting. See IT Advisor Overview Section 6.4.</li>
+            <li><strong>ntfy.sh paid plan:</strong> Authenticated requests to ntfy.sh bypass IP rate limiting. No proxy or self-hosting required.</li>
+        </ul>
+        Panic and Duress alarms, and Critical Timing overdue alarms, are not affected — they fire ntfy from the immediate-response path rather than the time-based trigger.
     </div>
 
     <h3>SMS Text Alerts</h3>
