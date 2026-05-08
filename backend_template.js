@@ -569,6 +569,7 @@ function handleWorkerPost(p) {
         }
         
         let rowUpdated = false;
+        let existingVisitNotes = ''; // captured from matched row for use in triggerAlerts
         const lastRow = sheet.getLastRow();
         const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
         const distColIdx = headers.indexOf("Distance (km)");
@@ -642,6 +643,7 @@ function handleWorkerPost(p) {
                         if (p2  && p2Col  > -1) sheet.getRange(targetRow, p2Col  + 1).setValue(p2);
                         if (p3  && p3Col  > -1) sheet.getRange(targetRow, p3Col  + 1).setValue(p3);
                         if (p4  && p4Col  > -1) sheet.getRange(targetRow, p4Col  + 1).setValue(p4);
+                        existingVisitNotes = String(rowData[11] || '');
                         rowUpdated = true;
                         break;
                     }
@@ -698,11 +700,15 @@ if (!rowUpdated) {
     // sending OVERDUE ALARM updates col K for sheet state only; the backend reads that
     // state independently and decides when to escalate.
     if(p['Alarm Status'].includes("EMERGENCY") || p['Alarm Status'].includes("PANIC") || p['Alarm Status'].includes("DURESS")) {
+        p['Visit Notes'] = p['Visit Notes'] || existingVisitNotes;
         triggerAlerts(p, "IMMEDIATE");
     } else if (p['Alarm Status'].includes("OVERDUE ALARM") && p['Critical Timing'] === 'true') {
         // Critical timing OVERDUE ALARM — fire ntfy immediately via the doPost execution context,
         // which can reach ntfy.sh. Standard (non-critical) OVERDUE ALARM escalation continues to
         // rely solely on checkOverdueVisits() (dead-man's switch principle preserved).
+        // Pass the existing row's visit notes so isCriticalTiming is correctly detected
+        // inside triggerAlerts — the worker payload does not carry Visit Notes.
+        p['Visit Notes'] = p['Visit Notes'] || existingVisitNotes;
         triggerAlerts(p, "IMMEDIATE");
     }
 }
