@@ -915,8 +915,15 @@ function _cleanPhone(num) {
         return (CONFIG.COUNTRY_CODE || "+64") + n.substring(1); 
     }
     
-    // Ensure the '+' prefix is present for Textbelt
-    return n.startsWith('+') ? n : "+" + n;
+    // 9-digit number = NZ local mobile with leading zero stripped by Google Sheets
+    // (e.g. 226854709 stored as a number → should become +64226854709, not +226854709).
+    // NZ mobiles are 10 digits with leading zero (021/022/027), so 9 digits without.
+    if (n.length === 9) {
+        return (CONFIG.COUNTRY_CODE || "+64") + n;
+    }
+
+    // Anything longer is assumed to already carry a country code — just add '+'.
+    return "+" + n;
 }
 
 /**
