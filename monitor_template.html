@@ -1642,9 +1642,14 @@ function submitResolution() {
     formData.append('Battery Level', 'N/A');
     formData.append('Location Name', 'HQ Manual Resolution');
     formData.append('Emergency Contact Name',   worker['Emergency Contact Name']   || '');
+    formData.append('Emergency Contact Number', worker['Emergency Contact Number'] || '');
     formData.append('Emergency Contact Email',  worker['Emergency Contact Email']  || '');
+    formData.append('Emergency Contact Ntfy',   worker['Emergency Contact Ntfy']   || '');
     formData.append('Escalation Contact Name',  worker['Escalation Contact Name']  || '');
+    formData.append('Escalation Contact Number', worker['Escalation Contact Number'] || '');
     formData.append('Escalation Contact Email', worker['Escalation Contact Email'] || '');
+    formData.append('Escalation Contact Ntfy',  worker['Escalation Contact Ntfy']  || '');
+    formData.append('Worker Phone Number',      worker['Worker Phone Number']      || '');
 
     fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: formData })
         .then(() => {
