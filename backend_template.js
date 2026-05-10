@@ -584,7 +584,10 @@ function handleWorkerPost(p) {
         // visit's row with data from a new session. handleResolvePost() is responsible
         // for closing all open rows when a worker declares safe; any open row remaining
         // at this point is stale and must not be reused.
-        const isNewVisit = (p['Alarm Status'] === 'ARRIVED' || p['Alarm Status'] === 'TRAVELLING');
+        // PRE_VISIT always creates a fresh row — never updates a stale open row.
+        // Without this, PRE_VISIT silently overwrites an old abandoned row elsewhere
+        // in the sheet and the pre-visit photo never appears at the bottom.
+        const isNewVisit = (p['Alarm Status'] === 'ARRIVED' || p['Alarm Status'] === 'TRAVELLING' || p['Alarm Status'] === 'PRE_VISIT');
 
         if (lastRow > 1 && !isNewVisit) {
             const startRow = Math.max(2, lastRow - 50); 
