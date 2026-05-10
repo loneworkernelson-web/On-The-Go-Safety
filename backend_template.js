@@ -490,7 +490,10 @@ function handleResolvePost(p) {
 
     // NEW: TRIGGER "ALL CLEAR" NOTIFICATIONS
     // This sends the Email and SMS to both emergency contacts immediately.
-    handleSafetyResolution(p); 
+    // forceNotify=true bypasses the alertWasSent guard (which would wrongly suppress
+    // All Clear because handleResolvePost has already updated the row to USER_SAFE).
+    // It also skips the internal handleWorkerPost() call — already done above.
+    handleSafetyResolution(p, true); 
 }
 function handleWorkerPost(p) {
     // ── IDEMPOTENCY GUARD ────────────────────────────────────────────────────
@@ -915,15 +918,8 @@ function _cleanPhone(num) {
         return (CONFIG.COUNTRY_CODE || "+64") + n.substring(1); 
     }
     
-    // 9-digit number = NZ local mobile with leading zero stripped by Google Sheets
-    // (e.g. 226854709 stored as a number → should become +64226854709, not +226854709).
-    // NZ mobiles are 10 digits with leading zero (021/022/027), so 9 digits without.
-    if (n.length === 9) {
-        return (CONFIG.COUNTRY_CODE || "+64") + n;
-    }
-
-    // Anything longer is assumed to already carry a country code — just add '+'.
-    return "+" + n;
+    // Ensure the '+' prefix is present for Textbelt
+    return n.startsWith('+') ? n : "+" + n;
 }
 
 /**
@@ -3195,39 +3191,46 @@ function triggerEscalation(sheet, entry, newStatus, isDual, rowNum) {
  * NEW: handleSafetyResolution
  * Logic: Notifies both contacts that the emergency has ended.
  */
-function handleSafetyResolution(p) {
+function handleSafetyResolution(p, forceNotify) {
     // GUARD: Scan the sheet BEFORE handleWorkerPost runs, because handleWorkerPost
     // will overwrite the open alarm row's status to USER_SAFE_CONFIRMED — after which
     // the scan would hit the 'SAFE' break condition and incorrectly return alertWasSent=false,
     // suppressing All Clear every time.
-    const workerNameCheck = (p['Worker Name'] || '').toString().trim();
-    let alertWasSent = false;
-    try {
-        const ss = SpreadsheetApp.getActiveSpreadsheet();
-        const sheet = ss.getSheetByName('Visits');
-        if (sheet) {
-            const data = sheet.getDataRange().getValues();
-            const alarmStatuses = ['OVERDUE', 'PANIC', 'SOS', 'DURESS', 'EMERGENCY', 'ALARM_GPS_PULSE'];
-            // No row cap — the loop breaks on DEPARTED/SAFE so won't scan the whole
-            // sheet unnecessarily. A cap risks missing an alarm row on busy sheets,
-            // which would incorrectly suppress the All-Clear notification.
-            for (let i = data.length - 1; i > 0; i--) {
-                if ((data[i][2] || '').toString().trim() === workerNameCheck) {
-                    const rowStatus = (data[i][10] || '').toString().toUpperCase();
-                    if (alarmStatuses.some(s => rowStatus.includes(s))) { alertWasSent = true; break; }
-                    if (rowStatus.includes('DEPARTED') || rowStatus.includes('SAFE')) break;
+    //
+    // forceNotify=true bypasses this guard entirely and skips the handleWorkerPost() call.
+    // Used by handleResolvePost() which has already updated the sheet row before calling here —
+    // so the guard would always find USER_SAFE (not an alarm) and wrongly suppress All Clear.
+    if (!forceNotify) {
+        const workerNameCheck = (p['Worker Name'] || '').toString().trim();
+        let alertWasSent = false;
+        try {
+            const ss = SpreadsheetApp.getActiveSpreadsheet();
+            const sheet = ss.getSheetByName('Visits');
+            if (sheet) {
+                const data = sheet.getDataRange().getValues();
+                const alarmStatuses = ['OVERDUE', 'PANIC', 'SOS', 'DURESS', 'EMERGENCY', 'ALARM_GPS_PULSE'];
+                // No row cap — the loop breaks on DEPARTED/SAFE so won't scan the whole
+                // sheet unnecessarily. A cap risks missing an alarm row on busy sheets,
+                // which would incorrectly suppress the All-Clear notification.
+                for (let i = data.length - 1; i > 0; i--) {
+                    if ((data[i][2] || '').toString().trim() === workerNameCheck) {
+                        const rowStatus = (data[i][10] || '').toString().toUpperCase();
+                        if (alarmStatuses.some(s => rowStatus.includes(s))) { alertWasSent = true; break; }
+                        if (rowStatus.includes('DEPARTED') || rowStatus.includes('SAFE')) break;
+                    }
                 }
             }
+        } catch(e) { console.warn('All Clear guard: ' + e); }
+
+        if (!alertWasSent) {
+            console.log('All Clear suppressed — no alarm was sent for ' + (p['Worker Name'] || ''));
+            return { status: 'success', allClearSuppressed: true };
         }
-    } catch(e) { console.warn('All Clear guard: ' + e); }
 
-    if (!alertWasSent) {
-        console.log('All Clear suppressed — no alarm was sent for ' + workerNameCheck);
-        return { status: 'success', allClearSuppressed: true };
+        // 1. Update the Visit Record for the audit trail (after the guard, so the scan sees clean data).
+        // Skipped when forceNotify=true because handleResolvePost() has already done this.
+        handleWorkerPost(p);
     }
-
-    // 1. Update the Visit Record for the audit trail (after the guard, so the scan sees clean data).
-    handleWorkerPost(p);
 
     // 2. Draft the Resolution Messages
     const subject    = `✅ ALL CLEAR — ${p['Worker Name']} is safe`;
