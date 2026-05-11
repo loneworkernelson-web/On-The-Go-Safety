@@ -849,7 +849,16 @@ function processWorkers(rows) {
         }
         // ────────────────────────────────────────────────────────────────────
 
-        if (!workers[name] || timestamp > workers[name].timestamp) {
+        // PRE_VISIT is a pre-departure metadata row that may arrive at the backend
+        // out of order relative to TRAVELLING (network timing). If TRAVELLING arrives
+        // first it gets an earlier server timestamp; PRE_VISIT arrives later and gets
+        // a newer one — causing PRE_VISIT to win the timestamp comparison and mask
+        // TRAVELLING for the entire trip. Fix: PRE_VISIT only seeds the dashboard
+        // record if no other status has been seen yet. Any other status always wins.
+        const shouldUpdate = statusRaw === 'PRE_VISIT'
+            ? !workers[name]
+            : (!workers[name] || timestamp >= workers[name].timestamp);
+        if (shouldUpdate) {
             workers[name] = {
                 // Full-key aliases (for HTML rendering)
                 "Worker Name":              name,
