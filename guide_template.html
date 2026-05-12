@@ -806,6 +806,18 @@
     </div>
     <p class="mock-caption">Starting a visit — 1 hr selected, slide "Begin" pill to confirm</p>
 
+    <h3>⚡ Critical Timing Mode</h3>
+    <p>Below the duration buttons you will see a <strong>Critical Timing</strong> toggle. When switched on, the grace period is removed — if you have not ended your visit by the due time, the alarm fires immediately rather than waiting for the usual grace period your organisation has configured.</p>
+    <p>Use Critical Timing whenever your situation calls for a tighter safety net — for example, a home visit to an unfamiliar person, a late-night appointment, or any time you feel a little less certain about your safety than usual. You do not need a specific reason; it is there for any time you would like the system to be more responsive.</p>
+    <ul>
+        <li><strong>Auto-enabled:</strong> Sites your organisation has marked as high-risk will have Critical Timing turned on automatically when you select them. You can still toggle it off if you choose.</li>
+        <li><strong>Manual:</strong> You can switch it on yourself for any visit, regardless of the site's risk rating.</li>
+        <li><strong>Per-visit setting:</strong> Critical Timing resets after each visit — it does not carry over automatically unless the site is flagged as high-risk.</li>
+    </ul>
+    <div class="tip">
+        <strong>💡 When in doubt, turn it on.</strong> The only consequence of Critical Timing is a more prompt alarm — there is no penalty for using it. If your visit simply takes a little longer than expected, tap <strong>Extend</strong> on the locked screen.
+    </div>
+
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2>6. During a Visit</h2>
 
@@ -814,7 +826,7 @@
     <h3>Mid-Visit Controls</h3>
     <p>The locked screen has four controls always available during an active visit:</p>
     <ul>
-        <li><strong>SOS button</strong> — the large red circular button in the top-right corner. Tap it 3 times rapidly (within about 2 seconds) to raise an alarm. See <a href="#alarms">Section 13: In an Emergency</a>.</li>
+        <li><strong>SOS button</strong> — the large red circular button in the top-right corner. Tap it 3 times rapidly (within about 2 seconds) to raise an alarm. See <a href="#alarms">Section 14: In an Emergency</a>.</li>
         <li><strong>Extend</strong> — tap the blue <strong>Extend</strong> button to give yourself more time before the overtime alert fires. Choose a new duration from the options presented.</li>
         <li><strong>📋 Forms</strong> — tap the <strong>Forms</strong> button to open your organisation's forms library. Use this to submit a status update, a note, or any other mid-visit documentation without ending the visit.</li>
         <li><strong>End Visit pill</strong> — slide the red <strong>End Visit</strong> pill from left to right to begin the departure process.</li>
@@ -865,7 +877,7 @@
     </div>
 
     <div class="tip">
-        <strong>💡 Battery threshold — immediate entry:</strong> If your battery drops below the level your organisation has configured (typically 15–20%), the app enters Battery Saver mode immediately, regardless of how recently you last touched the screen. This is intentional — preserving charge to keep safety monitoring running is the priority. The saver screen will appear even if you were actively using the app moments before.
+        <strong>💡 Low battery alert:</strong> When your battery drops to 15%, the app announces a voice warning, vibrates, and sends a <strong>LOW BATTERY</strong> notification to the safety monitor. This threshold is fixed and not configurable. The Battery Saver screen itself is triggered by inactivity only — the low battery alert and Battery Saver mode are separate features.
     </div>
 
     <p>After waking from Battery Saver mode, the 10-second inactivity countdown restarts immediately — there is no grace period. Any touch on the screen resets the countdown.</p>
@@ -961,7 +973,7 @@
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2 id="travel-mode">8. Travel Mode</h2>
 
-    <p>Use Travel Mode — started via the <strong>Trip</strong> button in the action row — whenever you are in transit between locations. It logs your journey under safety monitoring and, if your organisation uses travel reports, records your route and estimated distance.</p>
+    <p>Use Travel Mode — started via the <strong>Trip</strong> button in the action row — whenever you are in transit between locations. It monitors your route under safety monitoring and, if your organisation uses travel reports, calculates the distance travelled using OpenStreetMap as the reference.</p>
 
     <h3>Starting a trip</h3>
     <ol class="step-list">
@@ -981,7 +993,10 @@
     </div>
 
     <h3>GPS tracking during travel</h3>
-    <p>While a trip is active, the app sends your GPS location to the safety monitor at regular intervals — more frequently than during a static site visit. <strong>Keep the app open on the locked screen</strong> for the duration of your journey to ensure continuous tracking. Locking your phone (screen off) is fine; closing the app entirely or switching away while battery saver is not active may interrupt updates depending on your device.</p>
+    <p>While a trip is active, the app sends your GPS location to the safety monitor at regular intervals. <strong>Keep the app open on the in-app locked screen</strong> for the duration of your journey to ensure continuous tracking.</p>
+    <div class="warning">
+        <strong>⚠️ Do not use your phone's native lock button during a trip.</strong> Because this app is a Progressive Web App (PWA) running in your browser, activating your phone's own lock screen is likely to suspend GPS and background updates. This is a known limitation of PWAs on mobile devices. Instead, leave the app running on its own locked screen — this is what it is designed for. If your phone dims or goes dark on its own, that is fine; just do not press the side button to lock it manually.
+    </div>
 
     <h3>Personal travel — no report required</h3>
     <p>If you're travelling for personal reasons and no report is needed, tick the <strong>"No report required"</strong> checkbox in the expanded footer before you begin. The trip will still be safety-monitored, but you will not be asked to submit a report when you finish. If your organisation mandates reports for all travel, this checkbox will not be available.</p>
@@ -1052,8 +1067,46 @@
     <h3>Diagnostics</h3>
     <p>The <strong>Diagnostics</strong> section (tap to expand) shows technical information about the app's current state — GPS accuracy, sync status, outbox queue, and more. You will not normally need to use this, but your manager or IT support may ask you to open it if they are troubleshooting an issue.</p>
 
+    <h3>Offline Mode</h3>
+    <p>The app works without an internet connection. All safety events — visit start, GPS pulses, alarms, departure reports — are queued locally on your device and uploaded automatically as soon as connectivity is restored. A blue <strong>📡 OFFLINE MODE — Data queued for upload</strong> banner appears at the top of the screen whenever you are offline.</p>
+    <ul>
+        <li>You will not lose any safety data due to poor signal.</li>
+        <li>If the queue reaches 50 unsent items, the app will warn you — this almost always indicates a persistent connectivity problem rather than a brief outage.</li>
+        <li>To manually trigger an upload when you know you're back online, go to <strong>⚙️ Settings → Diagnostics → Flush Outbox Now</strong>.</li>
+    </ul>
+    <div class="tip">
+        <strong>💡 First load requires internet.</strong> The app must be opened at least once with a connection so it can cache the configuration. After that, it loads and runs fully offline.
+    </div>
+
+    <h3>Changing Phones</h3>
+    <p>The app ties your registration to a specific device. If you get a new phone, change browsers, or need to reinstall, there are a few things to be aware of:</p>
+    <ul>
+        <li><strong>Export your personal sites first.</strong> Any locations you have added manually (via <strong>+ Add site</strong>) are stored locally on your device. Go to <strong>⚙️ Settings → Export My Sites</strong> before switching devices. You will receive a short export code — paste it into <strong>Import Sites</strong> on your new device to restore them.</li>
+        <li><strong>Your admin must clear your device registration.</strong> The app locks each worker name to the device it was first registered on. If you try to register on a new device, you will see "This worker is already registered on another device." Your administrator needs to clear your device registration in the Staff sheet before you can re-register. Contact them before switching devices if possible.</li>
+        <li><strong>Do not clear your browser cache without a backup.</strong> Clearing your browser's cache or site data deletes all locally stored app settings — your name, PINs, contacts, and personal sites. This also generates a new device ID, which will again block re-registration until your admin clears it. If you must clear your cache, export your personal sites first and contact your admin.</li>
+    </ul>
+
     <!-- ═══════════════════════════════════════════════════════ -->
-    <h2>10. Safety Check-ins</h2>
+    <h2>10. Forms Library</h2>
+
+    <p>The Forms Library gives you access to a collection of forms that your organisation has made available through the app. Tap the <strong>Forms</strong> button — visible on the main screen footer and on the locked screen during an active visit — to open it.</p>
+    <p>Your organisation configures which forms are available. Examples might include:</p>
+    <ul>
+        <li>Incident reports</li>
+        <li>New client or customer registration forms</li>
+        <li>Vehicle safety checks</li>
+        <li>Site audit checklists</li>
+        <li>Hazard identification forms</li>
+        <li>Mid-visit status updates or notes</li>
+    </ul>
+    <p>Forms can include text fields, yes/no checkboxes, photo capture (camera or gallery), GPS capture, and signature fields. Completed forms are submitted directly through the app and recorded against your name in the same system as your visit records.</p>
+    <p>Forms submitted during an active visit are logged as mid-visit updates — they do not end the visit. Use the <strong>End Visit</strong> pill when you are ready to depart.</p>
+    <div class="tip">
+        <strong>💡 Forms work offline.</strong> If you complete a form without a signal, it is queued in the outbox and uploaded automatically when connectivity returns.
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <h2>11. Safety Check-ins</h2>
 
     <p>If your organisation has enabled periodic welfare check-ins, the app will chime and display a full-screen prompt at regular intervals while a visit is active.</p>
 
@@ -1081,7 +1134,7 @@
     </ul>
 
     <!-- ═══════════════════════════════════════════════════════ -->
-    <h2>11. Vehicle Safety Checks</h2>
+    <h2>12. Vehicle Safety Checks</h2>
 
     <p>If your organisation uses vehicle tracking, the app monitors your vehicle's %%VEHICLE_TERM%% expiry date and ensures periodic safety checks are completed. There are three levels of alert, depending on your vehicle's status.</p>
 
@@ -1164,7 +1217,7 @@
     <p>Once submitted, the app records the new %%VEHICLE_TERM%% expiry date and clears any warnings or blocks. If you are offline when you submit, the form is queued and sent automatically when connectivity is restored.</p>
 
     <!-- ═══════════════════════════════════════════════════════ -->
-    <h2>12. Instant Push Notifications (ntfy)</h2>
+    <h2>13. Instant Push Notifications (ntfy)</h2>
 
     <h3>Why this exists</h3>
     <p>When an alarm fires, your contacts are notified by email. Email is reliable, but it has a problem: most people don't have email open on their phone during the day, and notifications can be delayed by minutes or silenced entirely.</p>
@@ -1244,7 +1297,7 @@
     </div>
 
     <!-- ═══════════════════════════════════════════════════════ -->
-    <h2>12b. SMS Text Alerts</h2>
+    <h2>13b. SMS Text Alerts</h2>
 
     <p>In addition to email and ntfy push notifications, your organisation may be configured to send an <strong>SMS text message</strong> to your emergency and escalation contacts the instant an alarm fires. SMS acts as a further backup channel — useful if a contact hasn't installed ntfy, or if their email is delayed.</p>
 
@@ -1255,7 +1308,7 @@
 %%SMS_PROVIDER_SETUP%%
 
     <!-- ═══════════════════════════════════════════════════════ -->
-    <h2>13. In an Emergency</h2>
+    <h2 id="alarms">14. In an Emergency</h2>
 
     <div class="warning">
         <h3 style="margin-top:0;">🚨 IMPORTANT — Read Before You Need It</h3>
@@ -1295,6 +1348,13 @@
         </div>
     </div>
     <p class="mock-caption">Alarm active — subtle amber border overlay; screen stays normal for bystanders</p>
+
+    <h3>Alarm screen — additional buttons</h3>
+    <p>When an alarm is active, two additional buttons appear on screen alongside the normal controls:</p>
+    <ul>
+        <li><strong>📞 Call Emergency Contact</strong> — opens your phone's native dialler pre-filled with your emergency contact's number. One tap to call. This is also useful if a bystander is with you and wants to call on your behalf.</li>
+        <li><strong>Send Direct Alert</strong> — sends a direct alarm payload if you are in an area with no signal and the normal background upload has not yet gone through. Use this if the alarm has fired but you are concerned the notification may not have reached your contacts.</li>
+    </ul>
 
     <h3>Confirming you are safe</h3>
     <p>While an alarm is active, <strong>every button tap</strong> on the locked screen is intercepted and asks for your PIN before doing anything else. This protects against someone forcing you to cancel the alarm. PIN entry is the only valid path to clearing any alarm — this applies whether the alarm was triggered by SOS, shake, volume buttons, an overdue timer, or a Critical Timing breach. There are no shortcut buttons that bypass PIN verification.</p>
@@ -1415,7 +1475,7 @@
     <h4>3. Volume buttons — Android only</h4>
     <p>Press either volume button <strong>5 times within 3 seconds</strong>. A confirmation screen appears — press any volume button 3 more times within 3 seconds to confirm. This method works even when the screen is off or locked.</p>
     <div class="tip">
-        <strong>💡 Audio must have been used at least once:</strong> Volume button detection requires Android Chrome to have registered an active audio session. This happens automatically the first time you start a visit (you'll hear a brief audio cue). If you've never started a visit on this device, volume detection may not be active yet. Once you've started your first visit, it works reliably for all subsequent ones.
+        <strong>💡 Volume detection is active from first use:</strong> The app registers the audio session needed for Android Chrome to route volume key presses to the page as soon as you open the app and tap anything. You do not need to start a visit first — a single tap anywhere in the app (such as selecting a location tile) is sufficient. Once registered, it remains active for the duration of the session.
     </div>
 
     <div class="mock-wrap">
@@ -1436,6 +1496,18 @@
 
     <div class="tip">
         <strong>💡 All three methods send the same alarm.</strong> SOS, shake, and volume buttons all send a PANIC alert to your contacts and monitor via push notification, email, and SMS (if SMS is enabled for your organisation) — the alarm behaviour and the way you cancel it is identical regardless of which trigger you used.
+    </div>
+
+    <h3>Alarm outside an active visit — Decoy Lock Screen</h3>
+    <p>If you trigger an alarm via <strong>shake</strong> when you do not have an active visit running (for example, before you have started a visit, or after you have departed), the app cannot show the normal alarm overlay — there is no locked visit screen to overlay. Instead, it displays a <strong>decoy lock screen</strong>.</p>
+    <p>The decoy screen is designed to be indistinguishable from a real phone lock screen to a casual bystander — it shows the current time and date, an "Enter Passcode" prompt, and a standard numeric keypad. The alarm is already active and your contacts are being notified in the background.</p>
+    <ul>
+        <li><strong>To confirm you are safe:</strong> enter your <strong>Safety PIN</strong> on the decoy keypad. The screen dismisses and the alarm is cancelled.</li>
+        <li><strong>Under duress:</strong> enter your <strong>Duress PIN</strong> instead. The screen appears to dismiss normally, but a silent DURESS alert is sent to your contacts and the safety monitor.</li>
+        <li>An incorrect PIN causes the keypad to shake — try again.</li>
+    </ul>
+    <div class="warning">
+        <strong>The decoy screen is not your phone's real lock screen.</strong> It cannot make emergency calls, and swiping or pressing the home button will not bypass it during an active alarm.
     </div>
 
     <h3>What your contacts receive</h3>
