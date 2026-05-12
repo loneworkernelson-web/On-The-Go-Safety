@@ -361,7 +361,7 @@
             padding: 2px 5px;
         }
 
-        /* ── Action Row (Refresh · Add Site | Trip) ── */
+        /* ── Action Row (Add Site · Trip · General) ── */
         .mock-action-row {
             display: flex;
             gap: 6px;
@@ -478,16 +478,14 @@
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2>2. First-Run Setup Wizard</h2>
 
-    <p>The first time you open the app from your home screen, a setup wizard will guide you through four steps. This only happens once.</p>
+    <p>The first time you open the app from your home screen, a setup wizard will guide you through three steps. This only happens once.</p>
 
     <div class="mock-with-text">
         <div>
             <ol class="step-list">
-                <li><strong>Your Name:</strong> Enter your full name exactly as it appears in your organisation's records — <em>First Last</em>. This is case-sensitive and must match the Staff list precisely.</li>
-                <li><strong>Safety PIN:</strong> Create a 4-digit PIN (e.g. 1234). You'll use this to confirm you're safe after an alarm.</li>
-                <li><strong>Duress PIN:</strong> Create a <em>different</em> secret PIN (e.g. 9999). If someone forces you to cancel an alarm, enter this PIN instead. It appears to cancel the alarm but silently sends a <strong>DURESS</strong> alert with your GPS to your contacts and HQ.</li>
-                <li><strong>Emergency Contact:</strong> Your personal emergency contact (e.g. spouse or next-of-kin).</li>
-                <li><strong>Escalation Contact:</strong> Your work escalation contact (e.g. your manager).</li>
+                <li><strong>Your Identity:</strong> Enter your full name exactly as it appears in your organisation's records — <em>First Last</em>. This is case-sensitive and must match the Staff list precisely. Also enter your phone number and email address.</li>
+                <li><strong>Safety &amp; Duress PINs:</strong> Create a 4-digit Safety PIN (e.g. 1234) — you'll use this to confirm you're safe after an alarm. Then create a <em>different</em> secret Duress PIN (e.g. 9999). If someone forces you to cancel an alarm, enter this instead — it appears to cancel normally but silently sends a <strong>DURESS</strong> alert with your GPS to your contacts and HQ.</li>
+                <li><strong>Response Hierarchy:</strong> Enter your Primary Contact (e.g. spouse or next-of-kin) and, optionally, an Escalation Contact (e.g. your manager). Both contacts can have a name, phone number, email, and ntfy topic for push alerts.</li>
             </ol>
         </div>
         <div class="mock-wrap">
@@ -495,7 +493,7 @@
                 <div class="mock-statusbar"><span>9:41 AM</span><span>▐▐▐ 🔋</span></div>
                 <div class="mock-header">
                     <div class="mock-header-left"><div class="mock-logo-dot"></div><span>%%ORG_NAME%%</span></div>
-                    <span style="color:#94a3b8;font-size:9px">SETUP 2/4</span>
+                    <span style="color:#94a3b8;font-size:9px">SETUP 2/3</span>
                 </div>
                 <div class="mock-body-pad">
                     <div class="mock-label">Safety PIN</div>
@@ -553,29 +551,27 @@
                 </div>
                 <div class="mock-body">
                     <div class="mock-action-row">
-                        <div class="mock-action-half">
-                            <div class="mock-action-btn"><span class="mock-action-icon" style="color:#60a5fa;">↻</span><span class="mock-action-label">Refresh</span></div>
-                            <div class="mock-action-btn"><span class="mock-action-icon" style="color:#4ade80;">+</span><span class="mock-action-label">Add site</span></div>
-                        </div>
-                        <div class="mock-trip-tile">
+                        <div class="mock-action-btn"><span class="mock-action-icon" style="color:#4ade80;">+</span><span class="mock-action-label">Add site</span></div>
+                        <div class="mock-trip-tile" style="width:auto;flex:1;">
                             <span style="font-size:14px;">🚗</span>
                             <div>
                                 <div style="font-size:10px;font-weight:800;color:white;line-height:1.1;">Trip</div>
                                 <div style="font-size:8px;color:#bfdbfe;font-weight:700;">Report required</div>
                             </div>
                         </div>
+                        <div class="mock-action-btn" style="opacity:0.4;"><span class="mock-action-icon">🗺️</span><span class="mock-action-label">General</span></div>
                     </div>
                     <div class="mock-sort-row">
                         <span style="font-size:8px;color:#9ca3af;font-weight:700;">Last Sync: 9:38 AM</span>
                         <div class="mock-sort-btn"><span>🕐</span><span>Recent</span></div>
                     </div>
-                    <div class="mock-location-tile active">
-                        <div><div class="mock-tile-name">📍 City Library</div><div class="mock-tile-sub">123 Main St, Auckland</div></div>
-                        <div class="mock-tile-info">ℹ</div>
+                    <div class="mock-location-tile active" style="border-radius:8px;min-height:56px;align-items:flex-start;flex-direction:column;gap:2px;">
+                        <div style="font-size:18px;line-height:1;">🏛️</div>
+                        <div class="mock-tile-name" style="font-size:10px;">City Library</div>
                     </div>
-                    <div class="mock-location-tile">
-                        <div><div class="mock-tile-name">🏢 Head Office</div><div class="mock-tile-sub">45 Queen St, Auckland</div></div>
-                        <div class="mock-tile-info">ℹ</div>
+                    <div class="mock-location-tile" style="border-radius:8px;min-height:56px;align-items:flex-start;flex-direction:column;gap:2px;">
+                        <div style="font-size:18px;line-height:1;">🏢</div>
+                        <div class="mock-tile-name" style="font-size:10px;">Head Office</div>
                     </div>
                 </div>
             </div>
@@ -584,11 +580,11 @@
     <p class="mock-caption">Main screen — action bar, sort toggle, and location tiles. City Library selected.</p>
 
     <h3>The Action Bar</h3>
-    <p>Above the location list, a two-part action bar gives you fast access to the most common actions:</p>
+    <p>Above the location list, a row of three equal buttons gives you fast access to the most common actions:</p>
     <ul>
-        <li><strong>↻ Refresh</strong> — downloads the latest approved locations and form templates from your organisation. Use this after your manager adds or changes sites. Requires an internet connection; locations remain available offline once synced.</li>
         <li><strong>+ Add site</strong> — adds a personal location not on the organisation list (e.g. a new client or one-off visit). See <em>Adding a Manual Location</em> below.</li>
-        <li><strong>🚗 Trip</strong> — on the right side of the action row. Tap to enter travel mode. See <a href="#travel-mode">Section 8: Travel Mode</a>.</li>
+        <li><strong>🚗 Trip</strong> — activates travel mode. Once tapped, a <strong>🗺️ General</strong> button appears alongside it so you can choose between travelling to a specific site or a general (unspecified) destination. See <a href="#travel-mode">Section 8: Travel Mode</a>.</li>
+        <li><strong>🗺️ General</strong> — only visible when Trip mode is active. Tap to select "general travel" when you are not heading to a listed site.</li>
     </ul>
 
     <h3>Sorting the Location List</h3>
@@ -621,12 +617,14 @@
             <h4 style="margin-top:0;color:#374151;">What you'll see</h4>
             <ul>
                 <li><strong>Site Name, Company &amp; Address</strong> — as recorded by your organisation.</li>
-                <li><strong>📞 Call</strong> — dials the site contact directly. Only appears if a contact phone number has been set.</li>
-                <li><strong>✉️ Email</strong> — opens an email to the site contact. Only appears if a contact email has been set.</li>
-                <li><strong>🗺️ Navigate</strong> — opens Google Maps with the site address pre-filled, ready for turn-by-turn directions.</li>
+                <li><strong>🛡️ VIEW SITE SAFETY INFORMATION</strong> — red button below the address. Tap to open emergency procedures in your browser. If none are on file, a greyed prompt appears instead — tap it to submit documentation.</li>
                 <li><strong>Contact</strong> — the contact name and phone number for the site, if provided.</li>
                 <li><strong>Notes</strong> — any site-specific notes your organisation has added (e.g. access instructions, parking details).</li>
                 <li><strong>📄 Report Required toggle</strong> — your personal setting for this site. When on, a departure report is requested at the end of every visit. You can change this at any time without affecting other workers.</li>
+                <li><strong>📞 Call</strong> — dials the site contact directly. Only appears if a contact phone number has been set.</li>
+                <li><strong>✉️ Email</strong> — opens an email to the site contact. Only appears if a contact email has been set.</li>
+                <li><strong>🗺️ Navigate</strong> — opens Google Maps with the site address pre-filled, ready for turn-by-turn directions.</li>
+                <li><strong>Close</strong> — returns to the location list.</li>
             </ul>
         </div>
         <div class="mock-wrap">
@@ -643,21 +641,31 @@
                     </div>
                 </div>
                 <div class="mock-body-pad">
-                    <div style="margin-bottom:6px;">
+                    <div style="font-size:11px;font-weight:900;color:white;margin-bottom:8px;letter-spacing:0.05em;">Site Safety Information</div>
+                    <div style="margin-bottom:8px;">
                         <div style="font-size:8px;color:#60a5fa;font-weight:900;text-transform:uppercase;letter-spacing:0.1em;">Site Name</div>
-                        <div style="font-size:13px;font-weight:800;color:white;">City Library</div>
-                        <div style="font-size:9px;color:#9ca3af;">123 Main St, Auckland</div>
+                        <div style="font-size:12px;font-weight:800;color:white;">City Library</div>
+                        <div style="font-size:8px;color:#9ca3af;">Auckland City Council</div>
+                        <div style="font-size:8px;color:#9ca3af;">123 Main St, Auckland</div>
                     </div>
-                    <div style="display:flex;gap:6px;margin-bottom:6px;">
-                        <div style="flex:1;background:#15803d;border-radius:8px;padding:8px;text-align:center;font-size:9px;font-weight:900;color:white;">📞 Call</div>
-                        <div style="flex:1;background:#1d4ed8;border-radius:8px;padding:8px;text-align:center;font-size:9px;font-weight:900;color:white;">✉️ Email</div>
+                    <div style="background:#dc2626;border-radius:8px;padding:8px;text-align:center;font-size:8px;font-weight:900;color:white;margin-bottom:6px;">🛡️ VIEW SITE SAFETY INFORMATION</div>
+                    <div style="font-size:8px;color:#9ca3af;margin-bottom:6px;border-top:1px solid #374151;padding-top:6px;">
+                        <div style="color:#ef4444;font-weight:900;font-size:7px;text-transform:uppercase;letter-spacing:0.1em;">Contact</div>
+                        <div style="color:white;font-weight:700;">Jane Smith · 021 123 456</div>
                     </div>
-                    <div style="background:#1e40af;border-radius:8px;padding:8px;text-align:center;font-size:9px;font-weight:900;color:white;margin-bottom:6px;">🗺️ Navigate</div>
-                    <div style="background:#dc2626;border-radius:8px;padding:10px;text-align:center;font-size:9px;font-weight:900;color:white;margin-bottom:6px;">🛡️ VIEW SITE SAFETY INFORMATION</div>
-                    <div style="background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px;font-size:9px;color:#d1d5db;">
-                        <span style="color:#9ca3af;">📄 Report Required</span>
-                        <span style="float:right;color:#3b82f6;font-weight:900;">ON</span>
+                    <div style="background:#1f2937;border:1px solid #374151;border-radius:8px;padding:7px;font-size:8px;color:#d1d5db;display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                        <span style="color:#9ca3af;font-weight:700;">📄 Report Required</span>
+                        <div style="position:relative;width:28px;height:15px;">
+                            <div style="width:28px;height:15px;background:#2563eb;border-radius:99px;"></div>
+                            <div style="position:absolute;top:2px;right:2px;width:11px;height:11px;background:white;border-radius:50%;"></div>
+                        </div>
                     </div>
+                    <div style="display:flex;gap:5px;margin-bottom:5px;">
+                        <div style="flex:1;background:#15803d;border-radius:8px;padding:7px;text-align:center;font-size:8px;font-weight:900;color:white;">📞 Call</div>
+                        <div style="flex:1;background:#1d4ed8;border-radius:8px;padding:7px;text-align:center;font-size:8px;font-weight:900;color:white;">✉️ Email</div>
+                    </div>
+                    <div style="background:#1e40af;border-radius:8px;padding:7px;text-align:center;font-size:8px;font-weight:900;color:white;margin-bottom:5px;">🗺️ Navigate</div>
+                    <div style="background:#374151;border-radius:8px;padding:7px;text-align:center;font-size:8px;font-weight:700;color:#9ca3af;">Close</div>
                 </div>
             </div>
         </div>
@@ -735,7 +743,7 @@
     <h3>Notice Archive tab</h3>
     <p>The Notice Archive stores historical notices that your organisation has sent through the app. These may include policy updates, safety alerts, or general announcements. Notices are shown in reverse date order — most recent first.</p>
     <div class="tip">
-        <strong>💡 Resources are synced:</strong> Tap the <strong>Sync</strong> button on the main screen to download the latest resources and notices. Once synced, resources are available offline.
+        <strong>💡 Resources are synced automatically:</strong> The app downloads the latest resources and notices each time it opens. You can also trigger a manual sync at any time via <strong>⚙️ Settings → Diagnostics → Force Sync</strong>. Once synced, resources are available offline.
     </div>
 
     <!-- ═══════════════════════════════════════════════════════ -->
@@ -745,8 +753,8 @@
         <div>
             <ol class="step-list">
                 <li>Tap a location tile to select it (it will highlight in your organisation's colour).</li>
-                <li>Tap a <strong>duration button</strong> (15 min, 30 min, 1 hr, 2 hr) to set how long you expect to be there. A "Due:" time will appear beneath the buttons as a reminder.</li>
-                <li><strong>Slide the green "Start Visit" pill</strong> from left to right to confirm and begin. The pill label will show the name of your selected site — if it's greyed out, check you've selected both a location and a duration.</li>
+                <li>Tap a <strong>duration button</strong> to set how long you expect to be there. Eight options are available: 15m, 30m, 45m, 1 hr, 1½ hr, 2 hr, 3 hr, 4 hr. A "Due:" time will appear alongside the buttons as a reminder.</li>
+                <li><strong>Slide the "Begin — [site name]" pill</strong> from left to right to confirm and begin. If the pill is greyed out, check you've selected both a location and a duration.</li>
             </ol>
             <div class="tip">
                 <strong>🔊 Audio check:</strong> When starting, you may hear a brief quiet click or beep. This is normal — it wakes the app's audio system so it can alert you with a voice prompt if you go overtime.
@@ -766,26 +774,37 @@
                     </div>
                 </div>
                 <div class="mock-body">
-                    <div class="mock-location-tile active" style="margin-bottom:10px;">
-                        <div><div class="mock-tile-name">📍 City Library</div><div class="mock-tile-sub" style="color:#93c5fd;">Selected — tap to deselect</div></div>
+                    <div class="mock-location-tile active" style="margin-bottom:10px;border-radius:8px;min-height:56px;align-items:flex-start;flex-direction:column;gap:2px;">
+                        <div style="font-size:18px;line-height:1;">🏛️</div>
+                        <div class="mock-tile-name" style="font-size:10px;">City Library</div>
+                        <div class="mock-tile-sub" style="color:#93c5fd;font-size:8px;">✓ Selected — Now set duration</div>
                     </div>
                     <div class="mock-label">Expected Duration</div>
                     <div class="mock-timer-row">
                         <div class="mock-quick-btn">15m</div>
-                        <div class="mock-quick-btn" style="border-color:#3b82f6;color:#93c5fd;">30m</div>
-                        <div class="mock-quick-btn">1hr</div>
+                        <div class="mock-quick-btn">30m</div>
+                        <div class="mock-quick-btn">45m</div>
+                        <div class="mock-quick-btn" style="border-color:#3b82f6;color:#93c5fd;">1 hr</div>
                     </div>
-                    <div class="mock-progress-bar"><div class="mock-progress-fill" style="width:50%"></div></div>
-                    <div style="text-align:center;color:#9ca3af;font-size:9px;margin-bottom:10px;">30 minutes selected</div>
-                    <div class="mock-slide-pill">
-                        <div class="mock-pill-thumb">▶</div>
-                        Begin — City Library
+                    <div class="mock-timer-row">
+                        <div class="mock-quick-btn">1½ hr</div>
+                        <div class="mock-quick-btn">2 hr</div>
+                        <div class="mock-quick-btn">3 hr</div>
+                        <div class="mock-quick-btn">4 hr</div>
+                    </div>
+                    <div style="text-align:center;color:#9ca3af;font-size:9px;margin-bottom:10px;">Due: 10:41 AM</div>
+                    <div style="display:flex;gap:6px;align-items:stretch;">
+                        <div style="background:#1e1b4b;border:1px solid #3730a3;border-radius:12px;padding:10px 8px;font-size:8px;font-weight:900;color:#a5b4fc;text-align:center;width:52px;flex-shrink:0;">Forms</div>
+                        <div class="mock-slide-pill" style="flex:1;margin-top:0;">
+                            <div class="mock-pill-thumb">▶</div>
+                            Begin — City Library
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-    <p class="mock-caption">Starting a visit — duration set to 30 minutes, slide pill ready</p>
+    <p class="mock-caption">Starting a visit — 1 hr selected, slide "Begin" pill to confirm</p>
 
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2>6. During a Visit</h2>
@@ -793,10 +812,12 @@
     <p>Once a visit is active, the app moves to a <strong>locked screen</strong> — this is intentional. It conserves your battery and keeps the GPS running in the background.</p>
 
     <h3>Mid-Visit Controls</h3>
-    <p>Two controls are always available on the locked screen during an active visit:</p>
+    <p>The locked screen has four controls always available during an active visit:</p>
     <ul>
+        <li><strong>SOS button</strong> — the large red circular button in the top-right corner. Tap it 3 times rapidly (within about 2 seconds) to raise an alarm. See <a href="#alarms">Section 13: In an Emergency</a>.</li>
         <li><strong>Extend</strong> — tap the blue <strong>Extend</strong> button to give yourself more time before the overtime alert fires. Choose a new duration from the options presented.</li>
         <li><strong>📋 Forms</strong> — tap the <strong>Forms</strong> button to open your organisation's forms library. Use this to submit a status update, a note, or any other mid-visit documentation without ending the visit.</li>
+        <li><strong>End Visit pill</strong> — slide the red <strong>End Visit</strong> pill from left to right to begin the departure process.</li>
     </ul>
 
     <div class="mock-wrap">
@@ -807,6 +828,9 @@
                 <span style="color:#22c55e;font-size:9px;font-weight:900;">● ACTIVE</span>
             </div>
             <div class="mock-body">
+                <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+                    <div style="width:52px;height:52px;background:#dc2626;border-radius:50%;border:3px solid #7f1d1d;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:white;box-shadow:0 0 0 4px rgba(220,38,38,0.2);">SOS</div>
+                </div>
                 <div class="mock-label">Currently Active At</div>
                 <div class="mock-value" style="font-size:11px;">📍 City Library</div>
                 <div class="mock-label">Time Remaining</div>
@@ -823,7 +847,7 @@
             </div>
         </div>
     </div>
-    <p class="mock-caption">Locked screen — Extend and Forms buttons are always visible</p>
+    <p class="mock-caption">Locked screen — SOS button (top right), Extend, Forms, and End Visit pill</p>
 
     <h3>Battery Saver</h3>
     <p>After 10 seconds without interaction, the app automatically switches to <strong>Battery Saver mode</strong>. The screen goes black and the system navigation bars are hidden — this is normal behaviour. GPS tracking and all safety monitoring continue to run in the background.</p>
@@ -900,7 +924,7 @@
                 <div class="mock-progress-bar"><div class="mock-progress-fill" style="width:40%;background:#22c55e;"></div></div>
                 <div class="mock-slide-pill danger" style="margin-top:16px;">
                     <div class="mock-pill-thumb">→</div>
-                    Proceed to Report
+                    End Visit
                 </div>
                 <div style="text-align:center;font-size:8px;color:#fca5a5;margin-top:5px;">📋 Complete your visit report next</div>
             </div>
@@ -1084,9 +1108,9 @@
                 </div>
             </div>
             <div class="mock-body">
-                <div class="mock-location-tile">
-                    <div><div class="mock-tile-name">📍 City Library</div><div class="mock-tile-sub">123 Main St, Auckland</div></div>
-                    <div class="mock-tile-info">ℹ</div>
+                <div class="mock-location-tile" style="border-radius:8px;min-height:56px;align-items:flex-start;flex-direction:column;gap:2px;">
+                    <div style="font-size:18px;line-height:1;">🏛️</div>
+                    <div class="mock-tile-name" style="font-size:10px;">City Library</div>
                 </div>
             </div>
         </div>
@@ -1345,10 +1369,10 @@
     </div>
 
     <h3>Ways to trigger an alarm</h3>
-    <p>There are three independent ways to raise an alarm, any of which can be used covertly. <strong>Shake works anywhere in the app</strong> — including the home screen, before a visit has started. The SOS button and volume button method are only available during an active visit.</p>
+    <p>There are three independent ways to raise an alarm, any of which can be used covertly. <strong>Shake works anywhere in the app</strong> — including the home screen, before a visit has started. The SOS button and volume button method are only available during an active visit. The SOS button is always visible in the top-right corner of the locked screen.</p>
 
     <h4>1. SOS Button — tap 3 times</h4>
-    <p>Tap the red <strong>SOS button 3 times rapidly</strong> (within about 2 seconds). Available during an active visit when the screen is on.</p>
+    <p>Tap the red <strong>SOS button 3 times rapidly</strong> (within about 2 seconds). The SOS button is the large red circle in the <strong>top-right corner of the locked screen</strong> — it is always visible during an active visit.</p>
 
     <div class="mock-wrap">
         <div class="mock-phone" style="width:260px;">
@@ -1358,8 +1382,8 @@
                 <span style="color:#22c55e;font-size:9px;font-weight:900;">● ACTIVE</span>
             </div>
             <div class="mock-body" style="padding-top:14px;padding-bottom:14px;">
-                <div style="text-align:center;margin-bottom:10px;">
-                    <div style="width:64px;height:64px;background:#dc2626;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:white;letter-spacing:0.05em;box-shadow:0 0 0 6px rgba(220,38,38,0.2);">SOS</div>
+                <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+                    <div style="width:52px;height:52px;background:#dc2626;border-radius:50%;border:3px solid #7f1d1d;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:white;box-shadow:0 0 0 4px rgba(220,38,38,0.2);">SOS</div>
                 </div>
                 <div style="text-align:center;font-size:9px;color:#9ca3af;margin-bottom:10px;">Tap 3× rapidly to raise alarm</div>
                 <div class="mock-slide-pill danger" style="margin-top:0;">
@@ -1369,7 +1393,7 @@
             </div>
         </div>
     </div>
-    <p class="mock-caption">SOS button — tap rapidly 3 times to trigger</p>
+    <p class="mock-caption">SOS button (top right of locked screen) — tap rapidly 3 times to trigger</p>
 
     <h4>2. Shake — shake vigorously, then shake again</h4>
     <p>Shake your phone vigorously for about a second. A full-screen red confirmation modal appears with a 5-second countdown. <strong>Shake again</strong> to confirm — the alarm fires. If you do not shake again within 5 seconds, the screen dismisses automatically and nothing is sent. This is the only trigger that works <strong>anywhere in the app</strong>, including the home screen before a visit has started.</p>
@@ -1389,7 +1413,7 @@
     <p class="mock-caption">Shake confirmation — 5 seconds to confirm or it auto-dismisses</p>
 
     <h4>3. Volume buttons — Android only</h4>
-    <p>Press either volume button <strong>5 times within 3 seconds</strong>. A confirmation screen appears — press any volume button 3 more times within 5 seconds to confirm. This method works even when the screen is off or locked.</p>
+    <p>Press either volume button <strong>5 times within 3 seconds</strong>. A confirmation screen appears — press any volume button 3 more times within 3 seconds to confirm. This method works even when the screen is off or locked.</p>
     <div class="tip">
         <strong>💡 Audio must have been used at least once:</strong> Volume button detection requires Android Chrome to have registered an active audio session. This happens automatically the first time you start a visit (you'll hear a brief audio cue). If you've never started a visit on this device, volume detection may not be active yet. Once you've started your first visit, it works reliably for all subsequent ones.
     </div>
@@ -1438,7 +1462,7 @@
             </tr>
         </thead>
         <tbody>
-            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Start a visit</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap location tile → set duration → slide the Begin pill</td></tr>
+            <tr><td style="padding:10px;border:1px solid #e5e7eb;">Start a visit</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap location tile → set duration → slide the "Begin — [site name]" pill</td></tr>
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">End a visit</td><td style="padding:10px;border:1px solid #e5e7eb;">Slide the End Visit pill → slide Submit &amp; End if report required</td></tr>
             <tr><td style="padding:10px;border:1px solid #e5e7eb;">Extend visit time</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap <strong>Extend</strong> button on locked screen</td></tr>
             <tr style="background:#f9fafb;"><td style="padding:10px;border:1px solid #e5e7eb;">Submit a note or form mid-visit</td><td style="padding:10px;border:1px solid #e5e7eb;">Tap <strong>📋 Forms</strong> button on locked screen</td></tr>
