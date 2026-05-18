@@ -1480,9 +1480,32 @@ function triggerAlerts(p, type) {
         `Sent: ${sentAt}`
     ].filter(Boolean).join('\n');
 
+    // Start with payload values (sent by the worker app from state.worker).
+    // Fall back to Staff sheet (col H/I) — the authoritative source — in case the
+    // worker's device has stale or empty ntfy config. Matches the All Clear pattern.
+    let _alertEmgNtfy = (p['Emergency Contact Ntfy']  || '').toString().trim();
+    let _alertEscNtfy = (p['Escalation Contact Ntfy'] || '').toString().trim();
+    try {
+        const _ss2 = SpreadsheetApp.getActiveSpreadsheet();
+        const _staffSheet2 = _ss2.getSheetByName('Staff');
+        if (_staffSheet2) {
+            const _staffData2 = _staffSheet2.getDataRange().getValues();
+            const _wName2 = (p['Worker Name'] || '').toString().trim();
+            for (let _j2 = 1; _j2 < _staffData2.length; _j2++) {
+                if ((_staffData2[_j2][0] || '').toString().trim() === _wName2) {
+                    const _sEmg2 = (_staffData2[_j2][7] || '').toString().trim(); // col H
+                    const _sEsc2 = (_staffData2[_j2][8] || '').toString().trim(); // col I
+                    if (_sEmg2) _alertEmgNtfy = _sEmg2;
+                    if (_sEsc2) _alertEscNtfy = _sEsc2;
+                    break;
+                }
+            }
+        }
+    } catch (_e2) { console.warn('Alert ntfy Staff lookup failed: ' + _e2.toString()); }
+
     const ntfyContacts = [
-        { topic: p['Emergency Contact Ntfy'],  name: p['Emergency Contact Name']  },
-        { topic: p['Escalation Contact Ntfy'], name: p['Escalation Contact Name'] }
+        { topic: _alertEmgNtfy,  name: p['Emergency Contact Name']  },
+        { topic: _alertEscNtfy,  name: p['Escalation Contact Name'] }
     ].filter(c => c.topic && c.topic.trim());
 
     ntfyContacts.forEach(c => {
@@ -2227,6 +2250,15 @@ function runDiagnostics() {
         .replace(/^-|-$/g, '')
         .substring(0, 24);
     const diagTopic = orgSlug + '-otg-diag';
+    const _ntfyProxyConfigured = (CONFIG.NTFY_PROXY_URL && !CONFIG.NTFY_PROXY_URL.includes('%%'));
+    const ntfyServer = _ntfyProxyConfigured
+        ? CONFIG.NTFY_PROXY_URL.replace(/\/$/, '')
+        : (CONFIG.NTFY_SERVER && !CONFIG.NTFY_SERVER.includes('%%'))
+            ? CONFIG.NTFY_SERVER.replace(/\/$/, '')
+            : 'https://ntfy.sh';
+    const ntfyRouteLabel = _ntfyProxyConfigured
+        ? 'via proxy (' + ntfyServer + ')'
+        : 'on ' + ntfyServer;
     // Route through _sendNtfy() so the proxy is used when configured — the same
     // path that real alerts take. Previous versions called UrlFetchApp.fetch() directly,
     // bypassing the proxy and giving a misleading result.
@@ -2471,7 +2503,7 @@ skipCount + ' skipped (not configured)' +
 '</td></tr>' +
 '</table></div>' +
 '<p style="margin:14px 0 0;font-size:12px;color:#666">' +
-'ℹ️ An ntfy test notification was posted to topic <strong>' + diagTopic + '</strong> on <strong>' + ntfyServer + '</strong>. ' +
+'ℹ️ An ntfy test notification was posted to topic <strong>' + diagTopic + '</strong> ' + ntfyRouteLabel + '. ' +
 'Subscribe to this topic in the ntfy app to verify push delivery end-to-end. ' +
 'You only need to subscribe once.' +
 '</p>' +
