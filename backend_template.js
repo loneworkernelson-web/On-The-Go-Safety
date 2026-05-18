@@ -567,6 +567,7 @@ function handleWorkerPost(p) {
         } catch(e) { console.error("Data Parsing Error: " + e); }
     }
     
+    let existingVisitNotes = ''; // captured from matched row for use in triggerAlerts
     if (!isNoteToSelf) {
         if(!sheet) {
             sheet = ss.insertSheet('Visits');
@@ -574,7 +575,6 @@ function handleWorkerPost(p) {
         }
         
         let rowUpdated = false;
-        let existingVisitNotes = ''; // captured from matched row for use in triggerAlerts
         const lastRow = sheet.getLastRow();
         const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
         const distColIdx = headers.indexOf("Distance (km)");
@@ -1076,16 +1076,6 @@ function _sendViaTextbelt_(to, body) {
  */
 function triggerAlerts(p, type) {
 
-    // ── [DIAG] ──────────────────────────────────────────────────────────────
-    console.log('[DIAG] triggerAlerts called. type=' + type
-        + ' | status=' + p['Alarm Status']
-        + ' | emgEmail=' + p['Emergency Contact Email']
-        + ' | escEmail=' + p['Escalation Contact Email']
-        + ' | emgNtfy='  + p['Emergency Contact Ntfy']
-        + ' | escNtfy='  + p['Escalation Contact Ntfy']
-        + ' | worker='   + p['Worker Name']);
-    // ── [/DIAG] ─────────────────────────────────────────────────────────────
-
     // ── GPS HANDLING ────────────────────────────────────────────────────────
     // Guard: treat "0,0" as no fix (it's the worker app fallback when GPS
     // was unavailable, not a real coordinate).
@@ -1449,12 +1439,6 @@ function triggerAlerts(p, type) {
         { email: p['Escalation Contact Email'],  name: p['Escalation Contact Name'],  ntfy: p['Escalation Contact Ntfy']  }
     ].filter(c => c.email && c.email.includes('@'));
 
-    // ── [DIAG] ──────────────────────────────────────────────────────────────
-    console.log('[DIAG] contactPairs count=' + contactPairs.length
-        + ' | emgEmail raw=' + p['Emergency Contact Email']
-        + ' | escEmail raw=' + p['Escalation Contact Email']);
-    // ── [/DIAG] ─────────────────────────────────────────────────────────────
-
     contactPairs.forEach(contact => {
         const subject  = `${headerEmoji} ${statusLabel} — ${workerName}`;
         const htmlBody = buildHtml(contact.name, contact.ntfy);
@@ -1523,12 +1507,6 @@ function triggerAlerts(p, type) {
         { topic: _alertEmgNtfy,  name: p['Emergency Contact Name']  },
         { topic: _alertEscNtfy,  name: p['Escalation Contact Name'] }
     ].filter(c => c.topic && c.topic.trim());
-
-    // ── [DIAG] ──────────────────────────────────────────────────────────────
-    console.log('[DIAG] ntfyContacts count=' + ntfyContacts.length
-        + ' | _alertEmgNtfy=' + _alertEmgNtfy
-        + ' | _alertEscNtfy=' + _alertEscNtfy);
-    // ── [/DIAG] ─────────────────────────────────────────────────────────────
 
     ntfyContacts.forEach(c => {
         _sendNtfy(c.topic, `${headerEmoji} ${statusLabel} — ${workerName}`, ntfyMessage, ntfyPriority, ntfyTags);
