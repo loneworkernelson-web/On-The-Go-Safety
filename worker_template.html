@@ -3896,6 +3896,10 @@ async function triggerPanic(duress = false, alarmCode = null) {
  closeModal('notice');
  closeModal('resourceHub');
 
+ // IDLE ALARM: Show decoy lock screen after modals are closed.
+ // Must be before _armAlarmInterceptor() — the interceptor handles decoy taps.
+ if (!state?.activeVisit) showDecoyLockScreen();
+
  // Arm the global tap interceptor — every button press now requires PIN.
  _armAlarmInterceptor();
 }
@@ -5910,6 +5914,7 @@ function _clearAlarmState() {
   if (arrivedPulseInterval) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; }
   _disarmAlarmInterceptor();
   hideAlarmOverlay();
+  hideDecoyLockScreen(); // clean up if idle alarm was active
 
   // Clear visit-level alarm flags if a visit is active
   if (state && state.activeVisit) {
@@ -5962,7 +5967,16 @@ function _armAlarmInterceptor() {
   _disarmAlarmInterceptor(); // ensure no double-arm
 
   _alarmInterceptorFn = (e) => {
-    // Only intercept taps on interactive elements
+    // Decoy lock screen: any tap anywhere → hide decoy, show OTG PIN prompt.
+    // Must be checked before the button guard — decoy keypad buttons are also buttons.
+    if (e.target.closest('#decoyLockScreen')) {
+      e.stopPropagation();
+      e.preventDefault();
+      hideDecoyLockScreen();
+      _alarmPinPrompt();
+      return;
+    }
+    // Standard interception for active-visit alarms — only intercept interactive elements.
     const target = e.target.closest('button, [role="button"], .slide-action-pill, a[href]');
     if (!target) return;
     // Don't intercept PIN pad itself — that would create infinite loop
@@ -6057,7 +6071,9 @@ function showDecoyLockScreen() {
 
 function hideDecoyLockScreen() {
   const el = document.getElementById('decoyLockScreen');
-  if (el) el.classList.add('hidden');
+  if (el) {
+    el.classList.add('hidden');
+  }
   if (_decoyClockInterval) { clearInterval(_decoyClockInterval); _decoyClockInterval = null; }
   _decoyEntry = '';
 }
@@ -9172,7 +9188,7 @@ function renderResources() {
  const items = state.meta.resources || [];
 
  const guideCard = `
- <div class="p-4 bg-blue-950/60 border border-blue-700/50 rounded-2xl active:scale-95 transition" onclick="window.open('./worker_guide.html?v=' + Date.now(), '_blank')">
+ <div class="p-4 bg-blue-950/60 border border-blue-700/50 rounded-2xl active:scale-95 transition" onclick="window.open('./worker_guide.html', '_blank')">
  <div class="text-xs text-blue-400 font-black tracking-widest mb-1">📘 Built-in</div>
  <div class="text-sm font-bold text-white">Worker User Guide</div>
  <div class="text-sm text-gray-300 mt-2 font-black">Open Guide ↗</div>
