@@ -1258,6 +1258,16 @@ function triggerAlerts(p, type) {
         noteToContact = isTravel
             ? `This alert was triggered immediately at the worker's scheduled arrival time because they had activated Critical Timing Mode before departing. Treat it with the same urgency as a manual panic alarm.`
             : `This alert was triggered immediately at the worker's scheduled check-out time because they had activated Critical Timing Mode — indicating they had a specific concern about timing. Treat it with the same urgency as a manual panic alarm.`;
+
+        // Critical Timing repeat alerts (sent by checkOverdueVisits at due + 5 and due + 10).
+        // statusLabel feeds the email subject, SMS and ntfy title, so it must carry the message alone.
+        if (status.includes('CRITICAL TIMING FINAL NOTICE')) {
+            statusLabel  = 'FINAL NOTICE — SAFETY STILL UNRESOLVED (CRITICAL TIMING) — NO FURTHER ALERTS';
+            whatHappened = `<strong>FINAL NOTICE — ${workerName} is still unaccounted for.</strong> This is the third and final automatic alert. Their safety has not been confirmed. <strong>No further alerts will be sent — please act now.</strong><br><br>` + whatHappened;
+        } else if (status.includes('CRITICAL TIMING REPEAT')) {
+            statusLabel  = 'SECOND ALERT — ' + statusLabel;
+            whatHappened = `<strong>SECOND ALERT — there has still been no contact from ${workerName}.</strong> One final notice will follow if their safety is not confirmed.<br><br>` + whatHappened;
+        }
     }
     else if (status.includes('EMERGENCY')) {
         headerColour  = '#dc2626';
@@ -1711,10 +1721,26 @@ function checkOverdueVisits() {
                 const diffMins = (now - due) / 60000; 
                 const isCritical = (entry[11] && entry[11].includes("[CRITICAL_TIMING]"));
 
-                // 1. CRITICAL TIMING: Immediate Dual Alert at 0 mins
-                if (isCritical && diffMins >= 0 && !status.includes("EMERGENCY")) {
-                    triggerEscalation(sheet, entry, "EMERGENCY - CRITICAL TIMING BREACH", true, latest[worker].r);
-                    return; 
+                // 1. CRITICAL TIMING: own three-step ladder, both contacts every step.
+                //    Step 1 at due, step 2 at due + 5, step 3 (final notice) at due + 10,
+                //    then no further server alerts. Steps advance by what col K shows has
+                //    already been sent, so a late or skipped trigger still sends them in
+                //    order, one per run. Critical rows ALWAYS return here and never enter
+                //    the standard 15/30/45/60 ladder (A2 fix - the 30/45 tiers used to
+                //    overwrite col K and re-fire this alert every minute).
+                if (isCritical) {
+                    if (diffMins >= 0) {
+                        if (status.includes("CRITICAL TIMING FINAL NOTICE")) {
+                            // Sequence complete - nothing more to send.
+                        } else if (status.includes("CRITICAL TIMING REPEAT")) {
+                            if (diffMins >= 10) triggerEscalation(sheet, entry, "EMERGENCY - CRITICAL TIMING FINAL NOTICE", true, latest[worker].r);
+                        } else if (status.includes("CRITICAL TIMING BREACH")) {
+                            if (diffMins >= 5) triggerEscalation(sheet, entry, "EMERGENCY - CRITICAL TIMING REPEAT", true, latest[worker].r);
+                        } else if (!status.includes("EMERGENCY")) {
+                            triggerEscalation(sheet, entry, "EMERGENCY - CRITICAL TIMING BREACH", true, latest[worker].r);
+                        }
+                    }
+                    return;
                 }
 
                 // 2. STANDARD: 15/30/45/60 min escalations
