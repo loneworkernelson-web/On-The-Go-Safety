@@ -240,6 +240,21 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
   background-color: rgba(251, 146, 60, 0.10); /* amber */
   box-shadow: inset 0 0 0 3px rgba(251, 146, 60, 0.55);
 }
+/* A1 - discreet PANIC delivery cue: looks like the phone's own mic-in-use dot.
+   Shown only while a PANIC is not yet confirmed by the server. Never under DURESS. */
+#alarmDeliveryCue {
+  display: none;
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 6px);
+  right: 14px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(251, 146, 60, 0.9);
+  pointer-events: none;
+  z-index: 9998;
+}
+#alarmDeliveryCue.show { display: block; }
 #alarmOverlay.alarm-duress {
   display: block;
   background-color: rgba(168, 85, 247, 0.10); /* purple */
@@ -1095,7 +1110,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div id="outboxHistory" class="text-xs font-mono text-gray-400 max-h-36 overflow-y-auto space-y-1 mb-3 bg-gray-900/50 rounded-lg p-2">
  <div class="text-gray-600 text-center py-2">Loading…</div>
  </div>
- <button onclick="outboxProcess(); showToast('🔄 Flushing outbox…')"
+ <button onclick="outboxRequeueFailedAndFlush(); showToast('🔄 Flushing outbox…')"
  class="w-full bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs font-bold text-white">
  Flush Outbox Now
  </button>
@@ -1488,7 +1503,7 @@ const CONFIG = {
  vehEnabled: false,
  checkinEnabled: true,
  vehInterval: 90,
- escalationMinutes: 60,
+ escalationMinutes: 15, // A10 (session 72): was 60 - must match the server ladder (first alert at due + 15)
  checkinInterval: 30,
  countryPrefix: '+64',
  vehicleTerm: 'WOF',
@@ -1573,7 +1588,7 @@ function applyConfig(cfg) {
  // Timing
  if (cfg.timing) {
  CONFIG.checkinInterval = cfg.timing.checkinInterval || 30;
- CONFIG.escalationMinutes = cfg.timing.escalationMinutes || 60;
+ CONFIG.escalationMinutes = cfg.timing.escalationMinutes || 15; // A10: fallback was 60
  CONFIG.vehInterval = cfg.timing.vehicleInterval || 90;
  }
 
@@ -5489,8 +5504,6 @@ return {
 // ============================================================================
 
 let _outboxDbInstance = null; // Lazy IndexedDB singleton
-let _outboxProcessing = false;
-let _outboxRetryDelay = 2000;
 
 /** Lazy singleton opener for the 'otg-outbox' IndexedDB database. */
 function _outboxDB() {
@@ -5563,7 +5576,9 @@ async function outboxEnqueue(payload) {
  status: 'pending',
  createdAt: new Date().toISOString(),
  sentAt: null,
- attempts: 0
+ attempts: 0,
+ serverFails: 0,   // A1: server-side errors (routine records fail after 10)
+ lastError: null   // A1: last delivery problem, shown in the Event Outbox panel
  };
 
  try {
@@ -5583,72 +5598,244 @@ async function outboxEnqueue(payload) {
  return;
  }
 
+ _refreshAlarmDeliveryCue(); // A1: PANIC cue shows until the server confirms
  outboxProcess();
 }
 
-/** Find the oldest pending outbox record and attempt to deliver it. */
-async function outboxProcess() {
- if (_outboxProcessing || !navigator.onLine) return;
+/*
+ * ── A1 DELIVERY CONFIRMATION + TWO SEND LANES (session 72) ─────────────────
+ * A record is marked 'sent' ONLY when the backend replies {status:"success"}
+ * (a duplicate delivery is also acked as success by the backend). Before this,
+ * the outbox used no-cors and marked a record sent as soon as fetch resolved,
+ * so a "Busy" reply silently dropped the event - including a PANIC.
+ *
+ * Two lanes run independently so an alarm never waits behind a slow upload:
+ *   ALARM lane   - PANIC, DURESS, Critical Timing OVERDUE ALARM, and the
+ *                  notifySafety All Clear. Strict oldest-first within the lane,
+ *                  so an All Clear can never overtake the alarm it clears.
+ *   ROUTINE lane - everything else, strict oldest-first.
+ * Ordering rules (see _outboxPick):
+ *   - An alarm waits if an OLDER visit start (ARRIVED / TRAVELLING / PRE_VISIT)
+ *     is still unsent, so the alarm lands on the right Visits row.
+ *   - A routine record never overtakes a pending alarm (routine lane only sends
+ *     when the oldest pending record is not an alarm).
+ *   Older routine records CAN land after an alarm; backend __36_ ranks col K so
+ *   they cannot overwrite it (A6).
+ *
+ * Failure handling:
+ *   - Network error, timeout, "Busy"         -> retry with backoff (never counted).
+ *   - Server error (exception, unreadable)   -> retry; routine records are marked
+ *                                               'failed' after 10 of these.
+ *   - Rejected ({status:"error"}, no message - bad key) -> routine 'failed' now.
+ *   - Alarm-lane records are NEVER marked failed. They retry until delivered.
+ *   'failed' records show in the Event Outbox panel; Flush Outbox re-queues them.
+ */
+const OUTBOX_ROUTINE_MAX_SERVER_FAILS = 10;
+const OUTBOX_TIMEOUT_MS       = 30000; // plain records
+const OUTBOX_TIMEOUT_MEDIA_MS = 90000; // records carrying photos / signature
+const _outboxLanes = {
+ alarm:   { busy: false, retryDelay: 2000, timer: null },
+ routine: { busy: false, retryDelay: 2000, timer: null }
+};
 
- let db;
- try { db = await _outboxDB(); } catch (e) { return; }
+/** True for records that travel in the alarm lane. */
+function _outboxIsAlarmRecord(record) {
+ const p = record?.payload || {};
+ if (p.action === 'notifySafety') return true;
+ const st = String(p['Alarm Status'] || '').toUpperCase();
+ if (st.includes('ALARM_GPS_PULSE')) return false;
+ if (st.includes('PANIC') || st.includes('DURESS')) return true;
+ if (st.includes('OVERDUE ALARM') && p['Critical Timing'] === 'true') return true;
+ return false;
+}
 
- // Cursor over the status index to find the oldest pending record.
- const record = await new Promise(resolve => {
- const tx = db.transaction('events', 'readonly');
- const req = tx.objectStore('events')
- .index('status')
- .openCursor(IDBKeyRange.only('pending'));
- req.onsuccess = e => resolve(e.target.result?.value || null);
- req.onerror = () => resolve(null);
+/** True for records that start a new Visits row on the backend. */
+function _outboxIsVisitStart(record) {
+ const st = String(record?.payload?.['Alarm Status'] || '');
+ return st === 'ARRIVED' || st === 'TRAVELLING' || st === 'PRE_VISIT';
+}
+
+/**
+ * Pick the next record for a lane from the pending list (any order in; sorted
+ * here by id = creation order). Returns null when the lane must wait.
+ */
+function _outboxPick(pending, lane) {
+ const list = [...pending].sort((a, b) => a.id - b.id);
+ if (list.length === 0) return null;
+ if (lane === 'alarm') {
+   const i = list.findIndex(_outboxIsAlarmRecord);
+   if (i < 0) return null;
+   if (list.slice(0, i).some(_outboxIsVisitStart)) return null; // wait for the visit row
+   return list[i];
+ }
+ // routine: only the oldest pending record, and only if it is not an alarm
+ return _outboxIsAlarmRecord(list[0]) ? null : list[0];
+}
+
+/** Read all pending records. */
+function _outboxPendingRecords(db) {
+ return new Promise(resolve => {
+   const tx = db.transaction('events', 'readonly');
+   const req = tx.objectStore('events').index('status').getAll(IDBKeyRange.only('pending'));
+   req.onsuccess = e => resolve(e.target.result || []);
+   req.onerror = () => resolve([]);
  });
+}
 
- if (!record) return; // Nothing pending
+/** Apply a change to one stored record. */
+function _outboxUpdateRecord(db, id, mutate) {
+ return new Promise(resolve => {
+   const tx = db.transaction('events', 'readwrite');
+   const store = tx.objectStore('events');
+   const g = store.get(id);
+   g.onsuccess = e => {
+     const row = e.target.result;
+     if (!row) { resolve(); return; }
+     mutate(row);
+     store.put(row).onsuccess = () => resolve();
+   };
+   g.onerror = () => resolve();
+ });
+}
 
- _outboxProcessing = true;
-
+/**
+ * POST one record and classify the reply.
+ * Returns { outcome: 'sent' | 'retry' | 'server' | 'rejected', detail }.
+ */
+async function _outboxSend(record) {
  const fd = new FormData();
  for (const k in record.payload) fd.append(k, record.payload[k]);
-
+ const p = record.payload || {};
+ const hasMedia = ['Photo 1', 'Photo 2', 'Photo 3', 'Photo 4', 'Signature', 'photos']
+   .some(k => p[k] && String(p[k]).length > 100);
+ const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+ const timer = ctrl ? setTimeout(() => ctrl.abort(), hasMedia ? OUTBOX_TIMEOUT_MEDIA_MS : OUTBOX_TIMEOUT_MS) : null;
  try {
- await fetch(record.targetUrl || CONFIG.url, { method: 'POST', body: fd, mode: 'no-cors' });
-
- // Mark sent — keep the record permanently for the device-side audit trail.
- await new Promise(resolve => {
- const tx = db.transaction('events', 'readwrite');
- const store = tx.objectStore('events');
- store.get(record.id).onsuccess = e => {
- const row = e.target.result;
- if (row) {
- row.status = 'sent';
- row.sentAt = new Date().toISOString();
- row.attempts = (row.attempts || 0) + 1;
- store.put(row).onsuccess = resolve;
- } else { resolve(); }
- };
- });
-
- _outboxRetryDelay = 2000;
- _outboxProcessing = false;
- setTimeout(outboxProcess, 500); // chain: immediately try the next pending item
-
+   // No 'no-cors': the GAS reply is readable (proven by device registration).
+   const resp = await fetch(record.targetUrl || CONFIG.url, {
+     method: 'POST', body: fd, signal: ctrl ? ctrl.signal : undefined
+   });
+   let data = null;
+   try { data = await resp.json(); }
+   catch (_) { return { outcome: 'server', detail: `Unreadable reply (HTTP ${resp.status})` }; }
+   if (data && data.status === 'success') return { outcome: 'sent', detail: '' };
+   if (data && data.status === 'error' && data.message === 'Busy') return { outcome: 'retry', detail: 'Server busy' };
+   if (data && data.status === 'error' && !data.message) return { outcome: 'rejected', detail: 'Rejected by server (check app key)' };
+   return { outcome: 'server', detail: String(data?.message || 'Unknown server reply').slice(0, 200) };
  } catch (e) {
- // Network failure — increment attempt count and back off.
- await new Promise(resolve => {
- const tx = db.transaction('events', 'readwrite');
- const store = tx.objectStore('events');
- store.get(record.id).onsuccess = e => {
- const row = e.target.result;
- if (row) { row.attempts = (row.attempts || 0) + 1; store.put(row).onsuccess = resolve; }
- else { resolve(); }
- };
- });
-
- console.warn(`Outbox: send failed. Retrying in ${_outboxRetryDelay / 1000}s…`);
- _outboxProcessing = false;
- setTimeout(outboxProcess, _outboxRetryDelay);
- _outboxRetryDelay = Math.min(_outboxRetryDelay * 2, 60000);
+   return { outcome: 'retry', detail: e && e.name === 'AbortError' ? 'Timed out' : 'Network error' };
+ } finally {
+   if (timer) clearTimeout(timer);
  }
+}
+
+/** Run one lane: pick, send, record the result, schedule the next run. */
+async function _outboxRunLane(lane) {
+ const L = _outboxLanes[lane];
+ if (L.busy || !navigator.onLine) return;
+ L.busy = true; // set synchronously - prevents two overlapping runs of one lane
+ let next = null;  // ms until this lane runs again, or null for none
+ let sent = false; // a successful send may unblock the other lane
+ try {
+   let db;
+   try { db = await _outboxDB(); } catch (e) { return; }
+   const record = _outboxPick(await _outboxPendingRecords(db), lane);
+   if (!record) return;
+
+   const res = await _outboxSend(record);
+   const isAlarm = lane === 'alarm';
+
+   if (res.outcome === 'sent') {
+     await _outboxUpdateRecord(db, record.id, row => {
+       row.status = 'sent';
+       row.sentAt = new Date().toISOString();
+       row.attempts = (row.attempts || 0) + 1;
+       row.lastError = null;
+     });
+     L.retryDelay = 2000;
+     next = 300; // chain straight on to the next record
+     sent = true;
+   } else {
+     let markedFailed = false;
+     await _outboxUpdateRecord(db, record.id, row => {
+       row.attempts = (row.attempts || 0) + 1;
+       row.lastError = res.detail;
+       if (res.outcome === 'server') row.serverFails = (row.serverFails || 0) + 1;
+       if (!isAlarm && (res.outcome === 'rejected' ||
+           (row.serverFails || 0) >= OUTBOX_ROUTINE_MAX_SERVER_FAILS)) {
+         row.status = 'failed';
+         markedFailed = true;
+       }
+     });
+     if (markedFailed) {
+       console.warn(`Outbox: routine record ${record.id} marked failed - ${res.detail}`);
+       next = 300; // move on to the next record
+       sent = true; // removing it from 'pending' may unblock the alarm lane
+     } else {
+       console.warn(`Outbox (${lane}): ${res.detail}. Retrying in ${L.retryDelay / 1000}s…`);
+       next = L.retryDelay;
+       L.retryDelay = Math.min(L.retryDelay * 2, 60000);
+     }
+   }
+ } finally {
+   L.busy = false;
+   if (next !== null) {
+     clearTimeout(L.timer);
+     L.timer = setTimeout(() => _outboxRunLane(lane), next);
+   }
+   // The other lane may have been waiting on this one (ordering rules).
+   if (sent) setTimeout(() => _outboxRunLane(lane === 'alarm' ? 'routine' : 'alarm'), 0);
+   _refreshAlarmDeliveryCue();
+ }
+}
+
+/** Kick both lanes. Safe to call at any time (online event, flush button, enqueue). */
+async function outboxProcess() {
+ _outboxRunLane('alarm');
+ _outboxRunLane('routine');
+}
+
+/** Flush button: re-queue failed records, then kick both lanes. */
+async function outboxRequeueFailedAndFlush() {
+ try {
+   const db = await _outboxDB();
+   const failed = await new Promise(resolve => {
+     const tx = db.transaction('events', 'readonly');
+     const req = tx.objectStore('events').index('status').getAll(IDBKeyRange.only('failed'));
+     req.onsuccess = e => resolve(e.target.result || []);
+     req.onerror = () => resolve([]);
+   });
+   for (const r of failed) {
+     await _outboxUpdateRecord(db, r.id, row => { row.status = 'pending'; row.serverFails = 0; });
+   }
+ } catch (_) {}
+ _outboxLanes.alarm.retryDelay = 2000;
+ _outboxLanes.routine.retryDelay = 2000;
+ outboxProcess();
+ setTimeout(() => { if (typeof updateOutboxStatus === 'function') updateOutboxStatus(); }, 1500);
+}
+
+/**
+ * Discreet PANIC delivery cue (session 72, Russell option b).
+ * A small amber dot in the top-right corner while a PANIC is NOT yet confirmed
+ * received by the server; it disappears once the server confirms. It resembles
+ * the phone's own "microphone in use" dot, so it means nothing to an onlooker.
+ * NEVER shown during DURESS - nothing unusual may appear on screen then.
+ */
+async function _refreshAlarmDeliveryCue() {
+ const el = document.getElementById('alarmDeliveryCue');
+ if (!el) return;
+ const duressNow = () => isDuressActive || !!state?.activeVisit?.isDuress;
+ const panicNow  = () => isPanicActive  || !!state?.activeVisit?.isPanic;
+ if (duressNow() || !panicNow()) { el.classList.remove('show'); return; }
+ let pendingPanic = false;
+ try {
+   const db = await _outboxDB();
+   const pending = await _outboxPendingRecords(db);
+   pendingPanic = pending.some(r => String(r.payload?.['Alarm Status'] || '').toUpperCase().includes('PANIC'));
+ } catch (_) { pendingPanic = false; }
+ // Re-check after the await - the alarm may have been cleared or escalated meanwhile.
+ el.classList.toggle('show', pendingPanic && panicNow() && !duressNow());
 }
 
 /**
@@ -5686,8 +5873,11 @@ function _legacyEnqueue(payload) {
  const item = state.pendingUploads[0];
  const fd = new FormData();
  for (const k in item) fd.append(k, item[k]);
- fetch(CONFIG.url, { method: 'POST', body: fd, mode: 'no-cors' })
- .then(() => {
+ // A1: read the reply - only a {status:"success"} reply removes the item.
+ fetch(CONFIG.url, { method: 'POST', body: fd })
+ .then(resp => resp.json())
+ .then(data => {
+ if (!data || data.status !== 'success') throw new Error((data && data.message) || 'Not confirmed');
  state.pendingUploads.shift(); saveState();
  _legacyRetryDelay = 2000; _legacyProcessing = false;
  if (state.pendingUploads.length > 0) setTimeout(_legacyEnqueue, 500);
@@ -5915,6 +6105,8 @@ function _clearAlarmState() {
   _disarmAlarmInterceptor();
   hideAlarmOverlay();
   hideDecoyLockScreen(); // clean up if idle alarm was active
+  const _cue = document.getElementById('alarmDeliveryCue');
+  if (_cue) _cue.classList.remove('show'); // A1: PANIC delivery cue
 
   // Clear visit-level alarm flags if a visit is active
   if (state && state.activeVisit) {
@@ -5938,6 +6130,8 @@ function _clearAlarmState() {
  */
 async function escalateToDuress() {
   isDuressActive = true;
+  const _cue = document.getElementById('alarmDeliveryCue');
+  if (_cue) _cue.classList.remove('show'); // A1: never show the cue under duress
 
   // Switch overlay to purple to distinguish DURESS from PANIC
   showAlarmOverlay('duress');
@@ -7235,9 +7429,10 @@ async function updateOutboxStatus() {
 
  const pending = allRecords.filter(r => r.status === 'pending');
  const sent = allRecords.filter(r => r.status === 'sent');
+ const failed = allRecords.filter(r => r.status === 'failed'); // A1
 
- pendingEl.textContent = pending.length;
- pendingEl.className = `text-xl font-black ${pending.length > 0 ? 'text-yellow-400' : 'text-green-400'}`;
+ pendingEl.textContent = failed.length > 0 ? `${pending.length} (+${failed.length} failed)` : pending.length;
+ pendingEl.className = `text-xl font-black ${failed.length > 0 ? 'text-red-400' : pending.length > 0 ? 'text-yellow-400' : 'text-green-400'}`;
  sentEl.textContent = sent.length;
 
  // Most recent sent record
@@ -7263,10 +7458,12 @@ async function updateOutboxStatus() {
  historyEl.innerHTML = recent.map(r => {
  const alarmStatus = r.payload?.['Alarm Status'] || 'LOG';
  const ts = r.createdAt ? new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '?';
- const dot = r.status === 'sent' ? '🟢' : '🟡';
+ const dot = r.status === 'sent' ? '🟢' : r.status === 'failed' ? '🔴' : '🟡';
  const attempts = r.attempts > 0 ? ` ×${r.attempts}` : '';
+ // A1: show why an unsent record has not gone yet (escaped - may hold server text)
+ const why = (r.status !== 'sent' && r.lastError) ? ` <span class="text-red-300">${escapeHtml(r.lastError)}</span>` : '';
  return `<div class="flex justify-between items-center py-0.5">
- <span>${dot} <span class="text-white">${alarmStatus}</span>${attempts}</span>
+ <span>${dot} <span class="text-white">${alarmStatus}</span>${attempts}${why}</span>
  <span class="text-gray-500">${ts}</span>
  </div>`;
  }).join('');
@@ -9616,5 +9813,8 @@ document.addEventListener("visibilitychange", async () => {
  
 </script>
 
+<!-- A1: discreet PANIC delivery cue (see #alarmDeliveryCue CSS). Last in the DOM
+     so it sits above the decoy lock screen at the same z-index. -->
+<div id="alarmDeliveryCue" aria-hidden="true"></div>
 </body>
 </html>
