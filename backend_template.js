@@ -143,8 +143,99 @@ function doPost(e) {
           lock.releaseLock(); 
       }
   } else { 
+      // A1 OPTION 2 (session 72): the lock could not be obtained within 10 s.
+      // For life-safety alarms, alert the contacts NOW without touching the sheet,
+      // then still reply "Busy" so the worker's outbox keeps retrying and the row
+      // lands once the lock frees. _busyPathAlert_() never throws.
+      _busyPathAlert_(e.parameter);
       return sendJSON({status:"error", message:"Busy"}); 
   }
+}
+
+/**
+ * A1 OPTION 2 - alert contacts when doPost cannot get the script lock.
+ * Applies to PANIC, DURESS and Critical Timing OVERDUE ALARM posts only.
+ *
+ * Runs WITHOUT the script lock, so it must never write to the sheet or to
+ * IDEM_KEYS_V1. Reads only.
+ *
+ * Dedup: the worker outbox retries a Busy reply every few seconds. Without a
+ * guard, every busy retry would re-alert the contacts. A CacheService entry
+ * keyed on the idempotency key allows ONE busy-path alert per event. The normal
+ * path (handleWorkerPost) still alerts when the row finally saves, so the worst
+ * case is two alert rounds per event - accepted by Russell (session 72).
+ */
+function _busyPathAlert_(p) {
+    try {
+        if (!p) return;
+        const act = (p.action || '').toString();
+        const NON_ALERT_ACTIONS = ['resolve', 'registerDevice', 'acknowledgeNotice',
+                                   'uploadEmergencyProcedures', 'notifySafety', 'broadcast'];
+        if (NON_ALERT_ACTIONS.indexOf(act) > -1) return;
+
+        const status = (p['Alarm Status'] || '').toString().toUpperCase();
+        if (status.includes('ALARM_GPS_PULSE')) return;
+        const isCriticalOverdue = status.includes('OVERDUE ALARM') && p['Critical Timing'] === 'true';
+        const isAlarm = status.includes('PANIC') || status.includes('DURESS') || isCriticalOverdue;
+        if (!isAlarm) return;
+
+        // One busy-path alert per event (idempotency key). Put the marker BEFORE
+        // sending so a near-simultaneous retry is very unlikely to double up.
+        const key = (p.idempotencyKey || '').toString();
+        if (key) {
+            const cache = CacheService.getScriptCache();
+            const cacheKey = 'BUSYALERT_' + key.substring(0, 200);
+            if (cache.get(cacheKey)) {
+                console.log('[busyPath] Already alerted for ' + key + ' - skipping.');
+                return;
+            }
+            cache.put(cacheKey, '1', 21600); // 6 h, the CacheService maximum
+        }
+
+        // Read-only lookup of the worker's open row notes, so triggerAlerts() can
+        // detect Critical Timing and travel wording exactly as the normal path does.
+        const alertPayload = Object.assign({}, p);
+        let visitNotes = '';
+        try {
+            const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Visits');
+            const lastRow = sheet ? sheet.getLastRow() : 0;
+            if (lastRow > 1) {
+                const startRow = Math.max(2, lastRow - 50);
+                const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, 21).getValues();
+                for (let i = data.length - 1; i >= 0; i--) {
+                    if (data[i][2] === p['Worker Name']) {
+                        const st = String(data[i][10]);
+                        const closed = st.includes('DEPARTED') || st.includes('COMPLETED') ||
+                                       st.includes('DATA_ENTRY_ONLY') || st.includes('USER_SAFE') ||
+                                       st.includes('PRE_VISIT');
+                        if (!closed) {
+                            visitNotes = String(data[i][11] || '');
+                            // Critical Timing merge: once due, word it as ladder step 1 (urgent).
+                            const due = new Date(data[i][20]);
+                            if (isCriticalOverdue && st.toUpperCase().includes('CRITICAL TIMING')) {
+                                console.log('[busyPath] Server ladder already alerting - skipping.');
+                                return;
+                            }
+                            if (isCriticalOverdue && !isNaN(due.getTime()) && new Date() >= due) {
+                                alertPayload['Alarm Status'] = 'EMERGENCY - CRITICAL TIMING BREACH';
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        } catch (readErr) { console.warn('[busyPath] Visit notes lookup failed: ' + readErr); }
+        if (isCriticalOverdue && !visitNotes.includes('[CRITICAL_TIMING]')) {
+            visitNotes = (visitNotes + ' [CRITICAL_TIMING]').trim();
+        }
+        alertPayload['Visit Notes'] = alertPayload['Visit Notes'] || visitNotes;
+
+        console.warn('[busyPath] Lock busy - alerting contacts directly for ' +
+                     (p['Worker Name'] || '?') + ' status=' + status + ' key=' + key);
+        triggerAlerts(alertPayload, 'IMMEDIATE');
+    } catch (err) {
+        console.error('[busyPath] Alert failed: ' + err.toString());
+    }
 }
 
 // ==========================================
@@ -453,7 +544,10 @@ function handleResolvePost(p) {
     if (lastRow > 1) {
         const startRow = Math.max(2, lastRow - 50); 
         const numRows = lastRow - startRow + 1;
-        const data = sheet.getRange(startRow, 1, numRows, 11).getValues();
+        // A14 (session 72): read through col L - Notes. Reading only A-K made rowData[11]
+        // undefined, so the line below wrote the word "undefined" over the visit Notes
+        // and erased the [CRITICAL_TIMING] / [START_GPS] tags.
+        const data = sheet.getRange(startRow, 1, numRows, 12).getValues();
         for (let i = data.length - 1; i >= 0; i--) {
             const rowData = data[i];
             if (rowData[2] === workerName) {
@@ -462,7 +556,7 @@ function handleResolvePost(p) {
                 if (status.includes('EMERGENCY') || status.includes('PANIC') || status.includes('DURESS') || status.includes('OVERDUE')) {
                     const targetRow = startRow + i;
                     sheet.getRange(targetRow, 11).setValue(p['Alarm Status']); 
-                    sheet.getRange(targetRow, 12).setValue((String(rowData[11]) + "\n" + p['Notes']).trim()); 
+                    sheet.getRange(targetRow, 12).setValue((String(rowData[11] || '') + "\n" + (p['Notes'] || '')).trim()); 
                     rowUpdated = true;
                     break;
                 }
@@ -507,18 +601,16 @@ function handleWorkerPost(p) {
     // PropertiesService entry (JSON array, ~5 KB — well under the 9 KB limit).
     // Keys are only present when the worker app sends them; legacy payloads
     // without the field are passed through unchanged.
-    if (p.idempotencyKey) {
-        const IDEM_PROP = 'IDEM_KEYS_V1';
-        const seen = JSON.parse(sp.getProperty(IDEM_PROP) || '[]');
-        if (seen.includes(p.idempotencyKey)) {
-            // Duplicate delivery — silently ack without writing to the sheet.
-            console.log('Outbox dedup: discarding duplicate key ' + p.idempotencyKey);
-            return;
-        }
-        // Register the key, keep the window trimmed to 100 entries.
-        seen.push(p.idempotencyKey);
-        if (seen.length > 100) seen.splice(0, seen.length - 100); // 100 keys ≈ 5KB, safe under GAS 9KB per-key limit
-        sp.setProperty(IDEM_PROP, JSON.stringify(seen));
+    //
+    // A1 (session 72): the key is CHECKED here but only REGISTERED once the work
+    // has completed (see _idemRegister_ calls below). If anything throws part-way,
+    // doPost replies with an error, the outbox retries, and the retry is processed
+    // instead of being discarded. Rare cost: a duplicate row if the throw happens
+    // after the row write. A lost alert is never the cost.
+    if (p.idempotencyKey && _idemSeen_(p.idempotencyKey)) {
+        // Duplicate delivery — ack (doPost returns success) without writing to the sheet.
+        console.log('Outbox dedup: discarding duplicate key ' + p.idempotencyKey);
+        return;
     }
     // ── END IDEMPOTENCY GUARD ────────────────────────────────────────────────
 
@@ -528,6 +620,7 @@ function handleWorkerPost(p) {
     // visit from correctly writing its address details.
     if (p['Alarm Status'] && p['Alarm Status'].includes('TEST_ALERT')) {
         triggerAlerts(p, "TEST");
+        _idemRegister_(p.idempotencyKey);
         return;
     }
     // ── END TEST_ALERT FAST PATH ─────────────────────────────────────────────
@@ -568,6 +661,7 @@ function handleWorkerPost(p) {
     }
     
     let existingVisitNotes = ''; // captured from matched row for use in triggerAlerts
+    let criticalBridgeSuppressed = false; // merge: server ladder already alerting for this visit
     if (!isNoteToSelf) {
         if(!sheet) {
             sheet = ss.insertSheet('Visits');
@@ -592,7 +686,11 @@ function handleWorkerPost(p) {
         if (lastRow > 1 && !isNewVisit) {
             const startRow = Math.max(2, lastRow - 50); 
             const numRows = lastRow - startRow + 1;
-            const data = sheet.getRange(startRow, 1, numRows, 11).getValues(); 
+            // A14 (session 72): read through col U. Reading only A-K left rowData[11] (Notes)
+            // undefined, so alerts never saw [CRITICAL_TIMING] or travel tags - the Critical
+            // Timing bridge alert went out as an amber "OVERDUE - MISSED CHECK-IN" at
+            // 'high' priority (confirmed on device 13 Oct 2026). Col U = due time (merge below).
+            const data = sheet.getRange(startRow, 1, numRows, 21).getValues(); 
             for (let i = data.length - 1; i >= 0; i--) {
                 const rowData = data[i];
                 if (rowData[2] === workerName) {
@@ -613,19 +711,47 @@ function handleWorkerPost(p) {
                         // never be overwritten by lower-priority statuses (OVERDUE, ALARM_GPS_PULSE).
                         // triggerEscalation() updates the existing row in place (one-row-per-visit);
                         // subsequent GPS pulses must not clobber the escalation status it wrote.
+                        //
+                        // A6 (session 72): severity ranking replaces the old LOW_PRIORITY list,
+                        // which only blocked OVERDUE and ALARM_GPS_PULSE. Routine posts (LOW BATTERY,
+                        // WELFARE_OK, MID_VISIT_UPDATE, ON SITE, VEHICLE_CHECK_COMPLETED,
+                        // PROCEDURES_UPDATED, TEST_ALERT, plain OVERDUE) can no longer overwrite an
+                        // alarm. Only a clearing status (USER_SAFE*, EXTENDED, DEPARTED, COMPLETED)
+                        // or an equal/higher alarm may replace one. Needed now that the worker
+                        // outbox can send an alarm ahead of older routine records.
+                        //
+                        // CRITICAL TIMING MERGE (session 72, Russell): the phone posts OVERDUE ALARM
+                        // with Critical Timing at the due time. Once the due time has passed, record it
+                        // as ladder step 1 (EMERGENCY - CRITICAL TIMING BREACH) so checkOverdueVisits()
+                        // continues with REPEAT at due + 5 and FINAL NOTICE at due + 10 instead of
+                        // sending a second step-1 alert a minute later. If the server ladder has already
+                        // started (col K holds a CRITICAL TIMING step), this post neither alerts nor
+                        // touches col K - otherwise a late phone post would reset the ladder.
+                        // Before the due time, a Critical Timing OVERDUE ALARM is a missed welfare
+                        // check and is left unchanged.
+                        if ((p['Alarm Status'] || '').toUpperCase().includes('OVERDUE ALARM') && p['Critical Timing'] === 'true') {
+                            const _rowDue = new Date(rowData[20]);
+                            const _ladderStarted = String(rowData[10]).toUpperCase().includes('CRITICAL TIMING');
+                            if (_ladderStarted) {
+                                criticalBridgeSuppressed = true;
+                            } else if (!isNaN(_rowDue.getTime()) && ts >= _rowDue) {
+                                p['Alarm Status'] = 'EMERGENCY - CRITICAL TIMING BREACH';
+                            }
+                        }
                         const _existingStatus = String(rowData[10]).toUpperCase();
-                        const HIGH_SEVERITY = ['EMERGENCY', 'PANIC', 'DURESS', 'OVERDUE ALARM', 'OVERDUE -'];
-                        const LOW_PRIORITY  = ['ALARM_GPS_PULSE', 'OVERDUE'];
-                        const _existingIsHigh = HIGH_SEVERITY.some(s => _existingStatus.includes(s));
-                        const _incomingIsLow  = LOW_PRIORITY.some(s => (p['Alarm Status'] || '').toUpperCase().includes(s));
-                        const _isGpsPulse     = (p['Alarm Status'] || '').toUpperCase().includes('ALARM_GPS_PULSE');
+                        const _incomingStatus = (p['Alarm Status'] || '').toUpperCase();
+                        const _existingRank   = _alarmRank_(_existingStatus);
+                        const _existingIsHigh = _existingRank >= 2;
+                        const _incomingClears = ['USER_SAFE', 'EXTENDED', 'DEPARTED', 'COMPLETED'].some(s => _incomingStatus.includes(s));
+                        const _incomingIsLow  = !_incomingClears && _alarmRank_(_incomingStatus) < _existingRank;
+                        const _isGpsPulse     = _incomingStatus.includes('ALARM_GPS_PULSE');
                         // ALARM_GPS_PULSE must never update col K — it is a location-only update.
                         // Writing ALARM_GPS_PULSE to col K replaces TRAVELLING, causing the monitor's
                         // processWorkers to see an unrecognised status in neither JOURNEY_START_STATUSES
                         // nor JOURNEY_CLOSED_STATUSES — the journey enters limbo and the worker
                         // disappears from the map. All other non-pulse payloads: guard against
                         // HIGH_SEVERITY downgrades only.
-                        if (!_isGpsPulse && !(_existingIsHigh && _incomingIsLow)) {
+                        if (!_isGpsPulse && !criticalBridgeSuppressed && !(_existingIsHigh && _incomingIsLow)) {
                             sheet.getRange(targetRow, 11).setValue(p['Alarm Status']);
                         }
                         if (distanceValue && distColIdx > -1) sheet.getRange(targetRow, distColIdx + 1).setValue(distanceValue);
@@ -707,7 +833,9 @@ if (!rowUpdated) {
     // authority for firing escalation alerts (dead-man's switch principle). The worker
     // sending OVERDUE ALARM updates col K for sheet state only; the backend reads that
     // state independently and decides when to escalate.
-    if(p['Alarm Status'].includes("EMERGENCY") || p['Alarm Status'].includes("PANIC") || p['Alarm Status'].includes("DURESS")) {
+    if (criticalBridgeSuppressed) {
+        console.log('Critical Timing bridge: server ladder already started for ' + workerName + ' - no extra alert.');
+    } else if(p['Alarm Status'].includes("EMERGENCY") || p['Alarm Status'].includes("PANIC") || p['Alarm Status'].includes("DURESS")) {
         p['Visit Notes'] = p['Visit Notes'] || existingVisitNotes;
         triggerAlerts(p, "IMMEDIATE");
     } else if (p['Alarm Status'].includes("OVERDUE ALARM") && p['Critical Timing'] === 'true') {
@@ -719,7 +847,52 @@ if (!rowUpdated) {
         p['Visit Notes'] = p['Visit Notes'] || existingVisitNotes;
         triggerAlerts(p, "IMMEDIATE");
     }
+
+    // A1: register the idempotency key only now that the row, emails and alerts are done.
+    _idemRegister_(p.idempotencyKey);
 }
+
+/** A1 - has this outbox idempotency key already been fully processed? */
+function _idemSeen_(key) {
+    if (!key) return false;
+    try {
+        const seen = JSON.parse(sp.getProperty('IDEM_KEYS_V1') || '[]');
+        return seen.includes(key);
+    } catch (e) {
+        console.warn('IDEM read failed: ' + e);
+        return false; // fail open - a duplicate row is better than a dropped event
+    }
+}
+
+/**
+ * A1 - record an idempotency key AFTER the work succeeds. Called inside the
+ * doPost script lock only. Rolling window of 100 keys (~5 KB, under the 9 KB limit).
+ */
+function _idemRegister_(key) {
+    if (!key) return;
+    try {
+        const seen = JSON.parse(sp.getProperty('IDEM_KEYS_V1') || '[]');
+        if (seen.includes(key)) return;
+        seen.push(key);
+        if (seen.length > 100) seen.splice(0, seen.length - 100);
+        sp.setProperty('IDEM_KEYS_V1', JSON.stringify(seen));
+    } catch (e) { console.warn('IDEM register failed: ' + e); }
+}
+/**
+ * A6 - severity rank of a col K status. 0 = routine. Higher may replace lower.
+ * DURESS 5 > PANIC/SOS 4 > EMERGENCY 3 > OVERDUE ALARM / OVERDUE - tiers 2.
+ * Plain 'OVERDUE' (worker pulse) and ALARM_GPS_PULSE are routine (0).
+ */
+function _alarmRank_(statusUpper) {
+    const s = (statusUpper || '').toString().toUpperCase();
+    if (s.includes('ALARM_GPS_PULSE')) return 0;
+    if (s.includes('DURESS')) return 5;
+    if (s.includes('PANIC') || s.includes('SOS')) return 4;
+    if (s.includes('EMERGENCY')) return 3;
+    if (s.includes('OVERDUE ALARM') || s.includes('OVERDUE -')) return 2;
+    return 0;
+}
+
 function processFormEmail(p, reportObj, polishedNotes, p1, p2, p3, p4, sig) {
     const templateName = p['Template Name'] || "";
     if (!templateName) return;
@@ -1718,8 +1891,17 @@ function checkOverdueVisits() {
             
             if(!isClosed && dueTimeStr) {
                 const due = new Date(dueTimeStr);
+                // A12 (session 72): an unreadable due time used to give NaN and silently never
+                // escalate. Record it so the daily health email reports it.
+                if (isNaN(due.getTime())) {
+                    console.error('[checkOverdueVisits] Unreadable due time for ' + worker + ': ' + dueTimeStr);
+                    try { sp.setProperty('LAST_DUE_PARSE_ERROR', new Date().toISOString() + ' | ' + worker + ' | col U = "' + String(dueTimeStr).substring(0, 60) + '"'); } catch (_) {}
+                    return;
+                }
                 const diffMins = (now - due) / 60000; 
-                const isCritical = (entry[11] && entry[11].includes("[CRITICAL_TIMING]"));
+                // A12: String() - Sheets may store Notes as a number or date, and .includes()
+                // on those threw, skipping this worker every minute.
+                const isCritical = String(entry[11] || '').includes("[CRITICAL_TIMING]");
 
                 // 1. CRITICAL TIMING: own three-step ladder, both contacts every step.
                 //    Step 1 at due, step 2 at due + 5, step 3 (final notice) at due + 10,
@@ -1911,6 +2093,12 @@ function sendHealthEmail() {
       Check Apps Script &gt; Executions log for full stack traces.
     </div>` : ''}
 
+    ${sp.getProperty('LAST_DUE_PARSE_ERROR') ? `
+    <div style="background:#fdf3f3;border-left:4px solid #c0392b;padding:12px 16px;margin-top:16px;border-radius:0 4px 4px 0">
+      <strong style="color:#c0392b">⚠ A visit had an unreadable due time and could NOT be escalated.</strong>
+      Check column U of the Visits sheet. Last seen: ${sp.getProperty('LAST_DUE_PARSE_ERROR')}
+    </div>` : ''}
+
     ${stalledVisits.length > 0 ? `
     <div style="background:#fef9ec;border-left:4px solid #e67e22;padding:12px 16px;margin-top:16px;border-radius:0 4px 4px 0">
       <strong style="color:#e67e22">⚠ ${stalledVisits.length} worker(s) have open visits older than 24 hours.</strong>
@@ -1935,6 +2123,7 @@ function sendHealthEmail() {
     // --- 5. Reset daily fail counter now that it's been reported ---
     sp.setProperty('DAILY_FAIL_COUNT', '0');
     sp.deleteProperty('LAST_FAIL_DETAIL');
+    sp.deleteProperty('LAST_DUE_PARSE_ERROR'); // A12: reported - clear until it recurs
 
     console.log(`Health email sent to ${recipient}. Visits: ${visitCount}, Escalations: ${escalationCount}, Fails: ${failCount}, Stalled: ${stalledVisits.length}`);
 }
