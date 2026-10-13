@@ -98,7 +98,7 @@
                   <input type="text" id="orgName" class="input-field" value="My Organisation" oninput="saveInput(this)">
                   <p class="help-text italic">Appears in app headers, report emails, and generated safety manuals.</p>
               </div>
-              
+
               <div>
                   <div class="flex justify-between items-center mb-1">
                       <label for="appName" class="block text-blue-300 font-extrabold text-xs uppercase tracking-widest">2. App Icon Label</label>
@@ -110,15 +110,15 @@
 
 <div class="p-4 bg-gray-900 rounded-2xl border border-gray-700 shadow-inner">
     <h3 class="text-white font-black mb-4 uppercase text-[10px] tracking-widest border-b border-gray-800 pb-2">🔐 Security Connection Keys</h3>
-    
+
 <div class="mb-4">
     <div class="flex justify-between items-end mb-1">
         <label for="secretKey" class="block text-blue-300 font-extrabold text-xs">Secret Key (Admin Only)</label>
         <span id="keyLenCounter" class="text-[10px] font-black text-slate-500 uppercase tracking-widest">0 / 32–64</span>
     </div>
     <div class="flex gap-2">
-        <input type="text" id="secretKey" 
-               class="input-field text-yellow-400 font-mono text-sm py-2" 
+        <input type="text" id="secretKey"
+               class="input-field text-yellow-400 font-mono text-sm py-2"
                placeholder="e.g. kauri-harbour-ember-summit-47-rimu"
                oninput="updateKeyCounter(); saveInput(this); validateKey(); syncProxySecret();">
         <button onclick="generateSecureKey('secretKey')" class="btn bg-gray-700 hover:bg-gray-600 text-white py-2">🔄</button>
@@ -146,7 +146,7 @@
                   <input type="hidden" id="timezoneVal">
               </div>
             </div>
-            
+
             <div class="highlight-box flex flex-col items-center justify-center text-center">
               <label class="block text-blue-300 font-extrabold mb-3 text-sm uppercase tracking-widest">4. App Branding (Customise)</label>
               <div id="dropZone" class="drop-zone w-40 h-40 mx-auto rounded-full flex items-center justify-center mb-4 border-4" onclick="document.getElementById('logoInput').click()" role="button" tabindex="0" aria-label="Upload logo image — click or drag and drop">
@@ -156,7 +156,7 @@
               <input type="file" id="logoInput" accept="image/*" class="hidden" onchange="handleLogo(this)"><input type="hidden" id="logoUrl" oninput="saveInput(this)">
 
               <div id="paletteArea" class="hidden w-full bg-gray-900/50 p-6 rounded-3xl border border-gray-700 shadow-inner">
-    
+
     <div class="mb-4 text-left">
         <div class="flex justify-between items-center mb-1">
             <span class="text-[10px] text-gray-200 font-black uppercase tracking-widest leading-none">1. Extract Brand Pairs</span>
@@ -184,10 +184,10 @@
     </div>
 
     <div class="mt-8 pt-8 border-t border-gray-700">
-    <h3 class="text-white font-black mb-4 uppercase text-[10px] tracking-widest text-center">📱 Live App Preview</h3>   
-    
+    <h3 class="text-white font-black mb-4 uppercase text-[10px] tracking-widest text-center">📱 Live App Preview</h3>
+
     <div id="appMockup" class="mx-auto w-64 h-[520px] rounded-[2.5rem] border-[6px] border-gray-900 bg-[#111827] shadow-2xl overflow-hidden relative transition-all duration-500" aria-hidden="true">
-        
+
         <div id="mockHeader" class="h-12 border-b border-gray-700 flex items-center px-4 justify-between bg-[#111827]">
             <div class="flex items-center gap-2">
                 <img id="mockLogo" src="" class="w-5 h-5 rounded-sm bg-white object-contain hidden">
@@ -305,11 +305,11 @@
     <div class="preset-swatch" onclick="applyPreset('#0c1a3d', '#f97316', this)" title="Navy / Orange"><div class="swatch-half bg-[#0c1a3d]"></div><div class="swatch-half bg-[#f97316]"></div></div>
     <div class="preset-swatch" onclick="applyPreset('#064e3b', '#10b981', this)" title="Green"><div class="swatch-half bg-[#064e3b]"></div><div class="swatch-half bg-[#10b981]"></div></div>
     <div class="preset-swatch" onclick="applyPreset('#450a0a', '#ef4444', this)" title="Red"><div class="swatch-half bg-[#450a0a]"></div><div class="swatch-half bg-[#ef4444]"></div></div>
-    
+
     <div class="preset-swatch" onclick="applyPreset('#2e1065', '#a78bfa', this)" title="Violet"><div class="swatch-half bg-[#2e1065]"></div><div class="swatch-half bg-[#a78bfa]"></div></div>
     <div class="preset-swatch" onclick="applyPreset('#134e4a', '#2dd4bf', this)" title="Teal"><div class="swatch-half bg-[#134e4a]"></div><div class="swatch-half bg-[#2dd4bf]"></div></div>
     <div class="preset-swatch" onclick="applyPreset('#78350f', '#fbbf24', this)" title="Amber"><div class="swatch-half bg-[#78350f]"></div><div class="swatch-half bg-[#fbbf24]"></div></div>
-    
+
     <div class="preset-swatch" onclick="applyPreset('#0f172a', '#f59e0b', this)" title="Navy / Gold"><div class="swatch-half bg-[#0f172a]"></div><div class="swatch-half bg-[#f59e0b]"></div></div>
 </div>
 
@@ -328,7 +328,7 @@
                     <label class="flex items-center gap-3 cursor-pointer"><input type="checkbox" id="chkTravelReport" class="w-6 h-6 rounded bg-gray-700" onchange="saveInput(this)" checked><span class="text-sm font-black text-gray-200 uppercase">Require Travel Reports</span></label>
                     <p class="text-[10px] text-gray-400 ml-9 mt-1 leading-tight italic">When on, all travel sessions require a report on departure (org policy). When off, workers set their own default in the app's Travel Settings.</p>
                 </div>
-                
+
                 <div>
                     <label class="flex items-center gap-3 cursor-pointer"><input type="checkbox" id="chkCheckin" class="w-6 h-6 rounded bg-gray-700" onchange="toggleCheckin(); saveInput(this)"><span class="text-sm font-black text-gray-200 uppercase">Periodic Welfare Check-in</span></label>
                     <div id="checkinOptions" class="hidden ml-9 mt-1 items-center gap-2 font-black"><input type="number" id="checkinMins" value="60" class="bg-gray-800 border border-gray-600 rounded p-1 w-16 text-center text-white" oninput="saveInput(this)"><span>mins</span></div>
@@ -343,7 +343,7 @@
         </div>
         <div class="space-y-6">
             <div class="pt-2 border-t border-gray-700">
-                <label class="text-[11px] font-black text-indigo-300 uppercase tracking-widest block mb-2">SMS Alerts</label>
+                <label class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">SMS Alerts</label>
                 <p class="help-text italic leading-tight mb-3">Sends a text message to emergency contacts the instant an alarm fires. Select the recommended provider for your region — credentials are injected into the backend automatically.</p>
                 <div class="mb-3">
                     <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Region / Provider</label>
@@ -751,8 +751,12 @@
     const FILES = { worker: 'worker_template.html', monitor: 'monitor_template.html', backend: 'backend_template.js', guide: 'guide_template.html', manual: 'ops_manual_template.html' };
 
     // Service worker source — embedded directly so no extra file is needed in the factory folder.
-    // Identical for every org (no variable injection required).
-    const SW_SOURCE = `// OTG Lone Worker Safety System — Canonical Service Worker
+    // Identical for every org (no variable injection required) EXCEPT the first-line build stamp:
+    // %%SW_BUILD%% is replaced with the config.json version when the pack is zipped, so sw.js
+    // changes byte-for-byte on every build. The browser only installs a new service worker when
+    // sw.js changes - that is what makes phones pick up a new build without a manual refresh.
+    const SW_SOURCE = `// build: %%SW_BUILD%%
+// OTG Lone Worker Safety System — Canonical Service Worker
 // Cache name is updated by reading the version field from config.json at install time.
 // This replaces the old build-stamp approach; cache invalidation is now driven by
 // incrementing "version" in config.json rather than by regenerating files.
@@ -793,6 +797,7 @@ self.addEventListener('install', event => {
                 try {
                     const response = await fetch(url, {
                         mode: url.startsWith('http') ? 'no-cors' : 'cors',
+                        cache: url.startsWith('http') ? 'default' : 'reload',
                         redirect: 'follow'
                     });
                     await cache.put(url, response);
@@ -890,7 +895,7 @@ self.addEventListener('message', event => {
         Templates: `Type\tTemplate Name\tAssigned To (Worker Names or ALL)\tEmail Recipient\tQuestion 1\tQuestion 2\t[Questions 3-30]\tForm Timing\nFORM\tAccident Report\tALL\tsafety@org.com\t[HEADING] Incident Details\t[TEXT] What happened?\t[PHOTO] Evidence\t\t\tpre-visit\nREPORT\tStandard Visit\t\t\t[TEXT] Visit Notes\t[PHOTO] Site Photo\t[YESNO] Hazards Identified?\t\t\t`,
     };
     let TEMPLATES = {};
-    const REGION_DATA = { 
+    const REGION_DATA = {
         "+64": { term: "WOF",        locale: "en-NZ", tz: "Pacific/Auckland",    mapLat: -40.9,  mapLng:  174.9 },
         "+61": { term: "Rego",       locale: "en-AU", tz: "Australia/Sydney",    mapLat: -33.9,  mapLng:  151.2 },
         "+44": { term: "Inspection", locale: "en-GB", tz: "Europe/London",       mapLat:  51.5,  mapLng:   -0.1 },
@@ -917,10 +922,10 @@ self.addEventListener('message', event => {
         syncProxySecret();
         updateRegionInfo();
         setupDragDrop();
-        for (const [k, f] of Object.entries(FILES)) { 
-        try { 
-            const r = await fetch(f + "?v=" + Date.now()); 
-            if (r.ok) TEMPLATES[k] = await r.text(); 
+        for (const [k, f] of Object.entries(FILES)) {
+        try {
+            const r = await fetch(f + "?v=" + Date.now());
+            if (r.ok) TEMPLATES[k] = await r.text();
             else throw new Error();
         } catch(e){
             if (k === 'guide' || k === 'manual') {
@@ -930,7 +935,7 @@ self.addEventListener('message', event => {
                 console.error(`Failed to load ${f}. System build may be incomplete.`);
                 alert(`⚠️ Warning: Could not load the ${k} template. Please refresh.`);
             }
-        } 
+        }
     }
     _updateOptionalDownloadButtons();
 };
@@ -943,7 +948,7 @@ self.addEventListener('message', event => {
                 const img = new Image(); img.onload = () => {
                     const c = document.createElement('canvas'); c.width = 192; c.height = 192;
                     const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0, 192, 192);
-                    const d = c.toDataURL('image/png'); document.getElementById('logoImg').src = d; 
+                    const d = c.toDataURL('image/png'); document.getElementById('logoImg').src = d;
                     document.getElementById('logoImg').classList.remove('hidden'); document.getElementById('logoUrl').value = d;
                     saveInput(document.getElementById('logoUrl')); triggerResample();
                 };
@@ -1121,7 +1126,7 @@ function applyPreset(p, a, el) {
     localStorage.setItem('otg_theme_primary', p);
     localStorage.setItem('otg_theme_accent', a);
     _updateContrastBadge(p, a);
-    
+
     // 1. Target the mockup elements
     const mockup = document.getElementById('appMockup');
     const mockAccentCard = document.getElementById('mockAccentCard');
@@ -1191,7 +1196,7 @@ function applyPreset(p, a, el) {
     function toggleCheckin() { document.getElementById('checkinOptions').classList.toggle('hidden', !document.getElementById('chkCheckin').checked); }
     function toggleVehicle() { document.getElementById('vehOptions').classList.toggle('hidden', !document.getElementById('chkVehicle').checked); }
     function copyScript() { generateScript(); navigator.clipboard.writeText(document.getElementById('codeDisplay').textContent); alert("Copied!"); }
-    
+
     function generateScript() {
         if(!TEMPLATES.backend) return;
         document.getElementById('codeDisplay').textContent = TEMPLATES.backend
@@ -1284,10 +1289,10 @@ function updateMockupUI() {
 
     if(header) header.style.backgroundColor = primary;
     if(footer) footer.style.backgroundColor = primary;
-    
+
     const mockSlideThumb = document.getElementById('mockSlideThumb');
     if(mockSlideThumb) mockSlideThumb.style.backgroundColor = accent;
-    
+
     if(accentCard) {
         accentCard.style.borderColor = accent;
         accentCard.style.backgroundColor = accent + '33'; // 20% opacity
@@ -1303,7 +1308,7 @@ function updateMockupUI() {
 }
 
 // UPDATED: Save input and refresh the mockup
-function saveInput(el) { 
+function saveInput(el) {
     localStorage.setItem('otg_' + el.id, el.type === 'checkbox' ? el.checked : el.value);
     if(el.id === 'orgName' || el.id === 'logoUrl') updateMockupUI();
 }
@@ -1311,7 +1316,7 @@ function testConnection() {
     const url = document.getElementById('webAppUrl').value.trim();
     const key = document.getElementById('secretKey').value.trim();
     const resBox = document.getElementById('testResult');
-    
+
     if (!url.startsWith('https://script.google.com')) {
         resBox.classList.remove('hidden');
         resBox.textContent = "❌ INVALID URL: MUST START WITH HTTPS://SCRIPT.GOOGLE.COM";
@@ -1351,7 +1356,7 @@ function testConnection() {
         const workerKey   = document.getElementById('workerKey').value.trim();
         const url         = document.getElementById('webAppUrl').value.trim();
         const ntfyServer  = document.getElementById('ntfyServer').value.trim() || 'https://ntfy.sh';
-        const escalation  = document.getElementById('escalationMins').value.trim() || '60';
+        const escalation  = document.getElementById('escalationMins').value.trim() || '15';
         const checkinMins = document.getElementById('checkinMins').value.trim() || '30';
         const vehEnabled  = document.getElementById('chkVehicle').checked;
         const checkinEnabled = document.getElementById('chkCheckin').checked;
@@ -1370,8 +1375,11 @@ function testConnection() {
 
         const logoUrl = document.getElementById('logoUrl').value || './icon.png';
 
-        // Bump version from current date-stamp so cache invalidation fires
-        const version = 'v82.' + new Date().toISOString().slice(0,10).replace(/-/g,'');
+        // Version = date AND time (to the second): unique per build. The same value is stamped into sw.js.
+        const _bn = new Date();
+        const _bp = n => String(n).padStart(2, '0');
+        const version = 'v82.' + _bn.getFullYear() + _bp(_bn.getMonth() + 1) + _bp(_bn.getDate())
+                        + '-' + _bp(_bn.getHours()) + _bp(_bn.getMinutes()) + _bp(_bn.getSeconds());
 
         return {
             "_comment": "OTG Lone Worker Safety System — Organisation Configuration",
@@ -1390,7 +1398,7 @@ function testConnection() {
             },
             "timing": {
                 "checkinInterval":   parseInt(checkinMins, 10)   || 30,
-                "escalationMinutes": parseInt(escalation, 10)    || 60,
+                "escalationMinutes": parseInt(escalation, 10)    || 15,
                 "vehicleInterval":   parseInt(document.getElementById('vehFreq')?.value || '90', 10)
             },
             "locale": {
@@ -1750,7 +1758,7 @@ it is self-contained and does not need hosting.
         try {
             const zip = new JSZip();
             zip.file('index.html',    TEMPLATES.worker);
-            zip.file('sw.js',         SW_SOURCE);
+            zip.file('sw.js', SW_SOURCE.replace('%%SW_BUILD%%', cfg.version));
             zip.file('manifest.json', buildManifestJson());
             zip.file('config.json',   configJson);
             if (hasIcon) zip.file('icon.png', iconB64, { base64: true });
@@ -1779,10 +1787,10 @@ it is self-contained and does not need hosting.
         const urlInput = document.getElementById('workerAppUrl');
         const url = urlInput.value.trim();
         const org = document.getElementById('orgName').value;
-        
+
         if(url.length > 10 && url.startsWith('http')) {
             document.getElementById('launchPack').classList.remove('hidden');
-            
+
 // Use single quotes and (+) to build the string. This prevents internal quotes from crashing the script.
 const emailBody = 'Hello Team,\n\n' +
     'We are launching our new Lone-Worker Safety System for ' + (typeof org !== 'undefined' ? org : 'the organisation') + '.\n\n' +
@@ -1793,12 +1801,12 @@ const emailBody = 'Hello Team,\n\n' +
     'Important: Use your full name exactly as it appears in our records to ensure your safety alerts are correctly matched.\n\n' +
     'Stay safe,\n' +
     'Management';
-    
+
     document.getElementById('launchEmail').value = emailBody;
-            
+
             // High-resolution QR generation with High Error Correction
             document.getElementById('qrImage').src = "https://api.qrserver.com/v1/create-qr-code/?size=250x250&ecc=H&margin=1&data=" + encodeURIComponent(url);
-            
+
             urlInput.classList.remove('border-indigo-500/30');
             urlInput.classList.add('border-green-500/50');
         } else {
