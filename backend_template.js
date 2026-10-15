@@ -1,6 +1,15 @@
 /**
  * OTG APPSUITE - MASTER BACKEND %%BACKEND_VERSION%%
  * FIXED: SOS Map URLs, SMS Payloads, and GAS Environment Stability
+ *
+ * __38_ (session 76, 16 Oct 2026) - F74-1:
+ *   - Audit trail: hidden 'Audit' sheet records every col K write, guard skip,
+ *     Critical Timing ladder decision, busy reply, doPost error and human/app
+ *     edit (see _audit_ and onEdit at the end of this file).
+ *   - Critical Timing ladder memory moved to col AA ('Escalation Memory'), keyed
+ *     to the due time and claimed BEFORE alerts send. A stray col K write can no
+ *     longer reset the ladder; an extended visit (new due time) gets a fresh one.
+ *   - Pending sheet writes are flushed before the script lock is released.
  */
 
 const CONFIG = {
@@ -38,6 +47,18 @@ const CONFIG = {
 // Cached ORS API version — resolved lazily on first use by getOrsVersion_().
 // Avoids re-probing on every routing call within the same execution.
 let _orsVersion = null;
+
+// __38_ (F74-1): audit trail + Critical Timing ladder memory. Helpers at end of file.
+const AUDIT_SHEET_NAME   = 'Audit';
+const AUDIT_MAX_ROWS     = 5000;   // trimmed daily by sendHealthEmail()
+const LADDER_MEM_COL     = 27;     // col AA. Col Z is reserved for the Stage 1 warned flag.
+const LADDER_MEM_HEADER  = 'Escalation Memory';
+const LADDER_STATUSES    = ['EMERGENCY - CRITICAL TIMING BREACH',
+                            'EMERGENCY - CRITICAL TIMING REPEAT',
+                            'EMERGENCY - CRITICAL TIMING FINAL NOTICE'];
+const LADDER_STEP_LABELS = ['BREACH', 'REPEAT', 'FINAL NOTICE'];
+let _AUDIT_EXEC = null;          // short id shared by every audit row from one execution
+let _AUDIT_LOCKWAIT_MS = null;   // doPost only: how long it waited for the script lock
 
 const sp = PropertiesService.getScriptProperties();
 const tid = sp.getProperty('REPORT_TEMPLATE_ID');
@@ -106,7 +127,9 @@ function doPost(e) {
   if(e.parameter.key !== CONFIG.MASTER_KEY && e.parameter.key !== CONFIG.WORKER_KEY) return sendJSON({status:"error"});
   
   const lock = LockService.getScriptLock();
+  const _lockT0 = Date.now();
   if (lock.tryLock(10000)) { 
+      _AUDIT_LOCKWAIT_MS = Date.now() - _lockT0; // __38_: recorded on every audit row from this run
       try {
           const p = e.parameter;
           
@@ -136,11 +159,16 @@ function doPost(e) {
           
           return sendJSON({status:"success"});
           
-      } catch(err) { 
-          return sendJSON({status:"error", message: err.toString()}); 
-      } 
-      finally { 
-          lock.releaseLock(); 
+      } catch(err) {
+          const _ep = e.parameter || {};
+          _audit_('doPost:error', _ep['Worker Name'], '', '', '', _ep['Alarm Status'], _ep.idempotencyKey,
+                  err.toString().substring(0, 200));
+          return sendJSON({status:"error", message: err.toString()});
+      }
+      finally {
+          // __38_: commit pending sheet writes before the next execution can take the lock.
+          try { SpreadsheetApp.flush(); } catch (_) {}
+          lock.releaseLock();
       }
   } else { 
       // A1 OPTION 2 (session 72): the lock could not be obtained within 10 s.
@@ -148,6 +176,8 @@ function doPost(e) {
       // then still reply "Busy" so the worker's outbox keeps retrying and the row
       // lands once the lock frees. _busyPathAlert_() never throws.
       _busyPathAlert_(e.parameter);
+      _audit_('doPost:BUSY', e.parameter['Worker Name'], '', '', '', e.parameter['Alarm Status'],
+              e.parameter.idempotencyKey, 'Script lock not obtained within 10 s - replied Busy (alarm posts alert via busy path)');
       return sendJSON({status:"error", message:"Busy"}); 
   }
 }
@@ -556,6 +586,7 @@ function handleResolvePost(p) {
                 if (status.includes('EMERGENCY') || status.includes('PANIC') || status.includes('DURESS') || status.includes('OVERDUE')) {
                     const targetRow = startRow + i;
                     sheet.getRange(targetRow, 11).setValue(p['Alarm Status']); 
+                    _audit_('handleResolvePost', workerName, targetRow, status, p['Alarm Status'], p['Alarm Status'], p.idempotencyKey, 'alarm resolved');
                     sheet.getRange(targetRow, 12).setValue((String(rowData[11] || '') + "\n" + (p['Notes'] || '')).trim()); 
                     rowUpdated = true;
                     break;
@@ -580,6 +611,7 @@ function handleResolvePost(p) {
             p['Last Known GPS'], p['Timestamp'], p['Battery Level'], "", "", "", "", "", "", "", ""
         ];
         sheet.appendRow(row);
+        _audit_('handleResolvePost:new', workerName, sheet.getLastRow(), '', p['Alarm Status'], p['Alarm Status'], p.idempotencyKey, 'no open alarm row - new row appended');
     }
 
     // NEW: TRIGGER "ALL CLEAR" NOTIFICATIONS
@@ -729,6 +761,8 @@ function handleWorkerPost(p) {
                         // touches col K - otherwise a late phone post would reset the ladder.
                         // Before the due time, a Critical Timing OVERDUE ALARM is a missed welfare
                         // check and is left unchanged.
+                        const _origIncoming = String(p['Alarm Status'] || ''); // __38_: as sent, before any merge
+                        let _mergedBreachDue = null; // __38_: due time of a phone-merged BREACH (ladder memory)
                         if ((p['Alarm Status'] || '').toUpperCase().includes('OVERDUE ALARM') && p['Critical Timing'] === 'true') {
                             const _rowDue = new Date(rowData[20]);
                             const _ladderStarted = String(rowData[10]).toUpperCase().includes('CRITICAL TIMING');
@@ -736,6 +770,7 @@ function handleWorkerPost(p) {
                                 criticalBridgeSuppressed = true;
                             } else if (!isNaN(_rowDue.getTime()) && ts >= _rowDue) {
                                 p['Alarm Status'] = 'EMERGENCY - CRITICAL TIMING BREACH';
+                                _mergedBreachDue = _rowDue;
                             }
                         }
                         const _existingStatus = String(rowData[10]).toUpperCase();
@@ -753,6 +788,14 @@ function handleWorkerPost(p) {
                         // HIGH_SEVERITY downgrades only.
                         if (!_isGpsPulse && !criticalBridgeSuppressed && !(_existingIsHigh && _incomingIsLow)) {
                             sheet.getRange(targetRow, 11).setValue(p['Alarm Status']);
+                            _audit_('handleWorkerPost', workerName, targetRow, rowData[10], p['Alarm Status'], _origIncoming, p.idempotencyKey,
+                                    _mergedBreachDue ? 'Critical Timing merge: OVERDUE ALARM recorded as BREACH' : '');
+                            // __38_: a phone-merged BREACH is ladder step 1 for this due time.
+                            if (_mergedBreachDue) _ladderMemClaim_(sheet, targetRow, _mergedBreachDue, 1, 'handleWorkerPost:merge', workerName);
+                        } else if (!_isGpsPulse) {
+                            _audit_('handleWorkerPost:skip', workerName, targetRow, rowData[10], '', _origIncoming, p.idempotencyKey,
+                                    criticalBridgeSuppressed ? 'Critical Timing ladder already started - col K not written'
+                                                             : 'A6 guard - lower-severity status not written over an alarm');
                         }
                         if (distanceValue && distColIdx > -1) sheet.getRange(targetRow, distColIdx + 1).setValue(distanceValue);
                         if (polishedNotes && polishedNotes !== rowData[11]) {
@@ -818,6 +861,7 @@ if (!rowUpdated) {
         p4
     ];
     sheet.appendRow(row);
+    _audit_('handleWorkerPost:new', workerName, sheet.getLastRow(), '', p['Alarm Status'], p['Alarm Status'], p.idempotencyKey, 'new row');
 }
     }
 
@@ -1912,14 +1956,38 @@ function checkOverdueVisits() {
                 //    overwrite col K and re-fire this alert every minute).
                 if (isCritical) {
                     if (diffMins >= 0) {
-                        if (status.includes("CRITICAL TIMING FINAL NOTICE")) {
-                            // Sequence complete - nothing more to send.
-                        } else if (status.includes("CRITICAL TIMING REPEAT")) {
-                            if (diffMins >= 10) triggerEscalation(sheet, entry, "EMERGENCY - CRITICAL TIMING FINAL NOTICE", true, latest[worker].r);
-                        } else if (status.includes("CRITICAL TIMING BREACH")) {
-                            if (diffMins >= 5) triggerEscalation(sheet, entry, "EMERGENCY - CRITICAL TIMING REPEAT", true, latest[worker].r);
-                        } else if (!status.includes("EMERGENCY")) {
-                            triggerEscalation(sheet, entry, "EMERGENCY - CRITICAL TIMING BREACH", true, latest[worker].r);
+                        // __38_ (F74-1): the ladder's memory lives in col AA, keyed to the due time.
+                        // On 15 Oct col K went FINAL NOTICE -> REPEAT with no backend writer (proven
+                        // from cell edit history) and FINAL NOTICE was sent twice, because the ladder
+                        // took its step from col K. Col AA is authoritative once it holds an entry for
+                        // THIS due time; col K is used only when it does not (rows open before __38_
+                        // was deployed). A new due time (visit extended, A11) starts a fresh ladder.
+                        const rowNum  = latest[worker].r;
+                        const dueIso  = due.toISOString();
+                        const memRaw  = String(entry[LADDER_MEM_COL - 1] || '');
+                        const memStep = _ladderMemRead_(memRaw, dueIso);
+                        const kStep   = _ladderStepFromStatus_(status);
+                        const sent    = memStep > 0 ? memStep : kStep;
+                        let next = 0;
+                        if (sent === 0) {
+                            if (!status.includes("EMERGENCY")) next = 1;   // unchanged step 1 rule
+                        } else if (sent === 1) {
+                            if (diffMins >= 5) next = 2;
+                        } else if (sent === 2) {
+                            if (diffMins >= 10) next = 3;
+                        }
+                        const mismatch = memStep > 0 && kStep !== memStep;
+                        if (next || mismatch || sent < 3) {
+                            _audit_('ladder', worker, rowNum, status, next ? LADDER_STATUSES[next - 1] : '', '', '',
+                                    'diff=' + diffMins.toFixed(1) + 'm AA="' + memRaw + '" sent=' + sent +
+                                    (next ? ' -> sending step ' + next : ' -> nothing due') +
+                                    (mismatch ? ' | MISMATCH: col K step ' + kStep + ' vs col AA step ' + memStep : ''));
+                        }
+                        if (next) {
+                            // Claim before send: record the step BEFORE alerting so a repeat run cannot
+                            // resend it. A failed claim never blocks the alert (a duplicate beats a miss).
+                            _ladderMemClaim_(sheet, rowNum, due, next, 'ladder', worker);
+                            triggerEscalation(sheet, entry, LADDER_STATUSES[next - 1], true, rowNum);
                         }
                     }
                     return;
@@ -1948,6 +2016,8 @@ function checkOverdueVisits() {
     _pingHealthcheck();
 
     } finally {
+        // __38_: commit pending sheet writes before the next execution can take the lock.
+        try { SpreadsheetApp.flush(); } catch (_) {}
         lock.releaseLock();
     }
 }
@@ -2124,6 +2194,7 @@ function sendHealthEmail() {
     sp.setProperty('DAILY_FAIL_COUNT', '0');
     sp.deleteProperty('LAST_FAIL_DETAIL');
     sp.deleteProperty('LAST_DUE_PARSE_ERROR'); // A12: reported - clear until it recurs
+    _auditTrim_(); // __38_: keep the Audit sheet to the last AUDIT_MAX_ROWS rows
 
     console.log(`Health email sent to ${recipient}. Visits: ${visitCount}, Escalations: ${escalationCount}, Fails: ${failCount}, Stalled: ${stalledVisits.length}`);
 }
@@ -2947,6 +3018,7 @@ function archiveOldData() {
         archive.getRange(archive.getLastRow()+1, 1, move.length, move[0].length).setValues(move);
         sheet.clearContents();
         sheet.getRange(1, 1, keep.length, keep[0].length).setValues(keep);
+        _audit_('archiveOldData', '', '', '', '', '', '', 'Visits sheet rewritten: ' + move.length + ' row(s) archived, ' + (keep.length - 1) + ' kept');
     }
 }
 
@@ -3396,6 +3468,7 @@ function triggerEscalation(sheet, entry, newStatus, isDual, rowNum) {
     sheet.getRange(rowNum, 1).setValue(escalationTs);   // col A: Timestamp
     sheet.getRange(rowNum, 11).setValue(newStatus);      // col K: Alarm Status
     sheet.getRange(rowNum, 12).setValue(updatedNotes);   // col L: Notes
+    _audit_('triggerEscalation', entry[2], rowNum, entry[10], newStatus, '', '', 'escalation step written (col A, K, L) - alerts follow');
 
     // Look up ntfy topics from the Staff sheet — they are not stored in Visits rows.
     // Silently degrades to empty strings if the sheet is missing or the row isn't found.
@@ -3673,4 +3746,124 @@ function getEmergencyProceduresViewer(siteName, companyName) {
 /** Minimal HTML-escape for values inserted into GAS HtmlOutput strings. */
 function _escHtml(str) {
     return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+// ==========================================
+// __38_ AUDIT TRAIL + CRITICAL TIMING LADDER MEMORY (session 76, F74-1)
+// ==========================================
+
+/** Short id shared by every audit row written by one execution. */
+function _auditExecId_() {
+    if (!_AUDIT_EXEC) {
+        try { _AUDIT_EXEC = Utilities.getUuid().substring(0, 8); }
+        catch (_) { _AUDIT_EXEC = String(Date.now()).slice(-8); }
+    }
+    return _AUDIT_EXEC;
+}
+
+/**
+ * Append one row to the hidden 'Audit' sheet (created on first use).
+ * NEVER throws - a logging failure must never block a sheet write or an alert.
+ */
+function _audit_(source, worker, row, kBefore, kAfter, incoming, key, note) {
+    try {
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        let sh = ss.getSheetByName(AUDIT_SHEET_NAME);
+        if (!sh) {
+            sh = ss.insertSheet(AUDIT_SHEET_NAME);
+            sh.appendRow(['Time (UTC)', 'Execution', 'Source', 'Worker', 'Visits Row', 'Col K Before',
+                          'Col K After', 'Incoming Status', 'Idempotency Key', 'Note']);
+            sh.setFrozenRows(1);
+            try { sh.hideSheet(); } catch (_) {}
+        }
+        let n = String(note || '');
+        if (_AUDIT_LOCKWAIT_MS !== null) n = (n ? n + ' | ' : '') + 'lockWait=' + _AUDIT_LOCKWAIT_MS + 'ms';
+        sh.appendRow([
+            new Date().toISOString(), _auditExecId_(), String(source || ''), String(worker || ''),
+            row || '', kBefore == null ? '' : String(kBefore), kAfter == null ? '' : String(kAfter),
+            String(incoming || ''), String(key || ''), n
+        ]);
+    } catch (e) {
+        try { console.warn('[audit] write failed: ' + e); } catch (_) {}
+    }
+}
+
+/** Keep the Audit sheet to the last AUDIT_MAX_ROWS rows. Called daily by sendHealthEmail(). */
+function _auditTrim_() {
+    try {
+        const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AUDIT_SHEET_NAME);
+        if (!sh) return;
+        const extra = sh.getLastRow() - 1 - AUDIT_MAX_ROWS;
+        if (extra > 0) sh.deleteRows(2, extra);
+    } catch (e) { console.warn('[audit] trim failed: ' + e); }
+}
+
+/** Critical Timing ladder step shown in a col K status: 0 none, 1 BREACH, 2 REPEAT, 3 FINAL NOTICE. */
+function _ladderStepFromStatus_(status) {
+    const s = String(status || '').toUpperCase();
+    if (s.includes('CRITICAL TIMING FINAL NOTICE')) return 3;
+    if (s.includes('CRITICAL TIMING REPEAT'))       return 2;
+    if (s.includes('CRITICAL TIMING BREACH'))       return 1;
+    return 0;
+}
+
+/**
+ * Ladder step recorded in col AA for THIS due time, or 0.
+ * Col AA format: "<due ISO>|<step>|<label>", e.g. "2026-10-15T03:16:30.000Z|3|FINAL NOTICE".
+ * An entry for a different due time (the visit was extended) counts as 0.
+ */
+function _ladderMemRead_(raw, dueIso) {
+    const parts = String(raw || '').trim().split('|');
+    if (parts.length < 2 || parts[0] !== dueIso) return 0;
+    const n = parseInt(parts[1], 10);
+    return (n >= 1 && n <= 3) ? n : 0;
+}
+
+/**
+ * Claim a ladder step in col AA BEFORE its alerts are sent, then flush so the
+ * claim is committed even if the alert sends run long. Never throws: a failed
+ * claim is logged and the caller still sends (a duplicate beats a missed alert).
+ */
+function _ladderMemClaim_(sheet, rowNum, dueDate, step, source, worker) {
+    try {
+        const d = (dueDate instanceof Date) ? dueDate : new Date(dueDate);
+        if (isNaN(d.getTime())) throw new Error('unreadable due time');
+        const hdr = sheet.getRange(1, LADDER_MEM_COL);
+        if (!String(hdr.getValue() || '').trim()) hdr.setValue(LADDER_MEM_HEADER);
+        const val = d.toISOString() + '|' + step + '|' + LADDER_STEP_LABELS[step - 1];
+        sheet.getRange(rowNum, LADDER_MEM_COL).setValue(val);
+        SpreadsheetApp.flush();
+        _audit_(source + ':claim', worker, rowNum, '', '', '', '', 'col AA = ' + val);
+    } catch (e) {
+        _audit_(source + ':claim-FAILED', worker, rowNum, '', '', '', '',
+                String(e).substring(0, 200) + ' - alert still sent');
+    }
+}
+
+/**
+ * Simple trigger: records edits to col K (Alarm Status) and col AA (Escalation
+ * Memory) on the Visits sheet made in the Sheets UI or app. Google fires simple
+ * onEdit triggers ONLY for user edits - never for edits made by this script - so
+ * any row logged here was NOT written by the backend.
+ */
+function onEdit(e) {
+    try {
+        if (!e || !e.range) return;
+        const sh = e.range.getSheet();
+        if (sh.getName() !== 'Visits') return;
+        const c1 = e.range.getColumn();
+        const c2 = e.range.getLastColumn();
+        const touchesK  = 11 >= c1 && 11 <= c2;
+        const touchesAA = LADDER_MEM_COL >= c1 && LADDER_MEM_COL <= c2;
+        if (!touchesK && !touchesAA) return;
+        const single = e.range.getNumRows() === 1 && c1 === c2;
+        const row = e.range.getRow();
+        let worker = '';
+        try { worker = String(sh.getRange(row, 3).getValue() || ''); } catch (_) {}
+        let who = '';
+        try { who = (e.user && e.user.getEmail) ? e.user.getEmail() : ''; } catch (_) {}
+        _audit_('onEdit (NOT the backend)', worker, row,
+                single ? (e.oldValue === undefined ? '(blank or unknown)' : e.oldValue) : '(multi-cell edit)',
+                single ? (e.value === undefined ? '(blank or unknown)' : e.value) : '(multi-cell edit)',
+                '', '', 'range ' + e.range.getA1Notation() + (who ? ' by ' + who : ''));
+    } catch (_) { /* must never interfere with editing */ }
 }
