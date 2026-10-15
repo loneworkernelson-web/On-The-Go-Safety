@@ -1110,6 +1110,13 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div id="outboxHistory" class="text-xs font-mono text-gray-400 max-h-36 overflow-y-auto space-y-1 mb-3 bg-gray-900/50 rounded-lg p-2">
  <div class="text-gray-600 text-center py-2">Loading…</div>
  </div>
+ <!-- F74-3 diagnostic log (build __11_) -->
+ <div class="mb-3">
+ <div class="text-xs font-bold text-amber-400 mb-1">F74-3 DIAG LOG</div>
+ <pre id="diagLogBox" class="text-amber-300 bg-gray-900/50 rounded-lg p-2 max-h-48 overflow-auto whitespace-pre-wrap break-all" style="font-size:10px;line-height:1.3;">(empty)</pre>
+ <button onclick="try{localStorage.removeItem('otg_f743_diag');}catch(_){} updateOutboxStatus();"
+ class="mt-1 w-full bg-gray-800 py-1 rounded text-xs font-bold text-amber-300">Clear diag log</button>
+ </div>
  <button onclick="outboxRequeueFailedAndFlush(); showToast('🔄 Flushing outbox…')"
  class="w-full bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs font-bold text-white">
  Flush Outbox Now
@@ -1812,6 +1819,29 @@ let _lastWatchFixTs = null;          // ms timestamp of last accepted watchPosit
 // PHASE 1 ADDITIONS
 let isMidVisitUpdate = false; // Track if we're updating mid-visit vs ending
 let isSubmitting = false; // Guard against double-fire of the submit slide pill
+
+// ── F74-3 DIAGNOSTIC BUILD (__11_) - logging only, no behaviour change ──────
+// Records who calls what, and when, so a double DEPARTED can be traced.
+// Log is kept in localStorage (survives reload) and shown under the Event
+// Outbox panel in Settings. Remove once F74-3 is fixed.
+const _DIAG_KEY = 'otg_f743_diag';
+function _diag(label, withStack) {
+ try {
+  const t = new Date();
+  const hms = t.toLocaleTimeString('en-NZ', { hour12: false }) + '.' + String(t.getMilliseconds()).padStart(3, '0');
+  let line = hms + ' ' + label;
+  if (withStack) {
+   const st = (new Error().stack || '').split('\n').slice(2, 6)
+    .map(s => s.trim().replace(/^at\s+/, '').replace(/\(?https?:\/\/[^\s)]*\/([^\/\s)]*)\)?/, '$1')).join(' < ');
+   line += ' | ' + st;
+  }
+  let arr = [];
+  try { arr = JSON.parse(localStorage.getItem(_DIAG_KEY) || '[]'); } catch (_) { arr = []; }
+  arr.push(line);
+  if (arr.length > 80) arr = arr.slice(-80);
+  try { localStorage.setItem(_DIAG_KEY, JSON.stringify(arr)); } catch (_) {}
+ } catch (_) { /* diagnostics must never affect the app */ }
+}
 let isPreVisitForm = false; // True while a pre-visit form is being completed
 let isPreVisitFormDone = false; // Prevents re-triggering when startVisit() resumes
 let pendingVisitStartFn = null; // Closure to resume startVisit() after pre-visit form
@@ -2077,6 +2107,7 @@ async function refreshBatteryLevel() {
  * site emergency procedures integration, and correct media/signature transmission.
  */
 function submitReport() {
+ _diag('submitReport() isSubmitting=' + isSubmitting + ' activeVisit=' + !!(state && state.activeVisit) + ' tpl=' + currentActiveTemplate + ' midVisit=' + isMidVisitUpdate + ' preVisit=' + isPreVisitForm, true);
  if (isSubmitting) return;
  isSubmitting = true;
 
@@ -3302,6 +3333,7 @@ function buildReportForm(templateName, fieldArea) {
  * Resolves: Extra syntax braces, 1.8s hold integration, and context-aware population.
  */
 function loadFormAndShow(templateName, context = null) {
+ _diag('loadFormAndShow(' + templateName + ')', true);
  if (typeof dimTimer !== 'undefined') clearTimeout(dimTimer);
  deactivateBatterySaver();
 
@@ -3530,6 +3562,7 @@ function directDepart() {
 }
 
 function preDepart() {
+ _diag('preDepart() activeVisit=' + !!(state && state.activeVisit), true);
  if (!state || !state.activeVisit) return;
  
  // SAFETY GATE 1: Force PIN if an alarm is active
@@ -5534,6 +5567,7 @@ function _outboxDB() {
  */
 async function outboxEnqueue(payload) {
  if (!payload) return;
+ _diag('outboxEnqueue ' + (payload['Alarm Status'] || '?') + ' site="' + (payload['Location Name'] || '') + '" sigLen=' + String(payload['Signature'] || '').length, true);
 
  // Build a stable, unique idempotency key.
  // Stable across retries: key is stored in the record and reused on every attempt.
@@ -7413,6 +7447,15 @@ async function updateOutboxStatus() {
  const historyEl = document.getElementById('outboxHistory');
  if (!pendingEl || !sentEl || !lastSentEl || !historyEl) return;
 
+ // F74-3 diagnostic log (build __11_)
+ try {
+  const box = document.getElementById('diagLogBox');
+  if (box) {
+   const arr = JSON.parse(localStorage.getItem('otg_f743_diag') || '[]');
+   box.textContent = arr.length ? arr.join('\n') : '(empty)';
+  }
+ } catch (_) {}
+
  let db;
  try { db = await _outboxDB(); } catch (e) {
  historyEl.innerHTML = '<div class="text-red-400 text-center py-2">IndexedDB unavailable</div>';
@@ -7457,13 +7500,17 @@ async function updateOutboxStatus() {
 
  historyEl.innerHTML = recent.map(r => {
  const alarmStatus = r.payload?.['Alarm Status'] || 'LOG';
- const ts = r.createdAt ? new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '?';
+ const ts = r.createdAt ? new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '?';
+ // F74-3 diagnostic (build __11_): show which site and whether a signature travelled
+ const _site = escapeHtml(String(r.payload?.['Location Name'] || '').slice(0, 24));
+ const _sig = String(r.payload?.['Signature'] || '').length;
+ const _diagBits = ` <span class="text-amber-300">[${_site || 'no site'}${_sig ? ' sig' + Math.round(_sig / 1000) + 'k' : ''}]</span>`;
  const dot = r.status === 'sent' ? '🟢' : r.status === 'failed' ? '🔴' : '🟡';
  const attempts = r.attempts > 0 ? ` ×${r.attempts}` : '';
  // A1: show why an unsent record has not gone yet (escaped - may hold server text)
  const why = (r.status !== 'sent' && r.lastError) ? ` <span class="text-red-300">${escapeHtml(r.lastError)}</span>` : '';
  return `<div class="flex justify-between items-center py-0.5">
- <span>${dot} <span class="text-white">${alarmStatus}</span>${attempts}${why}</span>
+ <span>${dot} <span class="text-white">${alarmStatus}</span>${attempts}${_diagBits}${why}</span>
  <span class="text-gray-500">${ts}</span>
  </div>`;
  }).join('');
@@ -8710,6 +8757,9 @@ function initSlidePill(pillId, thumbId, labelId, onComplete) {
 
  const THUMB_W = thumb.offsetWidth || 56;
  const START_ZONE = 0.30; // gesture must begin within first 30% of track
+ // F74-3 diagnostic: how many times has THIS element been wired?
+ pill.dataset.diagWired = String((parseInt(pill.dataset.diagWired || '0', 10) || 0) + 1);
+ _diag('initSlidePill(' + pillId + ') wired x' + pill.dataset.diagWired, false);
 
  let isSliding = false;
  let gestureValid = false;
@@ -8755,10 +8805,12 @@ function initSlidePill(pillId, thumbId, labelId, onComplete) {
  thumb.style.transition = 'transform 0.15s ease-out';
  thumb.style.transform = `translateX(${maxSlide}px)`;
  if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
+ _diag('completeSlide(' + pillId + ')', false);
  setTimeout(() => {
  thumb.style.transition = 'none';
  thumb.style.transform = 'translateX(0)';
  if (label) label.style.opacity = '1';
+ _diag('onComplete(' + pillId + ') firing', false);
  onComplete();
  }, 150);
  }
