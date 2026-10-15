@@ -6859,6 +6859,13 @@ function updateVerifyProgress() {
 // applied. It replaces the old window.onload handler. The boot screen hides
 // before this runs so the user sees a fully themed, configured app.
 function _initApp() {
+ // F74-3 (build __12_): startup must run once per page. Observed on device
+ // (15 Oct 2026): every persistent slide pill was wired twice ~100 ms apart,
+ // giving two preDepart() calls per slide and a second DEPARTED payload.
+ // Log the caller's stack every time, then refuse a second run.
+ _diag('_initApp() entered, alreadyRan=' + !!window.__otgInitDone, true);
+ if (window.__otgInitDone) return;
+ window.__otgInitDone = true;
  // navigator.storage.persist() is the standardised W3C Storage API.
  // Note: if the browser console shows a ".persistent" deprecation, it refers
  // to the old webkitPersistentStorage API — not this call — and can be ignored.
@@ -8723,6 +8730,7 @@ function cancelVolumeConfirmation() {
  * Called once at startup — listeners are registered once and remain active.
  */
 function initAllActionPills() {
+ _diag('initAllActionPills() entered', true);
  // Start Visit pill
  initSlidePill('btnStart', 'slideStartThumb', 'slideStartLabel', () => {
  const durationMins = state.visitDurationMinutes || 0;
@@ -8760,6 +8768,13 @@ function initSlidePill(pillId, thumbId, labelId, onComplete) {
  // F74-3 diagnostic: how many times has THIS element been wired?
  pill.dataset.diagWired = String((parseInt(pill.dataset.diagWired || '0', 10) || 0) + 1);
  _diag('initSlidePill(' + pillId + ') wired x' + pill.dataset.diagWired, false);
+ // F74-3 (build __12_): never wire the same element twice. A second wiring
+ // means one slide fires onComplete twice. Submit pills are new elements on
+ // every form load, so they are unaffected.
+ if (pill.dataset.diagWired !== '1') {
+  _diag('initSlidePill(' + pillId + ') SKIPPED - already wired', true);
+  return;
+ }
 
  let isSliding = false;
  let gestureValid = false;
