@@ -1815,6 +1815,8 @@ let _consecutiveGPSFailures = 0; // Reset on each successful fix; toast shown at
 let gpsWatchPositionId = null;      // watchPosition ID during travel phase; null when inactive
 let _gpsWatchPositionFailed = false; // true if watchPosition errored mid-trip; triggers report warning
 let _lastWatchFixTs = null;          // ms timestamp of last accepted watchPosition fix (debounce)
+let _alarmFixPending = false;        // F76-1 (build __13_): alarm post went out without a fix - send a GPS pulse as soon as one lands
+let _alarmFixPromise = null;         // F76-1 (build __13_): shared in-flight fresh-fix request
 
 // PHASE 1 ADDITIONS
 let isMidVisitUpdate = false; // Track if we're updating mid-visit vs ending
@@ -2501,6 +2503,16 @@ function _takeSingleGPSFix() {
  const lng = pos.coords.longitude;
  lastGPS = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
  updateGPSBars(pos);
+ // F76-1 (build __13_): the alarm post went out before any fix existed - send the position the moment one lands
+ // (the regular alarm pulse is 2 minutes apart). Only while an alarm is still active.
+ if (_alarmFixPending && (isPanicActive || isDuressActive)) {
+   _alarmFixPending = false;
+   processUploadQueue(buildPayload({
+     'Alarm Status': 'ALARM_GPS_PULSE',
+     'Notes': 'GPS pulse - first fix after the alarm started.',
+     'Last Known GPS': lastGPS
+   }));
+ }
 
     // --- Adaptive interval logic ---
     // During travel sessions use a tighter floor (1 min) for breadcrumb density
@@ -4092,13 +4104,18 @@ function tick() {
  // GPS PUSH: fires at grace period start and every 5 minutes — runs behind battery saver.
  if (!state.activeVisit.overdueGpsSent) {
  if (typeof startGPSMonitoring === 'function') startGPSMonitoring();
+ // F76-1 (build __13_): wait (max 5 s) for a fresh fix before posting, as the SOS path does.
+ // The flag is set first so the next tick cannot start a second request while this one is pending.
+ state.activeVisit.overdueGpsSent = true;
+ saveState();
+ _freshAlarmFix().then(() => {
+ if (!state || !state.activeVisit) return; // visit ended while waiting
  processUploadQueue(buildPayload({
  'Alarm Status': 'OVERDUE',
  'Notes': 'Worker is overdue. GPS tracking active.',
  'Last Known GPS': typeof lastGPS !== 'undefined' ? lastGPS : "0,0"
  }));
- state.activeVisit.overdueGpsSent = true;
- saveState();
+ });
  if (!arrivedPulseInterval) {
  arrivedPulseInterval = setInterval(() => {
  if (!state || !state.activeVisit) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; return; }
@@ -6120,6 +6137,30 @@ function _stopAlarmGpsPulse() {
     clearInterval(alarmGpsPulseInterval);
     alarmGpsPulseInterval = null;
   }
+  _alarmFixPending = false; // F76-1 (build __13_): alarm over - no late first-fix pulse
+}
+
+/**
+ * F76-1 (build __13_): _freshAlarmFix - ask for a fresh high-accuracy fix and wait up to 5 s,
+ * the same request triggerPanic() makes for SOS, shake and duress. Resolves true if lastGPS was
+ * refreshed, false if no fix arrived in time. Never rejects. Callers that overlap share one request.
+ */
+function _freshAlarmFix() {
+  if (_alarmFixPromise) return _alarmFixPromise;
+  _alarmFixPromise = new Promise(resolve => {
+    try {
+      if (!navigator.geolocation) { resolve(false); return; }
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          lastGPS = `${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`;
+          resolve(true);
+        },
+        () => resolve(false),
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      );
+    } catch (e) { resolve(false); }
+  }).then(ok => { _alarmFixPromise = null; return ok; });
+  return _alarmFixPromise;
 }
 
 /**
@@ -9483,7 +9524,7 @@ function renderNoticeArchive() {
  * GRACE EXPIRY: Critical Alarm Activation
  * Logic: Locks UI to Alarm mode and notifies contacts via backend.
  */
-function triggerGraceExpiryAlarm() {
+async function triggerGraceExpiryAlarm() {
   setVisitPhase(VISIT_PHASES.ALARMING);
   saveState();
   isPanicActive = true;
@@ -9507,12 +9548,8 @@ function triggerGraceExpiryAlarm() {
     : (navigator.onLine
         ? `${CONFIG.escalationMinutes || 15}-minute grace period expired. Emergency contacts notified.`
         : `${CONFIG.escalationMinutes || 15}-minute grace period expired. Device was offline — contacts not yet notified.`);
-  processUploadQueue(buildPayload({
-    'Alarm Status': 'OVERDUE ALARM',
-    'Notes': _alarmNote,
-    'Last Known GPS': lastGPS || '0,0',
-    'Critical Timing': _isCriticalTrip ? 'true' : ''
-  }));
+  // F76-1 (build __13_): the OVERDUE ALARM post is sent at the end of this function, after a fresh
+  // GPS fix (max 5 s). The alarm screen and announcement below still appear immediately.
 
   // 2. Audio alert + overlay — grace expiry is a loud alarm on the device
   // (worker is not in a covert situation; they simply missed their check-in)
@@ -9540,6 +9577,19 @@ function triggerGraceExpiryAlarm() {
 
   // Show backup contact buttons
   _showAlarmButtons();
+
+  // F76-1 (build __13_): fresh fix before the post, as triggerPanic() does. If none arrives in 5 s the
+  // alarm is posted anyway with the best position held, and _alarmFixPending makes the first fix that
+  // does arrive go out immediately as a GPS pulse. The server ladder owns escalation either way.
+  const _gotFix = await _freshAlarmFix();
+  if (!isPanicActive) return; // alarm cleared (PIN) while waiting - do not revive it on the server
+  processUploadQueue(buildPayload({
+    'Alarm Status': 'OVERDUE ALARM',
+    'Notes': _alarmNote,
+    'Last Known GPS': lastGPS || '0,0',
+    'Critical Timing': _isCriticalTrip ? 'true' : ''
+  }));
+  if (!_gotFix) _alarmFixPending = true;
   fetchW3wForPanic();
 }
 
