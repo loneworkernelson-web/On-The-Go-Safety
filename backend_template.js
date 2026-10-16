@@ -10,6 +10,24 @@
  *     to the due time and claimed BEFORE alerts send. A stray col K write can no
  *     longer reset the ladder; an extended visit (new due time) gets a fresh one.
  *   - Pending sheet writes are flushed before the script lock is released.
+ *
+ * __39_ (session 77, 16 Oct 2026) - F75-2:
+ *   - archiveOldData() now takes the script lock (waits up to 60 s) BEFORE reading the
+ *     Visits sheet. Before, it ran without the lock and rewrote the whole sheet from a
+ *     snapshot, so an alarm or ladder write landing mid-run could be silently undone.
+ *   - It writes the kept rows over the top of Visits first and clears the leftover rows
+ *     after (it used to clear the sheet, then write). Visits is never empty, and a failure
+ *     part-way cannot wipe the open and recent rows.
+ *   - Lock busy: the run is skipped, logged to Audit, and one retry is scheduled for 1 hour
+ *     later (archiveOldDataRetry). If the retry also fails, or the run throws, it sets
+ *     ARCHIVE_FAILED, emails the health-report recipient, and the daily health email
+ *     carries a banner until it has been reported.
+ *   - Column K is read with String(), so a non-text cell no longer aborts the archive.
+ *
+ * __40_ (session 77, 16 Oct 2026) - F76-1:
+ *   - handleWorkerPost no longer writes a 'no fix' position ("0,0" or "0.0,0.0", which is what the
+ *     worker app sends when it has no GPS) into col O / col P. Before, any such post replaced a real
+ *     position already held for the visit. New rows still record whatever the first post carries.
  */
 
 const CONFIG = {
@@ -802,7 +820,9 @@ function handleWorkerPost(p) {
                              const oldNotes = sheet.getRange(targetRow, 12).getValue();
                              if (!oldNotes.includes(polishedNotes)) sheet.getRange(targetRow, 12).setValue((oldNotes + "\n" + polishedNotes).trim());
                         }
-                        if (p['Last Known GPS']) {
+                        // __40_: ignore a 'no fix' position so it cannot overwrite a real one already in col O.
+                        const _gpsIn = (p['Last Known GPS'] || '').toString().replace(/\s+/g, '');
+                        if (_gpsIn && _gpsIn !== '0,0' && _gpsIn !== '0.0,0.0') {
                             sheet.getRange(targetRow, 15).setValue(p['Last Known GPS']); // col O: Last Known GPS
                             sheet.getRange(targetRow, 16).setValue(ts.toISOString());    // col P: GPS Timestamp
                         }
@@ -2169,6 +2189,12 @@ function sendHealthEmail() {
       Check column U of the Visits sheet. Last seen: ${sp.getProperty('LAST_DUE_PARSE_ERROR')}
     </div>` : ''}
 
+    ${sp.getProperty('ARCHIVE_FAILED') ? `
+    <div style="background:#fdf3f3;border-left:4px solid #c0392b;padding:12px 16px;margin-top:16px;border-radius:0 4px 4px 0">
+      <strong style="color:#c0392b">\u26a0 The monthly archive of old Visits rows did not run.</strong>
+      Alerts are not affected; old rows stay in Visits until it runs. Last seen: ${sp.getProperty('ARCHIVE_FAILED')}
+    </div>` : ''}
+
     ${stalledVisits.length > 0 ? `
     <div style="background:#fef9ec;border-left:4px solid #e67e22;padding:12px 16px;margin-top:16px;border-radius:0 4px 4px 0">
       <strong style="color:#e67e22">⚠ ${stalledVisits.length} worker(s) have open visits older than 24 hours.</strong>
@@ -2194,6 +2220,7 @@ function sendHealthEmail() {
     sp.setProperty('DAILY_FAIL_COUNT', '0');
     sp.deleteProperty('LAST_FAIL_DETAIL');
     sp.deleteProperty('LAST_DUE_PARSE_ERROR'); // A12: reported - clear until it recurs
+    sp.deleteProperty('ARCHIVE_FAILED'); // __39_: reported - clear until it recurs
     _auditTrim_(); // __38_: keep the Audit sheet to the last AUDIT_MAX_ROWS rows
 
     console.log(`Health email sent to ${recipient}. Visits: ${visitCount}, Escalations: ${escalationCount}, Fails: ${failCount}, Stalled: ${stalledVisits.length}`);
@@ -3001,25 +3028,96 @@ function sendJSON(data) {
   return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
 }
 
-function archiveOldData() {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ss.getSheetByName('Visits');
-    const archive = ss.getSheetByName('Archive') || ss.insertSheet('Archive');
-    const data = sheet.getDataRange().getValues();
-    if(data.length <= 1) return;
-    const today = new Date();
-    const cutoff = new Date(today.setDate(today.getDate() - CONFIG.ARCHIVE_DAYS));
-    const keep = [data[0]];
-    const move = [];
-    for(let i=1; i<data.length; i++) {
-        if(new Date(data[i][0]) < cutoff && (data[i][10].includes('DEPARTED') || data[i][10].includes('SAFE') || data[i][10].includes('COMPLETED'))) { move.push(data[i]); } else { keep.push(data[i]); }
+/**
+ * Monthly archive: moves closed Visits rows older than CONFIG.ARCHIVE_DAYS to the Archive sheet.
+ * __39_ (F75-2): runs under the script lock, writes kept rows before trimming, retries once.
+ * archiveOldData() is the monthly trigger; archiveOldDataRetry() is the one-off 1-hour retry.
+ */
+const ARCHIVE_LOCK_WAIT_MS   = 60000;
+const ARCHIVE_RETRY_DELAY_MS = 60 * 60 * 1000;
+
+function archiveOldData()      { _archiveAttempt_(false); }
+function archiveOldDataRetry() { _archiveAttempt_(true);  }
+
+function _archiveAttempt_(isRetry) {
+    if (isRetry) _archiveDeleteRetryTriggers_(); // the one-off retry trigger has done its job
+    const lock = LockService.getScriptLock();
+    let got = false;
+    try { got = lock.tryLock(ARCHIVE_LOCK_WAIT_MS); } catch (e) { got = false; }
+    if (!got) { _archiveLockFailed_(isRetry); return; }
+    try {
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        const sheet = ss.getSheetByName('Visits');
+        if (!sheet) return;
+        const archive = ss.getSheetByName('Archive') || ss.insertSheet('Archive');
+        const data = sheet.getDataRange().getValues();
+        if (data.length <= 1) return;
+        const today = new Date();
+        const cutoff = new Date(today.setDate(today.getDate() - CONFIG.ARCHIVE_DAYS));
+        const keep = [data[0]];
+        const move = [];
+        for (let i = 1; i < data.length; i++) {
+            const st = String(data[i][10]); // __39_: Sheets may hold a non-text value in col K
+            if (new Date(data[i][0]) < cutoff && (st.includes('DEPARTED') || st.includes('SAFE') || st.includes('COMPLETED'))) { move.push(data[i]); } else { keep.push(data[i]); }
+        }
+        if (move.length > 0) {
+            archive.getRange(archive.getLastRow() + 1, 1, move.length, move[0].length).setValues(move);
+            // __39_: kept rows are written over the top of Visits FIRST, then the leftover rows
+            // below them are cleared. The sheet is never empty, and a failure between the two
+            // calls leaves duplicates (recoverable) instead of a wiped sheet.
+            sheet.getRange(1, 1, keep.length, keep[0].length).setValues(keep);
+            if (data.length > keep.length) {
+                sheet.getRange(keep.length + 1, 1, data.length - keep.length, keep[0].length).clearContent();
+            }
+            _audit_('archiveOldData', '', '', '', '', '', '', 'Visits sheet rewritten (write then trim): ' + move.length + ' row(s) archived, ' + (keep.length - 1) + ' kept');
+        }
+    } catch (err) {
+        _archiveFlag_('The archive run failed: ' + String(err).substring(0, 200) + '. Check the Audit and Archive sheets before running it again - rows may already be in Archive.');
+        throw err;
+    } finally {
+        // flush before release, as in doPost and checkOverdueVisits
+        try { SpreadsheetApp.flush(); } catch (_) {}
+        lock.releaseLock();
     }
-    if(move.length > 0) {
-        archive.getRange(archive.getLastRow()+1, 1, move.length, move[0].length).setValues(move);
-        sheet.clearContents();
-        sheet.getRange(1, 1, keep.length, keep[0].length).setValues(keep);
-        _audit_('archiveOldData', '', '', '', '', '', '', 'Visits sheet rewritten: ' + move.length + ' row(s) archived, ' + (keep.length - 1) + ' kept');
+}
+
+/** Lock not obtained: first time schedule one retry in 1 hour; a failed retry flags. */
+function _archiveLockFailed_(isRetry) {
+    if (isRetry) {
+        _archiveFlag_('The retry also could not get the script lock (waited 60 s). The monthly archive did not run. It will run at the next monthly trigger, or run archiveOldData by hand.');
+        return;
     }
+    _audit_('archiveOldData:LOCK-BUSY', '', '', '', '', '', '', 'Script lock not obtained within 60 s - archive skipped, retry scheduled in 1 hour');
+    try {
+        _archiveDeleteRetryTriggers_(); // never leave two retries queued
+        ScriptApp.newTrigger('archiveOldDataRetry').timeBased().after(ARCHIVE_RETRY_DELAY_MS).create();
+    } catch (e) {
+        _archiveFlag_('The script lock was busy and the 1-hour retry could not be scheduled: ' + String(e).substring(0, 200) + '. The monthly archive did not run.');
+    }
+}
+
+function _archiveDeleteRetryTriggers_() {
+    try {
+        ScriptApp.getProjectTriggers().forEach(function(t) {
+            if (t.getHandlerFunction() === 'archiveOldDataRetry') ScriptApp.deleteTrigger(t);
+        });
+    } catch (e) { console.warn('[archive] could not clear retry triggers: ' + e); }
+}
+
+/** Record, audit and email an archive failure. The daily health email carries it until reported. Never throws. */
+function _archiveFlag_(msg) {
+    try { sp.setProperty('ARCHIVE_FAILED', new Date().toISOString() + ' | ' + String(msg).substring(0, 400)); } catch (_) {}
+    _audit_('archiveOldData:FLAG', '', '', '', '', '', '', msg);
+    try {
+        const recipient = (CONFIG.HEALTH_EMAIL && CONFIG.HEALTH_EMAIL.includes('@'))
+            ? CONFIG.HEALTH_EMAIL
+            : Session.getEffectiveUser().getEmail();
+        MailApp.sendEmail({
+            to: recipient,
+            subject: '\u26a0\ufe0f OTG monthly archive did not run - ' + CONFIG.ORG_NAME,
+            htmlBody: '<p>' + _escHtml(String(msg)) + '</p><p>The Visits sheet is still in service and alerts are not affected. Old rows stay in Visits until the archive runs.</p>'
+        });
+    } catch (e) { console.warn('[archive] flag email failed: ' + e); }
 }
 
 function sendWeeklySummary() {
