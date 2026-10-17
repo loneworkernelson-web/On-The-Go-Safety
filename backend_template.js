@@ -28,6 +28,23 @@
  *   - handleWorkerPost no longer writes a 'no fix' position ("0,0" or "0.0,0.0", which is what the
  *     worker app sends when it has no GPS) into col O / col P. Before, any such post replaced a real
  *     position already held for the visit. New rows still record whatever the first post carries.
+ *
+ * __41_ (session 80, 17 Oct 2026) - Layer 2 trigger health:
+ *   - Each background job (archiveOldData incl. runs that move 0 rows, sendHealthEmail,
+ *     geocodeSiteLocations, sendWeeklySummary, cleanupPrivateSentNotes) records its own last success and
+ *     last failure in script properties (JOB_<name>_OK / _FAIL). checkOverdueVisits is NOT tracked this way:
+ *     it is watched from outside by Healthchecks.io, and no property is written on the minute run.
+ *   - The daily Health email gains a Background Jobs table (judged against JOB_CADENCE) and colours the
+ *     'Escalation engine last ran' line (amber over 5 min, red over 10 min).
+ *   - runDiagnostics: FAILs a trigger whose handler function does not exist (the orphan generateStats case),
+ *     reports job heartbeats and engine age, and the archive note now says monthly.
+ *   - TEMPLATE_BUILD stamp: in the ping reply, every Audit note, the Health email footer and diagnostics.
+ *   - Critical Timing ladder: two audit-only rows after each step's alerts ('ladder:sends-complete' with the
+ *     duration, or 'ladder:send-FAILED' if the send threw). They record evidence only and change no behaviour.
+ *
+ * DEPLOY CHECKLIST (every deployment): Deploy > Manage deployments > New version. Then open the Apps Script
+ * editor, run ONE function from each installed trigger by hand (accept any permission prompt), and confirm
+ * the Triggers list shows no failures.
  */
 
 const CONFIG = {
@@ -112,7 +129,7 @@ function doGet(e) {
       const p = e.parameter;
    // NEW: Version Ping for System Info
       if (p.action === 'ping') {
-          return sendResponse(e, { status: "success", version: CONFIG.VERSION });
+          return sendResponse(e, { status: "success", version: CONFIG.VERSION, build: TEMPLATE_BUILD });
       }
       if (p.action === 'getDistance' && p.start && p.end) {
           const dist = getRouteDistance(p.start, p.end);
@@ -2007,7 +2024,18 @@ function checkOverdueVisits() {
                             // Claim before send: record the step BEFORE alerting so a repeat run cannot
                             // resend it. A failed claim never blocks the alert (a duplicate beats a miss).
                             _ladderMemClaim_(sheet, rowNum, due, next, 'ladder', worker);
-                            triggerEscalation(sheet, entry, LADDER_STATUSES[next - 1], true, rowNum);
+                            // __41_ (F79-2 evidence): time the send and leave a trace. _audit_ never throws,
+                            // and a throw from triggerEscalation is re-thrown exactly as before.
+                            const _sendT0 = Date.now();
+                            try {
+                                triggerEscalation(sheet, entry, LADDER_STATUSES[next - 1], true, rowNum);
+                            } catch (_sendErr) {
+                                _audit_('ladder:send-FAILED', worker, rowNum, '', LADDER_STATUSES[next - 1], '', '',
+                                        'step ' + next + ' threw after ' + (Date.now() - _sendT0) + 'ms: ' + String(_sendErr).substring(0, 200));
+                                throw _sendErr;
+                            }
+                            _audit_('ladder:sends-complete', worker, rowNum, '', LADDER_STATUSES[next - 1], '', '',
+                                    'step ' + next + ' alerts returned after ' + (Date.now() - _sendT0) + 'ms');
                         }
                     }
                     return;
@@ -2054,7 +2082,9 @@ function checkOverdueVisits() {
  *   - Timestamp of the last successful checkOverdueVisits() trigger run
  *   - Any workers with an open visit older than 24 hours (likely a missed departure)
  */
-function sendHealthEmail() {
+function sendHealthEmail() { _jobRun_('sendHealthEmail', _sendHealthEmailImpl_); }
+
+function _sendHealthEmailImpl_() {
     const now = new Date();
     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const tz = CONFIG.TIMEZONE || 'UTC';
@@ -2114,8 +2144,37 @@ function sendHealthEmail() {
     // --- 2. Read PropertiesService counters ---
     const failCount      = parseInt(sp.getProperty('DAILY_FAIL_COUNT') || '0', 10);
     const lastFailDetail = sp.getProperty('LAST_FAIL_DETAIL') || 'None';
-    const lastTriggerRaw = sp.getProperty('LAST_TRIGGER_TIME');
-    const lastTriggerStr = lastTriggerRaw ? fmtTime(lastTriggerRaw) : '<strong style="color:#c0392b">Never recorded — is the 1-minute trigger set up?</strong>';
+    // __41_: the escalation engine line is judged, not just printed (amber over 5 min, red over 10 min).
+    const _eng = _engineAge_(now);
+    let lastTriggerStr;
+    if (_eng.level === 'NEVER') {
+        lastTriggerStr = '<strong style="color:#c0392b">Never recorded — is the 1-minute trigger set up?</strong>';
+    } else {
+        const _engColour = _eng.level === 'OK' ? '#27ae60' : _eng.level === 'WARN' ? '#e67e22' : '#c0392b';
+        lastTriggerStr = fmtTime(_eng.time) + ' <strong style="color:' + _engColour + '">(' + _jobAgeText_(_eng.ageMin / 60) + ' ago' +
+                         (_eng.level === 'STALE' ? ' - ESCALATION MAY HAVE STOPPED' : '') + ')</strong>';
+    }
+
+    // __41_: Background Jobs table. This job shows only if its previous run failed or went stale (an email
+    // arriving at all is the proof it ran).
+    const _jobList = _jobStatuses_(now).filter(j => j.fn !== 'sendHealthEmail' || j.status === 'FAILED' || j.status === 'STALE');
+    const _jobBad  = _jobList.filter(j => j.status === 'STALE' || j.status === 'FAILED' || j.status === 'NEVER');
+    const _jobColour = { OK: '#27ae60', WAITING: '#888', STALE: '#c0392b', FAILED: '#c0392b', NEVER: '#c0392b' };
+    const _jobRowsHtml = _jobList.map(j =>
+        '<tr><td style="padding:8px 12px;border-top:1px solid #eee;vertical-align:top">' + _escHtml(j.label) +
+        '<br><em style="font-size:11px;color:#888">' + _escHtml(j.every) + '</em></td>' +
+        '<td style="padding:8px 12px;border-top:1px solid #eee;vertical-align:top"><strong style="color:' + _jobColour[j.status] + '">' + j.status + '</strong></td>' +
+        '<td style="padding:8px 12px;border-top:1px solid #eee;font-size:13px">' + _escHtml(_jobDescribe_(j, tz)) + '</td></tr>').join('');
+    const _jobSectionHtml =
+        '<h3 style="margin:20px 0 12px;font-size:15px;color:#1e3a5f">Background Jobs</h3>' +
+        '<table style="border-collapse:collapse;width:100%;background:#fff;border-radius:4px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)">' +
+        '<tr style="background:#e8edf3"><th style="text-align:left;padding:10px 12px;font-size:13px">Job</th><th style="text-align:left;padding:10px 12px;font-size:13px">Status</th><th style="text-align:left;padding:10px 12px;font-size:13px">Detail</th></tr>' +
+        _jobRowsHtml + '</table>' +
+        (_jobBad.length > 0
+            ? '<div style="background:#fdf3f3;border-left:4px solid #c0392b;padding:12px 16px;margin-top:12px;border-radius:0 4px 4px 0"><strong style="color:#c0392b">&#9888; ' +
+              _jobBad.length + ' background job(s) need attention.</strong> Alerts to contacts are not affected by these jobs, but something that should be running is not. Check Apps Script &gt; Triggers and Executions.</div>'
+            : '');
+    const _healthProblems = _jobBad.length > 0 || _eng.level === 'STALE' || _eng.level === 'NEVER';
 
     // --- 3. Build HTML email ---
     const statusColour = (val, bad) => `color:${val > 0 && bad ? '#c0392b' : val > 0 ? '#e67e22' : '#27ae60'}`;
@@ -2166,6 +2225,8 @@ function sendHealthEmail() {
       </tr>
     </table>
 
+    ${_jobSectionHtml}
+
     <h3 style="margin:20px 0 12px;font-size:15px;color:#1e3a5f">Open Visits Older Than 24 Hours <em style="font-weight:normal;font-size:13px;color:#888">(likely missed departures)</em></h3>
     <table style="border-collapse:collapse;width:100%;background:#fff;border-radius:4px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)">
       <tr style="background:#e8edf3">
@@ -2203,7 +2264,7 @@ function sendHealthEmail() {
 
   </div>
   <div style="background:#e8edf3;padding:10px 24px;border-radius:0 0 6px 6px;font-size:11px;color:#888">
-    OTG AppSuite ${CONFIG.VERSION} — this report was sent by <em>sendHealthEmail()</em>. To unsubscribe, remove the daily trigger from Apps Script.
+    OTG AppSuite ${CONFIG.VERSION} (${TEMPLATE_BUILD}) — this report was sent by <em>sendHealthEmail()</em>. To unsubscribe, remove the daily trigger from Apps Script.
   </div>
 </div>`;
 
@@ -2212,7 +2273,7 @@ function sendHealthEmail() {
         ? CONFIG.HEALTH_EMAIL
         : Session.getEffectiveUser().getEmail();
 
-    const subject = `${stalledVisits.length > 0 || failCount > 0 ? '⚠️' : '✅'} OTG Health Report — ${CONFIG.ORG_NAME} — ${Utilities.formatDate(now, tz, "dd MMM yyyy")}`;
+    const subject = `${stalledVisits.length > 0 || failCount > 0 || _healthProblems ? '⚠️' : '✅'} OTG Health Report — ${CONFIG.ORG_NAME} — ${Utilities.formatDate(now, tz, "dd MMM yyyy")}`;
 
     MailApp.sendEmail({ to: recipient, subject: subject, htmlBody: html });
 
@@ -2258,6 +2319,12 @@ function sendHealthEmail() {
  * by runDiagnostics().
  */
 function geocodeSiteLocations() {
+    return _jobRun_('geocodeSiteLocations', _geocodeSiteLocationsImpl_, function (r) {
+        return r ? (r.attempted + ' attempted, ' + r.resolved + ' resolved, ' + r.failed + ' failed') : '';
+    });
+}
+
+function _geocodeSiteLocationsImpl_() {
     const ss         = SpreadsheetApp.getActiveSpreadsheet();
     const siteSheet  = ss.getSheetByName('Sites');
     const summary    = { attempted: 0, resolved: 0, failed: 0, skipped: 0 };
@@ -2368,6 +2435,9 @@ function runDiagnostics() {
             'Un-injected placeholders found: ' + uninjected.join(', ') +
             '. Re-deploy from the Factory or set these values manually.');
     }
+
+    // __41_: which template file is this? CONFIG.VERSION is injected by the Factory and can differ.
+    check('Config', 'Template build', 'PASS', TEMPLATE_BUILD + ' (Factory version ' + CONFIG.VERSION + ').');
 
     // ── 2. REQUIRED SHEETS ────────────────────────────────────────────────
     Logger.log('── SHEETS ──');
@@ -2613,7 +2683,7 @@ function runDiagnostics() {
             const code = resp.getResponseCode();
             if (code === 200) {
                 check('Dead-Man Switch', 'Healthchecks.io ping', 'PASS',
-                    'Ping accepted (HTTP 200). Dead-man switch is active.');
+                    'Ping accepted (HTTP 200). This proves only that the URL is valid. The real test is that the Healthchecks dashboard shows a ping every minute.');
             } else {
                 check('Dead-Man Switch', 'Healthchecks.io ping', 'WARN',
                     'Unexpected HTTP ' + code + '. Verify the ping URL is correct in CONFIG.');
@@ -2714,7 +2784,7 @@ function runDiagnostics() {
             fn:       'archiveOldData',
             label:    'Visit archiver',
             required: false,
-            note:     'Recommended — run weekly to keep the Visits sheet performant.'
+            note:     'Recommended — run monthly to keep the Visits sheet performant.'
         },
         {
             fn:       'geocodeSiteLocations',
@@ -2736,8 +2806,15 @@ function runDiagnostics() {
         } else {
             triggers.forEach(t => {
                 const isTimeBased = t.getTriggerSource() === ScriptApp.TriggerSource.CLOCK;
-                check('Triggers', '"' + t.getHandlerFunction() + '"', 'PASS',
-                    (isTimeBased ? 'Time-based trigger installed.' : 'Trigger installed (source: ' + t.getTriggerSource() + ').'));
+                const _hn = t.getHandlerFunction();
+                // __41_: installed is not enough - the function it calls must exist (orphan trigger, e.g. generateStats).
+                if (_fnExists_(_hn) === false) {
+                    check('Triggers', '"' + _hn + '"', 'FAIL',
+                        'Trigger is installed but the function "' + _hn + '" does not exist in this script, so it fails every time it fires. Delete this trigger (Triggers, three dots, Delete).');
+                } else {
+                    check('Triggers', '"' + _hn + '"', 'PASS',
+                        (isTimeBased ? 'Time-based trigger installed.' : 'Trigger installed (source: ' + t.getTriggerSource() + ').'));
+                }
             });
         }
 
@@ -2760,6 +2837,22 @@ function runDiagnostics() {
                 'Could not read project triggers: ' + msg);
         }
     }
+
+    // ── 11. JOB HEARTBEATS (__41_) ────────────────────────────────────────
+    Logger.log('── JOB HEARTBEATS ──');
+    try {
+        const _eng2 = _engineAge_(now);
+        check('Triggers', 'Escalation engine last ran',
+            _eng2.level === 'OK' ? 'PASS' : _eng2.level === 'WARN' ? 'WARN' : 'FAIL',
+            _eng2.level === 'NEVER'
+                ? 'No run has ever been recorded. The 1-minute checkOverdueVisits trigger is missing or has never completed.'
+                : 'Last run ' + _jobAgeText_(_eng2.ageMin / 60) + ' ago' +
+                  (_eng2.level === 'STALE' ? '. More than 10 minutes: escalation may have stopped. Check Triggers and Executions now.' : '.'));
+        _jobStatuses_(now).forEach(j => {
+            const st = j.status === 'OK' ? 'PASS' : j.status === 'WAITING' ? 'SKIP' : j.status === 'NEVER' ? 'WARN' : 'FAIL';
+            check('Jobs', j.label + ' (' + j.every + ')', st, _jobDescribe_(j, tz));
+        });
+    } catch (e) { check('Jobs', 'Job heartbeats', 'WARN', 'Could not read job heartbeats: ' + e.toString()); }
 
     // ── SUMMARY ───────────────────────────────────────────────────────────
     const passCount = results.filter(r => r.status === 'PASS').length;
@@ -3044,14 +3137,18 @@ function _archiveAttempt_(isRetry) {
     const lock = LockService.getScriptLock();
     let got = false;
     try { got = lock.tryLock(ARCHIVE_LOCK_WAIT_MS); } catch (e) { got = false; }
-    if (!got) { _archiveLockFailed_(isRetry); return; }
+    if (!got) {
+        _jobMark_('archiveOldData', false, 'script lock not obtained within 60 s' + (isRetry ? ' (retry)' : ' - retry scheduled'));
+        _archiveLockFailed_(isRetry);
+        return;
+    }
     try {
         const ss = SpreadsheetApp.getActiveSpreadsheet();
         const sheet = ss.getSheetByName('Visits');
-        if (!sheet) return;
+        if (!sheet) { _jobMark_('archiveOldData', false, 'Visits sheet not found'); return; }
         const archive = ss.getSheetByName('Archive') || ss.insertSheet('Archive');
         const data = sheet.getDataRange().getValues();
-        if (data.length <= 1) return;
+        if (data.length <= 1) { _jobMark_('archiveOldData', true, 'Visits has no data rows - nothing to archive'); return; }
         const today = new Date();
         const cutoff = new Date(today.setDate(today.getDate() - CONFIG.ARCHIVE_DAYS));
         const keep = [data[0]];
@@ -3070,8 +3167,13 @@ function _archiveAttempt_(isRetry) {
                 sheet.getRange(keep.length + 1, 1, data.length - keep.length, keep[0].length).clearContent();
             }
             _audit_('archiveOldData', '', '', '', '', '', '', 'Visits sheet rewritten (write then trim): ' + move.length + ' row(s) archived, ' + (keep.length - 1) + ' kept');
+        } else {
+            // __41_: a run that moves nothing must still leave a trace (it used to look like a run that never happened).
+            _audit_('archiveOldData:none', '', '', '', '', '', '', 'run complete: 0 row(s) eligible, ' + (keep.length - 1) + ' kept');
         }
+        _jobMark_('archiveOldData', true, move.length + ' row(s) archived, ' + (keep.length - 1) + ' kept');
     } catch (err) {
+        _jobMark_('archiveOldData', false, 'run failed: ' + String(err).substring(0, 150));
         _archiveFlag_('The archive run failed: ' + String(err).substring(0, 200) + '. Check the Audit and Archive sheets before running it again - rows may already be in Archive.');
         throw err;
     } finally {
@@ -3120,10 +3222,12 @@ function _archiveFlag_(msg) {
     } catch (e) { console.warn('[archive] flag email failed: ' + e); }
 }
 
-function sendWeeklySummary() {
+function sendWeeklySummary() { _jobRun_('sendWeeklySummary', _sendWeeklySummaryImpl_); }
+
+function _sendWeeklySummaryImpl_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName('Visits');
-  if(!sheet) return;
+  if(!sheet) return { __jobSkip: 'Visits sheet not found' };
   const data = sheet.getDataRange().getValues();
   const now = new Date();
   const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -3284,8 +3388,10 @@ function cleanupPrivateSentNotes() {
       }
       console.log(`Privacy Sweep: Moved ${threads.length} private threads to trash.`);
     }
+    _jobMark_('cleanupPrivateSentNotes', true, threads.length + ' thread(s) trashed');
   } catch (e) {
     console.warn("Privacy Sweep Error: " + e.toString());
+    _jobMark_('cleanupPrivateSentNotes', false, e.toString());
   }
 }
 
@@ -3875,6 +3981,7 @@ function _audit_(source, worker, row, kBefore, kAfter, incoming, key, note) {
         }
         let n = String(note || '');
         if (_AUDIT_LOCKWAIT_MS !== null) n = (n ? n + ' | ' : '') + 'lockWait=' + _AUDIT_LOCKWAIT_MS + 'ms';
+        n = (n ? n + ' | ' : '') + 'build=' + TEMPLATE_BUILD;   // __41_: shows which template wrote the row
         sh.appendRow([
             new Date().toISOString(), _auditExecId_(), String(source || ''), String(worker || ''),
             row || '', kBefore == null ? '' : String(kBefore), kAfter == null ? '' : String(kAfter),
@@ -3964,4 +4071,157 @@ function onEdit(e) {
                 single ? (e.value === undefined ? '(blank or unknown)' : e.value) : '(multi-cell edit)',
                 '', '', 'range ' + e.range.getA1Notation() + (who ? ' by ' + who : ''));
     } catch (_) { /* must never interfere with editing */ }
+}
+
+// ==========================================
+// __41_ JOB HEARTBEATS, BUILD STAMP AND TRIGGER HEALTH (session 80, Layer 2)
+// ==========================================
+// Why: a trigger that stops, or a job that quietly does nothing, looked identical to a healthy one.
+// Each background job now records its own last success and last failure in script properties
+// (NOT the Executions log: reading that from inside the script needs the Apps Script API and a
+// new OAuth scope, which is exactly what blocked the archive). The daily Health email judges
+// each job against how often it should succeed. checkOverdueVisits() is NOT tracked here: it is
+// watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
+
+/** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
+const TEMPLATE_BUILD = 'backend__41_';
+
+/**
+ * How often each background job should succeed. maxHours is how late counts as STALE.
+ * Google does not let a script read a trigger's schedule, so these are set here: if an
+ * installation runs a job on a different schedule, change the number for that job.
+ */
+const JOB_CADENCE = {
+    cleanupPrivateSentNotes: { label: 'Private note sweep',    every: 'hourly',  maxHours: 3 },
+    sendHealthEmail:         { label: 'Daily health email',    every: 'daily',   maxHours: 26 },
+    geocodeSiteLocations:    { label: 'Site GPS geocoder',     every: 'weekly',  maxHours: 8 * 24 },
+    sendWeeklySummary:       { label: 'Weekly safety summary', every: 'weekly',  maxHours: 8 * 24 },
+    archiveOldData:          { label: 'Visit archiver',        every: 'monthly', maxHours: 32 * 24 }
+};
+
+/** Record one job outcome. Value is "<ISO time>|<detail>". Never throws. */
+function _jobMark_(name, ok, detail) {
+    try {
+        const d = String(detail == null ? '' : detail).replace(/\|/g, '/').substring(0, 200);
+        const nowIso = new Date().toISOString();
+        if (!sp.getProperty('JOB_TRACKING_SINCE')) sp.setProperty('JOB_TRACKING_SINCE', nowIso + '|');
+        sp.setProperty('JOB_' + name + (ok ? '_OK' : '_FAIL'), nowIso + '|' + d);
+    } catch (e) {
+        try { console.warn('[job] could not record ' + name + ': ' + e); } catch (_) {}
+    }
+}
+
+/**
+ * Run a job and record the outcome. A throw is recorded, then re-thrown, so Google's own
+ * failure emails (Layer 3) still fire exactly as before. fn may return { __jobSkip: 'reason' }
+ * (the run did not happen: recorded as a failure) or { __jobNote: 'text' }; noteFn(result)
+ * can supply the note instead. The result is passed back unchanged.
+ */
+function _jobRun_(name, fn, noteFn) {
+    let r;
+    try {
+        r = fn();
+    } catch (e) {
+        _jobMark_(name, false, (e && e.message) ? e.message : e);
+        throw e;
+    }
+    if (r && r.__jobSkip) { _jobMark_(name, false, r.__jobSkip); return r; }
+    let note = '';
+    try { note = noteFn ? noteFn(r) : ((r && r.__jobNote) || ''); } catch (_) {}
+    _jobMark_(name, true, note);
+    return r;
+}
+
+/** Split a stored "<ISO>|<detail>" value. Returns null when absent or unreadable. */
+function _jobParse_(raw) {
+    if (!raw) return null;
+    const s = String(raw);
+    const i = s.indexOf('|');
+    const iso = i < 0 ? s : s.substring(0, i);
+    const t = new Date(iso);
+    if (isNaN(t.getTime())) return null;
+    return { time: t, detail: i < 0 ? '' : s.substring(i + 1) };
+}
+
+/**
+ * Judge every tracked job. Returns [{ fn, label, every, status, ageHours, lastOk, lastFail, note }].
+ * status: OK | STALE | NEVER | FAILED | WAITING (tracking began less than one cadence ago).
+ * FAILED = the most recent run failed or did not happen, and it is newer than the last success.
+ */
+function _jobStatuses_(now) {
+    let since = _jobParse_(sp.getProperty('JOB_TRACKING_SINCE'));
+    if (!since) {
+        try { sp.setProperty('JOB_TRACKING_SINCE', now.toISOString() + '|'); } catch (_) {}
+        since = { time: now, detail: '' };
+    }
+    return Object.keys(JOB_CADENCE).map(function (fn) {
+        const c    = JOB_CADENCE[fn];
+        const ok   = _jobParse_(sp.getProperty('JOB_' + fn + '_OK'));
+        const fail = _jobParse_(sp.getProperty('JOB_' + fn + '_FAIL'));
+        const ageHours = ok ? (now - ok.time) / 3600000 : null;
+        let status;
+        if (fail && (!ok || fail.time >= ok.time)) status = 'FAILED';   // a tie counts as failed (the alarming answer)
+        else if (ok && ageHours <= c.maxHours)     status = 'OK';
+        else if (ok)                               status = 'STALE';
+        else if ((now - since.time) / 3600000 <= c.maxHours) status = 'WAITING';
+        else                                       status = 'NEVER';
+        return { fn: fn, label: c.label, every: c.every, status: status, ageHours: ageHours,
+                 lastOk: ok, lastFail: fail, note: ok ? ok.detail : '' };
+    });
+}
+
+/** Human wording for an age in hours, e.g. "5 min", "3.2 h", "4 days". */
+function _jobAgeText_(h) {
+    if (h == null) return '';
+    if (h < 1)  return Math.max(0, Math.round(h * 60)) + ' min';
+    if (h < 48) return (Math.round(h * 10) / 10) + ' h';
+    return Math.round(h / 24) + ' days';
+}
+
+/** One diagnostics-style line for a job status (used by the Health email and runDiagnostics). */
+function _jobDescribe_(j, tz) {
+    const fmt = function (d) { return Utilities.formatDate(d, tz, 'dd MMM HH:mm'); };
+    switch (j.status) {
+        case 'OK':
+            return 'Last success ' + fmt(j.lastOk.time) + ' (' + _jobAgeText_(j.ageHours) + ' ago)' +
+                   (j.note ? ' - ' + j.note : '');
+        case 'STALE':
+            return 'NO SUCCESS for ' + _jobAgeText_(j.ageHours) + ' (last ' + fmt(j.lastOk.time) +
+                   '). Expected ' + j.every + '. Check the Triggers list and the Executions log.';
+        case 'FAILED':
+            return 'LAST RUN FAILED ' + fmt(j.lastFail.time) + ': ' + (j.lastFail.detail || 'no detail') +
+                   (j.lastOk ? ' (last success ' + fmt(j.lastOk.time) + ')' : ' (no success recorded yet)');
+        case 'NEVER':
+            return 'NO SUCCESS recorded since tracking began. Expected ' + j.every +
+                   '. Is the trigger installed? Run the function once by hand.';
+        default:
+            return 'Waiting for the first run since tracking began (expected ' + j.every + ').';
+    }
+}
+
+/**
+ * Does a top-level function with this name exist in the script? Returns true / false, or
+ * null when this runtime cannot tell (so a limit of the check is never reported as a fault).
+ */
+function _fnExists_(name) {
+    try {
+        const g = (typeof globalThis !== 'undefined') ? globalThis : this;
+        if (!g) return null;
+        // Self-test: a function we know exists must be found, or the check is not trustworthy here.
+        if (typeof g['_fnExists_'] !== 'function') return null;
+        return typeof g[name] === 'function';
+    } catch (e) { return null; }
+}
+
+/**
+ * Age of the last escalation-engine (checkOverdueVisits) run, from LAST_TRIGGER_TIME.
+ * Returns { ageMin, level } where level is 'OK' (<= 5 min), 'WARN' (<= 10 min), 'STALE' (> 10 min)
+ * or 'NEVER'. Reads one property; writes nothing.
+ */
+function _engineAge_(now) {
+    const raw = sp.getProperty('LAST_TRIGGER_TIME');
+    const t = raw ? new Date(raw) : null;
+    if (!t || isNaN(t.getTime())) return { ageMin: null, level: 'NEVER', time: null };
+    const ageMin = (now - t) / 60000;
+    return { ageMin: ageMin, time: t, level: ageMin <= 5 ? 'OK' : ageMin <= 10 ? 'WARN' : 'STALE' };
 }
