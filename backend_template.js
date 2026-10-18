@@ -42,6 +42,24 @@
  *   - Critical Timing ladder: two audit-only rows after each step's alerts ('ladder:sends-complete' with the
  *     duration, or 'ladder:send-FAILED' if the send threw). They record evidence only and change no behaviour.
  *
+ * __42_ (session 82, 18 Oct 2026) - A4 / F80-1 / F80-2 / A7 / F79-1 (deploy WITH worker __14_):
+ *   - B1 (A7): the standard 15/30/45/60 ladder keeps its memory in col AA (as Critical Timing does),
+ *     claimed before send. Col K is read only for a legacy row with no col AA entry at all; an entry
+ *     for a different due time is a fresh ladder (both ladders). triggerEscalation no longer
+ *     overwrites PANIC/SOS/DURESS in col K (alerts, col A and the Notes tag unchanged). The Critical
+ *     Timing merge and the busy path treat the ladder as started from col K OR col AA.
+ *   - B2: a PIN clear (USER_SAFE_CONFIRMED) on a visit row restores TRAVELLING/ARRIVED and leaves the
+ *     row OPEN, so the server still escalates at the due time. Outside a visit it closes the row as
+ *     before. Notes get a [PIN CLEAR hh:mm:ss] line. One All Clear per clear (idempotency key).
+ *     The All Clear guard decides on the worker's latest row only; an open visit row with no alarm
+ *     still records the clear and its due time, without an All Clear.
+ *   - B3: col U on an existing row only moves later, so a post queued before an extend or a PIN clear
+ *     after due cannot put the ladder back on the old due time.
+ *   - B4 (F79-1): handleWorkerPost decides on the worker's latest row only. A routine post (GPS pulse,
+ *     plain OVERDUE, LOW BATTERY, WELFARE_OK) arriving after the visit closed with that visit's due time
+ *     is Audit only (handleWorkerPost:straggler) - no new row.
+ *   - Not changed: handleResolvePost (HQ resolve, Monitor only) still closes the visit - follow-up A4-HQ.
+ *
  * DEPLOY CHECKLIST (every deployment): Deploy > Manage deployments > New version. Then open the Apps Script
  * editor, run ONE function from each installed trigger by hand (accept any permission prompt), and confirm
  * the Triggers list shows no failures.
@@ -92,6 +110,11 @@ const LADDER_STATUSES    = ['EMERGENCY - CRITICAL TIMING BREACH',
                             'EMERGENCY - CRITICAL TIMING REPEAT',
                             'EMERGENCY - CRITICAL TIMING FINAL NOTICE'];
 const LADDER_STEP_LABELS = ['BREACH', 'REPEAT', 'FINAL NOTICE'];
+// __42_ (B1, A7): the standard 15/30/45/60 ladder keeps its memory in col AA too (same format).
+const LADDER_STD_STATUSES = ['OVERDUE - 15MIN ALERT', 'OVERDUE - 30MIN ALERT',
+                             'OVERDUE - 45MIN ALERT', 'EMERGENCY - 60MIN BREACH'];
+const LADDER_STD_LABELS   = ['15MIN', '30MIN', '45MIN', '60MIN'];
+const STRAGGLER_STATUSES  = ['ALARM_GPS_PULSE', 'OVERDUE', 'LOW BATTERY', 'WELFARE_OK']; // __42_ B4 (exact match)
 let _AUDIT_EXEC = null;          // short id shared by every audit row from one execution
 let _AUDIT_LOCKWAIT_MS = null;   // doPost only: how long it waited for the script lock
 
@@ -266,7 +289,8 @@ function _busyPathAlert_(p) {
             const lastRow = sheet ? sheet.getLastRow() : 0;
             if (lastRow > 1) {
                 const startRow = Math.max(2, lastRow - 50);
-                const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, 21).getValues();
+                // __42_ (B1): read through col AA so the ladder-started check sees the ladder memory.
+                const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, _readWidth_(sheet)).getValues();
                 for (let i = data.length - 1; i >= 0; i--) {
                     if (data[i][2] === p['Worker Name']) {
                         const st = String(data[i][10]);
@@ -277,7 +301,7 @@ function _busyPathAlert_(p) {
                             visitNotes = String(data[i][11] || '');
                             // Critical Timing merge: once due, word it as ladder step 1 (urgent).
                             const due = new Date(data[i][20]);
-                            if (isCriticalOverdue && st.toUpperCase().includes('CRITICAL TIMING')) {
+                            if (isCriticalOverdue && _ladderStartedFor_(st, data[i][LADDER_MEM_COL - 1], data[i][20])) {
                                 console.log('[busyPath] Server ladder already alerting - skipping.');
                                 return;
                             }
@@ -728,6 +752,7 @@ function handleWorkerPost(p) {
     }
     
     let existingVisitNotes = ''; // captured from matched row for use in triggerAlerts
+    let _latestClosed = null;    // __42_ B4: the worker's latest row when it is closed
     let criticalBridgeSuppressed = false; // merge: server ladder already alerting for this visit
     if (!isNoteToSelf) {
         if(!sheet) {
@@ -757,11 +782,14 @@ function handleWorkerPost(p) {
             // undefined, so alerts never saw [CRITICAL_TIMING] or travel tags - the Critical
             // Timing bridge alert went out as an amber "OVERDUE - MISSED CHECK-IN" at
             // 'high' priority (confirmed on device 13 Oct 2026). Col U = due time (merge below).
-            const data = sheet.getRange(startRow, 1, numRows, 21).getValues(); 
+            // __42_: read through col AA (ladder memory) for the Critical Timing merge check.
+            const data = sheet.getRange(startRow, 1, numRows, _readWidth_(sheet)).getValues(); 
             for (let i = data.length - 1; i >= 0; i--) {
                 const rowData = data[i];
                 if (rowData[2] === workerName) {
                     const status = String(rowData[10]);
+                    // __42_ B4: PRE_VISIT / DATA_ENTRY_ONLY rows are records, not visit rows - look past them.
+                    if (status.includes('PRE_VISIT') || status.includes('DATA_ENTRY_ONLY')) continue;
                     // ONE-ROW-PER-VISIT: USER_SAFE_CONFIRMED is treated as open when the
                     // incoming payload is DEPARTED — the worker confirmed safe, then submitted
                     // their report. Both events must land on the same row. For all other
@@ -800,7 +828,8 @@ function handleWorkerPost(p) {
                         let _mergedBreachDue = null; // __38_: due time of a phone-merged BREACH (ladder memory)
                         if ((p['Alarm Status'] || '').toUpperCase().includes('OVERDUE ALARM') && p['Critical Timing'] === 'true') {
                             const _rowDue = new Date(rowData[20]);
-                            const _ladderStarted = String(rowData[10]).toUpperCase().includes('CRITICAL TIMING');
+                            // __42_ (B1): col K CRITICAL TIMING step OR col AA step 1+ for this due time.
+                            const _ladderStarted = _ladderStartedFor_(rowData[10], rowData[LADDER_MEM_COL - 1], rowData[20]);
                             if (_ladderStarted) {
                                 criticalBridgeSuppressed = true;
                             } else if (!isNaN(_rowDue.getTime()) && ts >= _rowDue) {
@@ -808,11 +837,28 @@ function handleWorkerPost(p) {
                                 _mergedBreachDue = _rowDue;
                             }
                         }
+                        // __42_ B2: a PIN clear is an event, not an end. USER_SAFE_CONFIRMED on a visit row
+                        // (readable due time in col U) restores the visit status and leaves the row OPEN, so
+                        // checkOverdueVisits still escalates at the due time if the worker never departs.
+                        // Outside a visit (no due time) it closes the row as before.
+                        let _pinClearNote = '';
+                        if (_origIncoming.toUpperCase().includes('USER_SAFE')) {
+                            const _clrDue = new Date(rowData[20]);
+                            const _clrTime = Utilities.formatDate(ts, CONFIG.TIMEZONE, 'HH:mm:ss');
+                            if (rowData[20] && !isNaN(_clrDue.getTime())) {
+                                const _restored = String(rowData[11] || '').includes('Travel to') ? 'TRAVELLING' : 'ARRIVED';
+                                p['Alarm Status'] = _restored;
+                                _pinClearNote = 'pin-clear: restored to ' + _restored + ', row stays open';
+                            } else {
+                                _pinClearNote = 'pin-clear: no visit due time - row closed';
+                            }
+                            polishedNotes = '[PIN CLEAR ' + _clrTime + '] ' + (polishedNotes || 'Worker confirmed safe via PIN entry.');
+                        }
                         const _existingStatus = String(rowData[10]).toUpperCase();
                         const _incomingStatus = (p['Alarm Status'] || '').toUpperCase();
                         const _existingRank   = _alarmRank_(_existingStatus);
                         const _existingIsHigh = _existingRank >= 2;
-                        const _incomingClears = ['USER_SAFE', 'EXTENDED', 'DEPARTED', 'COMPLETED'].some(s => _incomingStatus.includes(s));
+                        const _incomingClears = !!_pinClearNote || ['USER_SAFE', 'EXTENDED', 'DEPARTED', 'COMPLETED'].some(s => _incomingStatus.includes(s));
                         const _incomingIsLow  = !_incomingClears && _alarmRank_(_incomingStatus) < _existingRank;
                         const _isGpsPulse     = _incomingStatus.includes('ALARM_GPS_PULSE');
                         // ALARM_GPS_PULSE must never update col K — it is a location-only update.
@@ -823,8 +869,8 @@ function handleWorkerPost(p) {
                         // HIGH_SEVERITY downgrades only.
                         if (!_isGpsPulse && !criticalBridgeSuppressed && !(_existingIsHigh && _incomingIsLow)) {
                             sheet.getRange(targetRow, 11).setValue(p['Alarm Status']);
-                            _audit_('handleWorkerPost', workerName, targetRow, rowData[10], p['Alarm Status'], _origIncoming, p.idempotencyKey,
-                                    _mergedBreachDue ? 'Critical Timing merge: OVERDUE ALARM recorded as BREACH' : '');
+                            _audit_(_pinClearNote ? 'handleWorkerPost:pin-clear' : 'handleWorkerPost', workerName, targetRow, rowData[10], p['Alarm Status'], _origIncoming, p.idempotencyKey,
+                                    _mergedBreachDue ? 'Critical Timing merge: OVERDUE ALARM recorded as BREACH' : _pinClearNote);
                             // __38_: a phone-merged BREACH is ladder step 1 for this due time.
                             if (_mergedBreachDue) _ladderMemClaim_(sheet, targetRow, _mergedBreachDue, 1, 'handleWorkerPost:merge', workerName);
                         } else if (!_isGpsPulse) {
@@ -845,7 +891,19 @@ function handleWorkerPost(p) {
                         }
                         if (p['Visit Report Data']) sheet.getRange(targetRow, headers.indexOf("Visit Report Data") + 1).setValue(p['Visit Report Data']);
                         const deptCol = headers.indexOf("Anticipated Departure Time");
-                        if (p['Anticipated Departure Time'] && deptCol > -1) sheet.getRange(targetRow, deptCol + 1).setValue(p['Anticipated Departure Time']);
+                        // __42_ B3: on an existing row the due time only moves LATER (extend, PIN clear after due).
+                        // A post queued on the phone before the change still carries the old due time; letting it
+                        // write col U would put the ladder back on the old due time.
+                        if (p['Anticipated Departure Time'] && deptCol > -1) {
+                            const _newDue = new Date(p['Anticipated Departure Time']);
+                            const _oldDue = new Date(rowData[20]);
+                            if (!isNaN(_newDue.getTime()) && !isNaN(_oldDue.getTime()) && rowData[20] && _newDue.getTime() < _oldDue.getTime() - 1000) {
+                                _audit_('handleWorkerPost:due-kept', workerName, targetRow, '', '', _origIncoming, p.idempotencyKey,
+                                        'post carried an earlier due time ' + _newDue.toISOString() + ' - col U kept at ' + _oldDue.toISOString());
+                            } else {
+                                sheet.getRange(targetRow, deptCol + 1).setValue(p['Anticipated Departure Time']);
+                            }
+                        }
                         // Write Drive file links for photos and signature
                         const p1Col  = headers.indexOf("Photo 1");
                         const sigCol = headers.indexOf("Signature");
@@ -861,8 +919,25 @@ function handleWorkerPost(p) {
                         rowUpdated = true;
                         break;
                     }
+                    // __42_ B4 (F79-1): only the worker's LATEST row counts. It is closed, so stop here -
+                    // never walk back to an older open row (that is how row 74's data could land on a
+                    // stale visit). What happens next is decided below (straggler or new row).
+                    _latestClosed = { row: startRow + i, status: status, due: rowData[20] };
+                    break;
                 }
             }
+        }
+
+        // __42_ B4: a routine post (GPS pulse, plain OVERDUE...) arriving after the visit closed, carrying
+        // that visit's due time, is a straggler: Audit only, no new row. A different or missing due time
+        // still creates a row as before (rescue path if the visit-start record was lost).
+        if (!rowUpdated && _latestClosed && !hasFormData &&
+            STRAGGLER_STATUSES.indexOf(String(p['Alarm Status'] || '').trim().toUpperCase()) > -1 &&
+            _sameDue_(p['Anticipated Departure Time'], _latestClosed.due)) {
+            _audit_('handleWorkerPost:straggler', workerName, _latestClosed.row, _latestClosed.status, '', p['Alarm Status'], p.idempotencyKey,
+                    'latest row is closed and this post carries its due time - no new row');
+            _idemRegister_(p.idempotencyKey);
+            return;
         }
 
 // Ensure these fallbacks are in your backend script to catch the frontend keys
@@ -2002,21 +2077,27 @@ function checkOverdueVisits() {
                         const rowNum  = latest[worker].r;
                         const dueIso  = due.toISOString();
                         const memRaw  = String(entry[LADDER_MEM_COL - 1] || '');
-                        const memStep = _ladderMemRead_(memRaw, dueIso);
+                        // __42_ (B1): col K is a fallback ONLY for a legacy row with no col AA entry at all.
+                        // A col AA entry for a different due time means a fresh ladder (step 0) - before,
+                        // it fell back to col K, which could hold an older due time's step.
+                        const mem     = _ladderMemInfo_(memRaw, dueIso);
+                        const memStep = mem.same ? Math.min(mem.step, 3) : 0;
                         const kStep   = _ladderStepFromStatus_(status);
-                        const sent    = memStep > 0 ? memStep : kStep;
+                        const sent    = mem.has ? memStep : kStep;
                         let next = 0;
                         if (sent === 0) {
-                            if (!status.includes("EMERGENCY")) next = 1;   // unchanged step 1 rule
+                            if (mem.has) next = 1;                                 // __42_: fresh ladder for this due time
+                            else if (!status.includes("EMERGENCY")) next = 1;      // legacy row: unchanged step 1 rule
                         } else if (sent === 1) {
                             if (diffMins >= 5) next = 2;
                         } else if (sent === 2) {
                             if (diffMins >= 10) next = 3;
                         }
-                        const mismatch = memStep > 0 && kStep !== memStep;
+                        // __42_: no mismatch noise while col K holds PANIC/DURESS (B1 leaves it there on purpose).
+                        const mismatch = memStep > 0 && kStep !== memStep && _alarmRank_(status) < 4;
                         if (next || mismatch || sent < 3) {
                             _audit_('ladder', worker, rowNum, status, next ? LADDER_STATUSES[next - 1] : '', '', '',
-                                    'diff=' + diffMins.toFixed(1) + 'm AA="' + memRaw + '" sent=' + sent +
+                                    'diff=' + diffMins.toFixed(1) + 'm AA="' + memRaw + '" sent=' + sent + (mem.has ? '' : ' (legacy: from col K)') +
                                     (next ? ' -> sending step ' + next : ' -> nothing due') +
                                     (mismatch ? ' | MISMATCH: col K step ' + kStep + ' vs col AA step ' + memStep : ''));
                         }
@@ -2042,17 +2123,26 @@ function checkOverdueVisits() {
                 }
 
                 // 2. STANDARD: 15/30/45/60 min escalations
-                if (!isCritical && diffMins >= 15 && diffMins < 30 && !status.includes('15MIN')) {
-                    triggerEscalation(sheet, entry, "OVERDUE - 15MIN ALERT", false, latest[worker].r);
-                }
-                else if (diffMins >= 30 && diffMins < 45 && !status.includes('30MIN')) {
-                    triggerEscalation(sheet, entry, "OVERDUE - 30MIN ALERT", false, latest[worker].r);
-                }
-                else if (diffMins >= 45 && diffMins < 60 && !status.includes('45MIN')) {
-                    triggerEscalation(sheet, entry, "OVERDUE - 45MIN ALERT", false, latest[worker].r);
-                }
-                else if (diffMins >= 60 && !status.includes("EMERGENCY")) {
-                    triggerEscalation(sheet, entry, "EMERGENCY - 60MIN BREACH", true, latest[worker].r);
+                // __42_ (B1, A7): the ladder's memory is col AA, keyed to the due time and claimed before
+                // the alert is sent - the same rule as Critical Timing. Before, it was col K, so a PIN clear
+                // or any status written over the tier text re-sent a tier, and the tier text overwrote
+                // PANIC/DURESS. Col K is read only for a legacy row with NO col AA entry at all; a col AA
+                // entry for a different due time (extended, or a PIN clear after due) is a fresh ladder.
+                // The tier windows are unchanged: one tier per window, the one matching the time overdue.
+                {
+                    const rowNum  = latest[worker].r;
+                    const dueIso  = due.toISOString();
+                    const memRaw  = String(entry[LADDER_MEM_COL - 1] || '');
+                    const mem     = _ladderMemInfo_(memRaw, dueIso);
+                    const sent    = mem.has ? (mem.same ? mem.step : 0) : _ladderStepFromStdStatus_(status);
+                    const target  = diffMins >= 60 ? 4 : diffMins >= 45 ? 3 : diffMins >= 30 ? 2 : diffMins >= 15 ? 1 : 0;
+                    if (target > sent) {
+                        _audit_('ladder-std', worker, rowNum, status, LADDER_STD_STATUSES[target - 1], '', '',
+                                'diff=' + diffMins.toFixed(1) + 'm AA="' + memRaw + '" sent=' + sent +
+                                (mem.has ? '' : ' (legacy: from col K)') + ' -> sending step ' + target);
+                        _ladderMemClaim_(sheet, rowNum, due, target, 'ladder-std', worker, LADDER_STD_LABELS);
+                        triggerEscalation(sheet, entry, LADDER_STD_STATUSES[target - 1], target === 4, rowNum);
+                    }
                 }
             }
         } catch (err) { console.error(`Escalation Error: ${err.toString()}`); }
@@ -3670,9 +3760,17 @@ function triggerEscalation(sheet, entry, newStatus, isDual, rowNum) {
     const escalationTs = new Date().toISOString();
     const updatedNotes = (entry[11] || '') + ` [AUTO-${newStatus}]`;
     sheet.getRange(rowNum, 1).setValue(escalationTs);   // col A: Timestamp
-    sheet.getRange(rowNum, 11).setValue(newStatus);      // col K: Alarm Status
-    sheet.getRange(rowNum, 12).setValue(updatedNotes);   // col L: Notes
-    _audit_('triggerEscalation', entry[2], rowNum, entry[10], newStatus, '', '', 'escalation step written (col A, K, L) - alerts follow');
+    // __42_ (B1, A7): never overwrite PANIC/SOS/DURESS (rank 4+) in col K. The ladder's memory is in
+    // col AA, so col K no longer needs the tier text. Col A, the Notes tag and the alerts are unchanged.
+    if (_alarmRank_(String(entry[10] || '')) >= 4) {
+        sheet.getRange(rowNum, 12).setValue(updatedNotes);   // col L: Notes
+        _audit_('triggerEscalation:k-kept', entry[2], rowNum, entry[10], '', newStatus, '',
+                'col K holds PANIC/DURESS - not overwritten; col A and L written - alerts follow');
+    } else {
+        sheet.getRange(rowNum, 11).setValue(newStatus);      // col K: Alarm Status
+        sheet.getRange(rowNum, 12).setValue(updatedNotes);   // col L: Notes
+        _audit_('triggerEscalation', entry[2], rowNum, entry[10], newStatus, '', '', 'escalation step written (col A, K, L) - alerts follow');
+    }
 
     // Look up ntfy topics from the Staff sheet — they are not stored in Visits rows.
     // Silently degrades to empty strings if the sheet is missing or the row isn't found.
@@ -3728,28 +3826,49 @@ function handleSafetyResolution(p, forceNotify) {
     // Used by handleResolvePost() which has already updated the sheet row before calling here —
     // so the guard would always find USER_SAFE (not an alarm) and wrongly suppress All Clear.
     if (!forceNotify) {
+        // __42_ B2: one All Clear per clear. The outbox retries until it reads "success", so the same
+        // clear can arrive twice; handleWorkerPost already discards the duplicate row write, and now the
+        // All Clear is not sent a second time either.
+        if (p.idempotencyKey && _idemSeen_(p.idempotencyKey)) {
+            _audit_('handleSafetyResolution:duplicate', p['Worker Name'], '', '', '', p['Alarm Status'], p.idempotencyKey,
+                    'clear already processed - no second All Clear');
+            return { status: 'success', duplicate: true };
+        }
         const workerNameCheck = (p['Worker Name'] || '').toString().trim();
         let alertWasSent = false;
+        let latestOpenVisit = false;   // __42_: latest row is an open visit row (has a due time)
         try {
             const ss = SpreadsheetApp.getActiveSpreadsheet();
             const sheet = ss.getSheetByName('Visits');
             if (sheet) {
                 const data = sheet.getDataRange().getValues();
                 const alarmStatuses = ['OVERDUE', 'PANIC', 'SOS', 'DURESS', 'EMERGENCY', 'ALARM_GPS_PULSE'];
-                // No row cap — the loop breaks on DEPARTED/SAFE so won't scan the whole
-                // sheet unnecessarily. A cap risks missing an alarm row on busy sheets,
-                // which would incorrectly suppress the All-Clear notification.
+                // __42_ B2/B4: decide on the worker's LATEST row only. A PIN clear now leaves the visit
+                // row open as ARRIVED/TRAVELLING, so walking back past it could find an older visit's
+                // alarm and send a wrong All Clear. PRE_VISIT / DATA_ENTRY_ONLY records are skipped.
                 for (let i = data.length - 1; i > 0; i--) {
                     if ((data[i][2] || '').toString().trim() === workerNameCheck) {
                         const rowStatus = (data[i][10] || '').toString().toUpperCase();
-                        if (alarmStatuses.some(s => rowStatus.includes(s))) { alertWasSent = true; break; }
-                        if (rowStatus.includes('DEPARTED') || rowStatus.includes('SAFE')) break;
+                        if (rowStatus.includes('PRE_VISIT') || rowStatus.includes('DATA_ENTRY_ONLY')) continue;
+                        if (alarmStatuses.some(s => rowStatus.includes(s))) alertWasSent = true;
+                        const closed = rowStatus.includes('DEPARTED') || rowStatus.includes('COMPLETED') || rowStatus.includes('SAFE');
+                        const due = new Date(data[i][20]);
+                        latestOpenVisit = !closed && !!data[i][20] && !isNaN(due.getTime());
+                        break;
                     }
                 }
             }
         } catch(e) { console.warn('All Clear guard: ' + e); }
 
         if (!alertWasSent) {
+            // __42_ B3: no alarm reached the server (e.g. the clear overtook a standard OVERDUE ALARM still
+            // queued on the phone), so no All Clear - but an open visit row still records the clear and
+            // takes the new due time from the post, so the server and phone agree on when to alarm.
+            if (latestOpenVisit) {
+                handleWorkerPost(p);
+                _audit_('handleSafetyResolution:no-alarm', p['Worker Name'], '', '', '', p['Alarm Status'], p.idempotencyKey,
+                        'latest row is an open visit with no alarm - clear recorded, All Clear not sent');
+            }
             console.log('All Clear suppressed — no alarm was sent for ' + (p['Worker Name'] || ''));
             return { status: 'success', allClearSuppressed: true };
         }
@@ -4017,10 +4136,58 @@ function _ladderStepFromStatus_(status) {
  * An entry for a different due time (the visit was extended) counts as 0.
  */
 function _ladderMemRead_(raw, dueIso) {
-    const parts = String(raw || '').trim().split('|');
-    if (parts.length < 2 || parts[0] !== dueIso) return 0;
-    const n = parseInt(parts[1], 10);
-    return (n >= 1 && n <= 3) ? n : 0;
+    return _ladderMemInfo_(raw, dueIso).step;
+}
+
+/**
+ * __42_ (B1): what col AA holds. has = any entry at all (a legacy row has none);
+ * same = the entry is for THIS due time; step = 1-4 when same, else 0.
+ */
+function _ladderMemInfo_(raw, dueIso) {
+    const s = String(raw || '').trim();
+    if (!s) return { has: false, same: false, step: 0 };
+    const parts = s.split('|');
+    const same = parts.length >= 2 && parts[0] === dueIso;
+    const n = same ? parseInt(parts[1], 10) : 0;
+    return { has: true, same: same, step: (n >= 1 && n <= 4) ? n : 0 };
+}
+
+/** __42_ (B1): standard ladder step shown in a legacy col K: 0 none, 1 15MIN ... 4 60MIN/EMERGENCY. */
+function _ladderStepFromStdStatus_(status) {
+    const s = String(status || '').toUpperCase();
+    if (s.includes('60MIN') || s.includes('EMERGENCY')) return 4;
+    if (s.includes('45MIN')) return 3;
+    if (s.includes('30MIN')) return 2;
+    if (s.includes('15MIN')) return 1;
+    return 0;
+}
+
+/**
+ * __42_ (B1): has the Critical Timing ladder started for this row's due time?
+ * True if col K shows a CRITICAL TIMING step OR col AA holds step 1+ for this due time.
+ * (Col K alone stops being enough once it can be restored or hold PANIC/DURESS.)
+ */
+function _ladderStartedFor_(colK, colAA, dueRaw) {
+    if (String(colK || '').toUpperCase().includes('CRITICAL TIMING')) return true;
+    const due = new Date(dueRaw);
+    if (!dueRaw || isNaN(due.getTime())) return false;
+    const mem = _ladderMemInfo_(colAA, due.toISOString());
+    return mem.same && mem.step >= 1;
+}
+
+/** __42_ B4: do two due-time values name the same moment (within 1 s)? Empty or unreadable = no. */
+function _sameDue_(a, b) {
+    if (!a || !b) return false;
+    const x = new Date(a), y = new Date(b);
+    if (isNaN(x.getTime()) || isNaN(y.getTime())) return false;
+    return Math.abs(x.getTime() - y.getTime()) <= 1000;
+}
+
+/** __42_: how many columns to read so col AA is included, without reading past the sheet edge. */
+function _readWidth_(sheet) {
+    let max = LADDER_MEM_COL;
+    try { max = sheet.getMaxColumns(); } catch (_) {}
+    return Math.max(21, Math.min(LADDER_MEM_COL, max));
 }
 
 /**
@@ -4028,13 +4195,14 @@ function _ladderMemRead_(raw, dueIso) {
  * claim is committed even if the alert sends run long. Never throws: a failed
  * claim is logged and the caller still sends (a duplicate beats a missed alert).
  */
-function _ladderMemClaim_(sheet, rowNum, dueDate, step, source, worker) {
+function _ladderMemClaim_(sheet, rowNum, dueDate, step, source, worker, labels) {
     try {
         const d = (dueDate instanceof Date) ? dueDate : new Date(dueDate);
         if (isNaN(d.getTime())) throw new Error('unreadable due time');
         const hdr = sheet.getRange(1, LADDER_MEM_COL);
         if (!String(hdr.getValue() || '').trim()) hdr.setValue(LADDER_MEM_HEADER);
-        const val = d.toISOString() + '|' + step + '|' + LADDER_STEP_LABELS[step - 1];
+        const _lbl = (labels || LADDER_STEP_LABELS)[step - 1] || ('STEP ' + step);   // __42_: per ladder type
+        const val = d.toISOString() + '|' + step + '|' + _lbl;
         sheet.getRange(rowNum, LADDER_MEM_COL).setValue(val);
         SpreadsheetApp.flush();
         _audit_(source + ':claim', worker, rowNum, '', '', '', '', 'col AA = ' + val);
@@ -4084,7 +4252,7 @@ function onEdit(e) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__41_';
+const TEMPLATE_BUILD = 'backend__42_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
