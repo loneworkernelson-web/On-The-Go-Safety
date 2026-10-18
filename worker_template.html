@@ -868,7 +868,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div id="lockedContent" class="flex-1 flex flex-col justify-between p-6">
  <div class="flex justify-end items-start">
  <button id="btnPanic" 
- onclick="triggerPanic()"
+ onclick="triggerPanic(false, 'Manual alarm activated. [source: SOS single tap - inline handler, startup binding not applied]')"
  class="w-24 h-24 bg-red-600 rounded-full font-black text-white text-2xl border-4 border-red-800 shadow-2xl active:scale-95 transition flex items-center justify-center" 
  aria-label="Emergency panic button">
  SOS
@@ -3944,7 +3944,9 @@ async function triggerPanic(duress = false, alarmCode = null) {
  showAlarmOverlay('panic');
 
  // Backend logging — all three triggers (SOS, Shake, Volume) send PANIC.
- await logSafety("PANIC", alarmCode || "Manual alarm activated.");
+ // W4 (build __14_, F80-3): every call site names its trigger in alarmCode; a bare call is logged as unknown.
+ _diag('triggerPanic: ' + (alarmCode || 'no source given'), true);
+ await logSafety("PANIC", alarmCode || "Manual alarm activated. [source: unknown - triggerPanic() called with no source]");
 
  if (state && state.activeVisit) {
    setVisitPhase(VISIT_PHASES.ALARMING);
@@ -3974,6 +3976,46 @@ function iamSafe() {
   if (!state || (!state.activeVisit && !isPanicActive)) return;
 
   const alarmWasFired = !!(state?.activeVisit?.isPanic || isPanicActive);
+
+  // W1 (build __14_): a PIN clear during a visit is an event, not the end of the visit.
+  // Before, it set the visit to CLOSED (isSafeConfirmed), which silenced the phone alarm for the
+  // rest of the visit and showed MARKED SAFE, while the server closed the row. Now the visit keeps
+  // running: cleared BEFORE the due time -> the alarm still fires at the due time; cleared AFTER
+  // the due time -> the due time becomes now + PIN_CLEAR_EXTRA_MINS (the worker must extend or end
+  // the visit, or the alarm fires again). The post carries the new due time; backend __42_ keys
+  // its ladder to it.
+  if (state.activeVisit) {
+    const _afterDue = Date.now() >= (state.activeVisit.anticipatedDepartureTime || 0);
+    _clearAlarmState(); // overlay, interceptor, pulses, panic flags - the phase is set below
+    // The alarm-screen contact buttons belong to the alarm, not the running visit (a reload hides them too).
+    ['btnDirectAlert', 'btnCallICE'].forEach(id => { const b = document.getElementById(id); if (b) b.classList.add('hidden'); });
+    if (_afterDue) {
+      _applyNewDueTime(Date.now() + PIN_CLEAR_EXTRA_MINS * 60000);
+    } else {
+      setVisitPhase(VISIT_PHASES.ACTIVE);
+      saveState();
+    }
+    if (alarmWasFired) {
+      processUploadQueue(buildPayload({
+        'action': 'notifySafety',
+        'Alarm Status': 'USER_SAFE_CONFIRMED',
+        'Notes': 'Worker confirmed safe via PIN entry.' + (_afterDue ? ` Due time moved to now + ${PIN_CLEAR_EXTRA_MINS} min.` : '')
+      }));
+    } else if (_afterDue) {
+      // No alarm had gone out (e.g. PIN asked for at the 2-minute warning) - still tell the server the new due time.
+      processUploadQueue(buildPayload({
+        'Alarm Status': 'EXTENDED',
+        'Notes': `Safety PIN entered after the due time - ${PIN_CLEAR_EXTRA_MINS} more minutes.`
+      }));
+    }
+    const _msg = _afterDue
+      ? `Safety confirmed. You have ${PIN_CLEAR_EXTRA_MINS} more minutes - extend or end your visit.`
+      : (alarmWasFired ? "Safety confirmed. Notifying contacts." : "Safety confirmed.");
+    announce(_msg);
+    showToast(_afterDue ? `✅ Safety confirmed - ${PIN_CLEAR_EXTRA_MINS} more minutes` : "✅ Safety status confirmed");
+    if (typeof tick === 'function') tick();
+    return;
+  }
 
   announce(alarmWasFired ? "Safety confirmed. Notifying contacts." : "Safety confirmed.");
 
@@ -5477,6 +5519,7 @@ let gpsWarm = false;
 let travelTargetName = "";
 let panicTapCount = 0;
 let panicTapTimer;
+let _panicTapTimes = []; // W4 (build __14_): tap times for the current triple-tap sequence
 
 // Note: currentBatteryLevel, currentActiveTemplate and isMidVisitUpdate already declared earlier in file
 
@@ -6183,11 +6226,13 @@ function _clearAlarmState() {
   const _cue = document.getElementById('alarmDeliveryCue');
   if (_cue) _cue.classList.remove('show'); // A1: PANIC delivery cue
 
-  // Clear visit-level alarm flags if a visit is active
+  // Clear visit-level alarm flags if a visit is active.
+  // W1 (build __14_): the visit phase is NOT set to CLOSED here any more - iamSafe() sets ACTIVE
+  // (or moves the due time) so the alarm can still fire. The only other caller is the decoy
+  // screen, which runs with no active visit.
   if (state && state.activeVisit) {
     state.activeVisit.isPanic = false;
     state.activeVisit.isDuress = false;
-    setVisitPhase(VISIT_PHASES.CLOSED);
     saveState();
   }
 
@@ -6950,6 +6995,15 @@ function _initApp() {
  saveState();
  }
 
+ // 2b. W3 (build __14_): a visit saved as CLOSED by an older build (PIN clear mid-visit) is a
+ // running visit again. CLOSED silenced the alarm for the rest of the visit; ACTIVE lets tick()
+ // fire it at the due time (immediately if the due time has already passed).
+ if (state.activeVisit && state.activeVisit.phase === VISIT_PHASES.CLOSED) {
+ setVisitPhase(VISIT_PHASES.ACTIVE);
+ saveState();
+ _diag('W3: saved visit was CLOSED (old PIN clear) - restored to ACTIVE', true);
+ }
+
  // 3. Ensure nested objects exist
  if (!state.meta) state.meta = {};
  if (!state.settings) state.settings = {};
@@ -6997,11 +7051,15 @@ function _initApp() {
  const btnPanic = document.getElementById('btnPanic');
  if (btnPanic) {
  btnPanic.onclick = () => {
+ // W4 (build __14_, F80-3): record when each tap landed so the PANIC Notes show the gaps.
+ if (panicTapCount === 0) _panicTapTimes = [];
+ _panicTapTimes.push(Date.now());
  panicTapCount++;
  clearTimeout(panicTapTimer);
  if (panicTapCount === 3) {
  panicTapCount = 0;
- triggerPanic(false);
+ const _gaps = _panicTapTimes.slice(1).map((t, i) => (t - _panicTapTimes[i]) + 'ms').join(', ');
+ triggerPanic(false, `Manual alarm activated. [source: SOS triple tap; tap gaps ${_gaps}]`);
  } else {
  panicTapTimer = setTimeout(() => { panicTapCount = 0; }, 2000);
  }
@@ -7805,29 +7863,38 @@ function closeWofWarn() {
  * RE-ENGINEERED: confirmExtension
  * Logic: Increments duration and resets all safety flags.
  */
-function confirmExtension(minutes) {
- const updateTime = () => {
+/**
+ * W1 (build __14_): minutes added when the safety PIN clears an alarm AFTER the due time
+ * (Russell, session 81). The alarm fires again at the new due time unless the worker extends or ends the visit.
+ */
+const PIN_CLEAR_EXTRA_MINS = 10;
+
+/**
+ * W1 (build __14_): move the visit's due time to newDue (epoch ms) and reset the warning and alarm
+ * flags so the timer runs again - shared by confirmExtension() and the PIN clear after due in iamSafe().
+ * Saves state. Does not post: the caller sends the record that carries the new due time.
+ */
+function _applyNewDueTime(newDue) {
  const currentDue = state.activeVisit.anticipatedDepartureTime;
- const newDue = currentDue + (minutes * 60000);
- 
  state.activeVisit.anticipatedDepartureTime = newDue;
- 
+
  // GOLDEN FIX: Increase the total duration budget so timer % stays correct
- state.activeVisit.duration += (minutes * 60);
- 
+ state.activeVisit.duration += Math.round((newDue - currentDue) / 1000);
+
  // Reset visit phase and safety flags
  setVisitPhase(VISIT_PHASES.ACTIVE);
  state.activeVisit.overdueGpsSent = false;
- 
+ if (arrivedPulseInterval) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; } // overdue pulse restarts if overdue again
+
  // Reset warnings so they fire again
  state.activeVisit.warn5minSent = false;
  state.activeVisit.warn2minSent = false;
  state.activeVisit.warn90Sent = false;
- 
+
  // UI Clean-up — alarm state is not cleared by extend, but legacy classes must go
  document.body.classList.remove('bg-red-900', 'panic-mode', 'strobe-active');
  const timerEl = document.getElementById('countdownTimer');
- if (timerEl) timerEl.classList.remove('text-red-500', 'animate-pulse');
+ if (timerEl) timerEl.classList.remove('text-red-500', 'animate-pulse', 'text-green-400');
  const overdueLabel = document.getElementById('overdueLabel');
  if (overdueLabel) {
  overdueLabel.classList.add('hidden');
@@ -7835,6 +7902,14 @@ function confirmExtension(minutes) {
  }
 
  saveState();
+}
+
+function confirmExtension(minutes) {
+ const updateTime = () => {
+ const currentDue = state.activeVisit.anticipatedDepartureTime;
+ const newDue = currentDue + (minutes * 60000);
+ 
+ _applyNewDueTime(newDue); // W1 (build __14_): shared with the PIN clear after due
  
  // Sync with Backend
  processUploadQueue(buildPayload({
@@ -8609,7 +8684,7 @@ function confirmShakePanic() {
  
  // All covert triggers send PANIC — same as SOS and volume.
  // Duress escalation happens later via PIN entry.
- triggerPanic(false);
+ triggerPanic(false, 'Manual alarm activated. [source: shake]'); // W4 (build __14_)
 }
 
 function cancelShakeConfirmation() {
@@ -8753,7 +8828,7 @@ function confirmVolumePanic() {
  showToast('🚨 Alert sent', 2000);
  
  // Standard PANIC — same as SOS and shake. Covert on device; monitor handles alerting.
- triggerPanic(false);
+ triggerPanic(false, 'Manual alarm activated. [source: volume buttons]'); // W4 (build __14_)
 }
 
 function cancelVolumeConfirmation() {
