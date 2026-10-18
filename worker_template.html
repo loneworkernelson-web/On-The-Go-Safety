@@ -637,6 +637,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
  <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety On-The-Go!</span>
+ <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__15_</span>
  </h1>
  </div>
  <div class="flex items-center">
@@ -1070,6 +1071,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
  <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
+ <div id="appBuild" class="text-xs font-mono text-gray-400">worker__15_</div>
  </div>
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">Backend Version</div>
@@ -1501,6 +1503,25 @@ const RISK_WELFARE_MAP = {
 // Defaults here are safe fallbacks used only if config.json is somehow
 // partially malformed; in normal operation every field is overwritten.
 // =============================================================================
+// =============================================================================
+// WORKER BUILD (X1, build __15_, session 84)
+// The worker template's own build ID. It lives in the code, so it is stale exactly when the code is
+// stale - unlike CONFIG.buildVersion and the colour theme, which come from config.json (always fetched
+// fresh) and update even when the phone is still running old code from its cache (session 84 finding).
+// Shown on the main screen and in Settings, sent in every post as 'Worker Build', and compared with
+// config.json 'workerBuild' when the Factory writes it (a mismatch shows a red 'App out of date' banner).
+//
+// __15_ changes (session 84, from __14_):
+//  X1 build stamp + self-check (above)
+//  X2 extending while overdue counts from now, not from the old due time (F83-3, Russell 18 Oct)
+//  X3 extend double-tap guard (F83-4)
+//  X4 a form submitted during a visit never posts a closing or new-visit status (F83-2, F82-1)
+//  X5 a reload during an alarm restores the alarm screen and PIN guard (F82-2)
+//  X6 extending during an alarm goes through the alarm PIN prompt (alarm cleared, duress PIN honoured)
+//  X7 an app update never reloads the page in the middle of a visit
+// =============================================================================
+const WORKER_BUILD = 'worker__15_';
+
 const CONFIG = {
  url: '',
  org: '',
@@ -1629,6 +1650,10 @@ function applyConfig(cfg) {
  // App version display in settings
  const verEl = document.getElementById('appVersion');
  if (verEl) verEl.textContent = CONFIG.buildVersion;
+
+ // X1 (build __15_): this code's own build, and a warning if config.json says another worker build was deployed.
+ ['appBuild', 'headerBuild'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = WORKER_BUILD; });
+ if (cfg.workerBuild && String(cfg.workerBuild).trim() !== WORKER_BUILD) _showBuildMismatch(String(cfg.workerBuild).trim());
 
  // Check for config version change — if version differs from last known,
  // update localStorage and nudge the SW to refresh on next foreground load.
@@ -1788,6 +1813,7 @@ document.addEventListener('DOMContentLoaded', loadConfig);
 // GLOBALS AND STATE INITIALIZATION
 // ============================================================================
 let state; // Declared but not initialized until onload
+let _swReloadPending = false; // X7 (build __15_): an app update arrived during a visit
 let siteSortMode = 'recent'; // 'recent' | 'name' | 'company' — loaded from namespaced storage in _initApp
 let formExecutionContext = null;
 let dimTimer;
@@ -2190,9 +2216,18 @@ function submitReport() {
  // Pre-visit form submitted — record it, then resume the visit start
  alarmStatus = "PRE_VISIT";
  }
+ } else if (isMidVisitUpdate && state.activeVisit) {
+ // X4 (build __15_, F83-2 / F82-1): a form submitted DURING a visit is a record, not a change of visit state.
+ // Before: a vehicle check posted VEHICLE_CHECK_COMPLETED, which contains 'COMPLETED', so the backend treated
+ // the open trip row as closed - it stopped escalating and the next post opened a new row without Critical
+ // Timing (session 83, rows 75/76). Any other form on a trip whose destination was General Travel posted
+ // TRAVELLING, which always opens a new row. Now a trip posts MID_VISIT_UPDATE and a site visit posts
+ // ON SITE: neither closes the row, starts a new one, or overwrites an alarm (backend A6 guard). The form
+ // data is still saved and emailed; the backend tracks vehicle checks by the template name, not this status.
+ const _onTrip = !!(state.activeVisit.isTravel || state.activeVisit.locationId === 'travel');
+ alarmStatus = _onTrip ? "MID_VISIT_UPDATE" : "ON SITE";
  } else if (isMidVisitUpdate) {
- // Log movement or status without ending the session
- // Vehicle Safety Check has its own status — avoids wrongly showing worker as ON SITE
+ // No visit running (e.g. vehicle check from the nag bar): a standalone record row, as before.
  if (currentActiveTemplate && currentActiveTemplate.toLowerCase().includes('vehicle')) {
  alarmStatus = "VEHICLE_CHECK_COMPLETED";
  } else {
@@ -4640,10 +4675,28 @@ if ('serviceWorker' in navigator) {
  // When the new SW takes control, reload once to serve the fresh index.html
  let refreshing = false;
  navigator.serviceWorker.addEventListener('controllerchange', () => {
- if (!refreshing) {
+ if (refreshing) return;
+ // X7 (build __15_): never reload in the middle of a visit. A reload drops the in-memory GPS trail,
+ // timers and alarm handling. Hold it and reload the next time the app goes to the background with
+ // no visit running (see the visibilitychange handler below).
+ if (typeof state !== 'undefined' && state && state.activeVisit) {
+ _swReloadPending = true;
+ try { _diag('X7: app update ready - reload held until the visit ends', true); } catch (e) {}
+ return;
+ }
  refreshing = true; // guard against double-reload loop
  window.location.reload();
+ });
+ document.addEventListener('visibilitychange', () => {
+ if (document.visibilityState !== 'hidden' || !_swReloadPending) return;
+ // Wait 5 s and check again, so a DEPARTED post queued just before the screen went off has finished
+ // writing to the outbox (a reload mid-write could lose it and leave the row open).
+ setTimeout(() => {
+ if (document.visibilityState === 'hidden' && _swReloadPending && !(state && state.activeVisit) && !refreshing) {
+ refreshing = true;
+ window.location.reload();
  }
+ }, 5000);
  });
 }
 
@@ -5577,6 +5630,7 @@ return {
  'Timestamp': new Date().toISOString(),
  'deviceId': state.deviceId || "",
  'Last Known GPS': d['Last Known GPS'] || (state.activeVisit?.startGPS) || "0,0",
+ 'Worker Build': WORKER_BUILD, // X1 (build __15_)
  ...d
  };
 }
@@ -6316,7 +6370,8 @@ function _disarmAlarmInterceptor() {
  * Standard PIN → clears alarm (iamSafe). Duress PIN → escalateToDuress.
  * Wrong PIN → shake feedback, stay armed.
  */
-function _alarmPinPrompt() {
+function _alarmPinPrompt(onSafe) {
+  // X6 (build __15_): onSafe (optional) runs after the safety PIN has cleared the alarm - used by extend.
   showModal('pin');
   const input = document.getElementById('pinInput');
   const confirmBtn = document.getElementById('btnPinConfirm');
@@ -6337,6 +6392,7 @@ function _alarmPinPrompt() {
       // Safety PIN — clear alarm, resume normal operation
       closeModal('pin');
       iamSafe();
+      if (typeof onSafe === 'function') onSafe();
     } else if (entered === duressPin) {
       // Duress PIN — looks like a normal PIN entry; silently escalates
       closeModal('pin');
@@ -7004,6 +7060,21 @@ function _initApp() {
  _diag('W3: saved visit was CLOSED (old PIN clear) - restored to ACTIVE', true);
  }
 
+ // 2c. X5 (build __15_, F82-2): a reload during an alarm (app update, crash, the phone killing the page)
+ // came back with no alarm screen and no PIN-on-every-tap guard, while the visit was still ALARMING and the
+ // server was still escalating - the worker could not see the alarm and extend skipped the alarm handling.
+ // Restore it on the phone only. Nothing is posted: the server already has the alarm.
+ if (state.activeVisit && state.activeVisit.phase === VISIT_PHASES.ALARMING) {
+ isPanicActive = true;
+ if (state.activeVisit.isDuress) isDuressActive = true;
+ showAlarmOverlay(isDuressActive ? 'duress' : 'panic');
+ _armAlarmInterceptor();
+ _startAlarmGpsPulse();
+ // The backup contact buttons are NOT restored: a PANIC is covert and never shows them, and after a
+ // reload a PANIC cannot be told apart from an overdue alarm. Overlay + PIN guard are what matter.
+ _diag('X5: visit was ALARMING at load - alarm screen and PIN guard restored', true);
+ }
+
  // 3. Ensure nested objects exist
  if (!state.meta) state.meta = {};
  if (!state.settings) state.settings = {};
@@ -7394,6 +7465,25 @@ function clearData() {
  * After reload the SW re-registers, fetches all assets from the server, and
  * caches the fresh versions. The app will be fully up to date.
  */
+/**
+ * X1 (build __15_): red banner when the code on this phone is not the worker build the Factory deployed
+ * (config.json 'workerBuild'). Tapping it opens Settings, where Force App Update is.
+ */
+function _showBuildMismatch(deployed) {
+ try { _diag('X1: build mismatch - running ' + WORKER_BUILD + ', deployed ' + deployed, true); } catch (e) {}
+ const show = () => {
+   if (document.getElementById('buildMismatchBanner')) return;
+   const b = document.createElement('div');
+   b.id = 'buildMismatchBanner';
+   b.setAttribute('role', 'alert');
+   b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#b91c1c;color:#fff;font-weight:800;font-size:12px;text-align:center;padding:10px 12px;';
+   b.textContent = '⚠️ App out of date (running ' + WORKER_BUILD + ', deployed ' + deployed + ') - tap here, then Force App Update';
+   b.onclick = () => { try { navigate('settings'); } catch (e) {} };
+   document.body.appendChild(b);
+ };
+ if (document.body) show(); else document.addEventListener('DOMContentLoaded', show);
+}
+
 async function forceAppUpdate() {
  if (!confirm('This will clear all cached app files and reload from the server.\n\nYour registration and settings will be preserved. Use this if the app looks wrong after an update.\n\nContinue?')) return;
 
@@ -7904,30 +7994,49 @@ function _applyNewDueTime(newDue) {
  saveState();
 }
 
+let _extendBusyUntil = 0; // X3 (build __15_): time before which a further extend tap is ignored
+
 function confirmExtension(minutes) {
+ if (!state || !state.activeVisit) return;
+ // X3 (build __15_, F83-4): a second tap while the first extension is being applied is ignored.
+ // Before, two quick taps sent two EXTENDED posts and added the time twice.
+ if (Date.now() < _extendBusyUntil) return;
+ _extendBusyUntil = Date.now() + 2000;
+
+ // X2 (build __15_, F83-3, Russell 18 Oct 2026): when the visit is already overdue, the extension counts
+ // from NOW. Before, it was added to the old due time, so +10 when 20 minutes overdue left the visit still
+ // overdue: the phone re-alarmed straight away and the server sent contacts a fresh BREACH.
+ // Decided at the tap, before any alarm clear below moves the due time.
+ const overdueAtTap = Date.now() >= (state.activeVisit.anticipatedDepartureTime || 0);
+
  const updateTime = () => {
+ if (!state || !state.activeVisit) return;
+ _extendBusyUntil = Date.now() + 2000;
  const currentDue = state.activeVisit.anticipatedDepartureTime;
- const newDue = currentDue + (minutes * 60000);
- 
+ const base = overdueAtTap ? Date.now() : Math.max(currentDue || 0, Date.now());
+ const newDue = base + (minutes * 60000);
+
  _applyNewDueTime(newDue); // W1 (build __14_): shared with the PIN clear after due
- 
- // Sync with Backend
+
+ const _hhmm = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
  processUploadQueue(buildPayload({
  'Alarm Status': 'EXTENDED',
- 'Notes': `Extended ${minutes}m`,
+ // The time keeps two identical extensions distinct in Notes (the backend skips a repeated line).
+ 'Notes': `Extended ${minutes}m at ${_hhmm}` + (overdueAtTap ? ' (from now - visit was overdue)' : ''),
  'Anticipated Departure Time': new Date(newDue).toISOString()
  }));
- 
+
  showToast(`✅ Visit extended by ${minutes} minutes`);
  closeModal('extend');
  };
- 
- const now = Date.now();
- const dueTime = state.activeVisit.anticipatedDepartureTime;
- 
- // Require PIN if already in Alarmed mode
- if (state.activeVisit.criticalSent || state.activeVisit.isPanic) {
- withPinVerification(false, updateTime);
+
+ // X6 (build __15_): during an alarm, extending needs the safety PIN through the alarm prompt. The safety PIN
+ // clears the alarm first (iamSafe - contacts get the All Clear), then extends. The duress PIN escalates
+ // silently. Before, a separate PIN check rejected the duress PIN as 'Incorrect PIN' and left the alarm state
+ // (overlay, PIN guard) in place with no All Clear.
+ if (isPanicActive || isDuressActive || state.activeVisit.criticalSent || state.activeVisit.isPanic) {
+ closeModal('extend');
+ _alarmPinPrompt(updateTime);
  } else {
  updateTime();
  }
