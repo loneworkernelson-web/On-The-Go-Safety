@@ -60,6 +60,28 @@
  *     is Audit only (handleWorkerPost:straggler) - no new row.
  *   - Not changed: handleResolvePost (HQ resolve, Monitor only) still closes the visit - follow-up A4-HQ.
  *
+ * __43_ (session 87, 20 Oct 2026) - F86-2 / Decision C / F86-7 / F86-8 / D2 (deploy with worker __19_ - no worker change):
+ *   - The script lock is RELEASED BEFORE ALERTS ARE SENT. checkOverdueVisits holds it only to read the sheet, claim col AA
+ *     and write col A/K/L; doPost holds it only for the sheet work (photo saves stay inside for now). Alerts, All Clears,
+ *     form emails and test alerts are queued and sent after release. Session 86: a phone OVERDUE ALARM waited 9,559 ms of
+ *     its 10,000 ms limit while the checker sent step 1. Every send-bearing run writes lockHeld to the Audit.
+ *   - Overlap guard: two checker runs never overlap (document lock; a CacheService marker where that is not available).
+ *     The checker now waits up to 20 s for the script lock instead of skipping the minute when doPost holds it.
+ *   - Missed-send net: col AA claims carry the claim time and get '|SENT' once the alerts have gone. A claim still unsent
+ *     3 minutes later (the run died between claim and send, or the send threw) is re-sent ONCE ('|RESEND'). A duplicate
+ *     beats a miss. Entries written before __43_ (no claim time) are treated as sent and never re-sent.
+ *   - doPost registers the idempotency key after the sends; a failed send replies error so the phone retries. A retry of
+ *     an event still being sent by another run gets 'Busy' (INFLIGHT marker), not a second round.
+ *   - All Clear waits (up to 20 s, without the lock) while the checker is still sending that worker's ladder alerts, so
+ *     contacts never get the All Clear before the alarm it clears.
+ *   - Decision C: ntfy goes first (then email, then SMS) in triggerAlerts and the All Clear. The reverse geocode now runs
+ *     only inside the SMS step (it is used only there) - it used to delay every alert, ntfy included.
+ *   - F86-7: every Audit row from a doPost run carries tpl=<Template Name> and wb=<Worker Build> when the post has them.
+ *   - F86-8: a distance of 0 is written to col S (a falsy check skipped it).
+ *   - D2: an All Clear for a visit that stays open says the visit is still being monitored (email, SMS, ntfy). An All
+ *     Clear that closes the visit keeps the old "No further action is required" wording.
+ *   - Not in this build: Forms tab (Decision A), HANDOVER_84 items 2 and 8 -> __44_; Private Notes -> __45_.
+ *
  * DEPLOY CHECKLIST (every deployment): Deploy > Manage deployments > New version. Then open the Apps Script
  * editor, run ONE function from each installed trigger by hand (accept any permission prompt), and confirm
  * the Triggers list shows no failures.
@@ -117,6 +139,13 @@ const LADDER_STD_LABELS   = ['15MIN', '30MIN', '45MIN', '60MIN'];
 const STRAGGLER_STATUSES  = ['ALARM_GPS_PULSE', 'OVERDUE', 'LOW BATTERY', 'WELFARE_OK']; // __42_ B4 (exact match)
 let _AUDIT_EXEC = null;          // short id shared by every audit row from one execution
 let _AUDIT_LOCKWAIT_MS = null;   // doPost only: how long it waited for the script lock
+// __43_ (F86-2): sends queued while the script lock is held, run after it is released (doPost only).
+let _DEFER = null;               // { sends: [{label, fn}], keys: [idempotency keys to register after the sends] }
+let _AUDIT_CTX = '';             // __43_ (F86-7): 'tpl=... wb=...' appended to every audit row of a doPost run
+const CHECKER_LOCK_WAIT_MS   = 20000;          // checker waits this long for the script lock (doPost holds it briefly)
+const SHORT_LOCK_WAIT_MS     = 10000;          // re-take the lock after sends: mark col AA sent, register keys
+const LADDER_RESEND_AFTER_MS = 3 * 60 * 1000;  // a claimed step still unsent after this is re-sent once
+const ALLCLEAR_WAIT_MS       = 20000;          // All Clear waits at most this long for in-flight ladder alerts
 
 const sp = PropertiesService.getScriptProperties();
 const tid = sp.getProperty('REPORT_TEMPLATE_ID');
@@ -183,52 +212,61 @@ function doGet(e) {
 function doPost(e) {
   if(!e || !e.parameter) return sendJSON({status:"error"});
   if(e.parameter.key !== CONFIG.MASTER_KEY && e.parameter.key !== CONFIG.WORKER_KEY) return sendJSON({status:"error"});
-  
+  const _ep = e.parameter;
+  _AUDIT_CTX = _auditCtxFor_(_ep); // __43_ (F86-7): template name + worker build on every audit row of this run
+
   const lock = LockService.getScriptLock();
   const _lockT0 = Date.now();
-  if (lock.tryLock(10000)) { 
+  if (lock.tryLock(10000)) {
       _AUDIT_LOCKWAIT_MS = Date.now() - _lockT0; // __38_: recorded on every audit row from this run
+      // __43_ (F86-2): everything that sends (alerts, All Clear, form email, test alert) is queued while the lock is
+      // held and sent after it is released, so another post or the checker never waits for an email to go out.
+      _DEFER = { sends: [], keys: [] };
+      const _ikey = String(_ep.idempotencyKey || '');
+      let reply, threw = false, lockHeldMs = 0, setInflight = false;
+      const _h0 = Date.now();
       try {
-          const p = e.parameter;
-          
-          if(p.action === 'resolve') {
-              handleResolvePost(p); 
+          if (_ikey && _inflightGet_(_ikey)) {
+              // The same event is still being sent by another run (it holds no lock while it sends). Busy makes the
+              // phone retry; by then the key is registered and the retry is acked as a duplicate.
+              _audit_('doPost:inflight', _ep['Worker Name'], '', '', '', _ep['Alarm Status'], _ikey,
+                      'this event is still being sent by another run - replied Busy');
+              reply = { status: 'error', message: 'Busy' };
+          } else {
+              reply = _doPostRoute_(_ep);
           }
-          else if(p.action === 'registerDevice') {
-              return sendJSON(handleRegisterDevice(p));
-          }
-          // NEW 3: Handle Notice Acknowledgments
-          else if(p.action === 'acknowledgeNotice') {
-              return sendJSON(handleNoticeAck(p));
-          }
-          else if(p.action === 'uploadEmergencyProcedures') {
-              updateSiteEmergencyProcedures(p);
-              handleWorkerPost(p);
-          }
-          else if (p.action === 'notifySafety') {
-            return sendJSON(handleSafetyResolution(p));
-          }
-          else if (p.action === 'broadcast') {
-              return sendJSON(handleBroadcast(p));
-          }
-          else {
-              handleWorkerPost(p);
-          }
-          
-          return sendJSON({status:"success"});
-          
       } catch(err) {
-          const _ep = e.parameter || {};
+          threw = true;
           _audit_('doPost:error', _ep['Worker Name'], '', '', '', _ep['Alarm Status'], _ep.idempotencyKey,
                   err.toString().substring(0, 200));
-          return sendJSON({status:"error", message: err.toString()});
+          reply = {status:"error", message: err.toString()};
       }
       finally {
+          if (_ikey && _DEFER && (_DEFER.sends.length || _DEFER.keys.length)) { _inflightSet_(_ikey, true); setInflight = true; }
           // __38_: commit pending sheet writes before the next execution can take the lock.
           try { SpreadsheetApp.flush(); } catch (_) {}
+          lockHeldMs = Date.now() - _h0;
           lock.releaseLock();
       }
-  } else { 
+
+      // ---- lock released: send ----
+      // A throw still sends what was queued before it (an alarm alert queued ahead of a later error must go out),
+      // then replies error so the phone retries. A duplicate beats a miss.
+      const job = _DEFER; _DEFER = null;
+      const res = _runDeferred_(job.sends);
+      if (!threw && res.failed === 0 && job.keys.length) {
+          // A1: the key is registered only once the sends are done. Under a short lock: IDEM_KEYS_V1 is read-modify-write.
+          _withShortLock_('idem-register', function (got) { job.keys.forEach(function (k) { _idemRegisterNow_(k); }); });
+      }
+      if (setInflight) _inflightSet_(_ikey, false);
+      if (job.sends.length || lockHeldMs >= 2000) {
+          _audit_('doPost:sends', _ep['Worker Name'], '', '', '', _ep['Alarm Status'], _ikey,
+                  'lockHeld=' + lockHeldMs + 'ms sends=' + job.sends.length + ' ok=' + res.ok + ' failed=' + res.failed +
+                  ' sendTime=' + res.ms + 'ms (after lock release)');
+      }
+      if (!threw && res.failed > 0) reply = { status: 'error', message: 'Alert send failed - please retry' };
+      return sendJSON(reply);
+  } else {
       // A1 OPTION 2 (session 72): the lock could not be obtained within 10 s.
       // For life-safety alarms, alert the contacts NOW without touching the sheet,
       // then still reply "Busy" so the worker's outbox keeps retrying and the row
@@ -236,8 +274,79 @@ function doPost(e) {
       _busyPathAlert_(e.parameter);
       _audit_('doPost:BUSY', e.parameter['Worker Name'], '', '', '', e.parameter['Alarm Status'],
               e.parameter.idempotencyKey, 'Script lock not obtained within 10 s - replied Busy (alarm posts alert via busy path)');
-      return sendJSON({status:"error", message:"Busy"}); 
+      return sendJSON({status:"error", message:"Busy"});
   }
+}
+
+/** __43_: doPost routing, run while the script lock is held. Returns the reply object. */
+function _doPostRoute_(p) {
+    if (p.action === 'resolve') { handleResolvePost(p); return { status: 'success' }; }
+    if (p.action === 'registerDevice') return handleRegisterDevice(p);
+    if (p.action === 'acknowledgeNotice') return handleNoticeAck(p);   // NEW 3: Notice Acknowledgments
+    if (p.action === 'uploadEmergencyProcedures') { updateSiteEmergencyProcedures(p); handleWorkerPost(p); return { status: 'success' }; }
+    if (p.action === 'notifySafety') return handleSafetyResolution(p);
+    if (p.action === 'broadcast') return handleBroadcast(p);
+    handleWorkerPost(p);
+    return { status: 'success' };
+}
+
+/**
+ * __43_ (F86-2): run fn now, or - inside a locked doPost section - queue it to run after the lock is released.
+ * Everything that contacts the outside world (MailApp, SMS, ntfy, geocoding) goes through here on the doPost path.
+ */
+function _sendOrQueue_(label, fn) {
+    if (_DEFER) { _DEFER.sends.push({ label: label, fn: fn }); return; }
+    fn();
+}
+
+/** __43_: run queued sends in order. One that throws never stops the rest. Returns { ok, failed, ms }. */
+function _runDeferred_(sends) {
+    const res = { ok: 0, failed: 0, ms: 0 };
+    (sends || []).forEach(function (s) {
+        const t0 = Date.now();
+        try { s.fn(); res.ok++; }
+        catch (err) {
+            res.failed++;
+            _audit_('doPost:send-FAILED', '', '', '', '', '', '', s.label + ' threw after ' + (Date.now() - t0) + 'ms: ' +
+                    String(err).substring(0, 200));
+        }
+        res.ms += Date.now() - t0;
+    });
+    return res;
+}
+
+/**
+ * __43_: take the script lock briefly after the sends (mark col AA sent, register idempotency keys), then release.
+ * fn(got) runs either way; got = false means the lock was not obtained and fn decides what is safe to do.
+ */
+function _withShortLock_(label, fn) {
+    const lock = LockService.getScriptLock();
+    let got = false;
+    try { got = lock.tryLock(SHORT_LOCK_WAIT_MS); } catch (_) { got = false; }
+    try { fn(got); }
+    catch (err) { _audit_(label + ':error', '', '', '', '', '', '', String(err).substring(0, 200)); }
+    finally {
+        if (got) { try { SpreadsheetApp.flush(); } catch (_) {} lock.releaseLock(); }
+    }
+    if (!got) _audit_(label + ':no-lock', '', '', '', '', '', '', 'script lock not obtained within ' + SHORT_LOCK_WAIT_MS + ' ms');
+}
+
+/** __43_: an event whose sends are still running in another execution. CacheService; never throws. */
+function _inflightGet_(key) {
+    try { return CacheService.getScriptCache().get('INFLIGHT_' + String(key).substring(0, 200)) === '1'; } catch (_) { return false; }
+}
+function _inflightSet_(key, on) {
+    try { CacheService.getScriptCache().put('INFLIGHT_' + String(key).substring(0, 200), on ? '1' : '0', on ? 300 : 1); } catch (_) {}
+}
+
+/** __43_ (F86-7): 'tpl=<Template Name> wb=<Worker Build>' for the audit rows of one post ('' when neither is sent). */
+function _auditCtxFor_(p) {
+    const bits = [];
+    const t = String((p && p['Template Name']) || '').trim();
+    const wb = String((p && p['Worker Build']) || '').trim();
+    if (t) bits.push('tpl=' + t.substring(0, 60));
+    if (wb) bits.push('wb=' + wb.substring(0, 30));
+    return bits.join(' ');
 }
 
 /**
@@ -710,7 +819,8 @@ function handleWorkerPost(p) {
     // open ARRIVED row's status, stranding the visit and blocking the next real
     // visit from correctly writing its address details.
     if (p['Alarm Status'] && p['Alarm Status'].includes('TEST_ALERT')) {
-        triggerAlerts(p, "TEST");
+        const _tp = Object.assign({}, p);
+        _sendOrQueue_('test-alert', function () { triggerAlerts(_tp, "TEST"); }); // __43_: after lock release
         _idemRegister_(p.idempotencyKey);
         return;
     }
@@ -754,6 +864,7 @@ function handleWorkerPost(p) {
     let existingVisitNotes = ''; // captured from matched row for use in triggerAlerts
     let _latestClosed = null;    // __42_ B4: the worker's latest row when it is closed
     let criticalBridgeSuppressed = false; // merge: server ladder already alerting for this visit
+    let _mergeMark = null;       // __43_: the phone-merged BREACH claim, marked '|SENT' once its alerts have gone
     if (!isNoteToSelf) {
         if(!sheet) {
             sheet = ss.insertSheet('Visits');
@@ -872,13 +983,17 @@ function handleWorkerPost(p) {
                             _audit_(_pinClearNote ? 'handleWorkerPost:pin-clear' : 'handleWorkerPost', workerName, targetRow, rowData[10], p['Alarm Status'], _origIncoming, p.idempotencyKey,
                                     _mergedBreachDue ? 'Critical Timing merge: OVERDUE ALARM recorded as BREACH' : _pinClearNote);
                             // __38_: a phone-merged BREACH is ladder step 1 for this due time.
-                            if (_mergedBreachDue) _ladderMemClaim_(sheet, targetRow, _mergedBreachDue, 1, 'handleWorkerPost:merge', workerName);
+                            if (_mergedBreachDue) {
+                                const _cv = _ladderMemClaim_(sheet, targetRow, _mergedBreachDue, 1, 'handleWorkerPost:merge', workerName);
+                                if (_cv) _mergeMark = { rowNum: targetRow, worker: workerName, claimVal: _cv };
+                            }
                         } else if (!_isGpsPulse) {
                             _audit_('handleWorkerPost:skip', workerName, targetRow, rowData[10], '', _origIncoming, p.idempotencyKey,
                                     criticalBridgeSuppressed ? 'Critical Timing ladder already started - col K not written'
                                                              : 'A6 guard - lower-severity status not written over an alarm');
                         }
-                        if (distanceValue && distColIdx > -1) sheet.getRange(targetRow, distColIdx + 1).setValue(distanceValue);
+                        // __43_ (F86-8): 0 km is a real value (a stationary trip). The falsy check used to skip it.
+                        if (distanceValue !== '' && distanceValue !== null && distanceValue !== undefined && distColIdx > -1) sheet.getRange(targetRow, distColIdx + 1).setValue(distanceValue);
                         if (polishedNotes && polishedNotes !== rowData[11]) {
                              const oldNotes = sheet.getRange(targetRow, 12).getValue();
                              if (!oldNotes.includes(polishedNotes)) sheet.getRange(targetRow, 12).setValue((oldNotes + "\n" + polishedNotes).trim());
@@ -981,7 +1096,10 @@ if (!rowUpdated) {
     if(hasFormData) {
         try {
             const reportObj = JSON.parse(p['Visit Report Data']);
-            processFormEmail(p, reportObj, polishedNotes, p1, p2, p3, p4, sig);
+            const _fp = Object.assign({}, p), _fNotes = polishedNotes;
+            _sendOrQueue_('form-email', function () {   // __43_: after lock release
+                try { processFormEmail(_fp, reportObj, _fNotes, p1, p2, p3, p4, sig); } catch (e2) { console.error("Email Error: " + e2); }
+            });
         } catch(e) { console.error("Email Error: " + e); }
     }
 
@@ -993,7 +1111,7 @@ if (!rowUpdated) {
         console.log('Critical Timing bridge: server ladder already started for ' + workerName + ' - no extra alert.');
     } else if(p['Alarm Status'].includes("EMERGENCY") || p['Alarm Status'].includes("PANIC") || p['Alarm Status'].includes("DURESS")) {
         p['Visit Notes'] = p['Visit Notes'] || existingVisitNotes;
-        triggerAlerts(p, "IMMEDIATE");
+        _queueImmediateAlert_(p, _mergeMark);   // __43_: sent after the lock is released
     } else if (p['Alarm Status'].includes("OVERDUE ALARM") && p['Critical Timing'] === 'true') {
         // Critical timing OVERDUE ALARM — fire ntfy immediately via the doPost execution context,
         // which can reach ntfy.sh. Standard (non-critical) OVERDUE ALARM escalation continues to
@@ -1001,11 +1119,27 @@ if (!rowUpdated) {
         // Pass the existing row's visit notes so isCriticalTiming is correctly detected
         // inside triggerAlerts — the worker payload does not carry Visit Notes.
         p['Visit Notes'] = p['Visit Notes'] || existingVisitNotes;
-        triggerAlerts(p, "IMMEDIATE");
+        _queueImmediateAlert_(p, null);         // __43_: sent after the lock is released
     }
 
     // A1: register the idempotency key only now that the row, emails and alerts are done.
     _idemRegister_(p.idempotencyKey);
+}
+
+/**
+ * __43_: queue an IMMEDIATE alert (a snapshot of the payload, so later changes to p cannot alter it). When the alert is
+ * the phone-merged Critical Timing BREACH, its col AA claim is marked '|SENT' afterwards.
+ */
+function _queueImmediateAlert_(p, mergeMark) {
+    const _ap = Object.assign({}, p);
+    _sendOrQueue_('alerts', function () {
+        triggerAlerts(_ap, "IMMEDIATE");
+        if (mergeMark) _withShortLock_('mark-sent', function (got) {
+            if (!got) return; // left unsent: the checker re-sends it after 3 minutes (a duplicate beats a miss)
+            const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Visits');
+            if (sh) _ladderMarkSent_(sh, mergeMark);
+        });
+    });
 }
 
 /** A1 - has this outbox idempotency key already been fully processed? */
@@ -1025,6 +1159,12 @@ function _idemSeen_(key) {
  * doPost script lock only. Rolling window of 100 keys (~5 KB, under the 9 KB limit).
  */
 function _idemRegister_(key) {
+    if (!key) return;
+    if (_DEFER) { _DEFER.keys.push(key); return; } // __43_: doPost registers it after the sends (_idemRegisterNow_)
+    _idemRegisterNow_(key);
+}
+
+function _idemRegisterNow_(key) {
     if (!key) return;
     try {
         const seen = JSON.parse(sp.getProperty('IDEM_KEYS_V1') || '[]');
@@ -1426,12 +1566,8 @@ function triggerAlerts(p, type) {
     const gpsText  = hasGPS
         ? `<a href="${gpsLink}" style="color:#2563eb;">${rawGPS.trim()}</a>`
         : `Not available — please use the address above to locate the worker.`;
-    // SMS must not contain URLs (Textbelt rejects them). Reverse-geocode the
-    // coordinates to a short address instead. Falls back to raw lat,lng if
-    // Nominatim is unavailable. Email and ntfy retain the full gpsLink above.
-    const gpsSmsTxt = hasGPS
-        ? `Location: ${reverseGeocode_(rawGPS.trim())}`
-        : `Location: Not available`;
+    // __43_ (Decision C): the SMS-only reverse geocode moved into the SMS step below. It used to run here, first,
+    // delaying every alert (ntfy included) by a Nominatim round trip.
 
     // ── STATUS-SPECIFIC MESSAGING ──────────────────────────────────────────
     const status        = (p['Alarm Status'] || '').toUpperCase();
@@ -1668,6 +1804,52 @@ function triggerAlerts(p, type) {
 
     const headerEmoji = status.includes('TEST_ALERT') ? '🧪' : '🚨';
 
+    // __43_ (Decision C): ntfy FIRST. It is the instant, audible channel; email (about 4 s per contact) and SMS follow.
+    // ── NTFY PUSH ROUTING ─────────────────────────────────────────────────
+    // Sends an instant push notification to each contact's phone via the ntfy app.
+    // Fires in addition to email and SMS — never instead of them. __43_: sent before them.
+    // Silently skipped per-contact if no ntfy topic is configured.
+    const ntfyMessage = [
+        `Worker: ${workerName} · ${workerPhone}`,
+        `Site: ${locationName}`,
+        locationAddr ? `Address: ${locationAddr}` : '',
+        hasGPS ? `GPS: ${gpsLink}` : 'GPS: Not available',
+        `Battery: ${battery}`,
+        `Sent: ${sentAt}`
+    ].filter(Boolean).join('\n');
+
+    // Start with payload values (sent by the worker app from state.worker).
+    // Fall back to Staff sheet (col H/I) — the authoritative source — in case the
+    // worker's device has stale or empty ntfy config. Matches the All Clear pattern.
+    let _alertEmgNtfy = (p['Emergency Contact Ntfy']  || '').toString().trim();
+    let _alertEscNtfy = (p['Escalation Contact Ntfy'] || '').toString().trim();
+    try {
+        const _ss2 = SpreadsheetApp.getActiveSpreadsheet();
+        const _staffSheet2 = _ss2.getSheetByName('Staff');
+        if (_staffSheet2) {
+            const _staffData2 = _staffSheet2.getDataRange().getValues();
+            const _wName2 = (p['Worker Name'] || '').toString().trim();
+            for (let _j2 = 1; _j2 < _staffData2.length; _j2++) {
+                if ((_staffData2[_j2][0] || '').toString().trim() === _wName2) {
+                    const _sEmg2 = (_staffData2[_j2][7] || '').toString().trim(); // col H
+                    const _sEsc2 = (_staffData2[_j2][8] || '').toString().trim(); // col I
+                    if (_sEmg2) _alertEmgNtfy = _sEmg2;
+                    if (_sEsc2) _alertEscNtfy = _sEsc2;
+                    break;
+                }
+            }
+        }
+    } catch (_e2) { console.warn('Alert ntfy Staff lookup failed: ' + _e2.toString()); }
+
+    const ntfyContacts = [
+        { topic: _alertEmgNtfy,  name: p['Emergency Contact Name']  },
+        { topic: _alertEscNtfy,  name: p['Escalation Contact Name'] }
+    ].filter(c => c.topic && c.topic.trim());
+
+    ntfyContacts.forEach(c => {
+        _sendNtfy(c.topic, `${headerEmoji} ${statusLabel} — ${workerName}`, ntfyMessage, ntfyPriority, ntfyTags);
+    });
+
     // ── BUILD HTML EMAIL ───────────────────────────────────────────────────
     // what3words — optional. Only looked up when a valid GPS fix exists.
     const w3wAddress = (hasValidGps && CONFIG.W3W_API_KEY && !CONFIG.W3W_API_KEY.includes('%%'))
@@ -1801,55 +1983,18 @@ function triggerAlerts(p, type) {
             p['Escalation Contact Number'] || p['Escalation Contact Phone']
         ].map(n => _cleanPhone(n)).filter(n => n);
 
+        // SMS must not contain URLs (Textbelt rejects them). Reverse-geocode the
+        // coordinates to a short address instead. Falls back to raw lat,lng if
+        // Nominatim is unavailable. Email and ntfy retain the full gpsLink above.
+        // __43_: computed here, only when an SMS is actually going out.
+        const gpsSmsTxt = (hasGPS && numbers.length)
+            ? `Location: ${reverseGeocode_(rawGPS.trim())}`
+            : `Location: Not available`;
         const smsBody = `🚨 ALERT: ${statusLabel}\nWorker: ${workerName}\nSite: ${locationName}\nPhone: ${workerPhone}\n${gpsSmsTxt}`;
         Logger.log('[SMS] Preparing to send. Body: "' + smsBody + '"');
         numbers.forEach(num => { try { _sendSms_(num, smsBody); } catch(e) { _logSmsResult_(num, smsBody, e.toString(), true); } });
     }
 
-    // ── NTFY PUSH ROUTING ─────────────────────────────────────────────────
-    // Sends an instant push notification to each contact's phone via the ntfy app.
-    // Fires in addition to email and SMS — never instead of them.
-    // Silently skipped per-contact if no ntfy topic is configured.
-    const ntfyMessage = [
-        `Worker: ${workerName} · ${workerPhone}`,
-        `Site: ${locationName}`,
-        locationAddr ? `Address: ${locationAddr}` : '',
-        hasGPS ? `GPS: ${gpsLink}` : 'GPS: Not available',
-        `Battery: ${battery}`,
-        `Sent: ${sentAt}`
-    ].filter(Boolean).join('\n');
-
-    // Start with payload values (sent by the worker app from state.worker).
-    // Fall back to Staff sheet (col H/I) — the authoritative source — in case the
-    // worker's device has stale or empty ntfy config. Matches the All Clear pattern.
-    let _alertEmgNtfy = (p['Emergency Contact Ntfy']  || '').toString().trim();
-    let _alertEscNtfy = (p['Escalation Contact Ntfy'] || '').toString().trim();
-    try {
-        const _ss2 = SpreadsheetApp.getActiveSpreadsheet();
-        const _staffSheet2 = _ss2.getSheetByName('Staff');
-        if (_staffSheet2) {
-            const _staffData2 = _staffSheet2.getDataRange().getValues();
-            const _wName2 = (p['Worker Name'] || '').toString().trim();
-            for (let _j2 = 1; _j2 < _staffData2.length; _j2++) {
-                if ((_staffData2[_j2][0] || '').toString().trim() === _wName2) {
-                    const _sEmg2 = (_staffData2[_j2][7] || '').toString().trim(); // col H
-                    const _sEsc2 = (_staffData2[_j2][8] || '').toString().trim(); // col I
-                    if (_sEmg2) _alertEmgNtfy = _sEmg2;
-                    if (_sEsc2) _alertEscNtfy = _sEsc2;
-                    break;
-                }
-            }
-        }
-    } catch (_e2) { console.warn('Alert ntfy Staff lookup failed: ' + _e2.toString()); }
-
-    const ntfyContacts = [
-        { topic: _alertEmgNtfy,  name: p['Emergency Contact Name']  },
-        { topic: _alertEscNtfy,  name: p['Escalation Contact Name'] }
-    ].filter(c => c.topic && c.topic.trim());
-
-    ntfyContacts.forEach(c => {
-        _sendNtfy(c.topic, `${headerEmoji} ${statusLabel} — ${workerName}`, ntfyMessage, ntfyPriority, ntfyTags);
-    });
 }
 
 /**
@@ -2009,23 +2154,65 @@ function _pingHealthcheck() {
 }
 
 function checkOverdueVisits() {
-    // Guard against concurrent executions. With a 1-minute trigger, GAS can launch a new
-    // instance before the previous one finishes (e.g. if ntfy/Nominatim calls run long).
-    // Both instances would read the same un-escalated status and fire duplicate alerts.
-    // tryLock(0) exits immediately if another instance holds the lock — no queuing.
-    const lock = LockService.getScriptLock();
-    if (!lock.tryLock(0)) {
-        console.log('[checkOverdueVisits] Skipped — another instance is already running.');
-        return;
-    }
+    // __43_ (F86-2): two locks, two jobs.
+    //  1. Overlap guard (document lock, or a CacheService marker): two minute-runs never overlap while a slow send is
+    //     still going. tryLock(0) - skip, never queue. Before __43_ the SCRIPT lock did this job, so a checker run was
+    //     also skipped whenever a doPost held it.
+    //  2. The script lock (shared with doPost) is held only to read the sheet, claim col AA and write col A/K/L.
+    //     Alerts go out after it is released. Session 86: holding it through the step 1 send (about 9 s, two contacts)
+    //     made a phone OVERDUE ALARM wait 9,559 ms of its 10,000 ms limit.
+    const guard = _checkerGuardAcquire_();
+    if (!guard) { console.log('[checkOverdueVisits] Skipped - another checker run is still going.'); return; }
     try {
+        const lock = LockService.getScriptLock();
+        const _w0 = Date.now();
+        let got = false;
+        try { got = lock.tryLock(CHECKER_LOCK_WAIT_MS); } catch (_) { got = false; }
+        const lockWaitMs = Date.now() - _w0;
+        if (!got) {
+            _audit_('checker:lock-busy', '', '', '', '', '', '', 'script lock not obtained within ' + CHECKER_LOCK_WAIT_MS +
+                    ' ms - run skipped, the next minute retries');
+            return;
+        }
+        const sends = [];
+        let completed = false, lockHeldMs = 0;
+        const _h0 = Date.now();
+        try {
+            completed = _checkOverdueLocked_(sends);
+            _ladderSendingFlags_(sends, true); // All Clears for these workers wait until the alerts have gone
+        } finally {
+            // __38_: commit pending sheet writes before the next execution can take the lock.
+            try { SpreadsheetApp.flush(); } catch (_) {}
+            lockHeldMs = Date.now() - _h0;
+            lock.releaseLock();
+        }
+        // ---- lock released: send ----
+        _runLadderSends_(sends);
+        if (sends.length) {
+            _audit_('checker:lock', '', '', '', '', '', '', 'lockWait=' + lockWaitMs + 'ms lockHeld=' + lockHeldMs + 'ms sends=' +
+                    sends.length + ' (sent after lock release) guard=' + guard.kind);
+        }
+        // Ping dead-man's switch — confirms the escalation engine ran to completion.
+        // Only fires here (after the loop) so a crash or early return leaves Healthchecks
+        // without a ping, which it correctly interprets as a system failure.
+        if (completed) _pingHealthcheck();
+    } finally {
+        _checkerGuardRelease_(guard);
+    }
+}
 
+/**
+ * __43_: the checker's decisions, run while the script lock is held. Claims and sheet writes happen here; the alerts
+ * are pushed onto `sends` and go out after the lock is released (_runLadderSends_). Returns false on an early return
+ * (no Visits sheet), true when the loop ran.
+ */
+function _checkOverdueLocked_(sends) {
     // Record successful trigger execution time for health email reporting
     try { sp.setProperty('LAST_TRIGGER_TIME', new Date().toISOString()); } catch(e) {}
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName('Visits');
-    if(!sheet) return;
+    if(!sheet) return false;
     const data = sheet.getDataRange().getValues();
     const now = new Date();
     const latest = {};
@@ -2104,19 +2291,19 @@ function checkOverdueVisits() {
                         if (next) {
                             // Claim before send: record the step BEFORE alerting so a repeat run cannot
                             // resend it. A failed claim never blocks the alert (a duplicate beats a miss).
-                            _ladderMemClaim_(sheet, rowNum, due, next, 'ladder', worker);
-                            // __41_ (F79-2 evidence): time the send and leave a trace. _audit_ never throws,
-                            // and a throw from triggerEscalation is re-thrown exactly as before.
-                            const _sendT0 = Date.now();
-                            try {
-                                triggerEscalation(sheet, entry, LADDER_STATUSES[next - 1], true, rowNum);
-                            } catch (_sendErr) {
-                                _audit_('ladder:send-FAILED', worker, rowNum, '', LADDER_STATUSES[next - 1], '', '',
-                                        'step ' + next + ' threw after ' + (Date.now() - _sendT0) + 'ms: ' + String(_sendErr).substring(0, 200));
-                                throw _sendErr;
-                            }
-                            _audit_('ladder:sends-complete', worker, rowNum, '', LADDER_STATUSES[next - 1], '', '',
-                                    'step ' + next + ' alerts returned after ' + (Date.now() - _sendT0) + 'ms');
+                            const claimVal = _ladderMemClaim_(sheet, rowNum, due, next, 'ladder', worker);
+                            // __43_: col A/K/L written now (under the lock); the alerts go out after release.
+                            sends.push({ src: 'ladder', worker: worker, rowNum: rowNum, step: next, status: LADDER_STATUSES[next - 1],
+                                         claimVal: claimVal, job: _escalationWrite_(sheet, entry, LADDER_STATUSES[next - 1], true, rowNum) });
+                        } else if (_ladderResendDue_(mem, now.getTime())) {
+                            // __43_: this step was claimed 3+ minutes ago and its alerts never confirmed sent (the run died
+                            // or the send threw). Send it again, once. No sheet writes besides the new claim.
+                            const rs = Math.min(mem.step, 3);
+                            _audit_('ladder:resend', worker, rowNum, status, LADDER_STATUSES[rs - 1], '', '',
+                                    'step ' + rs + ' claimed at ' + new Date(mem.claimMs).toISOString() + ' was never marked sent - re-sending once');
+                            const claimVal = _ladderMemClaim_(sheet, rowNum, due, rs, 'ladder', worker, null, true);
+                            sends.push({ src: 'ladder', worker: worker, rowNum: rowNum, step: rs, status: LADDER_STATUSES[rs - 1], resend: true,
+                                         claimVal: claimVal, job: _escalationPayload_(sheet, entry, LADDER_STATUSES[rs - 1], true) });
                         }
                     }
                     return;
@@ -2140,24 +2327,94 @@ function checkOverdueVisits() {
                         _audit_('ladder-std', worker, rowNum, status, LADDER_STD_STATUSES[target - 1], '', '',
                                 'diff=' + diffMins.toFixed(1) + 'm AA="' + memRaw + '" sent=' + sent +
                                 (mem.has ? '' : ' (legacy: from col K)') + ' -> sending step ' + target);
-                        _ladderMemClaim_(sheet, rowNum, due, target, 'ladder-std', worker, LADDER_STD_LABELS);
-                        triggerEscalation(sheet, entry, LADDER_STD_STATUSES[target - 1], target === 4, rowNum);
+                        const claimVal = _ladderMemClaim_(sheet, rowNum, due, target, 'ladder-std', worker, LADDER_STD_LABELS);
+                        // __43_: sheet written now; the alert goes out after the lock is released.
+                        sends.push({ src: 'ladder-std', worker: worker, rowNum: rowNum, step: target, status: LADDER_STD_STATUSES[target - 1],
+                                     claimVal: claimVal, job: _escalationWrite_(sheet, entry, LADDER_STD_STATUSES[target - 1], target === 4, rowNum) });
+                    } else if (target >= 1 && target === sent && _ladderResendDue_(mem, now.getTime())) {
+                        // __43_: claimed 3+ minutes ago, never confirmed sent - re-send once.
+                        const rs = mem.step;
+                        _audit_('ladder-std:resend', worker, rowNum, status, LADDER_STD_STATUSES[rs - 1], '', '',
+                                'step ' + rs + ' claimed at ' + new Date(mem.claimMs).toISOString() + ' was never marked sent - re-sending once');
+                        const claimVal = _ladderMemClaim_(sheet, rowNum, due, rs, 'ladder-std', worker, LADDER_STD_LABELS, true);
+                        sends.push({ src: 'ladder-std', worker: worker, rowNum: rowNum, step: rs, status: LADDER_STD_STATUSES[rs - 1], resend: true,
+                                     claimVal: claimVal, job: _escalationPayload_(sheet, entry, LADDER_STD_STATUSES[rs - 1], rs === 4) });
                     }
                 }
             }
         } catch (err) { console.error(`Escalation Error: ${err.toString()}`); }
     });
+    return true;
+}
 
-    // Ping dead-man's switch — confirms the escalation engine ran to completion.
-    // Only fires here (after the loop) so a crash or early return leaves Healthchecks
-    // without a ping, which it correctly interprets as a system failure.
-    _pingHealthcheck();
-
-    } finally {
-        // __38_: commit pending sheet writes before the next execution can take the lock.
-        try { SpreadsheetApp.flush(); } catch (_) {}
-        lock.releaseLock();
+/**
+ * __43_: send the ladder alerts queued by _checkOverdueLocked_, with the script lock released. Each send is timed and
+ * audited; those that returned are marked '|SENT' in col AA under one short lock. A send that throws is left unmarked
+ * and the next runs re-send it once after LADDER_RESEND_AFTER_MS (a duplicate beats a miss).
+ */
+function _runLadderSends_(sends) {
+    if (!sends || !sends.length) return;
+    const done = [];
+    sends.forEach(function (s) {
+        const t0 = Date.now();
+        try {
+            triggerAlerts(s.job.payload, s.job.type);
+            done.push(s);
+            _audit_(s.src + ':sends-complete', s.worker, s.rowNum, '', s.status, '', '',
+                    'step ' + s.step + (s.resend ? ' (re-send)' : '') + ' alerts returned after ' + (Date.now() - t0) + 'ms (lock released)');
+        } catch (err) {
+            _audit_(s.src + ':send-FAILED', s.worker, s.rowNum, '', s.status, '', '',
+                    'step ' + s.step + ' threw after ' + (Date.now() - t0) + 'ms: ' + String(err).substring(0, 200) +
+                    ' - left unmarked, re-sent once after ' + (LADDER_RESEND_AFTER_MS / 60000) + ' min');
+        }
+    });
+    if (done.length) {
+        _withShortLock_('ladder:mark-sent', function (got) {
+            if (!got) return; // unmarked: re-sent once later (a duplicate beats a miss)
+            const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Visits');
+            if (sh) done.forEach(function (s) { _ladderMarkSent_(sh, s); });
+        });
     }
+    _ladderSendingFlags_(sends, false);
+}
+
+/** __43_: per-worker "ladder alerts in flight" flag (CacheService, 2 min). All Clear waits while it is set. */
+function _ladderSendingFlags_(sends, on) {
+    try {
+        const cache = CacheService.getScriptCache();
+        const seen = {};
+        (sends || []).forEach(function (s) {
+            if (seen[s.worker]) return;
+            seen[s.worker] = 1;
+            cache.put(_sendingKey_(s.worker), on ? '1' : '0', on ? 120 : 1);
+        });
+    } catch (_) {}
+}
+function _sendingKey_(worker) { return 'SENDING_' + String(worker || '').substring(0, 200); }
+
+/**
+ * __43_: one checker run at a time. Document lock where Apps Script provides one; otherwise a CacheService marker
+ * (2-minute expiry, not atomic - col AA claims still stop a duplicate step). Returns null when another run holds it.
+ */
+function _checkerGuardAcquire_() {
+    try {
+        const dl = LockService.getDocumentLock();
+        if (dl) return dl.tryLock(0) ? { kind: 'doc', lock: dl } : null;
+    } catch (_) {}
+    try {
+        const c = CacheService.getScriptCache();
+        if (c.get('CHECKER_RUNNING') === '1') return null;
+        c.put('CHECKER_RUNNING', '1', 120);
+        return { kind: 'cache', cache: c };
+    } catch (_) {}
+    return { kind: 'none' };
+}
+function _checkerGuardRelease_(g) {
+    if (!g) return;
+    try {
+        if (g.kind === 'doc') g.lock.releaseLock();
+        else if (g.kind === 'cache') g.cache.put('CHECKER_RUNNING', '0', 1);
+    } catch (_) {}
 }
 
 /**
@@ -3752,6 +4009,14 @@ function handleNoticeAck(p) {
  * Logic: Appends row and routes to Primary (isDual=false) or Both (isDual=true).
  */
 function triggerEscalation(sheet, entry, newStatus, isDual, rowNum) {
+    // __43_: kept for compatibility (no caller in this file). The checker uses _escalationWrite_ and sends the
+    // alerts itself after releasing the script lock.
+    const job = _escalationWrite_(sheet, entry, newStatus, isDual, rowNum);
+    _sendOrQueue_('escalation', function () { triggerAlerts(job.payload, job.type); });
+}
+
+/** __43_: the sheet half of an escalation step (col A, K, L). Returns the alert job { payload, type } - not sent here. */
+function _escalationWrite_(sheet, entry, newStatus, isDual, rowNum) {
     // ONE-ROW-PER-VISIT: Update the existing row in place rather than appending a new one.
     // rowNum is the 1-based sheet row index passed from checkOverdueVisits() via latest[worker].r.
     // This ensures every visit lifecycle event (ARRIVED → EMERGENCY → USER_SAFE_CONFIRMED → DEPARTED)
@@ -3771,7 +4036,11 @@ function triggerEscalation(sheet, entry, newStatus, isDual, rowNum) {
         sheet.getRange(rowNum, 12).setValue(updatedNotes);   // col L: Notes
         _audit_('triggerEscalation', entry[2], rowNum, entry[10], newStatus, '', '', 'escalation step written (col A, K, L) - alerts follow');
     }
+    return _escalationPayload_(sheet, entry, newStatus, isDual);
+}
 
+/** __43_: build the alert job for an escalation step from the Visits row (and Staff ntfy topics). No writes. */
+function _escalationPayload_(sheet, entry, newStatus, isDual) {
     // Look up ntfy topics from the Staff sheet — they are not stored in Visits rows.
     // Silently degrades to empty strings if the sheet is missing or the row isn't found.
     let emgNtfy = '', escNtfy = '';
@@ -3809,7 +4078,7 @@ function triggerEscalation(sheet, entry, newStatus, isDual, rowNum) {
         'GPS Timestamp':             entry[15] || '',
         'Battery Level':             entry[16]
     };
-    triggerAlerts(payload, isDual ? "CRITICAL ESCALATION" : "OVERDUE WARNING");
+    return { payload: payload, type: isDual ? "CRITICAL ESCALATION" : "OVERDUE WARNING" };
 }
 
 /**
@@ -3817,6 +4086,7 @@ function triggerEscalation(sheet, entry, newStatus, isDual, rowNum) {
  * Logic: Notifies both contacts that the emergency has ended.
  */
 function handleSafetyResolution(p, forceNotify) {
+    let _stillMonitored = false; // __43_ (D2): the clear leaves an open visit row - the visit is still monitored
     // GUARD: Scan the sheet BEFORE handleWorkerPost runs, because handleWorkerPost
     // will overwrite the open alarm row's status to USER_SAFE_CONFIRMED — after which
     // the scan would hit the 'SAFE' break condition and incorrectly return alertWasSent=false,
@@ -3875,8 +4145,24 @@ function handleSafetyResolution(p, forceNotify) {
 
         // 1. Update the Visit Record for the audit trail (after the guard, so the scan sees clean data).
         // Skipped when forceNotify=true because handleResolvePost() has already done this.
+        // __42_ B2: a PIN clear on an open visit row (has a due time) restores it and leaves it open.
+        _stillMonitored = latestOpenVisit;
         handleWorkerPost(p);
     }
+
+    // __43_ (F86-2): the All Clear goes out after the script lock is released (doPost path).
+    const _acP = Object.assign({}, p), _acOpen = _stillMonitored;
+    _sendOrQueue_('allclear', function () { _sendAllClear_(_acP, _acOpen); });
+    return { status: "success" };
+}
+
+/**
+ * __43_: All Clear to both contacts - ntfy first (Decision C), then email, then SMS. Waits (without the lock, up to
+ * ALLCLEAR_WAIT_MS) while the checker is still sending this worker's ladder alerts, so it never arrives first.
+ * stillMonitored (D2): the visit stays open, so the wording says contacts will be alerted again if needed.
+ */
+function _sendAllClear_(p, stillMonitored) {
+    _allClearWaitForLadder_(p['Worker Name']);
 
     // 2. Draft the Resolution Messages
     const subject    = `✅ ALL CLEAR — ${p['Worker Name']} is safe`;
@@ -3902,7 +4188,9 @@ function handleSafetyResolution(p, forceNotify) {
       </td></tr>
       <tr><td style="background:#fff;padding:28px;border-radius:0 0 8px 8px">
         <p style="margin:0 0 20px">${salutation}</p>
-        <p style="margin:0 0 20px"><strong>${workerName}</strong> has confirmed they are safe. The previous safety alert is now resolved. <strong>No further action is required.</strong></p>
+        <p style="margin:0 0 20px"><strong>${workerName}</strong> has confirmed they are safe. The previous safety alert is now resolved. ${stillMonitored
+            ? '<strong>Their visit is still being monitored, and you will be alerted again if they do not check in on time.</strong>'
+            : '<strong>No further action is required.</strong>'}</p>
         <table cellpadding="0" cellspacing="0" style="font-size:13px;color:#374151">
           <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Worker:</td><td>${workerName}</td></tr>
           <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Phone:</td><td>${workerPhoneLink2}</td></tr>
@@ -3917,29 +4205,7 @@ function handleSafetyResolution(p, forceNotify) {
 </body></html>`;
     };
 
-    // 3. Dual-Contact Email — personalised salutation per recipient
-    const contactPairs = [
-        { email: p['Emergency Contact Email'],  name: p['Emergency Contact Name']  },
-        { email: p['Escalation Contact Email'], name: p['Escalation Contact Name'] }
-    ].filter(c => c.email && c.email.includes('@'));
-
-    contactPairs.forEach(contact => {
-        try {
-            MailApp.sendEmail({ to: contact.email, subject, htmlBody: buildAllClearHtml(contact.name) });
-        } catch (e) { console.error("All Clear email failed: " + e.toString()); }
-    });
-    
-    // 4. Dual-Contact SMS
-    if (CONFIG.SMS_PROVIDER && CONFIG.SMS_PROVIDER !== 'none' && !CONFIG.SMS_PROVIDER.includes('%%')) {
-        const numbers = [
-            p['Emergency Contact Number'] || p['Emergency Contact Phone'],
-            p['Escalation Contact Number'] || p['Escalation Contact Phone']
-        ].map(n => _cleanPhone(n)).filter(n => n);
-        const allClearBody = `${subject}. Alert resolved.`;
-        numbers.forEach(num => { try { _sendSms_(num, allClearBody); } catch(e) { _logSmsResult_(num, allClearBody, e.toString(), true); } });
-    }
-
-    // 5. ntfy push — All Clear notification to both contacts
+    // 5. ntfy push — All Clear notification to both contacts (__43_, Decision C: sent first)
     // Prefer Staff sheet topics (col H/I) — the same source used by triggerEscalation.
     // This is more reliable than the payload fields, which can be blank if state.worker
     // was partially restored on the worker device. Fall back to payload values if the
@@ -3967,7 +4233,8 @@ function handleSafetyResolution(p, forceNotify) {
     const allClearMsg = [
         `Worker: ${p['Worker Name'] || 'Unknown'} · ${p['Worker Phone Number'] || ''}`,
         `Location: ${p['Location Name'] || 'Unknown'}`,
-        `Cleared: ${resolvedAt}`
+        `Cleared: ${resolvedAt}`,
+        stillMonitored ? 'Their visit is still being monitored - you will be alerted again if they do not check in on time.' : ''  // __43_ D2
     ].filter(Boolean).join('\n');
 
     [allClearEmgNtfy, allClearEscNtfy]
@@ -3976,7 +4243,47 @@ function handleSafetyResolution(p, forceNotify) {
             _sendNtfy(topic, `✅ ALL CLEAR — ${p['Worker Name'] || 'Worker'} is safe`, allClearMsg, 'default', 'white_check_mark,green_circle');
         });
 
+    // 3. Dual-Contact Email — personalised salutation per recipient
+    const contactPairs = [
+        { email: p['Emergency Contact Email'],  name: p['Emergency Contact Name']  },
+        { email: p['Escalation Contact Email'], name: p['Escalation Contact Name'] }
+    ].filter(c => c.email && c.email.includes('@'));
+
+    contactPairs.forEach(contact => {
+        try {
+            MailApp.sendEmail({ to: contact.email, subject, htmlBody: buildAllClearHtml(contact.name) });
+        } catch (e) { console.error("All Clear email failed: " + e.toString()); }
+    });
+    
+    // 4. Dual-Contact SMS
+    if (CONFIG.SMS_PROVIDER && CONFIG.SMS_PROVIDER !== 'none' && !CONFIG.SMS_PROVIDER.includes('%%')) {
+        const numbers = [
+            p['Emergency Contact Number'] || p['Emergency Contact Phone'],
+            p['Escalation Contact Number'] || p['Escalation Contact Phone']
+        ].map(n => _cleanPhone(n)).filter(n => n);
+        const allClearBody = `${subject}. Alert resolved.` + (stillMonitored ? ' Visit still being monitored.' : ''); // __43_ D2
+        numbers.forEach(num => { try { _sendSms_(num, allClearBody); } catch(e) { _logSmsResult_(num, allClearBody, e.toString(), true); } });
+    }
+
+
     return { status: "success" };
+}
+
+/** __43_: wait (no lock held) while the checker's ladder alerts for this worker are still going out. Never throws. */
+function _allClearWaitForLadder_(worker) {
+    let cache;
+    try { cache = CacheService.getScriptCache(); } catch (_) { return; }
+    const k = _sendingKey_(worker);
+    const t0 = Date.now();
+    let n = 0, still = false;
+    try {
+        while (cache.get(k) === '1' && n < Math.ceil(ALLCLEAR_WAIT_MS / 500) && Date.now() - t0 < ALLCLEAR_WAIT_MS) {
+            Utilities.sleep(500); n++;
+        }
+        still = cache.get(k) === '1';
+    } catch (_) {}
+    if (n > 0) _audit_('allclear:waited', worker, '', '', '', '', '', 'waited ' + (Date.now() - t0) +
+                       'ms for the ladder alerts to finish' + (still ? ' - still sending, All Clear sent anyway' : ''));
 }
 
 /**
@@ -4100,6 +4407,7 @@ function _audit_(source, worker, row, kBefore, kAfter, incoming, key, note) {
         }
         let n = String(note || '');
         if (_AUDIT_LOCKWAIT_MS !== null) n = (n ? n + ' | ' : '') + 'lockWait=' + _AUDIT_LOCKWAIT_MS + 'ms';
+        if (_AUDIT_CTX) n = (n ? n + ' | ' : '') + _AUDIT_CTX;   // __43_ (F86-7)
         n = (n ? n + ' | ' : '') + 'build=' + TEMPLATE_BUILD;   // __41_: shows which template wrote the row
         sh.appendRow([
             new Date().toISOString(), _auditExecId_(), String(source || ''), String(worker || ''),
@@ -4145,11 +4453,45 @@ function _ladderMemRead_(raw, dueIso) {
  */
 function _ladderMemInfo_(raw, dueIso) {
     const s = String(raw || '').trim();
-    if (!s) return { has: false, same: false, step: 0 };
+    if (!s) return { has: false, same: false, step: 0, claimMs: null, sent: true, resend: false };
     const parts = s.split('|');
     const same = parts.length >= 2 && parts[0] === dueIso;
     const n = same ? parseInt(parts[1], 10) : 0;
-    return { has: true, same: same, step: (n >= 1 && n <= 4) ? n : 0 };
+    // __43_: optional fields after the label - claim time (ISO), then 'RESEND' and/or 'SENT'. An entry with no claim
+    // time was written before __43_: treated as sent, never re-sent.
+    const cms = parts.length >= 4 ? new Date(parts[3]).getTime() : NaN;
+    const claimMs = isNaN(cms) ? null : cms;
+    const tags = parts.slice(4);
+    return { has: true, same: same, step: (n >= 1 && n <= 4) ? n : 0, claimMs: claimMs,
+             sent: claimMs === null || tags.indexOf('SENT') > -1, resend: tags.indexOf('RESEND') > -1 };
+}
+
+/** __43_: should this claimed step be re-sent? Only once, only 3+ minutes after an unconfirmed claim for this due time. */
+function _ladderResendDue_(mem, nowMs) {
+    return !!(mem && mem.same && mem.step >= 1 && !mem.sent && !mem.resend && mem.claimMs !== null &&
+              nowMs - mem.claimMs >= LADDER_RESEND_AFTER_MS);
+}
+
+/**
+ * __43_: mark a claim '|SENT' once its alerts have gone. Call with the script lock held. Writes only if the row still
+ * belongs to the worker and col AA still holds exactly the value this run claimed (the archive can move rows; a newer
+ * claim must not be marked by an older send).
+ */
+function _ladderMarkSent_(sheet, s) {
+    try {
+        if (!s || !s.claimVal || !s.rowNum) return false;
+        const w = String(sheet.getRange(s.rowNum, 3).getValue() || '');
+        const cur = String(sheet.getRange(s.rowNum, LADDER_MEM_COL).getValue() || '');
+        if (w !== String(s.worker) || cur !== s.claimVal) {
+            _audit_('ladder:mark-skipped', s.worker, s.rowNum, '', '', '', '', 'col AA changed since the claim ("' + cur + '") - not marked');
+            return false;
+        }
+        sheet.getRange(s.rowNum, LADDER_MEM_COL).setValue(cur + '|SENT');
+        return true;
+    } catch (e) {
+        _audit_('ladder:mark-FAILED', s && s.worker, s && s.rowNum, '', '', '', '', String(e).substring(0, 200));
+        return false;
+    }
 }
 
 /** __42_ (B1): standard ladder step shown in a legacy col K: 0 none, 1 15MIN ... 4 60MIN/EMERGENCY. */
@@ -4195,20 +4537,23 @@ function _readWidth_(sheet) {
  * claim is committed even if the alert sends run long. Never throws: a failed
  * claim is logged and the caller still sends (a duplicate beats a missed alert).
  */
-function _ladderMemClaim_(sheet, rowNum, dueDate, step, source, worker, labels) {
+function _ladderMemClaim_(sheet, rowNum, dueDate, step, source, worker, labels, isResend) {
     try {
         const d = (dueDate instanceof Date) ? dueDate : new Date(dueDate);
         if (isNaN(d.getTime())) throw new Error('unreadable due time');
         const hdr = sheet.getRange(1, LADDER_MEM_COL);
         if (!String(hdr.getValue() || '').trim()) hdr.setValue(LADDER_MEM_HEADER);
         const _lbl = (labels || LADDER_STEP_LABELS)[step - 1] || ('STEP ' + step);   // __42_: per ladder type
-        const val = d.toISOString() + '|' + step + '|' + _lbl;
+        // __43_: + claim time (and RESEND on a re-send); '|SENT' is appended once the alerts have gone.
+        const val = d.toISOString() + '|' + step + '|' + _lbl + '|' + new Date().toISOString() + (isResend ? '|RESEND' : '');
         sheet.getRange(rowNum, LADDER_MEM_COL).setValue(val);
         SpreadsheetApp.flush();
         _audit_(source + ':claim', worker, rowNum, '', '', '', '', 'col AA = ' + val);
+        return val;
     } catch (e) {
         _audit_(source + ':claim-FAILED', worker, rowNum, '', '', '', '',
                 String(e).substring(0, 200) + ' - alert still sent');
+        return '';
     }
 }
 
@@ -4252,7 +4597,7 @@ function onEdit(e) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__42_';
+const TEMPLATE_BUILD = 'backend__43_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
