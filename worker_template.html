@@ -637,7 +637,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
  <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety On-The-Go!</span>
- <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__17_</span>
+ <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__18_</span>
  </h1>
  </div>
  <div class="flex items-center">
@@ -1071,7 +1071,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
  <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
- <div id="appBuild" class="text-xs font-mono text-gray-400">worker__17_</div>
+ <div id="appBuild" class="text-xs font-mono text-gray-400">worker__18_</div>
  </div>
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">Backend Version</div>
@@ -1526,6 +1526,14 @@ const RISK_WELFARE_MAP = {
 //  X6 extending during an alarm goes through the alarm PIN prompt (alarm cleared, duress PIN honoured)
 //  X7 an app update never reloads the page in the middle of a visit
 //
+// __18_ changes (session 86, from __17_):
+//  Y6 the photo store is emptied after EVERY submit (a mid-visit form used to leave its photo behind, so it rode along
+//     on the end-of-trip report) and whenever any form is opened (a form abandoned part-way no longer leaks its photo)
+//  Y7 Note to Self posts now carry 'Worker Email' (buildPayload never sent it, so the backend had no address to
+//     email the note to and skipped the email without saying so)
+//  Y8 the Note to Self form shows a red warning when Settings has no usable email address
+//  Y9 diag log lines carry the date (dd/mm); the diagnostics report dates every outbox line, lists failed outbox
+//     events with their reason, and its footer says site names are included
 // __17_ changes (session 85, from __16_):
 //  Y5 Settings > Event Outbox: "Copy report" and "Share" buttons build one plain-text diagnostics report (build,
 //     backend, visit state, distance details, outbox counts and recent events, the diag log) for pasting into an email.
@@ -1540,7 +1548,7 @@ const RISK_WELFARE_MAP = {
 //  Y4 timings of every Depart / distance step go to the F74-3 diag log; the report data records _distLookup and
 //     _distSpeedIntervals (credited/still/capped)
 // =============================================================================
-const WORKER_BUILD = 'worker__17_';
+const WORKER_BUILD = 'worker__18_';
 
 const CONFIG = {
  url: '',
@@ -1879,7 +1887,8 @@ function _diag(label, withStack) {
  try {
   const t = new Date();
   const hms = t.toLocaleTimeString('en-NZ', { hour12: false }) + '.' + String(t.getMilliseconds()).padStart(3, '0');
-  let line = hms + ' ' + label;
+  const dm = String(t.getDate()).padStart(2, '0') + '/' + String(t.getMonth() + 1).padStart(2, '0'); // Y9 (build __18_)
+  let line = dm + ' ' + hms + ' ' + label;
   if (withStack) {
    const st = (new Error().stack || '').split('\n').slice(2, 6)
     .map(s => s.trim().replace(/^at\s+/, '').replace(/\(?https?:\/\/[^\s)]*\/([^\/\s)]*)\)?/, '$1')).join(' < ');
@@ -2152,6 +2161,27 @@ async function refreshBatteryLevel() {
 }
 
 /**
+ * Y8 (build __18_): can a Note to Self be emailed? The backend emails the note to 'Worker Email' only (never to
+ * the sheet), and skips the email silently when the address is blank or has no '@'. Without an address the note
+ * is simply lost, so the form warns before the worker types it.
+ */
+function _noteEmailOk() {
+ try { return String((state && state.worker && state.worker.email) || '').trim().includes('@'); } catch (_) { return false; }
+}
+function _noteEmailWarn(container) {
+ try {
+  if (!container || _noteEmailOk()) return;
+  const w = document.createElement('div');
+  w.id = 'noteNoEmailWarn';
+  w.setAttribute('role', 'alert');
+  w.className = 'bg-red-900/40 border border-red-500 text-red-200 text-sm font-bold rounded-xl p-3 mb-3';
+  w.textContent = '⚠️ No email address is set in Settings. This note cannot be sent to you and will be lost. Add your email in Settings first.';
+  container.insertBefore(w, container.firstChild);
+  showToast('⚠️ No email set - this note will not reach you');
+ } catch (_) { /* a warning must never stop the form opening */ }
+}
+
+/**
  * MISSION-CRITICAL: High-Integrity Report Submission
  * Includes action routing for notes, vehicle nag clearing, canvas cleanup,
  * site emergency procedures integration, and correct media/signature transmission.
@@ -2226,6 +2256,8 @@ function submitReport() {
  } else if (currentActiveTemplate === "Note to Self") {
  backendAction = 'logNote';
  alarmStatus = "NOTE_LOGGED";
+ // Y7 (build __18_): the backend emails the note to 'Worker Email'; buildPayload does not send it.
+ fd['Worker Email'] = String((state.worker && state.worker.email) || '').trim();
  } else if (isPreVisitForm) {
  if (state.activeVisit) {
  // STALE FLAG: visit already active — pre-visit form was never properly
@@ -2269,6 +2301,11 @@ function submitReport() {
  "Alarm Status": alarmStatus,
  "Notes": d.notes || ""
  }));
+ // Y6 (build __18_): the photos are now inside the queued payload. Empty the store after EVERY submit - before,
+ // only a final submit or a pre-visit form emptied it, so a photo attached to a mid-visit form stayed behind and
+ // rode along on the end-of-trip report (written to the trip row, and probably emailed to its recipient).
+ state.photoStore = {};
+ if (typeof saveState === 'function') { try { saveState(); } catch (_) {} }
 
  // PRE-VISIT FORM RESUME: form data is queued — now actually start the visit
  if (isPreVisitForm) {
@@ -3409,6 +3446,9 @@ function buildReportForm(templateName, fieldArea) {
  */
 function loadFormAndShow(templateName, context = null) {
  _diag('loadFormAndShow(' + templateName + ')', true);
+ // Y6 (build __18_): a form always opens empty, so nothing attached earlier belongs to it (covers a form that was
+ // abandoned before submit).
+ state.photoStore = {};
  if (typeof dimTimer !== 'undefined') clearTimeout(dimTimer);
  deactivateBatterySaver();
 
@@ -3458,6 +3498,7 @@ function loadFormAndShow(templateName, context = null) {
  const fieldsContainer = document.getElementById('reportFields');
  if (fieldsContainer) {
  buildReportForm(templateName, fieldsContainer);
+ if (templateName === 'Note to Self') _noteEmailWarn(fieldsContainer); // Y8 (build __18_)
     // Inject pre-filled Start Point / Destination fields at top of travel report.
     if (templateName === 'Travel Report') {
       _injectTripEndpointFields(fieldsContainer);
@@ -7309,9 +7350,17 @@ async function _buildDiagReport() {
   });
   const cnt = s => all.filter(r => r.status === s).length;
   add('Pending / sent / failed', cnt('pending') + ' / ' + cnt('sent') + ' / ' + cnt('failed'));
+  // Y9 (build __18_): dd/mm hh:mm:ss, and failed events listed with their reason (the count alone hid them).
+  const nzShort = (t) => { try { return new Date(t).toLocaleString('en-NZ', { hour12: false, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }); } catch (_) { return '?'; } };
+  const failedRows = all.filter(r => r.status === 'failed').sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 10);
+  if (failedRows.length) {
+   L.push('Failed events (newest first):');
+   failedRows.forEach(r => L.push('  ' + (r.createdAt ? nzShort(r.createdAt) : '?') + '  ' + ((r.payload && r.payload['Alarm Status']) || 'LOG') +
+     (r.attempts > 0 ? '  x' + r.attempts : '') + ' - ' + String(r.lastError || 'no reason recorded').slice(0, 120)));
+  }
   const recent = [...all].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 15);
   recent.forEach(r => {
-   const t = r.createdAt ? new Date(r.createdAt).toLocaleTimeString('en-NZ', { hour12: false }) : '?';
+   const t = r.createdAt ? nzShort(r.createdAt) : '?';
    const st = (r.payload && r.payload['Alarm Status']) || 'LOG';
    const err = (r.status !== 'sent' && r.lastError) ? ' - ' + String(r.lastError).slice(0, 80) : '';
    L.push(t + '  ' + r.status + '  ' + st + (r.attempts > 0 ? '  x' + r.attempts : '') + err);
@@ -7326,7 +7375,7 @@ async function _buildDiagReport() {
   if (arr.length) arr.forEach(x => L.push(x)); else L.push('(empty)');
  } catch (_) { L.push('(unavailable)'); }
 
- L.push('', 'End of report. Contains no PINs, keys or contact details.');
+ L.push('', 'End of report. Contains no PINs, keys or contact details. It does include your name and site names - check it before sharing it outside the project.');
  return L.join('\n');
 }
 
