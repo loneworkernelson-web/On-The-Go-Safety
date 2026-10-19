@@ -63,7 +63,7 @@
         }
         .key-rule h3 { color: #92400e; margin-top: 0; }
         .key-rule p { color: #78350f; }
-
+ 
         .warning-box {
             background: #fff5f5;
             border: 1px solid #fecaca;
@@ -113,7 +113,7 @@
         }
         .step-card-body { flex: 1; }
         .step-card-body h4 { margin: 0 0 8px; color: #111827; font-size: 1em; text-transform: none; letter-spacing: normal; }
-
+ 
         .trigger-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
         @media (max-width: 620px) { .trigger-grid { grid-template-columns: 1fr; } }
         .trigger-card {
@@ -144,7 +144,7 @@
         .badge-required { background: #1e3a8a; color: #93c5fd; }
         .badge-recommended { background: #064e3b; color: #6ee7b7; }
         .badge-optional { background: #374151; color: #d1d5db; }
-
+ 
         /* ── File tree ── */
         .file-tree {
             background: #0f172a;
@@ -160,7 +160,7 @@
         .file-tree .repo  { color: #86efac; }
         .file-tree .org   { color: #fde68a; }
         .file-tree .note  { color: #475569; font-family: 'Segoe UI', sans-serif; margin-left: 12px; }
-
+ 
         /* ── Mock-up Factory UI ── */
         .mock-factory {
             background: #0f172a;
@@ -189,7 +189,7 @@
         }
         .mock-tab.active { color: #60a5fa; border-color: #3b82f6; background: #1f2937; }
         .mock-factory-body { padding: 20px; }
-
+ 
         /* ── Mock Monitor Dashboard ── */
         .mock-monitor {
             background: #0f172a;
@@ -228,7 +228,7 @@
         .ms-overdue { background:#92400e; color:#fde68a; }
         .ms-sos     { background:#991b1b; color:#fca5a5; }
         .ms-duress  { background:#6b21a8; color:#d8b4fe; }
-
+ 
         /* ── Code snippet box ── */
         .code-box {
             background: #0f172a;
@@ -244,13 +244,13 @@
             line-height: 1.6;
             overflow-x: auto;
         }
-
+ 
         /* ── Tables ── */
         table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
         th { background: #eff6ff; color: var(--primary); text-align: left; padding: 12px; border: 1px solid #dbeafe; font-weight: 800; }
         td { padding: 12px; border: 1px solid #e5e7eb; color: #374151; vertical-align: top; }
         tr:nth-child(even) td { background: #f9fafb; }
-
+ 
         hr { border: 0; border-top: 3px solid #e5e7eb; margin: 60px 0; }
         .toc { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px 28px; margin: 32px 0; }
         .toc h3 { margin-top: 0; }
@@ -263,14 +263,14 @@
 </head>
 <body>
 <div class="outer">
-
+ 
     <h1>Operations Manual</h1>
     <p class="doc-meta">
         <strong>System:</strong> %%ORG_NAME%% — OTG Lone Worker Safety System &nbsp;|&nbsp;
         <strong>Architecture:</strong> Config Model &nbsp;|&nbsp;
         <strong>Version:</strong> v87.0
     </p>
-
+ 
     <div class="toc">
         <h3>Contents</h3>
         <ol>
@@ -283,10 +283,10 @@
             <li><a href="#troubleshoot">Troubleshooting</a></li>
         </ol>
     </div>
-
+ 
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2 id="security">Part 1: Security Keys — The Golden Rule</h2>
-
+ 
     <div class="key-rule">
         <h3>🔐 Save Your Keys — Right Now</h3>
         <p>Your system uses two secret keys generated in <strong>Factory Step 1</strong>. These must be saved somewhere secure (e.g. a password manager) <em>before</em> you proceed with deployment.</p>
@@ -299,18 +299,18 @@
         </table>
         <p style="margin-top:16px;color:#92400e;"><strong>⚠️ If you deploy with different keys later:</strong> Every device will lose its connection and require a full reinstall. If you use the same keys in future config updates, devices update seamlessly in the background. There is no penalty for keeping the same keys indefinitely.</p>
     </div>
-
+ 
     <div class="info-box">
         <strong>Where to find your keys:</strong> Open the OTG Factory app (<code>index.html</code>) — your keys are shown in <strong>Step 1 → Security Connection Keys</strong>. The Factory remembers them between sessions using your browser's local storage. They are not re-printed in this document for security reasons.
     </div>
-
+ 
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2 id="deployment">Part 2: Initial Deployment — 5 Steps</h2>
-
+ 
     <div class="info-box">
         <strong>Config Model architecture:</strong> The OTG worker app is a <em>single canonical codebase</em> shared by all organisations. You do not build or customise the app itself — you produce a small <code>config.json</code> file that the app reads at runtime. The only files unique to your organisation are <code>config.json</code> and <code>icon.png</code>.
     </div>
-
+ 
     <div class="mock-factory">
         <div class="mock-factory-tabs">
             <div class="mock-tab active">1. Config</div>
@@ -340,7 +340,7 @@
             </div>
         </div>
     </div>
-
+ 
     <!-- Step 1 -->
     <div class="step-card">
         <div class="step-num">1</div>
@@ -360,7 +360,7 @@
             </div>
         </div>
     </div>
-
+ 
     <!-- Step 2 -->
     <div class="step-card">
         <div class="step-num">2</div>
@@ -374,14 +374,14 @@
             </div>
         </div>
     </div>
-
+ 
     <!-- Step 3 -->
     <div class="step-card">
         <div class="step-num">3</div>
         <div class="step-card-body">
             <h4>Install the Backend (Factory Step 3)</h4>
             <p>The backend is a Google Apps Script that handles all safety logic — overdue detection, email alerts, SMS, AI report processing, and data archiving.</p>
-
+ 
             <h4 style="margin-top:16px;">A. Paste the Code</h4>
             <ol>
                 <li>In the Factory, click <strong>"📋 Copy System Code"</strong>.</li>
@@ -389,7 +389,7 @@
                 <li>Delete all existing code in the editor.</li>
                 <li>Paste and click <strong>Save</strong> (disk icon).</li>
             </ol>
-
+ 
             <h4 style="margin-top:16px;">B. Grant OAuth Permissions (appsscript.json)</h4>
             <p>Google Apps Script does not automatically grant mail-sending scope. You must explicitly declare the required OAuth scopes by pasting the generated <code>appsscript.json</code> into your project settings.</p>
             <ol>
@@ -402,12 +402,18 @@
                 <li>Deploy or re-deploy the Web App. When prompted for authorisation, click <strong>Review Permissions</strong> → choose your Google account → <strong>Allow</strong>.</li>
             </ol>
             <div class="info-box" style="margin-top:12px;">
-                <strong>What this unlocks:</strong> The Factory-generated <code>appsscript.json</code> declares all required scopes: Sheets, Drive, MailApp, Gmail, external requests, script management, and user identity. Without the mail scopes, <code>MailApp.sendEmail</code> will fail with a permissions error even though your script appears to run normally.
+                <strong>What this unlocks:</strong> The Factory-generated <code>appsscript.json</code> declares all required scopes: Sheets, Drive, MailApp, Gmail (send, and full mailbox access for the Privacy Shredder), external requests, script management, and user identity. Without the mail scopes, <code>MailApp.sendEmail</code> will fail with a permissions error even though your script appears to run normally.
+            </div>
+            <div class="warning-box" style="margin-top:12px;">
+                <strong>Use a dedicated Google account.</strong> The Privacy Shredder (<code>cleanupPrivateSentNotes</code>) searches the account's Sent mail and moves private note emails to the trash. Google only allows that with the full Gmail scope <code>https://mail.google.com/</code>, and its consent screen words it as "read, compose, send and permanently delete all your email". The script only touches threads whose subject is <em>[PRIVATE] Note to Self</em>, but the permission itself is broad. Run the system on a Google account that is used for nothing else, so the permission can only ever reach system mail. Do not install it on a personal or day-to-day work account.
+            </div>
+            <div class="info-box" style="margin-top:12px;">
+                <strong>Existing installation? Add the scope by hand.</strong> Installations set up before this scope was added will show "Private note sweep" as failing in the daily Health email, with a permissions error in the Executions log. Fix: open <code>appsscript.json</code>, add <code>"https://mail.google.com/"</code> to the <code>oauthScopes</code> list (or paste the new manifest from the Factory), save, run <code>cleanupPrivateSentNotes</code> once from the editor and click <strong>Review Permissions → Allow</strong>. If the hourly trigger still fails afterwards, delete it and add it again.
             </div>
             <div class="warning-box" style="margin-top:12px;">
                 <strong>Re-authorisation required after scope changes:</strong> Any time you paste a new version of <code>Code.gs</code> or <code>appsscript.json</code> that adds a scope not previously granted, the script will throw a permissions error on the next run. The fix is the same — paste the new <code>appsscript.json</code> and re-authorise when prompted after deploying.
             </div>
-
+ 
             <h4 style="margin-top:16px;">C. Deploy as a Web App</h4>
             <ol>
                 <li>Click <strong>Deploy</strong> (blue button) → <strong>New Deployment</strong>.</li>
@@ -417,10 +423,10 @@
                 <li>Click <strong>Deploy</strong>. Accept the permissions prompt.</li>
                 <li><strong>Copy the Web App URL</strong> — you'll need it in Step 3 of the Factory.</li>
             </ol>
-
+ 
             <h4 style="margin-top:16px;">D. Set Up Triggers (Automated Tasks)</h4>
             <p>Triggers are the automation engine — without them, overdue detection and alerting will not work. Set up all five:</p>
-
+ 
             <div class="trigger-grid">
                 <div class="trigger-card">
                     <h5>A. Safety Watchdog <span class="trigger-badge badge-required">Required</span></h5>
@@ -432,7 +438,7 @@
                     <h5>B. Privacy Shredder <span class="trigger-badge badge-required">Required</span></h5>
                     <div class="fn">cleanupPrivateSentNotes</div>
                     <div class="schedule">⏱ Time-driven · Every hour</div>
-                    <p style="font-size:11px;color:#94a3b8;margin-top:8px;margin-bottom:0;">Removes raw personal notes from processed visit records after AI has processed them.</p>
+                    <p style="font-size:11px;color:#94a3b8;margin-top:8px;margin-bottom:0;">Moves private "Note to Self" emails out of the Sent folder to the trash. Needs the full Gmail scope (see Step 3B).</p>
                 </div>
                 <div class="trigger-card">
                     <h5>C. Daily Health Report <span class="trigger-badge badge-recommended">Recommended</span></h5>
@@ -453,16 +459,16 @@
                     <p style="font-size:11px;color:#94a3b8;margin-top:8px;margin-bottom:0;">Emails a brief weekly digest — total visits, distance travelled, and safety alerts fired in the past 7 days. Useful for management reporting without opening the spreadsheet.</p>
                 </div>
             </div>
-
+ 
             <div class="info-box">
                 <strong>How to add triggers:</strong> In the Apps Script editor, click the <strong>Alarm Clock icon</strong> in the left sidebar → <strong>+ Add Trigger</strong> (bottom right). Set the function name, source (Time-driven), and interval as shown above for each trigger.
             </div>
-
+ 
             <h4 style="margin-top:16px;">E. Paste the Web App URL Back into the Factory</h4>
             <p>Return to the Factory, go to <strong>Step 3</strong>, paste your Web App URL into the URL field, then click <strong>"📡 Test System Connection"</strong>. A green "System Link Established" response confirms everything is working before you proceed.</p>
         </div>
     </div>
-
+ 
     <!-- Step 4 -->
     <div class="step-card">
         <div class="step-num">4</div>
@@ -487,13 +493,13 @@
             </div>
         </div>
     </div>
-
+ 
     <!-- Step 5 -->
     <div class="step-card">
         <div class="step-num">5</div>
         <div class="step-card-body">
             <h4>Deploy the Worker App (Factory Step 5)</h4>
-
+ 
             <h4 style="margin-top:16px;">A. Assemble Your Deployment Folder</h4>
             <p>Extract the Worker App Pack ZIP downloaded in Step 4. Rename <code>worker_template.html</code> to <code>index.html</code>. Your deployment folder should look like this — all files at the same level, no subfolders:</p>
             <div class="file-tree">
@@ -504,23 +510,23 @@
 ├── <span class="org">config.json</span>        <span class="note">← your org config (from Worker App Pack) ✦</span>
 ├── <span class="org">icon.png</span>           <span class="note">← your logo (from Worker App Pack, if uploaded) ✦</span>
 └── <span class="repo">worker_guide.html</span>  <span class="note">← worker guide (from Worker App Pack) ◆</span>
-
+ 
 <span class="note">✦ org-specific — regenerated when you update your config</span>
 <span class="note">◆ optional but recommended — linked automatically in the app's Resource Library</span></div>
             <div class="info-box" style="margin-top:12px;">
                 <strong>No repository files needed.</strong> Every file in the deployment folder comes from the Factory-generated ZIP. If you did not upload a logo, add a 512×512 PNG named <code>icon.png</code> manually for the best PWA install experience.
             </div>
-
+ 
             <h4 style="margin-top:16px;">B. Upload to a Static Host</h4>
             <p>Drag your folder to <strong>Netlify Drop</strong> (<a href="https://app.netlify.com/drop" style="color:var(--accent);">app.netlify.com/drop</a>) or push to a GitHub Pages branch.</p>
-
+ 
             <div class="warning-box" style="margin-top:12px;">
                 <strong>Important — Netlify:</strong> After the initial upload, click <strong>"Sign up to claim site"</strong> so the URL doesn't expire after 24 hours. For future config updates, drag the new folder onto your existing Netlify site dashboard (not the Drop page) to update it in place without changing the URL.
             </div>
-
+ 
             <h4 style="margin-top:16px;">C. Test Offline Before Launch</h4>
             <p>Install the PWA on a test device, load it once on Wi-Fi, then switch to Airplane Mode and reopen. Confirm it loads fully with correct branding. This verifies the offline-first safety guarantee.</p>
-
+ 
             <h4 style="margin-top:16px;">D. Generate Your Onboarding Pack</h4>
             <p>Back in the Factory, go to <strong>Step 5 → Staff Onboarding Pack</strong>. Paste your deployed URL to generate:</p>
             <ul>
@@ -529,12 +535,12 @@
             </ul>
         </div>
     </div>
-
+ 
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2 id="monitor">Part 3: Monitor Dashboard</h2>
-
+ 
     <p>The Monitor is a self-contained HTML file (downloaded in Step 4). Open it in any modern browser — it does not require hosting or internet access to load, though it needs connectivity to poll for live data.</p>
-
+ 
     <h3>Unlocking the Monitor</h3>
     <ol>
         <li>Open the <code>{org}_monitor.html</code> file in Chrome, Edge, or Firefox.</li>
@@ -544,7 +550,7 @@
     <div class="info-box">
         <strong>Audio re-arming:</strong> If audio stops working (e.g. after a browser tab suspension), use the <strong>🔇 / 🔊</strong> toggle button in the monitor header to re-arm it manually. The button is always available — clicking it again from within a user gesture satisfies the browser's autoplay policy.
     </div>
-
+ 
     <div class="mock-monitor">
         <div class="mock-monitor-header">
             <div style="color:white;font-weight:800;font-size:13px;">%%ORG_NAME%% — Live Monitor</div>
@@ -589,7 +595,7 @@
         </div>
     </div>
     <p style="text-align:center;font-size:12px;color:#9ca3af;font-style:italic;margin-top:-12px;margin-bottom:20px;">Monitor Dashboard — live worker status cards</p>
-
+ 
     <h3>Status Colours</h3>
     <table>
         <thead><tr><th>Colour</th><th>Status</th><th>Required Action</th></tr></thead>
@@ -600,11 +606,11 @@
             <tr><td style="background:#f3e8ff;font-weight:700;">🟣 Purple</td><td>Duress alarm (worker entered duress PIN)</td><td>Follow emergency response protocol without contacting worker directly</td></tr>
         </tbody>
     </table>
-
+ 
     <div class="warning-box">
         <strong>⚠️ Duress protocol:</strong> A Duress alarm means the worker may be under coercion. Do not call the worker directly — this could put them in greater danger. Contact emergency services and follow your organisation's incident protocol.
     </div>
-
+ 
     <h3>Worker Card Details</h3>
     <p>Each worker card on the dashboard shows additional contextual information beyond basic status:</p>
     <table>
@@ -614,10 +620,10 @@
             <tr><td><strong>ICE Panel</strong> (Emergency &amp; Escalation contacts)</td><td>Only when the worker is in an alarm state (SOS, PANIC, DURESS, OVERDUE ALARM, or EMERGENCY)</td><td>Shows contact names and phone numbers as tappable call links — so the supervisor can call the nominated contact directly from the dashboard during an incident. Escalation contact is only shown if one has been configured by the worker.</td></tr>
         </tbody>
     </table>
-
+ 
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2 id="admin">Part 4: Daily Administration</h2>
-
+ 
     <h3>Staff Tab</h3>
     <p>Manage your staff list in the <code>Staff</code> tab of your Google Sheet. The <strong>Name</strong> field must match exactly what workers enter in the app setup wizard (case-sensitive). Key fields:</p>
     <table>
@@ -634,16 +640,16 @@
             <tr><td><code>I — EscNtfy</code></td><td>Escalation contact ntfy topic — same as above for the escalation contact.</td></tr>
         </tbody>
     </table>
-
+ 
     <h3>Re-Registering a Worker on a New Device</h3>
     <p>Each worker's app installation is bound to a specific device. When a worker first completes the setup wizard, the backend writes a unique device ID to <strong>column E</strong> of their row in the Staff tab. This prevents their account from being claimed by a different device without administrator approval.</p>
     <p>If a worker gets a new phone, reinstalls the app, or needs to register from a different device, the existing binding must be cleared first. The worker will see the message <em>"This worker is already registered on another device. Ask your administrator to clear the existing registration."</em> if they attempt to register without this step being completed.</p>
-
+ 
     <div class="warning-box">
         <h3>⚠️ Confirm Identity Before Clearing</h3>
         <p>Clearing column E allows <em>any</em> device to claim that worker's identity. Confirm directly with the worker — in person or by phone — that it is genuinely them requesting the re-registration, before proceeding.</p>
     </div>
-
+ 
     <p><strong>To re-bind a worker to a new device:</strong></p>
     <ol>
         <li>Open your Google Sheet and go to the <strong>Staff</strong> tab.</li>
@@ -652,14 +658,14 @@
         <li><strong>Delete the cell contents</strong> and press Enter. Leave the cell empty — do not replace the value with anything.</li>
         <li>Tell the worker they can now open the app and complete the setup wizard again on their new device. The new device ID will be written to column E automatically on successful registration.</li>
     </ol>
-
+ 
     <div class="info-box">
         <strong>No redeploy needed.</strong> Clearing column E takes effect immediately — the backend checks the cell value live on each registration attempt. You do not need to redeploy the Apps Script or regenerate <code>config.json</code>.
     </div>
-
+ 
     <h3>Sites Tab</h3>
     <p>Pre-load approved locations into the <code>Sites</code> tab. Workers see these as tiles in their location list after tapping Sync. Assign a template to a site in the <strong>Template Name</strong> column to automatically prompt workers with a form on departure.</p>
-
+ 
     <h3>Building Report Templates (Templates Tab)</h3>
     <p>The <code>Templates</code> tab defines the report forms workers complete at the end of visits. Use this syntax in the question columns:</p>
     <table>
@@ -676,16 +682,16 @@
             <tr><td><code>[SIGN] Label</code></td><td>Signature capture</td><td>Client sign-off</td></tr>
         </tbody>
     </table>
-
+ 
     <h3>Access Reports</h3>
     <p>In your Google Sheet, use the <strong>"🛡️ OTG Admin"</strong> menu for administrative actions including running the health report manually, triggering data archiving, or sending the weekly summary on-demand.</p>
-
+ 
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2 id="updates">Part 5: Updates &amp; Configuration Changes</h2>
-
+ 
     <h3>Performing a Config-Only Update (Recommended)</h3>
     <p>Under the Config Model, most changes — branding, intervals, feature toggles — only require replacing <code>config.json</code>. The worker app detects the updated version field and refreshes automatically.</p>
-
+ 
     <div class="step-card">
         <div class="step-num">1</div>
         <div class="step-card-body">
@@ -718,7 +724,7 @@
             <p>If you also changed backend settings (API keys, escalation logic), you need to re-copy the Code.gs and deploy a new version in Apps Script. See the "New Version Trap" warning below.</p>
         </div>
     </div>
-
+ 
     <div class="warning-box">
         <h3>⚠️ The "New Version" Trap — Apps Script</h3>
         <p>When you edit code in Google Apps Script, clicking <strong>Save</strong> does <em>not</em> update the live system. For any change to take effect:</p>
@@ -730,7 +736,7 @@
             <li>Click <strong>Deploy</strong>.</li>
         </ol>
     </div>
-
+ 
     <div class="warning-box">
         <h3>⚠️ Re-Authorisation After Scope Changes</h3>
         <p>If you deploy updated backend code that adds new OAuth scopes (or paste a new <code>appsscript.json</code>), the script will throw a permissions error on its next run until re-authorised. To re-authorise:</p>
@@ -741,7 +747,7 @@
         </ol>
         <p>You will only see the permissions prompt if a new scope has been added. If the prompt does not appear, the existing authorisation already covers all declared scopes.</p>
     </div>
-
+ 
     <h3>Modifying the Backend Logic (Advanced)</h3>
     <p>You can edit <code>Code.gs</code> directly to change system behaviour — email formatting, AI prompts, alert thresholds, etc.</p>
     <ul>
@@ -750,17 +756,17 @@
         <li>Test with the <strong>Run</strong> button before deploying</li>
         <li>Always follow the "New Version" deployment steps after saving changes</li>
     </ul>
-
+ 
     <h4>Example: Customising the AI Report Prompt</h4>
     <div class="code-box">// Inside the 'smartScribe' function — replace the prompt variable:
 const prompt = `Read these notes: "${safeNotes}".
 1. Correct grammar and spelling.
 2. If the worker describes a hazard, begin the note with "[HAZARD IDENTIFIED]".
 3. Return corrected text only.`;</div>
-
+ 
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2 id="features">Part 6: Advanced Features</h2>
-
+ 
     <h3>ntfy Push Notifications</h3>
     <p><a href="https://ntfy.sh" style="color:var(--accent);">ntfy</a> is a free, open-source push notification service that delivers instant alerts directly to contacts' phones the moment an alarm fires — no email delay, no polling required.</p>
     <ul>
@@ -781,17 +787,17 @@ const prompt = `Read these notes: "${safeNotes}".
         </ul>
         Panic and Duress alarms, and Critical Timing overdue alarms, are not affected — they fire ntfy from the immediate-response path rather than the time-based trigger.
     </div>
-
+ 
     <h3>SMS Text Alerts</h3>
     <p>The system can send an SMS text message to emergency and escalation contacts the instant an alarm fires, in addition to email and ntfy push. SMS is a useful backup channel — particularly for contacts who haven't installed ntfy, or when email delivery is delayed. Credits are consumed per message sent.</p>
     <p>The SMS provider is selected per-deployment in <strong>Factory Step 1</strong> based on your region. The correct provider and credential fields are shown automatically when you select your country.</p>
-
+ 
 %%SMS_PROVIDER_SETUP%%
-
+ 
     <div class="info-box">
         <strong>SMS is optional.</strong> If no provider is configured (SMS_PROVIDER = none), email and ntfy remain the primary notification channels. SMS is recommended for deployments where contacts are unlikely to have ntfy installed, or where GSM coverage is more reliable than data.
     </div>
-
+ 
     <h3>Healthchecks.io Dead-Man's Switch</h3>
     <p>The backend's escalation engine runs every ~15 minutes via a trigger. If that trigger silently stops firing (a known Google Apps Script limitation), workers could reach overdue status without any alarm. Healthchecks.io catches this.</p>
     <ul>
@@ -803,7 +809,7 @@ const prompt = `Read these notes: "${safeNotes}".
     <div class="success-box">
         <strong>Strongly recommended</strong> for any organisation where worker safety is critical. The free tier supports up to 20 checks.
     </div>
-
+ 
     <h3>Daily Health Report Email</h3>
     <p>When the <strong>sendHealthEmail</strong> trigger is configured (Trigger C), the system emails a daily summary each morning containing:</p>
     <ul>
@@ -813,21 +819,21 @@ const prompt = `Read these notes: "${safeNotes}".
         <li>Workers with an open visit older than 24 hours (stale records)</li>
     </ul>
     <p>Configure the recipient in Factory Step 1 (<strong>System Health Report Email</strong>). If left blank, the report goes to the Google account that owns the Apps Script. You can also trigger it manually at any time via <strong>OTG Admin → Send Health Email Now</strong> in the spreadsheet.</p>
-
+ 
     <h3>AI Privacy Redaction</h3>
     <p>When enabled in Factory Step 1, the AI report processor automatically removes worker names and other identifying information from visit notes before sending them to the Gemini AI API. This is a data minimisation practice and is <strong>strongly recommended</strong> when using any external AI service to process staff records.</p>
     <p>You can toggle this on or off per deployment via the <strong>AI Privacy Redaction</strong> checkbox in Factory Step 1 → Safety &amp; Fleet Options.</p>
-
+ 
     <h3>System Diagnostics</h3>
     <p>The <strong>Run System Diagnostics</strong> function is a comprehensive health check that tests every integration and configuration item in your deployment. Run it after initial setup to confirm everything is working, after any configuration change, or whenever you suspect a problem with alerts not reaching contacts.</p>
-
+ 
     <h4>How to run it</h4>
     <p>Open your Google Sheet and go to <strong>🛡️ OTG Admin → Run System Diagnostics</strong>. The function runs immediately and does two things simultaneously: it logs results to the Apps Script execution log (visible in the Apps Script editor under <strong>View → Logs</strong>), and it emails a formatted HTML report to your configured health email address.</p>
-
+ 
     <div class="info-box">
         <strong>Safe to run at any time.</strong> The diagnostic does not send any real alerts to workers' emergency contacts, does not consume SMS credits, and does not affect any visit data. The ntfy test posts to a private diagnostics topic, not to your contacts' topics.
     </div>
-
+ 
     <h4>What it checks</h4>
     <table>
         <thead><tr><th>Check</th><th>What it tests</th><th>Notes</th></tr></thead>
@@ -889,7 +895,7 @@ const prompt = `Read these notes: "${safeNotes}".
             </tr>
         </tbody>
     </table>
-
+ 
     <h4>Understanding the status icons</h4>
     <table>
         <thead><tr><th>Icon</th><th>Status</th><th>Meaning</th></tr></thead>
@@ -900,14 +906,14 @@ const prompt = `Read these notes: "${safeNotes}".
             <tr><td>⏭️</td><td><strong>SKIP</strong></td><td>This integration is not configured. This is not an error — it simply means that optional feature is not in use for this deployment.</td></tr>
         </tbody>
     </table>
-
+ 
     <div class="success-box">
         <strong>Recommended practice:</strong> Run diagnostics after every deployment, after any Factory configuration change, and at least monthly as a routine check. If Healthchecks.io sends you a dead-man's switch alert, run diagnostics immediately — the trigger check will tell you whether the escalation engine has stopped running.
     </div>
-
+ 
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2 id="troubleshoot">Part 7: Troubleshooting</h2>
-
+ 
     <table>
         <thead>
             <tr><th>Symptom</th><th>Likely Cause</th><th>Fix</th></tr>
@@ -999,18 +1005,19 @@ const prompt = `Read these notes: "${safeNotes}".
             </tr>
         </tbody>
     </table>
-
+ 
     <hr>
-
+ 
     <div class="info-box">
         <strong>Need help?</strong> Check the OTG GitHub repository for the latest documentation, release notes, and known issues. When reporting an issue, include your backend version (visible in the backend Code.gs header), the Factory version, and the exact error message or behaviour observed.
     </div>
-
+ 
     <footer>
         <p><strong>%%ORG_NAME%%</strong> — OTG Lone Worker Safety System Operations Manual</p>
         <p>For support, contact your system administrator or refer to the OTG repository documentation.</p>
     </footer>
-
+ 
 </div>
 </body>
 </html>
+ 
