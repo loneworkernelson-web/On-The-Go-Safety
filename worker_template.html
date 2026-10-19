@@ -637,7 +637,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
  <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety On-The-Go!</span>
- <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__15_</span>
+ <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__17_</span>
  </h1>
  </div>
  <div class="flex items-center">
@@ -1071,7 +1071,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
  <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
- <div id="appBuild" class="text-xs font-mono text-gray-400">worker__15_</div>
+ <div id="appBuild" class="text-xs font-mono text-gray-400">worker__17_</div>
  </div>
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">Backend Version</div>
@@ -1116,6 +1116,12 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="mb-3">
  <div class="text-xs font-bold text-amber-400 mb-1">F74-3 DIAG LOG</div>
  <pre id="diagLogBox" class="text-amber-300 bg-gray-900/50 rounded-lg p-2 max-h-48 overflow-auto whitespace-pre-wrap break-all" style="font-size:10px;line-height:1.3;">(empty)</pre>
+ <div class="mt-1 flex gap-1">
+ <button id="btnDiagCopy" onclick="copyDiagReport()"
+ class="flex-1 bg-amber-900/40 border border-amber-700/50 py-1.5 rounded text-xs font-bold text-amber-300">📋 Copy report</button>
+ <button id="btnDiagShare" onclick="shareDiagReport()"
+ class="flex-1 bg-amber-900/40 border border-amber-700/50 py-1.5 rounded text-xs font-bold text-amber-300">✉️ Share</button>
+ </div>
  <button onclick="try{localStorage.removeItem('otg_f743_diag');}catch(_){} updateOutboxStatus();"
  class="mt-1 w-full bg-gray-800 py-1 rounded text-xs font-bold text-amber-300">Clear diag log</button>
  </div>
@@ -1519,8 +1525,22 @@ const RISK_WELFARE_MAP = {
 //  X5 a reload during an alarm restores the alarm screen and PIN guard (F82-2)
 //  X6 extending during an alarm goes through the alarm PIN prompt (alarm cleared, duress PIN honoured)
 //  X7 an app update never reloads the page in the middle of a visit
+//
+// __17_ changes (session 85, from __16_):
+//  Y5 Settings > Event Outbox: "Copy report" and "Share" buttons build one plain-text diagnostics report (build,
+//     backend, visit state, distance details, outbox counts and recent events, the diag log) for pasting into an email.
+//     It never includes PINs, the worker key, the backend address or contact details. The diag log keeps 200 lines.
+// __16_ changes (session 85, from __15_):
+//  Y1 the speed floor is used only when the phone really moved: at least SPEED_FLOOR_MIN_RADIUS_M from the start
+//     (a trip that never left its start point can no longer report a distance)
+//  Y2 speed readings become distance only when the phone was moving at BOTH ends of an interval, and at most
+//     SPEED_ACCUM_MAX_GAP_S seconds are credited per interval (a phone picked up and put down reported 2.2 km)
+//  Y3 Depart: road lookups time out after DISTANCE_LOOKUP_BUDGET_MS in total, and a watchdog opens the report after
+//     DEPART_WATCHDOG_MS even if no GPS answer arrives; the report opens exactly once
+//  Y4 timings of every Depart / distance step go to the F74-3 diag log; the report data records _distLookup and
+//     _distSpeedIntervals (credited/still/capped)
 // =============================================================================
-const WORKER_BUILD = 'worker__15_';
+const WORKER_BUILD = 'worker__17_';
 
 const CONFIG = {
  url: '',
@@ -1833,7 +1853,9 @@ let lastGPSCoords = null; // Raw {lat, lng} of previous fix — used for Haversi
 let gpsCurrentIntervalMs = 0; // Live adaptive poll interval — set by startGPSMonitoring()
 let gpsTrail = []; // Breadcrumb trail [{lat, lng}] for the current travel session
 let _speedAccumM = 0;    // Option 2: running speed-derived distance (metres) for travel session
-let _speedAccumLastTs = null; // Timestamp (ms) of the previous fix — for elapsed-time calculation
+let _speedAccumLastTs = null;
+let _speedAccumPrevSpd = null; // Y2 (build __16_): speed (m/s) at the previous accepted fix; null if none or unknown
+let _speedStats = { credited: 0, still: 0, capped: 0 }; // Y2/Y4: intervals credited / not moving at both ends / credited but capped // Timestamp (ms) of the previous fix — for elapsed-time calculation
 let synth; // Tone.js synth - initialized after user interaction
 let audioReady = false;
 let gpsWatchId = null; // Holds setTimeout ID (or -1 sentinel) when GPS monitoring is active; null when stopped
@@ -1866,7 +1888,7 @@ function _diag(label, withStack) {
   let arr = [];
   try { arr = JSON.parse(localStorage.getItem(_DIAG_KEY) || '[]'); } catch (_) { arr = []; }
   arr.push(line);
-  if (arr.length > 80) arr = arr.slice(-80);
+  if (arr.length > 200) arr = arr.slice(-200);
   try { localStorage.setItem(_DIAG_KEY, JSON.stringify(arr)); } catch (_) {}
  } catch (_) { /* diagnostics must never affect the app */ }
 }
@@ -2171,6 +2193,8 @@ function submitReport() {
    d.jsonPayload['_distBreadcrumbs']  = gpsTrail.length;
    d.jsonPayload['_distSpeedAccumKm'] = (_speedAccumM / 1000).toFixed(3);
    d.jsonPayload['_distWatchFailed']  = _gpsWatchPositionFailed ? 'yes' : 'no';
+   d.jsonPayload['_distLookup']       = (calculatedDist && calculatedDist.trace) || '';   // Y4 (build __16_)
+   d.jsonPayload['_distSpeedIntervals'] = _speedStats.credited + '/' + _speedStats.still + '/' + _speedStats.capped; // credited/still/capped
  }
 
  // 4. BUILD PAYLOAD
@@ -2499,6 +2523,31 @@ const GPS_MIN_INTERVAL_TRAVEL_MS = 60 * 1000; // 1 minute — fast movement duri
 const GPS_DEFAULT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — default / first fix
 const GPS_MAX_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes — stationary
 
+// Y2 (build __16_): how GPS speed readings become distance (the "speed floor", used only when road routing is
+// unavailable). Session 84 finding: a phone left still, picked up and put down a few times, reported 2.2 km. The old
+// code multiplied ONE instantaneous speed reading by the whole time since the previous fix (up to 30 minutes), so a
+// single hand-movement blip counted as many minutes of walking. Now an interval is credited only when the phone was
+// moving at BOTH ends of it (average of the two speeds) and at most SPEED_ACCUM_MAX_GAP_S seconds are credited.
+// Trade-off: a driver who was stopped at one end of an interval loses that interval; the floor is a fallback only.
+const SPEED_MOVING_MPS = 0.5;         // at or below this a reading is treated as GPS noise (unchanged from before)
+const SPEED_ACCUM_MAX_GAP_S = 120;    // most time credited to one interval
+const SPEED_FLOOR_MIN_RADIUS_M = 200; // Y1: the floor needs the phone to have been at least this far from the start
+function _speedAccumStep(spd, now) {
+  const prevTs = _speedAccumLastTs, prevSpd = _speedAccumPrevSpd;
+  _speedAccumLastTs = now;
+  _speedAccumPrevSpd = (typeof spd === 'number' && isFinite(spd)) ? spd : null;
+  if (prevTs === null) return 0;                 // first fix of the trip: nothing to measure from
+  const gapS = (now - prevTs) / 1000;
+  if (!(gapS > 0)) return 0;
+  const moving = x => typeof x === 'number' && x > SPEED_MOVING_MPS;
+  if (!moving(_speedAccumPrevSpd) || !moving(prevSpd)) { _speedStats.still++; return 0; }
+  if (gapS > SPEED_ACCUM_MAX_GAP_S) _speedStats.capped++;
+  _speedStats.credited++;
+  const m = ((_speedAccumPrevSpd + prevSpd) / 2) * Math.min(gapS, SPEED_ACCUM_MAX_GAP_S);
+  _speedAccumM += m;
+  return m;
+}
+
 /**
  * Haversine great-circle distance between two WGS-84 coordinates.
  * Returns distance in metres.
@@ -2585,20 +2634,8 @@ function _takeSingleGPSFix() {
      gpsTrail.push({ lat, lng });
    }
 
-   // Speed accumulator — threshold of 0.5 m/s (~1.8 km/h) filters GPS noise.
-   // Many GPS chips report 0.1–0.5 m/s when stationary; without this gate a
-   // 60-minute stationary test accumulates ~1 km of phantom distance.
-   const spd = pos.coords.speed; // m/s, Doppler-derived, or null on unsupported devices
-   const now = Date.now();
-   if (typeof spd === 'number' && spd > 0.5 && _speedAccumLastTs !== null) {
-     const elapsedS = (now - _speedAccumLastTs) / 1000;
-     // Cap elapsed to 3× GPS_MAX_INTERVAL_MS to discard stale gaps
-     // (e.g. after a long GPS failure) that would inflate the total.
-     if (elapsedS < (GPS_MAX_INTERVAL_MS / 1000) * 3) {
-       _speedAccumM += spd * elapsedS;
-     }
-   }
-   _speedAccumLastTs = now;
+   // Speed accumulator (Y2, build __16_) - the rules live in _speedAccumStep().
+   _speedAccumStep(pos.coords.speed, Date.now());
  }
 
  // Schedule next poll — only if stopGPSMonitoring() hasn't been called
@@ -2689,17 +2726,8 @@ function startTravelWatchPosition() {
         gpsTrail.push({ lat, lng });
       }
 
-      // Speed accumulator — threshold of 0.5 m/s (~1.8 km/h) filters GPS noise.
-      // Without this, stationary GPS noise (~0.1–0.5 m/s) accumulates ~1 km/hr.
-      const spd = pos.coords.speed; // m/s, or null on unsupported devices
-      if (typeof spd === 'number' && spd > 0.5 && _speedAccumLastTs !== null) {
-        const elapsedS = (now - _speedAccumLastTs) / 1000;
-        // Cap elapsed to 3× GPS_MAX_INTERVAL_MS to discard stale gaps after a failure
-        if (elapsedS < (GPS_MAX_INTERVAL_MS / 1000) * 3) {
-          _speedAccumM += spd * elapsedS;
-        }
-      }
-      _speedAccumLastTs = now;
+      // Speed accumulator (Y2, build __16_) - the rules live in _speedAccumStep().
+      _speedAccumStep(pos.coords.speed, now);
     },
     err => {
       console.warn('watchPosition error during travel:', err.message);
@@ -3648,39 +3676,73 @@ function preDepart() {
         if (btnDepart) btnDepart.classList.add('pill-disabled');
  const _dLabel = document.getElementById('slideDepartLabel'); if (_dLabel) _dLabel.textContent = 'Please Wait — Getting GPS';
  
+ // Y3 (build __16_): the report must always open. Before, only the GPS callbacks opened it, so a fix that never
+ // arrived (screen off, GPS asleep) or a stalled distance lookup left the pill on "Please Wait" (session 84).
+ // _departOpenForm() opens the report exactly once; the watchdog opens it if nothing finished in time.
+ const _departT0 = Date.now();
+ let _departDone = false, _departEndGPS = null, _departWatchdog = null;
+ const _departOpenForm = (why) => {
+   if (_departDone) return;
+   _departDone = true;
+   clearTimeout(_departWatchdog);
+   try { _diag('preDepart: ' + why + ' after ' + (Date.now() - _departT0) + ' ms'); } catch (_) {}
+   updateDepartLabel();
+   loadFormAndShow('Travel Report'); // Correctly loads Travel template
+ };
+ _departWatchdog = setTimeout(() => {
+   if (_departDone) return;
+   // Nothing finished in time. If the end position did arrive, give a straight-line estimate from it (the report
+   // flags it for checking); otherwise leave the distance for the worker to enter.
+   const _sg = state && state.activeVisit && state.activeVisit.startGPS;
+   // type 'none' (not null) so the report data still records why there is no distance (_distMethod / _distLookup)
+   calculatedDist = { km: '', type: 'none', trace: 'watchdog: no end fix' };
+   if (_sg && _departEndGPS) {
+     try { calculatedDist = { km: haversine(_sg, _departEndGPS).toFixed(2), type: 'crow', offline: true, trace: 'watchdog: straight line from end fix' }; } catch (e) { /* keep the none result */ }
+   }
+   showToast('GPS or distance lookup was slow - check the distance on the report');
+   _departOpenForm('watchdog fired');
+ }, DEPART_WATCHDOG_MS);
+ try { _diag('preDepart: waiting for GPS fix'); } catch (_) {}
+
  navigator.geolocation.getCurrentPosition(
  async (pos) => {
+ if (_departDone) return; // the watchdog already opened the report
+ try { _diag('preDepart: GPS fix after ' + (Date.now() - _departT0) + ' ms, accuracy ' + Math.round(pos.coords.accuracy) + ' m'); } catch (_) {}
  const endGPS = `${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`;
- const startGPS = state.activeVisit.startGPS;
+ _departEndGPS = endGPS;
+ const startGPS = state.activeVisit && state.activeVisit.startGPS;
 
  // Seal the breadcrumb trail with the departure position.
  // Only append if it's meaningfully different from the last breadcrumb
- // (50 m threshold — same rule as _takeSingleGPSFix).
+ // (50 m threshold - same rule as _takeSingleGPSFix).
  const eLat = pos.coords.latitude, eLng = pos.coords.longitude;
  const trailLast = gpsTrail[gpsTrail.length - 1];
  if (!trailLast || _gpsHaversineMetres(trailLast.lat, trailLast.lng, eLat, eLng) > 50) {
  gpsTrail.push({ lat: eLat, lng: eLng });
  }
 
+ let _dist = null;
  if (startGPS && endGPS) {
  try {
- calculatedDist = await getDistance(startGPS, endGPS, gpsTrail);
+ _dist = await getDistance(startGPS, endGPS, gpsTrail);
  } catch (err) {
  const dist = haversine(startGPS, endGPS);
- calculatedDist = { km: dist.toFixed(2), type: 'crow', offline: true };
+ _dist = { km: dist.toFixed(2), type: 'crow', offline: true };
  }
  }
- updateDepartLabel();
- loadFormAndShow('Travel Report'); // Correctly loads Travel template
+ if (_departDone) return; // the watchdog opened the report while the lookup was running - keep what it set
+ calculatedDist = _dist;
+ _departOpenForm('distance ready');
  },
  (err) => {
- updateDepartLabel();
- calculatedDist = null;
- loadFormAndShow('Travel Report');
+ if (_departDone) return;
+ calculatedDist = { km: '', type: 'none', trace: 'gps-error ' + (err && err.code) };
+ try { _diag('preDepart: GPS error code ' + (err && err.code) + ' after ' + (Date.now() - _departT0) + ' ms'); } catch (_) {}
+ _departOpenForm('GPS error');
  },
  { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
  );
- return; 
+ return;
  }
 
  // 2. STANDARD LOOKUP: Only for regular site visits
@@ -5427,6 +5489,8 @@ async function startVisit(isSkipCheck = false) {
  gpsTrail = [];
  _speedAccumM = 0;
  _speedAccumLastTs = null;
+ _speedAccumPrevSpd = null;
+ _speedStats = { credited: 0, still: 0, capped: 0 };
  if (verifiedStartGPS && verifiedStartGPS !== '0,0') {
  const [sLat, sLng] = verifiedStartGPS.split(',').map(Number);
  if (!isNaN(sLat) && !isNaN(sLng)) gpsTrail.push({ lat: sLat, lng: sLng });
@@ -7185,6 +7249,119 @@ function toggleDiagnostics() {
  if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(180deg)';
 }
 
+// ============================================================================
+// Y5 (build __17_): ONE-TAP DIAGNOSTICS REPORT - copy it or share it (email, messages, notes)
+// ============================================================================
+// Plain text, newest facts first. Deliberately leaves out: PINs, the worker key, the backend address, contact
+// names/numbers/emails and the full visit object. Diag-log lines are included exactly as recorded.
+async function _buildDiagReport() {
+ const L = [];
+ const add = (k, v) => L.push(k + ': ' + (v === undefined || v === null || v === '' ? '-' : v));
+ const nz = (t) => { try { return new Date(t).toLocaleString('en-NZ', { hour12: false }); } catch (_) { return String(t); } };
+ const safe = (f, d) => { try { const v = f(); return (v === undefined || v === null) ? d : v; } catch (_) { return d; } };
+ const now = new Date();
+
+ L.push('OTG DIAGNOSTICS REPORT');
+ add('Generated (NZ)', nz(now));
+ add('Generated (UTC)', now.toISOString());
+ add('Worker build', WORKER_BUILD);
+ add('App version (config)', safe(() => CONFIG.buildVersion, '-'));
+ add('Backend version', safe(() => document.getElementById('backendVersion').textContent, '-'));
+ add('Sync status', safe(() => document.getElementById('syncStatus').textContent, '-'));
+ add('Worker', safe(() => state.worker.name, '-'));
+ add('Online', safe(() => navigator.onLine ? 'yes' : 'no', '-'));
+ add('Battery', safe(() => currentBatteryLevel, '-'));
+ add('Screen / page', safe(() => document.visibilityState, '-'));
+ add('Installed app', safe(() => (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) ? 'yes' : 'no (browser tab)', '-'));
+ add('Device', safe(() => navigator.userAgent, '-'));
+
+ L.push('', '--- VISIT ---');
+ const v = safe(() => state.activeVisit, null);
+ if (!v) {
+  L.push('No visit running');
+ } else {
+  add('Phase', safe(() => getVisitPhase(), '-'));
+  add('Type', v.isTravel ? 'travel' : 'site visit');
+  add('Place', v.locationName);
+  add('Started', v.startTime ? nz(v.startTime) : '-');
+  add('Due', v.anticipatedDepartureTime ? nz(v.anticipatedDepartureTime) : '-');
+  add('Alarm sent / panic / duress', [!!v.criticalSent, !!v.isPanic, !!v.isDuress].join(' / '));
+ }
+ add('Panic active / duress active', safe(() => [!!isPanicActive, !!isDuressActive].join(' / '), '-'));
+
+ L.push('', '--- DISTANCE (travel) ---');
+ const cd = safe(() => calculatedDist, null);
+ add('Last result', cd ? (cd.km + ' km, ' + cd.type) : '-');
+ add('Lookup trace', cd && cd.trace);
+ add('Breadcrumbs', safe(() => gpsTrail.length, '-'));
+ add('Speed total (km)', safe(() => (_speedAccumM / 1000).toFixed(3), '-'));
+ add('Speed intervals credited/still/capped', safe(() => _speedStats.credited + '/' + _speedStats.still + '/' + _speedStats.capped, '-'));
+ add('GPS watch failed', safe(() => _gpsWatchPositionFailed ? 'yes' : 'no', '-'));
+
+ L.push('', '--- OUTBOX ---');
+ try {
+  const db = await _outboxDB();
+  const all = await new Promise(resolve => {
+   const tx = db.transaction('events', 'readonly');
+   const req = tx.objectStore('events').getAll();
+   req.onsuccess = e => resolve(e.target.result || []);
+   req.onerror = () => resolve([]);
+  });
+  const cnt = s => all.filter(r => r.status === s).length;
+  add('Pending / sent / failed', cnt('pending') + ' / ' + cnt('sent') + ' / ' + cnt('failed'));
+  const recent = [...all].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 15);
+  recent.forEach(r => {
+   const t = r.createdAt ? new Date(r.createdAt).toLocaleTimeString('en-NZ', { hour12: false }) : '?';
+   const st = (r.payload && r.payload['Alarm Status']) || 'LOG';
+   const err = (r.status !== 'sent' && r.lastError) ? ' - ' + String(r.lastError).slice(0, 80) : '';
+   L.push(t + '  ' + r.status + '  ' + st + (r.attempts > 0 ? '  x' + r.attempts : '') + err);
+  });
+ } catch (e) {
+  L.push('Outbox unavailable: ' + (e && e.message ? e.message : e));
+ }
+
+ L.push('', '--- DIAG LOG (oldest first) ---');
+ try {
+  const arr = JSON.parse(localStorage.getItem(_DIAG_KEY) || '[]');
+  if (arr.length) arr.forEach(x => L.push(x)); else L.push('(empty)');
+ } catch (_) { L.push('(unavailable)'); }
+
+ L.push('', 'End of report. Contains no PINs, keys or contact details.');
+ return L.join('\n');
+}
+
+async function copyDiagReport() {
+ let text = '';
+ try { text = await _buildDiagReport(); } catch (e) { showToast('Could not build the report'); return; }
+ let ok = false;
+ try {
+  if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(text); ok = true; }
+ } catch (_) { ok = false; }
+ if (!ok) {
+  // Older WebViews / blocked clipboard API: select-and-copy through a temporary text box.
+  try {
+   const ta = document.createElement('textarea');
+   ta.value = text; ta.setAttribute('readonly', '');
+   ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;';
+   document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, text.length);
+   ok = document.execCommand('copy');
+   ta.remove();
+  } catch (_) { ok = false; }
+ }
+ showToast(ok ? '📋 Report copied - paste it into an email' : 'Copy blocked - use Share instead');
+}
+
+async function shareDiagReport() {
+ let text = '';
+ try { text = await _buildDiagReport(); } catch (e) { showToast('Could not build the report'); return; }
+ if (navigator.share) {
+  try { await navigator.share({ title: 'OTG diagnostics ' + WORKER_BUILD, text: text }); return; }
+  catch (e) { if (e && e.name === 'AbortError') return; }
+ }
+ // No share sheet on this device: fall back to copying.
+ await copyDiagReport();
+}
+
 function populateSettingsForm() {
  if (!state || !state.worker) return;
  const s = state.worker;
@@ -8499,23 +8676,59 @@ function haversine(p1, p2) {
  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
+// Y3 (build __16_): the road lookups (Tier 1 and Tier 3) are plain fetches to the backend. With no timeout a stalled
+// request left the Depart pill waiting for minutes (session 84). All network time inside one getDistance() call is
+// now limited to DISTANCE_LOOKUP_BUDGET_MS; when it is used up the straight-line tiers answer instead.
+const DISTANCE_LOOKUP_BUDGET_MS = 8000;
+const DEPART_WATCHDOG_MS = 20000; // preDepart(): longest wait for GPS plus distance before the report opens anyway
+
+function _fetchJsonWithTimeout(url, ms) {
+  const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  let timer = null;
+  const work = (async () => {
+    const response = await fetch(url, ctrl ? { signal: ctrl.signal } : undefined);
+    return await response.json();
+  })();
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => { try { if (ctrl) ctrl.abort(); } catch (_e) {} reject(new Error('timeout after ' + ms + ' ms')); }, ms);
+  });
+  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+}
+
 async function getDistance(p1, p2, trail = []) {
   if (!_isValidGPS(p1) || !_isValidGPS(p2)) return { km: 0, type: 'none' };
 
-  // Speed-accumulator floor — only applied to A→B fallbacks (Tier 3 and Tier 4).
-  // _speedAccumM is maintained by _takeSingleGPSFix() / startTravelWatchPosition()
+  const _t0 = Date.now();
+  const _budgetLeft = () => DISTANCE_LOOKUP_BUDGET_MS - (Date.now() - _t0);
+  const _trace = []; // Y4: what each tier did and how long it took - saved in the report data as _distLookup
+  const _out = (r) => {
+    r.trace = _trace.join(' ');
+    try { _diag('getDistance: ' + r.km + ' km ' + r.type + ' [' + r.trace + ']'); } catch (_e) {}
+    return r;
+  };
+
+  // Speed-accumulator floor - only applied to A-to-B fallbacks (Tier 3 and Tier 4).
+  // _speedAccumM is maintained by _speedAccumStep(), called from _takeSingleGPSFix() / startTravelWatchPosition()
   // using pos.coords.speed (instantaneous Doppler-derived m/s at fix time).
   //
-  // The floor is intentionally NOT applied to Tier 1 (trail ORS) or Tier 2
-  // (Haversine segments), because those methods are already accurate along the
-  // actual path driven. Applying the floor to them caused over-reporting:
-  // speed × elapsed-time between fixes overstates distance whenever the worker
-  // was decelerating, stopped at lights, or cornering during a long fix interval.
-  // The floor protects only against A→B under-reporting on winding routes where
-  // no trail data is available — its original purpose.
-  const speedFloorKm = (_speedAccumM > 0) ? _speedAccumM / 1000 : 0;
+  // The floor is intentionally NOT applied to Tier 1 (trail ORS) or Tier 2 (Haversine segments), because those
+  // methods are already accurate along the actual path driven. Applying the floor to them caused over-reporting.
+  // The floor protects only against A-to-B under-reporting on winding routes where no trail data is available -
+  // its original purpose.
+  //
+  // Y1 (build __16_): the floor is used only when the phone really moved - at least SPEED_FLOOR_MIN_RADIUS_M from
+  // the start point, judged from the breadcrumbs and the end point. A trip that never left its start point (session
+  // 84: phone picked up and put down on a desk) can no longer be given a distance by the speed readings.
+  const [_sLat, _sLng] = p1.split(',').map(Number);
+  const [_eLat, _eLng] = p2.split(',').map(Number);
+  let _radiusM = _gpsHaversineMetres(_sLat, _sLng, _eLat, _eLng);
+  trail.forEach(pt => {
+    if (_isValidGPS(`${pt.lat},${pt.lng}`)) _radiusM = Math.max(_radiusM, _gpsHaversineMetres(_sLat, _sLng, pt.lat, pt.lng));
+  });
+  const speedFloorKm = (_speedAccumM > 0 && _radiusM >= SPEED_FLOOR_MIN_RADIUS_M) ? _speedAccumM / 1000 : 0;
+  if (_speedAccumM > 0 && speedFloorKm === 0) _trace.push('floor-off(radius ' + Math.round(_radiusM) + 'm)');
 
-  // Helper: apply floor — used by Tier 3 and Tier 4 only
+  // Helper: apply floor - used by Tier 3 and Tier 4 only
   const withFloor = (result) => {
     if (speedFloorKm > 0 && parseFloat(result.km) < speedFloorKm) {
       return { km: speedFloorKm.toFixed(2), type: result.type + '+speed-floor' };
@@ -8523,58 +8736,71 @@ async function getDistance(p1, p2, trail = []) {
     return result;
   };
 
-  // TIER 1: ORS road routing with breadcrumb waypoints — most accurate.
+  // TIER 1: ORS road routing with breadcrumb waypoints - most accurate.
   // Sends the actual intermediate positions taken during the trip so ORS
   // snaps to the road network along the path the worker really drove.
-  // No speed floor — trail ORS is already accurate; floor would only inflate.
+  // No speed floor - trail ORS is already accurate; floor would only inflate.
   if (navigator.onLine && CONFIG.url && trail.length >= 3) {
+    const _t1 = Date.now();
     try {
       const validTrail = trail.filter(p => _isValidGPS(`${p.lat},${p.lng}`));
       if (validTrail.length < 3) throw new Error('Insufficient valid trail points after GPS filtering');
+      if (_budgetLeft() < 1000) throw new Error('lookup time used up');
       const trailStr = validTrail.map(p => `${p.lat},${p.lng}`).join('|');
       const url = `${CONFIG.url}?action=getDistanceWithTrail&trail=${encodeURIComponent(trailStr)}&key=${CONFIG.key}`;
-      const response = await fetch(url);
-      const data = await response.json();
+      const data = await _fetchJsonWithTimeout(url, _budgetLeft());
       if (data.status === 'success' && data.km) {
-        return { km: data.km, type: 'road-trail' };
+        _trace.push('t1:ok ' + (Date.now() - _t1) + 'ms');
+        return _out({ km: data.km, type: 'road-trail' });
       }
+      _trace.push('t1:no-result ' + (Date.now() - _t1) + 'ms');
     } catch (e) {
+      _trace.push('t1:fail ' + (Date.now() - _t1) + 'ms');
       console.warn('Trail ORS failed, falling back:', e);
     }
 
     // TIER 2: Sum of Haversine segments along actual breadcrumbs.
     // Less accurate than ORS (crow-flies between each reading) but still
-    // far better than a single A→B estimate for indirect journeys.
-    // No speed floor — segment Haversine is already path-accurate.
+    // far better than a single A-to-B estimate for indirect journeys.
+    // No speed floor - segment Haversine is already path-accurate.
     const cleanTrail = trail.filter(p => _isValidGPS(`${p.lat},${p.lng}`));
     let totalM = 0;
     for (let i = 1; i < cleanTrail.length; i++) {
       totalM += _gpsHaversineMetres(cleanTrail[i-1].lat, cleanTrail[i-1].lng, cleanTrail[i].lat, cleanTrail[i].lng);
     }
     if (totalM > 0) {
-      return { km: (totalM / 1000).toFixed(2), type: 'trail-crow' };
+      _trace.push('t2');
+      return _out({ km: (totalM / 1000).toFixed(2), type: 'trail-crow' });
     }
   }
 
-  // TIER 3: Standard ORS A→B road routing (no waypoints).
-  // Speed floor applied here — A→B on a winding route may under-report.
+  // TIER 3: Standard ORS A-to-B road routing (no waypoints).
+  // Speed floor applied here - A-to-B on a winding route may under-report.
   if (navigator.onLine && CONFIG.url) {
-    try {
-      const url = `${CONFIG.url}?action=getDistance&start=${p1}&end=${p2}&key=${CONFIG.key}`;
-      const response = await fetch(url);
-      const data = await response.json();
-      if (data.status === 'success' && data.km) {
-        return withFloor({ km: data.km, type: 'road' });
+    if (_budgetLeft() >= 1000) {
+      const _t3 = Date.now();
+      try {
+        const url = `${CONFIG.url}?action=getDistance&start=${p1}&end=${p2}&key=${CONFIG.key}`;
+        const data = await _fetchJsonWithTimeout(url, _budgetLeft());
+        if (data.status === 'success' && data.km) {
+          _trace.push('t3:ok ' + (Date.now() - _t3) + 'ms');
+          return _out(withFloor({ km: data.km, type: 'road' }));
+        }
+        _trace.push('t3:no-result ' + (Date.now() - _t3) + 'ms');
+      } catch (e) {
+        _trace.push('t3:fail ' + (Date.now() - _t3) + 'ms');
+        console.warn('A-to-B ORS failed, using haversine:', e);
       }
-    } catch (e) {
-      console.warn('A→B ORS failed, using haversine:', e);
+    } else {
+      _trace.push('t3:skipped');
     }
   }
 
-  // TIER 4: Haversine A→B — always available, works offline.
-  // Speed floor applied here — straight-line will always under-report on real roads.
+  // TIER 4: Haversine A-to-B - always available, works offline.
+  // Speed floor applied here - straight-line will always under-report on real roads.
   const dist = haversine(p1, p2);
-  return withFloor({ km: dist.toFixed(2), type: 'crow' });
+  _trace.push('t4');
+  return _out(withFloor({ km: dist.toFixed(2), type: 'crow' }));
 }
 
 // Feature 16: Advanced GPS Control
