@@ -637,7 +637,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
  <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety On-The-Go!</span>
- <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__19_</span>
+ <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__20_</span>
  </h1>
  </div>
  <div class="flex items-center">
@@ -1071,7 +1071,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
  <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
- <div id="appBuild" class="text-xs font-mono text-gray-400">worker__19_</div>
+ <div id="appBuild" class="text-xs font-mono text-gray-400">worker__20_</div>
  </div>
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">Backend Version</div>
@@ -1526,6 +1526,11 @@ const RISK_WELFARE_MAP = {
 //  X6 extending during an alarm goes through the alarm PIN prompt (alarm cleared, duress PIN honoured)
 //  X7 an app update never reloads the page in the middle of a visit
 //
+// __20_ changes (session 88, from __19_):
+//  F86-5 when the required-field check blocked a submit, nothing was logged, so a report that "did nothing" looked
+//        identical to one that never ran. validateRequiredFields now writes a diag line naming the missing fields.
+//  F86-6 the diagnostics report ran the recent-events lines straight on after the failed list with no heading; they now
+//        sit under "Recent events (newest first):".
 // __19_ changes (session 86, from __18_):
 //  Z1 a form submitted with NO visit active (Note to Self, vehicle check, etc.) went down the "visit ended" branch of
 //     submitReport (isMidVisitUpdate is false when there is no active visit), so it spoke "Visit concluded." and toasted
@@ -1553,7 +1558,7 @@ const RISK_WELFARE_MAP = {
 //  Y4 timings of every Depart / distance step go to the F74-3 diag log; the report data records _distLookup and
 //     _distSpeedIntervals (credited/still/capped)
 // =============================================================================
-const WORKER_BUILD = 'worker__19_';
+const WORKER_BUILD = 'worker__20_';
 
 const CONFIG = {
  url: '',
@@ -6257,6 +6262,7 @@ function validateRequiredFields() {
 
  if (missing.length > 0) {
  const names = missing.slice(0, 3).join(', ') + (missing.length > 3 ? '…' : '');
+ _diag('submitReport() BLOCKED by required-field check, ' + missing.length + ' missing: ' + missing.join(', ').slice(0, 120)); // F86-5 (build __20_)
  showToast(`⚠️ Required: ${names}`, 4000);
  // Scroll to first empty required field
  const firstEmpty = document.querySelector('[data-required="true"]');
@@ -7371,6 +7377,7 @@ async function _buildDiagReport() {
      (r.attempts > 0 ? '  x' + r.attempts : '') + ' - ' + String(r.lastError || 'no reason recorded').slice(0, 120)));
   }
   const recent = [...all].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 15);
+  if (recent.length) L.push('Recent events (newest first):'); // F86-6 (build __20_)
   recent.forEach(r => {
    const t = r.createdAt ? nzShort(r.createdAt) : '?';
    const st = (r.payload && r.payload['Alarm Status']) || 'LOG';
