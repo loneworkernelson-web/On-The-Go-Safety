@@ -637,7 +637,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
  <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety On-The-Go!</span>
- <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__18_</span>
+ <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__19_</span>
  </h1>
  </div>
  <div class="flex items-center">
@@ -1071,7 +1071,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
  <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
- <div id="appBuild" class="text-xs font-mono text-gray-400">worker__18_</div>
+ <div id="appBuild" class="text-xs font-mono text-gray-400">worker__19_</div>
  </div>
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">Backend Version</div>
@@ -1526,6 +1526,11 @@ const RISK_WELFARE_MAP = {
 //  X6 extending during an alarm goes through the alarm PIN prompt (alarm cleared, duress PIN honoured)
 //  X7 an app update never reloads the page in the middle of a visit
 //
+// __19_ changes (session 86, from __18_):
+//  Z1 a form submitted with NO visit active (Note to Self, vehicle check, etc.) went down the "visit ended" branch of
+//     submitReport (isMidVisitUpdate is false when there is no active visit), so it spoke "Visit concluded." and toasted
+//     "Safety Session Completed". With no visit it now says nothing aloud and shows "Note saved" / "Form sent".
+//     Behaviour with an active visit is unchanged.
 // __18_ changes (session 86, from __17_):
 //  Y6 the photo store is emptied after EVERY submit (a mid-visit form used to leave its photo behind, so it rode along
 //     on the end-of-trip report) and whenever any form is opened (a form abandoned part-way no longer leaks its photo)
@@ -1548,7 +1553,7 @@ const RISK_WELFARE_MAP = {
 //  Y4 timings of every Depart / distance step go to the F74-3 diag log; the report data records _distLookup and
 //     _distSpeedIntervals (credited/still/capped)
 // =============================================================================
-const WORKER_BUILD = 'worker__18_';
+const WORKER_BUILD = 'worker__19_';
 
 const CONFIG = {
  url: '',
@@ -2334,6 +2339,7 @@ function submitReport() {
  if (_gpsLbl) _gpsLbl.textContent = '--';
 
  const _concludedIsTravel = state.activeVisit && (state.activeVisit.isTravel || state.activeVisit.locationId === 'travel');
+ const _hadActiveVisit = !!state.activeVisit; // Z1 (build __19_)
  state.activeVisit = null;
  state.selectedLocationId = null;
  state.isGeneralDest = false;
@@ -2368,9 +2374,15 @@ function submitReport() {
  }
 
  if (typeof updateArrivedButtonState === 'function') updateArrivedButtonState();
+ if (_hadActiveVisit) {
  announce(_concludedIsTravel ? 'Travel concluded.' : 'Visit concluded.');
  isSubmitting = false;
  showToast('✅ Safety Session Completed');
+ } else {
+ // Z1 (build __19_): a stand-alone form - no visit was running, so nothing was concluded.
+ isSubmitting = false;
+ showToast(currentActiveTemplate === 'Note to Self' ? '✅ Note saved' : '✅ Form sent');
+ }
  } else {
  navigate(state.activeVisit ? 'locked' : 'main'); 
  isSubmitting = false;
