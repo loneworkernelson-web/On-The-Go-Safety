@@ -82,6 +82,21 @@
  *     Clear that closes the visit keeps the old "No further action is required" wording.
  *   - Not in this build: Forms tab (Decision A), HANDOVER_84 items 2 and 8 -> __44_; Private Notes -> __45_.
  *
+ * __44_ (session 90, 20 Oct 2026) - F87-4 / HANDOVER_84 items 2 and 8 / Decision A (F87-3) / F88-5a (no worker change):
+ *   - F87-4: the All Clear guard decides "were the contacts alerted?" from what was SENT - col AA holds a ladder step
+ *     for the row's current due time, or col K holds PANIC/SOS/DURESS/EMERGENCY, a legacy 'OVERDUE - ' tier, or a
+ *     Critical Timing OVERDUE ALARM (bridged to the contacts). A plain OVERDUE pulse or a standard OVERDUE ALARM (the
+ *     checker owns standard escalation) is no longer taken as "alerted": the clear is recorded, no All Clear is sent.
+ *   - Item 8: OVERDUE, LOW BATTERY and WELFARE_OK never write col K on an existing row (Audit 'handleWorkerPost:k-kept').
+ *     LOW BATTERY and WELFARE_OK are kept in Notes with the time, so each one stays reportable.
+ *   - Decision A / item 2: MID_VISIT_UPDATE and ON SITE form posts (and PROCEDURES_UPDATED / VEHICLE_CHECK_COMPLETED while
+ *     a visit is open) go to a 'Forms' tab, one row per form, and never write the trip row. New col AB 'Visit ID' on every
+ *     new Visits row (the creating post's idempotency key, or a generated id) links each form to its visit. A form that
+ *     arrives after the visit closed no longer opens a stray Visits row. Form email and the Staff vehicle check unchanged.
+ *   - F88-5a: 'doPost:sends' is also written for every alarm-family post (PANIC/SOS/DURESS/EMERGENCY, OVERDUE ALARM,
+ *     OVERDUE - tiers, ALARM_GPS_PULSE, USER_SAFE / notifySafety, HQ resolve), whatever the lock time.
+ *   - Not in this build: F88-1/F88-2/F88-3 (lock hold) and F89-1/F89-2/F89-3 -> __45_.
+ *
  * DEPLOY CHECKLIST (every deployment): Deploy > Manage deployments > New version. Then open the Apps Script
  * editor, run ONE function from each installed trigger by hand (accept any permission prompt), and confirm
  * the Triggers list shows no failures.
@@ -137,6 +152,16 @@ const LADDER_STD_STATUSES = ['OVERDUE - 15MIN ALERT', 'OVERDUE - 30MIN ALERT',
                              'OVERDUE - 45MIN ALERT', 'EMERGENCY - 60MIN BREACH'];
 const LADDER_STD_LABELS   = ['15MIN', '30MIN', '45MIN', '60MIN'];
 const STRAGGLER_STATUSES  = ['ALARM_GPS_PULSE', 'OVERDUE', 'LOW BATTERY', 'WELFARE_OK']; // __42_ B4 (exact match)
+// __44_ (HANDOVER_84 item 8): routine statuses never write col K on an existing row (exact match). The ones in
+// ROUTINE_NOTE_TAG are written to Notes with the time instead, so every welfare check / low battery stays reportable.
+const ROUTINE_NO_K_STATUSES = ['OVERDUE', 'LOW BATTERY', 'WELFARE_OK'];
+const ROUTINE_NOTE_TAG      = ['LOW BATTERY', 'WELFARE_OK'];
+// __44_ (Decision A, HANDOVER_84 item 2): form records go to the Forms tab and never write the trip row.
+const FORM_ALWAYS_STATUSES  = ['MID_VISIT_UPDATE', 'ON SITE'];                     // always a form record
+const FORM_IF_OPEN_STATUSES = ['PROCEDURES_UPDATED', 'VEHICLE_CHECK_COMPLETED'];   // a form record only while a visit is open
+const FORMS_SHEET_NAME      = 'Forms';
+const VISIT_ID_COL          = 28;            // col AB (Z reserved, AA ladder memory)
+const VISIT_ID_HEADER       = 'Visit ID';
 let _AUDIT_EXEC = null;          // short id shared by every audit row from one execution
 let _AUDIT_LOCKWAIT_MS = null;   // doPost only: how long it waited for the script lock
 // __43_ (F86-2): sends queued while the script lock is held, run after it is released (doPost only).
@@ -214,6 +239,7 @@ function doPost(e) {
   if(e.parameter.key !== CONFIG.MASTER_KEY && e.parameter.key !== CONFIG.WORKER_KEY) return sendJSON({status:"error"});
   const _ep = e.parameter;
   _AUDIT_CTX = _auditCtxFor_(_ep); // __43_ (F86-7): template name + worker build on every audit row of this run
+  const _epStatusIn = String(_ep['Alarm Status'] || ''); // __44_: as sent - handleWorkerPost may rewrite it (PIN clear)
 
   const lock = LockService.getScriptLock();
   const _lockT0 = Date.now();
@@ -259,8 +285,8 @@ function doPost(e) {
           _withShortLock_('idem-register', function (got) { job.keys.forEach(function (k) { _idemRegisterNow_(k); }); });
       }
       if (setInflight) _inflightSet_(_ikey, false);
-      if (job.sends.length || lockHeldMs >= 2000) {
-          _audit_('doPost:sends', _ep['Worker Name'], '', '', '', _ep['Alarm Status'], _ikey,
+      if (job.sends.length || lockHeldMs >= 2000 || _isAlarmFamilyPost_({ action: _ep.action, 'Alarm Status': _epStatusIn })) {   // __44_ (F88-5a): every alarm-family post
+          _audit_('doPost:sends', _ep['Worker Name'], '', '', '', _epStatusIn, _ikey,
                   'lockHeld=' + lockHeldMs + 'ms sends=' + job.sends.length + ' ok=' + res.ok + ' failed=' + res.failed +
                   ' sendTime=' + res.ms + 'ms (after lock release)');
       }
@@ -865,7 +891,11 @@ function handleWorkerPost(p) {
     let _latestClosed = null;    // __42_ B4: the worker's latest row when it is closed
     let criticalBridgeSuppressed = false; // merge: server ladder already alerting for this visit
     let _mergeMark = null;       // __43_: the phone-merged BREACH claim, marked '|SENT' once its alerts have gone
-    if (!isNoteToSelf) {
+    // __44_ (Decision A / F87-3 / HANDOVER_84 item 2): a form record goes to the Forms tab and never writes the trip row.
+    const _formRoute = isNoteToSelf ? null : _formRouteFor_(sheet, workerName, p);
+    if (_formRoute) {
+        _formsRecord_(ss, sheet, p, _formRoute, polishedNotes, distanceValue, sig, p1, p2, p3, p4);
+    } else if (!isNoteToSelf) {
         if(!sheet) {
             sheet = ss.insertSheet('Visits');
             sheet.appendRow(["Timestamp", "Date", "Worker Name", "Worker Phone Number", "Emergency Contact Name", "Emergency Contact Number", "Emergency Contact Email", "Escalation Contact Name", "Escalation Contact Number", "Escalation Contact Email", "Alarm Status", "Notes", "Location Name", "Location Address", "Last Known GPS", "GPS Timestamp", "Battery Level", "Photo 1", "Distance (km)", "Visit Report Data", "Anticipated Departure Time", "Signature", "Photo 2", "Photo 3", "Photo 4"]);
@@ -972,13 +1002,18 @@ function handleWorkerPost(p) {
                         const _incomingClears = !!_pinClearNote || ['USER_SAFE', 'EXTENDED', 'DEPARTED', 'COMPLETED'].some(s => _incomingStatus.includes(s));
                         const _incomingIsLow  = !_incomingClears && _alarmRank_(_incomingStatus) < _existingRank;
                         const _isGpsPulse     = _incomingStatus.includes('ALARM_GPS_PULSE');
+                        // __44_ (item 8): OVERDUE / LOW BATTERY / WELFARE_OK never write col K on an existing row.
+                        const _isRoutineNoK   = ROUTINE_NO_K_STATUSES.indexOf(_incomingStatus.trim()) > -1;
+                        if (ROUTINE_NOTE_TAG.indexOf(_incomingStatus.trim()) > -1) {
+                            polishedNotes = '[' + _incomingStatus.trim() + ' ' + Utilities.formatDate(ts, CONFIG.TIMEZONE, 'HH:mm:ss') + '] ' + (polishedNotes || '');
+                        }
                         // ALARM_GPS_PULSE must never update col K — it is a location-only update.
                         // Writing ALARM_GPS_PULSE to col K replaces TRAVELLING, causing the monitor's
                         // processWorkers to see an unrecognised status in neither JOURNEY_START_STATUSES
                         // nor JOURNEY_CLOSED_STATUSES — the journey enters limbo and the worker
                         // disappears from the map. All other non-pulse payloads: guard against
                         // HIGH_SEVERITY downgrades only.
-                        if (!_isGpsPulse && !criticalBridgeSuppressed && !(_existingIsHigh && _incomingIsLow)) {
+                        if (!_isGpsPulse && !_isRoutineNoK && !criticalBridgeSuppressed && !(_existingIsHigh && _incomingIsLow)) {
                             sheet.getRange(targetRow, 11).setValue(p['Alarm Status']);
                             _audit_(_pinClearNote ? 'handleWorkerPost:pin-clear' : 'handleWorkerPost', workerName, targetRow, rowData[10], p['Alarm Status'], _origIncoming, p.idempotencyKey,
                                     _mergedBreachDue ? 'Critical Timing merge: OVERDUE ALARM recorded as BREACH' : _pinClearNote);
@@ -988,8 +1023,9 @@ function handleWorkerPost(p) {
                                 if (_cv) _mergeMark = { rowNum: targetRow, worker: workerName, claimVal: _cv };
                             }
                         } else if (!_isGpsPulse) {
-                            _audit_('handleWorkerPost:skip', workerName, targetRow, rowData[10], '', _origIncoming, p.idempotencyKey,
-                                    criticalBridgeSuppressed ? 'Critical Timing ladder already started - col K not written'
+                            _audit_(_isRoutineNoK ? 'handleWorkerPost:k-kept' : 'handleWorkerPost:skip', workerName, targetRow, rowData[10], '', _origIncoming, p.idempotencyKey,
+                                    _isRoutineNoK ? 'routine status - col K not written (item 8)'
+                                    : criticalBridgeSuppressed ? 'Critical Timing ladder already started - col K not written'
                                                              : 'A6 guard - lower-severity status not written over an alarm');
                         }
                         // __43_ (F86-8): 0 km is a real value (a stationary trip). The falsy check used to skip it.
@@ -1088,6 +1124,7 @@ if (!rowUpdated) {
         p4
     ];
     sheet.appendRow(row);
+    _visitIdSet_(sheet, sheet.getLastRow(), String(p.idempotencyKey || '') || _visitIdNew_(sheet.getLastRow()));   // __44_: col AB
     _audit_('handleWorkerPost:new', workerName, sheet.getLastRow(), '', p['Alarm Status'], p['Alarm Status'], p.idempotencyKey, 'new row');
 }
     }
@@ -4112,7 +4149,7 @@ function handleSafetyResolution(p, forceNotify) {
             const sheet = ss.getSheetByName('Visits');
             if (sheet) {
                 const data = sheet.getDataRange().getValues();
-                const alarmStatuses = ['OVERDUE', 'PANIC', 'SOS', 'DURESS', 'EMERGENCY', 'ALARM_GPS_PULSE'];
+                // __44_ (F87-4): "alerted" is decided by _contactsAlerted_ (what was sent), not by words in col K.
                 // __42_ B2/B4: decide on the worker's LATEST row only. A PIN clear now leaves the visit
                 // row open as ARRIVED/TRAVELLING, so walking back past it could find an older visit's
                 // alarm and send a wrong All Clear. PRE_VISIT / DATA_ENTRY_ONLY records are skipped.
@@ -4120,7 +4157,7 @@ function handleSafetyResolution(p, forceNotify) {
                     if ((data[i][2] || '').toString().trim() === workerNameCheck) {
                         const rowStatus = (data[i][10] || '').toString().toUpperCase();
                         if (rowStatus.includes('PRE_VISIT') || rowStatus.includes('DATA_ENTRY_ONLY')) continue;
-                        if (alarmStatuses.some(s => rowStatus.includes(s))) alertWasSent = true;
+                        if (_contactsAlerted_(data[i])) alertWasSent = true;
                         const closed = rowStatus.includes('DEPARTED') || rowStatus.includes('COMPLETED') || rowStatus.includes('SAFE');
                         const due = new Date(data[i][20]);
                         latestOpenVisit = !closed && !!data[i][20] && !isNaN(due.getTime());
@@ -4597,7 +4634,7 @@ function onEdit(e) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__43_';
+const TEMPLATE_BUILD = 'backend__44_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
@@ -4737,4 +4774,115 @@ function _engineAge_(now) {
     if (!t || isNaN(t.getTime())) return { ageMin: null, level: 'NEVER', time: null };
     const ageMin = (now - t) / 60000;
     return { ageMin: ageMin, time: t, level: ageMin <= 5 ? 'OK' : ageMin <= 10 ? 'WARN' : 'STALE' };
+}
+
+// ==========================================
+// __44_ ALL CLEAR GUARD, FORMS TAB, VISIT ID, LOGGING (session 90)
+// ==========================================
+
+/**
+ * F87-4: were this row's contacts actually alerted? A Visits row (array, col A = index 0).
+ * Yes when col AA holds a ladder step for the row's CURRENT due time (standard or Critical, claimed before send),
+ * or col K holds PANIC/SOS/DURESS/EMERGENCY (doPost alerts at once; EMERGENCY is a ladder step or the bridge),
+ * a legacy 'OVERDUE - ' tier (pre-__42_ rows), or an OVERDUE ALARM on a Critical Timing row (bridged to the contacts).
+ * A plain OVERDUE pulse or a standard OVERDUE ALARM alerts nobody (the checker owns standard escalation).
+ */
+function _contactsAlerted_(row) {
+    if (!row) return false;
+    const st = String(row[10] || '').toUpperCase();
+    if (_alarmRank_(st) >= 3) return true;
+    if (st.includes('OVERDUE - ')) return true;
+    if (st.includes('OVERDUE ALARM') && String(row[11] || '').includes('[CRITICAL_TIMING]')) return true;
+    const dueRaw = row[20];
+    const due = new Date(dueRaw);
+    if (dueRaw && !isNaN(due.getTime())) {
+        const mem = _ladderMemInfo_(row[LADDER_MEM_COL - 1], due.toISOString());
+        if (mem.same && mem.step >= 1) return true;
+    }
+    return false;
+}
+
+/** F88-5a: posts whose doPost:sends row is always written (alarm family). Routine posts are not (log volume). */
+function _isAlarmFamilyPost_(p) {
+    if (!p) return false;
+    if (p.action === 'notifySafety' || p.action === 'resolve') return true;
+    const s = String(p['Alarm Status'] || '').toUpperCase();
+    return s.includes('ALARM_GPS_PULSE') || s.includes('USER_SAFE') || _alarmRank_(s) >= 2;
+}
+
+/**
+ * Decision A / item 2: is this post a form record for the Forms tab? Returns null (normal Visits path) or
+ * { status, rowNum, link } where rowNum is the Visits row it belongs to (null = unlinked).
+ * Read-only. Looks at the worker's latest row only (PRE_VISIT / DATA_ENTRY_ONLY records skipped), as handleWorkerPost does.
+ */
+function _formRouteFor_(sheet, workerName, p) {
+    const st = String((p && p['Alarm Status']) || '').trim().toUpperCase();
+    const always = FORM_ALWAYS_STATUSES.indexOf(st) > -1;
+    const ifOpen = FORM_IF_OPEN_STATUSES.indexOf(st) > -1;
+    if (!always && !ifOpen) return null;
+    let latest = null;
+    try {
+        const lastRow = sheet ? sheet.getLastRow() : 0;
+        if (lastRow > 1) {
+            const startRow = Math.max(2, lastRow - 50);
+            const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, 21).getValues();
+            for (let i = data.length - 1; i >= 0; i--) {
+                if (data[i][2] !== workerName) continue;
+                const s = String(data[i][10]);
+                if (s.includes('PRE_VISIT') || s.includes('DATA_ENTRY_ONLY')) continue;
+                const closed = s.includes('DEPARTED') || s.includes('COMPLETED') || s.includes('USER_SAFE');
+                latest = { rowNum: startRow + i, open: !closed, due: data[i][20] };
+                break;
+            }
+        }
+    } catch (e) { console.warn('[forms] latest-row lookup failed: ' + e); }
+    if (ifOpen && !(latest && latest.open)) return null;   // no visit running: the record row in Visits, as before
+    if (latest && latest.open) return { status: st, rowNum: latest.rowNum, link: 'open visit' };
+    if (latest && _sameDue_(p['Anticipated Departure Time'], latest.due)) return { status: st, rowNum: latest.rowNum, link: 'closed visit (same due time)' };
+    return { status: st, rowNum: null, link: 'none' };
+}
+
+/** Decision A: append one Forms row. Never writes the trip row (except a missing Visit ID in col AB). */
+function _formsRecord_(ss, sheet, p, route, notes, distance, sig, p1, p2, p3, p4) {
+    const workerName = p['Worker Name'];
+    const visitId = (route.rowNum && sheet) ? _visitIdGet_(sheet, route.rowNum, true) : '';
+    let fsh = ss.getSheetByName(FORMS_SHEET_NAME);
+    if (!fsh) {
+        fsh = ss.insertSheet(FORMS_SHEET_NAME);
+        fsh.appendRow(['Received (UTC)', 'Worker', 'Template', 'Status', 'Visit ID', 'Visits Row (at receipt)', 'Visit Link',
+                       'Form Data', 'Notes', 'Distance (km)', 'Signature', 'Photo 1', 'Photo 2', 'Photo 3', 'Photo 4',
+                       'Last Known GPS', 'Idempotency Key', 'Worker Build']);
+        try { fsh.setFrozenRows(1); } catch (_) {}
+    }
+    fsh.appendRow([new Date().toISOString(), workerName, p['Template Name'] || '', route.status, visitId, route.rowNum || '', route.link,
+                   p['Visit Report Data'] || '', notes || '', (distance === '' || distance === null || distance === undefined) ? '' : distance,
+                   sig || '', p1 || '', p2 || '', p3 || '', p4 || '', p['Last Known GPS'] || '', p.idempotencyKey || '', p['Worker Build'] || '']);
+    _audit_('handleWorkerPost:form', workerName, route.rowNum || '', '', '', p['Alarm Status'], p.idempotencyKey,
+            'form recorded in Forms tab row ' + fsh.getLastRow() + ' (' + route.link + (visitId ? ', Visit ID ' + visitId : '') + ') - trip row not written');
+}
+
+/** Visit ID of a Visits row (col AB). backfill = give a pre-__44_ row an id now. Never throws; '' when unavailable. */
+function _visitIdGet_(sheet, rowNum, backfill) {
+    let id = '';
+    try { if (sheet.getMaxColumns() >= VISIT_ID_COL) id = String(sheet.getRange(rowNum, VISIT_ID_COL).getValue() || '').trim(); } catch (_) { id = ''; }
+    if (!id && backfill) { id = _visitIdNew_(rowNum); if (!_visitIdSet_(sheet, rowNum, id)) id = ''; }
+    return id;
+}
+function _visitIdNew_(rowNum) { return 'V-' + Date.now().toString(36) + '-' + rowNum; }
+
+/** Write a Visit ID to col AB (adds the column and its header if missing). Never throws; false if it could not. */
+function _visitIdSet_(sheet, rowNum, id) {
+    try {
+        if (!id || !rowNum) return false;
+        if (sheet.getMaxColumns() < VISIT_ID_COL) {
+            sheet.insertColumnsAfter(sheet.getMaxColumns(), VISIT_ID_COL - sheet.getMaxColumns());
+        }
+        const hdr = sheet.getRange(1, VISIT_ID_COL);
+        if (!String(hdr.getValue() || '').trim()) hdr.setValue(VISIT_ID_HEADER);
+        sheet.getRange(rowNum, VISIT_ID_COL).setValue(String(id));
+        return true;
+    } catch (e) {
+        _audit_('visitId:FAILED', '', rowNum, '', '', '', '', String(e).substring(0, 200));
+        return false;
+    }
 }
