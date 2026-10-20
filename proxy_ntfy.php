@@ -35,8 +35,11 @@
  *
  * SECURITY NOTES
  *   - This script does not log or store notification content.
- *   - Only the ntfy-specific headers (Title, Priority, Tags) and
- *     the message body are forwarded — no worker data is retained.
+ *   - Only the ntfy-specific headers (Title, Priority, Tags, Click,
+ *     Actions) and the message body are forwarded — no worker data
+ *     is retained.
+ *   - Click and Actions let a notification carry a tap-to-call link
+ *     or button. Only a caller holding the PROXY_SECRET can send them.
  *   - The PROXY_SECRET is never returned to the caller.
  * ============================================================
  */
@@ -68,8 +71,9 @@ if ($topic === '' || $topic === 'proxy_ntfy.php') {
 $body = file_get_contents('php://input');
 
 // Forward ntfy-specific headers present in the GAS request
+// (Click and Actions added for tap-to-call; older callers that do not send them are unaffected)
 $headers = ['Content-Type: text/plain; charset=utf-8'];
-foreach (['Title', 'Priority', 'Tags'] as $h) {
+foreach (['Title', 'Priority', 'Tags', 'Click', 'Actions'] as $h) {
     $key = 'HTTP_' . strtoupper(str_replace('-', '_', $h));
     if (!empty($_SERVER[$key])) {
         $headers[] = "$h: {$_SERVER[$key]}";
