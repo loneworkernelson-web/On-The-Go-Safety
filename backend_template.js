@@ -21,7 +21,7 @@
  *   - Lock busy: the run is skipped, logged to Audit, and one retry is scheduled for 1 hour
  *     later (archiveOldDataRetry). If the retry also fails, or the run throws, it sets
  *     ARCHIVE_FAILED, emails the health-report recipient, and the daily health email
- *     carries a banner until it has been reported.
+ *     carries a banner until it has beena reported.
  *   - Column K is read with String(), so a non-text cell no longer aborts the archive.
  *
  * __40_ (session 77, 16 Oct 2026) - F76-1:
@@ -97,6 +97,31 @@
  *     OVERDUE - tiers, ALARM_GPS_PULSE, USER_SAFE / notifySafety, HQ resolve), whatever the lock time.
  *   - Not in this build: F88-1/F88-2/F88-3 (lock hold) and F89-1/F89-2/F89-3 -> __45_.
  *
+ * __45_ (session 91, 20 Oct 2026) - F90-1/2/3, Forms ledger, F89-1 to F89-4, HANDOVER_84 item 9 (no worker change):
+ *   - F90-1: the monthly archive widens (and lengthens) Archive before writing, so rows wider than the tab no longer
+ *     throw. A new tab from Google is 26 columns; Visits is 28. If Sheets refuses (protected tab) nothing moves, Visits
+ *     is untouched and the run is flagged (Audit 'archiveOldData:FIT-FAILED').
+ *   - F90-2: Archive and FormsArchive get a header row when the job creates them (Visits row 1 / Forms row 1). An
+ *     existing Archive tab whose A1 is a date (data in row 1, never had a header) gets one header row inserted above it,
+ *     once (Audit 'archiveOldData:header-added'). Blank header cells are filled from Visits row 1 (e.g. 'Visit ID').
+ *   - F90-3: Forms rows older than CONFIG.ARCHIVE_DAYS move to a FormsArchive tab in the same job, under the same lock,
+ *     write then trim (Audit 'archiveForms' / 'archiveForms:none'). A Forms failure does not undo the Visits archive.
+ *   - Forms ledger: every post that carries report data also writes a Forms row - the departure / completion report
+ *     ('closing report') and forms posted with no visit running ('record row'). Visits is written exactly as before, so
+ *     Travel Report and Monthly Stats do not change. Note to Self never reaches Forms or Visits. A failed ledger write
+ *     never fails the post (Audit 'handleWorkerPost:form-ledger-FAILED').
+ *   - F89-1: server tiers 1-3 (standard ladder) reach the primary contact only on every channel; the Staff-sheet ntfy
+ *     topic no longer adds the escalation contact. Tier 4 and every Critical Timing step still go to both.
+ *   - F89-2: the All Clear goes only to the contacts actually alerted for the current due time (primary only after
+ *     tiers 1-3; both after tier 4, Critical Timing, PANIC/SOS/DURESS). HQ resolve follows the same rule and sends no
+ *     All Clear when nobody was alerted (Audit 'handleResolvePost:no-alarm').
+ *   - F89-3: the standard ladder starts at CONFIG.ESCALATION_MINUTES (the phone's grace period, same Factory field),
+ *     then every 15 minutes (Russell, Decision 1 = b). 15 gives the old 15/30/45/60. Unreadable or < 1 -> 15, as the
+ *     phone does. Status names (OVERDUE - 15MIN ALERT ...) are unchanged; contacts never see them.
+ *   - F89-4: a standard OVERDUE ALARM carrying an earlier due time than the row (overtaken by a PIN clear or extend)
+ *     no longer writes col K (Audit 'handleWorkerPost:stale-alarm').
+ *   - Item 9 / F83-5: numeric-looking ids (execution id, idempotency key, Visit ID) are written as text.
+ *
  * DEPLOY CHECKLIST (every deployment): Deploy > Manage deployments > New version. Then open the Apps Script
  * editor, run ONE function from each installed trigger by hand (accept any permission prompt), and confirm
  * the Triggers list shows no failures.
@@ -160,6 +185,11 @@ const ROUTINE_NOTE_TAG      = ['LOW BATTERY', 'WELFARE_OK'];
 const FORM_ALWAYS_STATUSES  = ['MID_VISIT_UPDATE', 'ON SITE'];                     // always a form record
 const FORM_IF_OPEN_STATUSES = ['PROCEDURES_UPDATED', 'VEHICLE_CHECK_COMPLETED'];   // a form record only while a visit is open
 const FORMS_SHEET_NAME      = 'Forms';
+// __45_ (F90-2/F90-3): one header list for the Forms tab and its archive.
+const FORMS_HEADERS         = ['Received (UTC)', 'Worker', 'Template', 'Status', 'Visit ID', 'Visits Row (at receipt)', 'Visit Link',
+                               'Form Data', 'Notes', 'Distance (km)', 'Signature', 'Photo 1', 'Photo 2', 'Photo 3', 'Photo 4',
+                               'Last Known GPS', 'Idempotency Key', 'Worker Build'];
+const FORMS_ARCHIVE_SHEET_NAME = 'FormsArchive';
 const VISIT_ID_COL          = 28;            // col AB (Z reserved, AA ladder memory)
 const VISIT_ID_HEADER       = 'Visit ID';
 let _AUDIT_EXEC = null;          // short id shared by every audit row from one execution
@@ -764,6 +794,7 @@ function handleResolvePost(p) {
     const workerName = p['Worker Name'];
     const lastRow = sheet.getLastRow();
     let rowUpdated = false;
+    let _hqAudience = 'none';   // __45_ (F89-2)
 
     if (lastRow > 1) {
         const startRow = Math.max(2, lastRow - 50); 
@@ -771,7 +802,8 @@ function handleResolvePost(p) {
         // A14 (session 72): read through col L - Notes. Reading only A-K made rowData[11]
         // undefined, so the line below wrote the word "undefined" over the visit Notes
         // and erased the [CRITICAL_TIMING] / [START_GPS] tags.
-        const data = sheet.getRange(startRow, 1, numRows, 12).getValues();
+        // __45_ (F89-2): read through col AA so the All Clear audience can be decided from what was sent.
+        const data = sheet.getRange(startRow, 1, numRows, _readWidth_(sheet)).getValues();
         for (let i = data.length - 1; i >= 0; i--) {
             const rowData = data[i];
             if (rowData[2] === workerName) {
@@ -779,6 +811,7 @@ function handleResolvePost(p) {
                 // Targets active safety alerts
                 if (status.includes('EMERGENCY') || status.includes('PANIC') || status.includes('DURESS') || status.includes('OVERDUE')) {
                     const targetRow = startRow + i;
+                    _hqAudience = _alertAudience_(rowData);   // __45_ (F89-2): before the row is overwritten
                     sheet.getRange(targetRow, 11).setValue(p['Alarm Status']); 
                     _audit_('handleResolvePost', workerName, targetRow, status, p['Alarm Status'], p['Alarm Status'], p.idempotencyKey, 'alarm resolved');
                     sheet.getRange(targetRow, 12).setValue((String(rowData[11] || '') + "\n" + (p['Notes'] || '')).trim()); 
@@ -813,7 +846,13 @@ function handleResolvePost(p) {
     // forceNotify=true bypasses the alertWasSent guard (which would wrongly suppress
     // All Clear because handleResolvePost has already updated the row to USER_SAFE).
     // It also skips the internal handleWorkerPost() call — already done above.
-    handleSafetyResolution(p, true); 
+    // __45_ (F89-2): an All Clear only to the contacts who were alerted - none when nobody was.
+    if (_hqAudience === 'none') {
+        _audit_('handleResolvePost:no-alarm', workerName, '', '', '', p['Alarm Status'], p.idempotencyKey,
+                'no contact was alerted for this visit - resolved, All Clear not sent');
+        return;
+    }
+    handleSafetyResolution(p, true, _hqAudience);
 }
 function handleWorkerPost(p) {
     // ── IDEMPOTENCY GUARD ────────────────────────────────────────────────────
@@ -857,6 +896,7 @@ function handleWorkerPost(p) {
     const workerName = p['Worker Name'];
     const templateName = p['Template Name'] || "";
     const isNoteToSelf = (templateName.trim().toLowerCase() === 'note to self');
+    const _statusAsSent = String(p['Alarm Status'] || '');   // __45_ (ledger): before any restore / merge rewrites it
 
     let p1="", p2="", p3="", p4="", sig="";
     if(p['Photo 1']) p1 = saveImage(p['Photo 1'], workerName);
@@ -891,6 +931,7 @@ function handleWorkerPost(p) {
     let _latestClosed = null;    // __42_ B4: the worker's latest row when it is closed
     let criticalBridgeSuppressed = false; // merge: server ladder already alerting for this visit
     let _mergeMark = null;       // __43_: the phone-merged BREACH claim, marked '|SENT' once its alerts have gone
+    let _ledgerRow = null, _ledgerNew = false;   // __45_ (ledger): the Visits row this post wrote, and whether it was new
     // __44_ (Decision A / F87-3 / HANDOVER_84 item 2): a form record goes to the Forms tab and never writes the trip row.
     const _formRoute = isNoteToSelf ? null : _formRouteFor_(sheet, workerName, p);
     if (_formRoute) {
@@ -1002,6 +1043,11 @@ function handleWorkerPost(p) {
                         const _incomingClears = !!_pinClearNote || ['USER_SAFE', 'EXTENDED', 'DEPARTED', 'COMPLETED'].some(s => _incomingStatus.includes(s));
                         const _incomingIsLow  = !_incomingClears && _alarmRank_(_incomingStatus) < _existingRank;
                         const _isGpsPulse     = _incomingStatus.includes('ALARM_GPS_PULSE');
+                        // __45_ (F89-4): a standard OVERDUE ALARM queued before a PIN clear or extend can land after it, carrying
+                        // the earlier due time. It alerts nobody (the checker owns standard escalation), so it must not write
+                        // col K over the restored status. Critical Timing posts are not affected (alarm lane, in order).
+                        const _staleAlarm     = _origIncoming.toUpperCase().includes('OVERDUE ALARM') && p['Critical Timing'] !== 'true' &&
+                                                _isEarlierDue_(p['Anticipated Departure Time'], rowData[20]);
                         // __44_ (item 8): OVERDUE / LOW BATTERY / WELFARE_OK never write col K on an existing row.
                         const _isRoutineNoK   = ROUTINE_NO_K_STATUSES.indexOf(_incomingStatus.trim()) > -1;
                         if (ROUTINE_NOTE_TAG.indexOf(_incomingStatus.trim()) > -1) {
@@ -1013,7 +1059,7 @@ function handleWorkerPost(p) {
                         // nor JOURNEY_CLOSED_STATUSES — the journey enters limbo and the worker
                         // disappears from the map. All other non-pulse payloads: guard against
                         // HIGH_SEVERITY downgrades only.
-                        if (!_isGpsPulse && !_isRoutineNoK && !criticalBridgeSuppressed && !(_existingIsHigh && _incomingIsLow)) {
+                        if (!_isGpsPulse && !_isRoutineNoK && !_staleAlarm && !criticalBridgeSuppressed && !(_existingIsHigh && _incomingIsLow)) {
                             sheet.getRange(targetRow, 11).setValue(p['Alarm Status']);
                             _audit_(_pinClearNote ? 'handleWorkerPost:pin-clear' : 'handleWorkerPost', workerName, targetRow, rowData[10], p['Alarm Status'], _origIncoming, p.idempotencyKey,
                                     _mergedBreachDue ? 'Critical Timing merge: OVERDUE ALARM recorded as BREACH' : _pinClearNote);
@@ -1023,8 +1069,9 @@ function handleWorkerPost(p) {
                                 if (_cv) _mergeMark = { rowNum: targetRow, worker: workerName, claimVal: _cv };
                             }
                         } else if (!_isGpsPulse) {
-                            _audit_(_isRoutineNoK ? 'handleWorkerPost:k-kept' : 'handleWorkerPost:skip', workerName, targetRow, rowData[10], '', _origIncoming, p.idempotencyKey,
-                                    _isRoutineNoK ? 'routine status - col K not written (item 8)'
+                            _audit_(_staleAlarm ? 'handleWorkerPost:stale-alarm' : _isRoutineNoK ? 'handleWorkerPost:k-kept' : 'handleWorkerPost:skip', workerName, targetRow, rowData[10], '', _origIncoming, p.idempotencyKey,
+                                    _staleAlarm ? 'standard OVERDUE ALARM for an earlier due time - col K not written (F89-4)'
+                                    : _isRoutineNoK ? 'routine status - col K not written (item 8)'
                                     : criticalBridgeSuppressed ? 'Critical Timing ladder already started - col K not written'
                                                              : 'A6 guard - lower-severity status not written over an alarm');
                         }
@@ -1068,6 +1115,7 @@ function handleWorkerPost(p) {
                         if (p4  && p4Col  > -1) sheet.getRange(targetRow, p4Col  + 1).setValue(p4);
                         existingVisitNotes = String(rowData[11] || '');
                         rowUpdated = true;
+                        _ledgerRow = targetRow;   // __45_ (ledger)
                         break;
                     }
                     // __42_ B4 (F79-1): only the worker's LATEST row counts. It is closed, so stop here -
@@ -1126,7 +1174,11 @@ if (!rowUpdated) {
     sheet.appendRow(row);
     _visitIdSet_(sheet, sheet.getLastRow(), String(p.idempotencyKey || '') || _visitIdNew_(sheet.getLastRow()));   // __44_: col AB
     _audit_('handleWorkerPost:new', workerName, sheet.getLastRow(), '', p['Alarm Status'], p['Alarm Status'], p.idempotencyKey, 'new row');
+    _ledgerRow = sheet.getLastRow(); _ledgerNew = true;   // __45_ (ledger)
 }
+        // __45_ (Forms ledger): every post that carries report data also gets a Forms row, so Forms holds every report
+        // (filter by Template). The Visits row above is written exactly as before (Travel Report / Monthly Stats read it).
+        if (hasFormData && _ledgerRow) _formsLedger_(ss, sheet, p, _statusAsSent, _ledgerRow, _ledgerNew, polishedNotes, distanceValue, sig, p1, p2, p3, p4);
     }
 
     updateStaffStatus(p);
@@ -1581,6 +1633,11 @@ function _sendViaTextbelt_(to, body) {
  * Fixes: GPS Variable injection and Dual-Contact SMS Routing.
  */
 function triggerAlerts(p, type) {
+    // __45_ (F89-1): a standard tier 1-3 alert is for the primary contact only. Blank every escalation channel here,
+    // once, so no later step (email list, SMS list, the Staff-sheet ntfy lookup below) can add the escalation contact.
+    const _primaryOnly = String((p && p['Contact Scope']) || '') === 'primary';
+    if (_primaryOnly) p = Object.assign({}, p, { 'Escalation Contact Number': '', 'Escalation Contact Phone': '',
+                                                 'Escalation Contact Email': '', 'Escalation Contact Ntfy': '' });
 
     // ── GPS HANDLING ────────────────────────────────────────────────────────
     // Guard: treat "0,0" as no fix (it's the worker app fallback when GPS
@@ -1871,7 +1928,7 @@ function triggerAlerts(p, type) {
                     const _sEmg2 = (_staffData2[_j2][7] || '').toString().trim(); // col H
                     const _sEsc2 = (_staffData2[_j2][8] || '').toString().trim(); // col I
                     if (_sEmg2) _alertEmgNtfy = _sEmg2;
-                    if (_sEsc2) _alertEscNtfy = _sEsc2;
+                    if (_sEsc2 && !_primaryOnly) _alertEscNtfy = _sEsc2;   // __45_ (F89-1)
                     break;
                 }
             }
@@ -2359,7 +2416,10 @@ function _checkOverdueLocked_(sends) {
                     const memRaw  = String(entry[LADDER_MEM_COL - 1] || '');
                     const mem     = _ladderMemInfo_(memRaw, dueIso);
                     const sent    = mem.has ? (mem.same ? mem.step : 0) : _ladderStepFromStdStatus_(status);
-                    const target  = diffMins >= 60 ? 4 : diffMins >= 45 ? 3 : diffMins >= 30 ? 2 : diffMins >= 15 ? 1 : 0;
+                    // __45_ (F89-3, Decision 1 = b): tier 1 at the grace period (CONFIG.ESCALATION_MINUTES, the same Factory
+                    // field the phone uses), then every 15 minutes. A 15-minute grace gives the old 15/30/45/60.
+                    const _g      = _graceMinutes_();
+                    const target  = diffMins >= _g + 45 ? 4 : diffMins >= _g + 30 ? 3 : diffMins >= _g + 15 ? 2 : diffMins >= _g ? 1 : 0;
                     if (target > sent) {
                         _audit_('ladder-std', worker, rowNum, status, LADDER_STD_STATUSES[target - 1], '', '',
                                 'diff=' + diffMins.toFixed(1) + 'm AA="' + memRaw + '" sent=' + sent +
@@ -2398,7 +2458,8 @@ function _runLadderSends_(sends) {
             triggerAlerts(s.job.payload, s.job.type);
             done.push(s);
             _audit_(s.src + ':sends-complete', s.worker, s.rowNum, '', s.status, '', '',
-                    'step ' + s.step + (s.resend ? ' (re-send)' : '') + ' alerts returned after ' + (Date.now() - t0) + 'ms (lock released)');
+                    'step ' + s.step + (s.resend ? ' (re-send)' : '') + ' alerts returned after ' + (Date.now() - t0) + 'ms (lock released)' +
+                    (s.job.payload && s.job.payload['Contact Scope'] === 'primary' ? ' - primary contact only' : ''));   // __45_ (F89-1)
         } catch (err) {
             _audit_(s.src + ':send-FAILED', s.worker, s.rowNum, '', s.status, '', '',
                     'step ' + s.step + ' threw after ' + (Date.now() - t0) + 'ms: ' + String(err).substring(0, 200) +
@@ -3530,32 +3591,20 @@ function _archiveAttempt_(isRetry) {
         const ss = SpreadsheetApp.getActiveSpreadsheet();
         const sheet = ss.getSheetByName('Visits');
         if (!sheet) { _jobMark_('archiveOldData', false, 'Visits sheet not found'); return; }
-        const archive = ss.getSheetByName('Archive') || ss.insertSheet('Archive');
-        const data = sheet.getDataRange().getValues();
-        if (data.length <= 1) { _jobMark_('archiveOldData', true, 'Visits has no data rows - nothing to archive'); return; }
         const today = new Date();
         const cutoff = new Date(today.setDate(today.getDate() - CONFIG.ARCHIVE_DAYS));
-        const keep = [data[0]];
-        const move = [];
-        for (let i = 1; i < data.length; i++) {
-            const st = String(data[i][10]); // __39_: Sheets may hold a non-text value in col K
-            if (new Date(data[i][0]) < cutoff && (st.includes('DEPARTED') || st.includes('SAFE') || st.includes('COMPLETED'))) { move.push(data[i]); } else { keep.push(data[i]); }
+        const v = _archiveVisits_(ss, sheet, cutoff);   // throws on a failure after rows were written (flagged below)
+        // __45_ (F90-3): Forms by age, same job, same lock. A Forms failure never undoes the Visits archive.
+        let f = null, fErr = null;
+        try { f = _archiveForms_(ss, cutoff); } catch (e2) { fErr = e2; }
+        const vNote = v.note || (v.moved + ' row(s) archived, ' + v.kept + ' kept');
+        if (fErr) {
+            _jobMark_('archiveOldData', false, vNote + '; Forms archive failed: ' + String(fErr).substring(0, 100));
+            _archiveFlag_('The Forms archive failed: ' + String(fErr).substring(0, 200) + '. Visits: ' + vNote +
+                          '. Check the Forms and FormsArchive sheets before running it again - rows may already be in FormsArchive.');
+            return;
         }
-        if (move.length > 0) {
-            archive.getRange(archive.getLastRow() + 1, 1, move.length, move[0].length).setValues(move);
-            // __39_: kept rows are written over the top of Visits FIRST, then the leftover rows
-            // below them are cleared. The sheet is never empty, and a failure between the two
-            // calls leaves duplicates (recoverable) instead of a wiped sheet.
-            sheet.getRange(1, 1, keep.length, keep[0].length).setValues(keep);
-            if (data.length > keep.length) {
-                sheet.getRange(keep.length + 1, 1, data.length - keep.length, keep[0].length).clearContent();
-            }
-            _audit_('archiveOldData', '', '', '', '', '', '', 'Visits sheet rewritten (write then trim): ' + move.length + ' row(s) archived, ' + (keep.length - 1) + ' kept');
-        } else {
-            // __41_: a run that moves nothing must still leave a trace (it used to look like a run that never happened).
-            _audit_('archiveOldData:none', '', '', '', '', '', '', 'run complete: 0 row(s) eligible, ' + (keep.length - 1) + ' kept');
-        }
-        _jobMark_('archiveOldData', true, move.length + ' row(s) archived, ' + (keep.length - 1) + ' kept');
+        _jobMark_('archiveOldData', !v.fitFailed, vNote + '; ' + f.moved + ' form(s) archived, ' + f.kept + ' kept');
     } catch (err) {
         _jobMark_('archiveOldData', false, 'run failed: ' + String(err).substring(0, 150));
         _archiveFlag_('The archive run failed: ' + String(err).substring(0, 200) + '. Check the Audit and Archive sheets before running it again - rows may already be in Archive.');
@@ -3565,6 +3614,145 @@ function _archiveAttempt_(isRetry) {
         try { SpreadsheetApp.flush(); } catch (_) {}
         lock.releaseLock();
     }
+}
+
+/**
+ * __45_: the Visits half of the archive (was inline in _archiveAttempt_). Closed rows older than cutoff move to Archive.
+ * F90-1: Archive is widened and lengthened BEFORE anything is written; if Sheets refuses, nothing moves, Visits is untouched
+ * and the run is flagged. F90-2: header row on create; a tab with data in row 1 (A1 a date) gets one header row above it.
+ * Returns { moved, kept, note?, fitFailed? }. Throws only after rows may have been written (the caller flags it).
+ */
+function _archiveVisits_(ss, sheet, cutoff) {
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return { moved: 0, kept: 0, note: 'Visits has no data rows - nothing to archive' };
+    const keep = [data[0]];
+    const move = [];
+    for (let i = 1; i < data.length; i++) {
+        const st = String(data[i][10]); // __39_: Sheets may hold a non-text value in col K
+        if (new Date(data[i][0]) < cutoff && (st.includes('DEPARTED') || st.includes('SAFE') || st.includes('COMPLETED'))) { move.push(data[i]); } else { keep.push(data[i]); }
+    }
+    const width = data[0].length;
+    let archive;
+    // Everything that can be refused (create, widen, header, lengthen) happens before the first row is written.
+    try {
+        archive = ss.getSheetByName('Archive');
+        const created = !archive;
+        if (created) archive = ss.insertSheet('Archive');
+        _sheetFitCols_(archive, width);
+        _archiveHeader_(archive, data[0], created);
+        if (move.length) _sheetFitRows_(archive, archive.getLastRow() + move.length);
+    } catch (e) {
+        const msg = 'Archive tab could not be prepared (' + String(e).substring(0, 150) + ') - nothing moved, Visits unchanged';
+        _audit_('archiveOldData:FIT-FAILED', '', '', '', '', '', '', msg);
+        _archiveFlag_('The archive did not run: ' + msg + '. Unprotect the Archive tab or widen it to ' + width + ' columns, then run archiveOldData again.');
+        return { moved: 0, kept: keep.length - 1, fitFailed: true, note: 'nothing moved - Archive tab could not be prepared' };
+    }
+    if (move.length > 0) {
+        archive.getRange(archive.getLastRow() + 1, 1, move.length, width).setValues(move);
+        // __39_: kept rows are written over the top of Visits FIRST, then the leftover rows
+        // below them are cleared. The sheet is never empty, and a failure between the two
+        // calls leaves duplicates (recoverable) instead of a wiped sheet.
+        sheet.getRange(1, 1, keep.length, keep[0].length).setValues(keep);
+        if (data.length > keep.length) {
+            sheet.getRange(keep.length + 1, 1, data.length - keep.length, keep[0].length).clearContent();
+        }
+        _audit_('archiveOldData', '', '', '', '', '', '', 'Visits sheet rewritten (write then trim): ' + move.length + ' row(s) archived, ' + (keep.length - 1) + ' kept');
+    } else {
+        // __41_: a run that moves nothing must still leave a trace (it used to look like a run that never happened).
+        _audit_('archiveOldData:none', '', '', '', '', '', '', 'run complete: 0 row(s) eligible, ' + (keep.length - 1) + ' kept');
+    }
+    return { moved: move.length, kept: keep.length - 1 };
+}
+
+/**
+ * __45_ (F90-2): make sure Archive row 1 is the Visits header. New or empty tab: write it. A1 = 'Timestamp': fill any
+ * blank header cells (e.g. 'Visit ID' on a tab that pre-dates col AB). A1 a date (data in row 1, no header ever): insert
+ * one row above it, once. Anything else in A1: leave it and audit.
+ */
+function _archiveHeader_(archive, header, created) {
+    const width = header.length;
+    if (created || archive.getLastRow() === 0) {
+        archive.getRange(1, 1, 1, width).setValues([header]);
+        try { archive.setFrozenRows(1); } catch (_) {}
+        return;
+    }
+    const row1 = archive.getRange(1, 1, 1, width).getValues()[0];
+    const a1 = row1[0];
+    if (String(a1).trim() === 'Timestamp') {
+        let changed = false;
+        const merged = row1.map(function (v, c) {
+            if (String(v === null || v === undefined ? '' : v).trim() === '' && String(header[c] || '').trim() !== '') { changed = true; return header[c]; }
+            return v;
+        });
+        if (changed) {
+            archive.getRange(1, 1, 1, width).setValues([merged]);
+            _audit_('archiveOldData:header-filled', '', '', '', '', '', '', 'blank Archive header cells filled from Visits row 1');
+        }
+        return;
+    }
+    if (_looksLikeDate_(a1)) {
+        archive.insertRowsBefore(1, 1);
+        archive.getRange(1, 1, 1, width).setValues([header]);
+        try { archive.setFrozenRows(1); } catch (_) {}
+        _audit_('archiveOldData:header-added', '', '', '', '', '', '', 'Archive row 1 was data (A1 = ' + String(a1).substring(0, 40) +
+                ') - Visits header row inserted above it (one-off)');
+        return;
+    }
+    _audit_('archiveOldData:header-unknown', '', '', '', '', '', '', 'Archive A1 is neither the header nor a date ("' +
+            String(a1).substring(0, 40) + '") - left as it is; rows appended below');
+}
+
+/** __45_ (F90-3): Forms rows older than cutoff move to FormsArchive (header on create). Write then trim. Throws on failure. */
+function _archiveForms_(ss, cutoff) {
+    const fsh = ss.getSheetByName(FORMS_SHEET_NAME);
+    if (!fsh || fsh.getLastRow() <= 1) {
+        _audit_('archiveForms:none', '', '', '', '', '', '', 'run complete: no Forms rows');
+        return { moved: 0, kept: 0 };
+    }
+    const data = fsh.getDataRange().getValues();
+    const keep = [data[0]];
+    const move = [];
+    for (let i = 1; i < data.length; i++) {
+        const t = new Date(data[i][0]);
+        if (!isNaN(t.getTime()) && t < cutoff) move.push(data[i]); else keep.push(data[i]);
+    }
+    if (!move.length) {
+        _audit_('archiveForms:none', '', '', '', '', '', '', 'run complete: 0 form(s) eligible, ' + (keep.length - 1) + ' kept');
+        return { moved: 0, kept: keep.length - 1 };
+    }
+    const width = data[0].length;
+    let fa = ss.getSheetByName(FORMS_ARCHIVE_SHEET_NAME);
+    const created = !fa;
+    if (created) fa = ss.insertSheet(FORMS_ARCHIVE_SHEET_NAME);
+    _sheetFitCols_(fa, width);
+    if (created || fa.getLastRow() === 0) {
+        fa.getRange(1, 1, 1, width).setValues([data[0]]);
+        try { fa.setFrozenRows(1); } catch (_) {}
+    }
+    _sheetFitRows_(fa, fa.getLastRow() + move.length);
+    fa.getRange(fa.getLastRow() + 1, 1, move.length, width).setValues(move);
+    // Same safety order as Visits: kept rows written over the top first, then the leftover rows cleared.
+    fsh.getRange(1, 1, keep.length, width).setValues(keep);
+    if (data.length > keep.length) fsh.getRange(keep.length + 1, 1, data.length - keep.length, width).clearContent();
+    _audit_('archiveForms', '', '', '', '', '', '', 'Forms sheet rewritten (write then trim): ' + move.length + ' form(s) archived, ' + (keep.length - 1) + ' kept');
+    return { moved: move.length, kept: keep.length - 1 };
+}
+
+/** __45_ (F90-1): widen / lengthen a sheet so a write of that size is inside its dimensions (Sheets throws otherwise). */
+function _sheetFitCols_(sh, width) {
+    const m = sh.getMaxColumns();
+    if (m < width) sh.insertColumnsAfter(m, width - m);
+}
+function _sheetFitRows_(sh, lastRowNeeded) {
+    const m = sh.getMaxRows();
+    if (m < lastRowNeeded) sh.insertRowsAfter(m, lastRowNeeded - m);
+}
+
+/** __45_ (F90-2): a Sheets date value, or a string that starts with an ISO date and parses. */
+function _looksLikeDate_(v) {
+    if (Object.prototype.toString.call(v) === '[object Date]') return !isNaN(v.getTime());
+    const s = String(v === null || v === undefined ? '' : v).trim();
+    return /^\d{4}-\d{2}-\d{2}/.test(s) && !isNaN(new Date(s).getTime());
 }
 
 /** Lock not obtained: first time schedule one retry in 1 hour; a failed retry flags. */
@@ -4106,6 +4294,7 @@ function _escalationPayload_(sheet, entry, newStatus, isDual) {
         'Escalation Contact Number': isDual ? entry[8] : "",
         'Escalation Contact Email':  isDual ? entry[9] : "",
         'Escalation Contact Ntfy':   isDual ? escNtfy : "",
+        'Contact Scope':             isDual ? 'both' : 'primary',   // __45_ (F89-1): read by triggerAlerts
         'Alarm Status':              newStatus,
         'Notes':                     `Alert: Worker is ${newStatus}.`,
         'Visit Notes':               String(entry[11] || ''),
@@ -4122,8 +4311,9 @@ function _escalationPayload_(sheet, entry, newStatus, isDual) {
  * NEW: handleSafetyResolution
  * Logic: Notifies both contacts that the emergency has ended.
  */
-function handleSafetyResolution(p, forceNotify) {
+function handleSafetyResolution(p, forceNotify, forceScope) {
     let _stillMonitored = false; // __43_ (D2): the clear leaves an open visit row - the visit is still monitored
+    let _audience = forceNotify ? (forceScope || 'both') : 'none';   // __45_ (F89-2): who gets the All Clear
     // GUARD: Scan the sheet BEFORE handleWorkerPost runs, because handleWorkerPost
     // will overwrite the open alarm row's status to USER_SAFE_CONFIRMED — after which
     // the scan would hit the 'SAFE' break condition and incorrectly return alertWasSent=false,
@@ -4157,7 +4347,8 @@ function handleSafetyResolution(p, forceNotify) {
                     if ((data[i][2] || '').toString().trim() === workerNameCheck) {
                         const rowStatus = (data[i][10] || '').toString().toUpperCase();
                         if (rowStatus.includes('PRE_VISIT') || rowStatus.includes('DATA_ENTRY_ONLY')) continue;
-                        if (_contactsAlerted_(data[i])) alertWasSent = true;
+                        _audience = _alertAudience_(data[i]);            // __45_ (F89-2): who was alerted
+                        if (_audience !== 'none') alertWasSent = true;
                         const closed = rowStatus.includes('DEPARTED') || rowStatus.includes('COMPLETED') || rowStatus.includes('SAFE');
                         const due = new Date(data[i][20]);
                         latestOpenVisit = !closed && !!data[i][20] && !isNaN(due.getTime());
@@ -4188,8 +4379,8 @@ function handleSafetyResolution(p, forceNotify) {
     }
 
     // __43_ (F86-2): the All Clear goes out after the script lock is released (doPost path).
-    const _acP = Object.assign({}, p), _acOpen = _stillMonitored;
-    _sendOrQueue_('allclear', function () { _sendAllClear_(_acP, _acOpen); });
+    const _acP = Object.assign({}, p), _acOpen = _stillMonitored, _acScope = _audience;
+    _sendOrQueue_('allclear', function () { _sendAllClear_(_acP, _acOpen, _acScope); });
     return { status: "success" };
 }
 
@@ -4198,8 +4389,14 @@ function handleSafetyResolution(p, forceNotify) {
  * ALLCLEAR_WAIT_MS) while the checker is still sending this worker's ladder alerts, so it never arrives first.
  * stillMonitored (D2): the visit stays open, so the wording says contacts will be alerted again if needed.
  */
-function _sendAllClear_(p, stillMonitored) {
+function _sendAllClear_(p, stillMonitored, scope) {
     _allClearWaitForLadder_(p['Worker Name']);
+    // __45_ (F89-2): only the contacts who were alerted get the All Clear. 'primary' = standard tiers 1-3 only.
+    const _acPrimaryOnly = scope === 'primary';
+    if (_acPrimaryOnly) p = Object.assign({}, p, { 'Escalation Contact Number': '', 'Escalation Contact Phone': '',
+                                                   'Escalation Contact Email': '', 'Escalation Contact Ntfy': '' });
+    _audit_('allclear:sent', p['Worker Name'], '', '', '', p['Alarm Status'], p.idempotencyKey,
+            'All Clear to ' + (_acPrimaryOnly ? 'the primary contact only (only they were alerted)' : 'both contacts'));
 
     // 2. Draft the Resolution Messages
     const subject    = `✅ ALL CLEAR — ${p['Worker Name']} is safe`;
@@ -4260,7 +4457,7 @@ function _sendAllClear_(p, stillMonitored) {
                     const _sEmg = (_staffData[_j][7] || '').toString().trim(); // col H
                     const _sEsc = (_staffData[_j][8] || '').toString().trim(); // col I
                     if (_sEmg) allClearEmgNtfy = _sEmg;
-                    if (_sEsc) allClearEscNtfy = _sEsc;
+                    if (_sEsc && !_acPrimaryOnly) allClearEscNtfy = _sEsc;   // __45_ (F89-2)
                     break;
                 }
             }
@@ -4447,9 +4644,9 @@ function _audit_(source, worker, row, kBefore, kAfter, incoming, key, note) {
         if (_AUDIT_CTX) n = (n ? n + ' | ' : '') + _AUDIT_CTX;   // __43_ (F86-7)
         n = (n ? n + ' | ' : '') + 'build=' + TEMPLATE_BUILD;   // __41_: shows which template wrote the row
         sh.appendRow([
-            new Date().toISOString(), _auditExecId_(), String(source || ''), String(worker || ''),
+            new Date().toISOString(), _txt_(_auditExecId_()), String(source || ''), String(worker || ''),
             row || '', kBefore == null ? '' : String(kBefore), kAfter == null ? '' : String(kAfter),
-            String(incoming || ''), String(key || ''), n
+            String(incoming || ''), _txt_(String(key || '')), n   // __45_ (item 9 / F83-5): ids stay text
         ]);
     } catch (e) {
         try { console.warn('[audit] write failed: ' + e); } catch (_) {}
@@ -4634,7 +4831,7 @@ function onEdit(e) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__44_';
+const TEMPLATE_BUILD = 'backend__45_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
@@ -4787,19 +4984,52 @@ function _engineAge_(now) {
  * a legacy 'OVERDUE - ' tier (pre-__42_ rows), or an OVERDUE ALARM on a Critical Timing row (bridged to the contacts).
  * A plain OVERDUE pulse or a standard OVERDUE ALARM alerts nobody (the checker owns standard escalation).
  */
-function _contactsAlerted_(row) {
-    if (!row) return false;
+function _contactsAlerted_(row) { return _alertAudience_(row) !== 'none'; }
+
+/**
+ * __45_ (F89-2): WHO was alerted for this row's current due time - 'none', 'primary' or 'both'. Same evidence as
+ * _contactsAlerted_ (what was sent), plus which ladder sent it. Standard tiers 1-3 (col AA label 15MIN/30MIN/45MIN, or a
+ * legacy 'OVERDUE - ' tier in col K) reach the primary contact only; tier 4, every Critical Timing step, the Critical
+ * bridge and PANIC/SOS/DURESS/EMERGENCY reach both. The widest audience wins.
+ */
+function _alertAudience_(row) {
+    if (!row) return 'none';
     const st = String(row[10] || '').toUpperCase();
-    if (_alarmRank_(st) >= 3) return true;
-    if (st.includes('OVERDUE - ')) return true;
-    if (st.includes('OVERDUE ALARM') && String(row[11] || '').includes('[CRITICAL_TIMING]')) return true;
+    if (_alarmRank_(st) >= 3) return 'both';
+    if (st.includes('OVERDUE ALARM') && String(row[11] || '').includes('[CRITICAL_TIMING]')) return 'both';
+    let aud = st.includes('OVERDUE - ') ? 'primary' : 'none';
     const dueRaw = row[20];
     const due = new Date(dueRaw);
     if (dueRaw && !isNaN(due.getTime())) {
-        const mem = _ladderMemInfo_(row[LADDER_MEM_COL - 1], due.toISOString());
-        if (mem.same && mem.step >= 1) return true;
+        const raw = String(row[LADDER_MEM_COL - 1] || '');
+        const mem = _ladderMemInfo_(raw, due.toISOString());
+        if (mem.same && mem.step >= 1) {
+            const isStd = LADDER_STD_LABELS.indexOf(String(raw.split('|')[2] || '').trim()) > -1;
+            if (!isStd || mem.step >= 4) return 'both';
+            aud = 'primary';
+        }
     }
-    return false;
+    return aud;
+}
+
+/** __45_ (F89-3): the grace period in minutes, read as the phone reads it (parseInt, < 1 or unreadable -> 15). */
+function _graceMinutes_() {
+    const n = parseInt(String(CONFIG.ESCALATION_MINUTES), 10);
+    return (n >= 1) ? n : 15;
+}
+
+/** __45_ (F89-4): true when due time a is more than 1 s earlier than due time b (both readable). */
+function _isEarlierDue_(a, b) {
+    if (!a || !b) return false;
+    const x = new Date(a), y = new Date(b);
+    if (isNaN(x.getTime()) || isNaN(y.getTime())) return false;
+    return x.getTime() < y.getTime() - 1000;
+}
+
+/** __45_ (item 9 / F83-5): Sheets turns a numeric-looking string (12345678, 1234e567) into a number; an apostrophe keeps it text. */
+function _txt_(v) {
+    const s = String(v == null ? '' : v);
+    return /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(s.trim()) ? "'" + s : s;
 }
 
 /** F88-5a: posts whose doPost:sends row is always written (alarm family). Routine posts are not (log volume). */
@@ -4843,22 +5073,43 @@ function _formRouteFor_(sheet, workerName, p) {
 }
 
 /** Decision A: append one Forms row. Never writes the trip row (except a missing Visit ID in col AB). */
-function _formsRecord_(ss, sheet, p, route, notes, distance, sig, p1, p2, p3, p4) {
+function _formsRecord_(ss, sheet, p, route, notes, distance, sig, p1, p2, p3, p4, ledger) {
     const workerName = p['Worker Name'];
     const visitId = (route.rowNum && sheet) ? _visitIdGet_(sheet, route.rowNum, true) : '';
+    const fsh = _formsSheet_(ss);   // __45_: shared with the archive (header on create)
+    fsh.appendRow([new Date().toISOString(), workerName, p['Template Name'] || '', route.status, _txt_(visitId), route.rowNum || '', route.link,
+                   p['Visit Report Data'] || '', notes || '', (distance === '' || distance === null || distance === undefined) ? '' : distance,
+                   sig || '', p1 || '', p2 || '', p3 || '', p4 || '', p['Last Known GPS'] || '', _txt_(p.idempotencyKey || ''), p['Worker Build'] || '']);
+    _audit_(ledger ? 'handleWorkerPost:form-ledger' : 'handleWorkerPost:form', workerName, route.rowNum || '', '', '', p['Alarm Status'], p.idempotencyKey,
+            (ledger ? 'report also recorded in Forms tab row ' : 'form recorded in Forms tab row ') + fsh.getLastRow() + ' (' + route.link +
+            (visitId ? ', Visit ID ' + visitId : '') + ')' + (ledger ? ' - Visits row written as before' : ' - trip row not written'));
+}
+
+/** __45_: the Forms tab, created with its header row if missing. */
+function _formsSheet_(ss) {
     let fsh = ss.getSheetByName(FORMS_SHEET_NAME);
     if (!fsh) {
         fsh = ss.insertSheet(FORMS_SHEET_NAME);
-        fsh.appendRow(['Received (UTC)', 'Worker', 'Template', 'Status', 'Visit ID', 'Visits Row (at receipt)', 'Visit Link',
-                       'Form Data', 'Notes', 'Distance (km)', 'Signature', 'Photo 1', 'Photo 2', 'Photo 3', 'Photo 4',
-                       'Last Known GPS', 'Idempotency Key', 'Worker Build']);
+        fsh.appendRow(FORMS_HEADERS.slice());
         try { fsh.setFrozenRows(1); } catch (_) {}
     }
-    fsh.appendRow([new Date().toISOString(), workerName, p['Template Name'] || '', route.status, visitId, route.rowNum || '', route.link,
-                   p['Visit Report Data'] || '', notes || '', (distance === '' || distance === null || distance === undefined) ? '' : distance,
-                   sig || '', p1 || '', p2 || '', p3 || '', p4 || '', p['Last Known GPS'] || '', p.idempotencyKey || '', p['Worker Build'] || '']);
-    _audit_('handleWorkerPost:form', workerName, route.rowNum || '', '', '', p['Alarm Status'], p.idempotencyKey,
-            'form recorded in Forms tab row ' + fsh.getLastRow() + ' (' + route.link + (visitId ? ', Visit ID ' + visitId : '') + ') - trip row not written');
+    return fsh;
+}
+
+/**
+ * __45_ (Forms ledger): a post with report data that wrote a Visits row also gets a Forms row. Visit Link says what it
+ * is: 'closing report' (departure / completion), 'record row' (a new row - no visit was running), else 'visit row'.
+ * Never throws: a failed ledger write is audited and the post still succeeds (the Visits row already holds the report).
+ */
+function _formsLedger_(ss, sheet, p, statusAsSent, rowNum, isNewRow, notes, distance, sig, p1, p2, p3, p4) {
+    try {
+        const st = String(statusAsSent || '').trim().toUpperCase();
+        const link = isNewRow ? 'record row' : (st.includes('DEPARTED') || st === 'COMPLETED') ? 'closing report' : 'visit row';
+        _formsRecord_(ss, sheet, p, { status: st, rowNum: rowNum, link: link }, notes, distance, sig, p1, p2, p3, p4, true);
+    } catch (e) {
+        _audit_('handleWorkerPost:form-ledger-FAILED', p['Worker Name'], rowNum || '', '', '', p['Alarm Status'], p.idempotencyKey,
+                'report not copied to Forms (the Visits row holds it): ' + String(e).substring(0, 200));
+    }
 }
 
 /** Visit ID of a Visits row (col AB). backfill = give a pre-__44_ row an id now. Never throws; '' when unavailable. */
@@ -4879,7 +5130,7 @@ function _visitIdSet_(sheet, rowNum, id) {
         }
         const hdr = sheet.getRange(1, VISIT_ID_COL);
         if (!String(hdr.getValue() || '').trim()) hdr.setValue(VISIT_ID_HEADER);
-        sheet.getRange(rowNum, VISIT_ID_COL).setValue(String(id));
+        sheet.getRange(rowNum, VISIT_ID_COL).setValue(_txt_(String(id)));   // __45_ (F83-5): text even if numeric
         return true;
     } catch (e) {
         _audit_('visitId:FAILED', '', rowNum, '', '', '', '', String(e).substring(0, 200));
