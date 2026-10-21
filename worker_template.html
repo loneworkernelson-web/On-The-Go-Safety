@@ -637,7 +637,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
  <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety On-The-Go!</span>
- <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__20_</span>
+ <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__21_</span>
  </h1>
  </div>
  <div class="flex items-center">
@@ -1071,7 +1071,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
  <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
- <div id="appBuild" class="text-xs font-mono text-gray-400">worker__20_</div>
+ <div id="appBuild" class="text-xs font-mono text-gray-400">worker__21_</div>
  </div>
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">Backend Version</div>
@@ -1558,7 +1558,7 @@ const RISK_WELFARE_MAP = {
 //  Y4 timings of every Depart / distance step go to the F74-3 diag log; the report data records _distLookup and
 //     _distSpeedIntervals (credited/still/capped)
 // =============================================================================
-const WORKER_BUILD = 'worker__20_';
+const WORKER_BUILD = 'worker__21_';
 
 const CONFIG = {
  url: '',
@@ -5870,6 +5870,8 @@ async function outboxEnqueue(payload) {
 
  _refreshAlarmDeliveryCue(); // A1: PANIC cue shows until the server confirms
  outboxProcess();
+ // __21_ (R49): if this record is still unconfirmed after OUTBOX_UNCONFIRMED_MS, the banner appears.
+ setTimeout(_refreshUnconfirmedBanner, OUTBOX_UNCONFIRMED_MS + 1000);
 }
 
 /*
@@ -6020,8 +6022,10 @@ async function _outboxRunLane(lane) {
        row.status = 'sent';
        row.sentAt = new Date().toISOString();
        row.attempts = (row.attempts || 0) + 1;
+       if (row.lastError) row.prevError = row.lastError;   // __21_ (R49): keep why the earlier tries failed
        row.lastError = null;
      });
+     if ((record.attempts || 0) > 0) _outboxDiagTry(lane, record, (record.attempts || 0) + 1, 'sent');   // __21_ (R49)
      L.retryDelay = 2000;
      next = 300; // chain straight on to the next record
      sent = true;
@@ -6037,6 +6041,7 @@ async function _outboxRunLane(lane) {
          markedFailed = true;
        }
      });
+     _outboxDiagTry(lane, record, (record.attempts || 0) + 1, res.detail + (markedFailed ? ' (marked failed)' : ''));   // __21_ (R49)
      if (markedFailed) {
        console.warn(`Outbox: routine record ${record.id} marked failed - ${res.detail}`);
        next = 300; // move on to the next record
@@ -6056,6 +6061,7 @@ async function _outboxRunLane(lane) {
    // The other lane may have been waiting on this one (ordering rules).
    if (sent) setTimeout(() => _outboxRunLane(lane === 'alarm' ? 'routine' : 'alarm'), 0);
    _refreshAlarmDeliveryCue();
+   _refreshUnconfirmedBanner();   // __21_ (R49)
  }
 }
 
@@ -6083,6 +6089,113 @@ async function outboxRequeueFailedAndFlush() {
  _outboxLanes.routine.retryDelay = 2000;
  outboxProcess();
  setTimeout(() => { if (typeof updateOutboxStatus === 'function') updateOutboxStatus(); }, 1500);
+}
+
+/*
+ * __21_ (R49 / F93-1, session 93): keep delivering after the app was backgrounded or reloaded.
+ * Device 21 Oct: a DEPARTED queued as the phone was locked stayed unsent for 26 minutes (contacts got two overdue
+ * alerts) because (1) nothing restarted the outbox when the app started, (2) the foreground resend ran only while a
+ * visit was active, and (3) the retry timer froze in the background and was lost on reload. Now the outbox is
+ * restarted on app start, on every return to the foreground (visit or not), and every 30 s while on screen.
+ */
+const OUTBOX_RESUME_EVERY_MS = 30000;   // periodic restart while the app is on screen and something is waiting
+const OUTBOX_UNCONFIRMED_MS  = 15000;   // banner once a departure / extension / All Clear has waited this long
+
+/** Restart both lanes if anything is pending. reason: logged when given; resetDelay: back to the 2 s first retry. */
+async function _outboxResume(reason, resetDelay) {
+ try {
+   const db = await _outboxDB();
+   const pending = await _outboxPendingRecords(db);
+   if (pending.length) {
+     if (reason) _diag('R49: outbox resume (' + reason + ') - ' + pending.length + ' waiting');
+     if (resetDelay) { _outboxLanes.alarm.retryDelay = 2000; _outboxLanes.routine.retryDelay = 2000; }
+     outboxProcess();
+   }
+ } catch (_) { /* never block the app */ }
+ _refreshUnconfirmedBanner();
+}
+
+/** Wire the restarts once per page (app start, foreground, every 30 s on screen). */
+function _outboxWireResume() {
+ if (window.__otgOutboxResumeWired) return;
+ window.__otgOutboxResumeWired = true;
+ setTimeout(() => _outboxResume('app start', true), 1500);
+ document.addEventListener('visibilitychange', () => {
+   if (document.visibilityState === 'visible') _outboxResume('foreground', true);
+ });
+ setInterval(() => {
+   if (document.visibilityState === 'visible') _outboxResume(null, false);
+ }, OUTBOX_RESUME_EVERY_MS);
+}
+
+/** __21_ (R49 item 3): one diag line per failed try (first 5, then every 10th) and on a late success. */
+function _outboxDiagTry(lane, record, n, what) {
+ try {
+   if (what !== 'sent' && n > 5 && n % 10 !== 0) return;
+   const st = (record && record.payload && record.payload['Alarm Status']) || (record && record.payload && record.payload.action) || 'LOG';
+   _diag('outbox ' + lane + ': ' + st + (what === 'sent' ? ' sent on try ' + n : ' try ' + n + ' failed - ' + what));
+ } catch (_) {}
+}
+
+/** __21_ (R49 item 2): what a pending record confirms, for the banner - or null (not shown for other records). */
+function _outboxConfirmKind(record) {
+ const p = (record && record.payload) || {};
+ if (p.action === 'notifySafety') return 'All clear';
+ const st = String(p['Alarm Status'] || '').toUpperCase();
+ if (st.includes('DEPARTED')) return 'Departure';
+ if (st.includes('EXTENDED')) return 'Extension';
+ if (st.includes('USER_SAFE')) return 'All clear';
+ return null;
+}
+
+/** __21_: the kinds still unconfirmed after OUTBOX_UNCONFIRMED_MS, oldest first, no repeats. Pure (tested). */
+function _outboxUnconfirmed(pending, nowMs) {
+ const kinds = [];
+ [...(pending || [])].sort((a, b) => (a.id || 0) - (b.id || 0)).forEach(r => {
+   const k = _outboxConfirmKind(r);
+   if (!k || kinds.includes(k)) return;
+   const t = new Date(r.createdAt || 0).getTime();
+   if (!isNaN(t) && nowMs - t >= OUTBOX_UNCONFIRMED_MS) kinds.push(k);
+ });
+ return kinds;
+}
+
+/**
+ * __21_ (R49 item 2): amber banner "Departure not yet confirmed by the server - keep the app open" with Send now,
+ * while a departure / extension / All Clear waits. Gone as soon as the server confirms. NEVER shown during DURESS
+ * (nothing unusual may appear on screen then).
+ */
+async function _refreshUnconfirmedBanner() {
+ try {
+   const duressNow = () => isDuressActive || !!(state && state.activeVisit && state.activeVisit.isDuress);
+   let kinds = [];
+   if (!duressNow()) {
+     const db = await _outboxDB();
+     kinds = _outboxUnconfirmed(await _outboxPendingRecords(db), Date.now());
+   }
+   let b = document.getElementById('unconfirmedBanner');
+   if (!kinds.length || duressNow()) { if (b) b.remove(); return; }   // re-checked after the await
+   const text = kinds.join(' and ') + ' not yet confirmed by the server - keep the app open';
+   if (!b) {
+     b = document.createElement('div');
+     b.id = 'unconfirmedBanner';
+     b.setAttribute('role', 'alert');
+     b.style.cssText = 'position:fixed;left:0;right:0;z-index:9998;background:#b45309;color:#fff;font-weight:800;font-size:13px;' +
+       'padding:10px 12px;display:flex;align-items:center;gap:10px;justify-content:space-between;top:' +
+       (document.getElementById('buildMismatchBanner') ? '40px' : '0') + ';';
+     const span = document.createElement('span');
+     span.id = 'unconfirmedBannerText';
+     const btn = document.createElement('button');
+     btn.textContent = 'Send now';
+     btn.style.cssText = 'background:#fff;color:#b45309;font-weight:800;border-radius:8px;padding:6px 12px;white-space:nowrap;';
+     btn.onclick = (e) => { e.stopPropagation(); _diag('R49: Send now tapped'); outboxRequeueFailedAndFlush(); showToast('🔄 Sending…'); };
+     b.appendChild(span); b.appendChild(btn);
+     document.body.appendChild(b);
+     _diag('R49: unconfirmed banner shown - ' + kinds.join(', '));
+   }
+   const span = document.getElementById('unconfirmedBannerText');
+   if (span && span.textContent !== text) span.textContent = text;
+ } catch (_) { /* the banner must never affect delivery */ }
 }
 
 /**
@@ -7287,6 +7400,11 @@ function _initApp() {
  // the durable IndexedDB store. No-op if the queue is already empty.
  _outboxDrainLegacy();
 
+ // __21_ (R49 / F93-1): restart delivery on app start, on every return to the foreground (visit or not)
+ // and every 30 s while on screen. Before, a record left waiting after the visit ended stayed unsent until
+ // something else was queued or the worker pressed Flush.
+ _outboxWireResume();
+
  // OUTBOX: Resume delivery of any pending events as soon as connectivity
  // is (re)established — covers app-launch-while-offline then going online,
  // and mid-session reconnects after a tunnel / building / dead-zone drop.
@@ -7381,7 +7499,8 @@ async function _buildDiagReport() {
   recent.forEach(r => {
    const t = r.createdAt ? nzShort(r.createdAt) : '?';
    const st = (r.payload && r.payload['Alarm Status']) || 'LOG';
-   const err = (r.status !== 'sent' && r.lastError) ? ' - ' + String(r.lastError).slice(0, 80) : '';
+   const err = (r.status !== 'sent' && r.lastError) ? ' - ' + String(r.lastError).slice(0, 80)
+             : (r.status === 'sent' && r.prevError) ? ' (earlier: ' + String(r.prevError).slice(0, 60) + ')' : '';   // __21_ (R49)
    L.push(t + '  ' + r.status + '  ' + st + (r.attempts > 0 ? '  x' + r.attempts : '') + err);
   });
  } catch (e) {
@@ -10021,10 +10140,10 @@ async function triggerGraceExpiryAlarm() {
   const _isCriticalTrip = state.activeVisit?.highRisk || false;
   const _alarmNote = _isCriticalTrip
     ? (navigator.onLine
-        ? 'Critical timing: due time elapsed. Emergency contacts notified.'
+        ? 'Critical timing: due time elapsed. Alert being sent to contacts.'   // __21_ (R02)
         : 'Critical timing: due time elapsed. Device was offline — contacts not yet notified.')
     : (navigator.onLine
-        ? `${CONFIG.escalationMinutes || 15}-minute grace period expired. Emergency contacts notified.`
+        ? `${CONFIG.escalationMinutes || 15}-minute grace period expired. Alert being sent to contacts.`   // __21_ (R02)
         : `${CONFIG.escalationMinutes || 15}-minute grace period expired. Device was offline — contacts not yet notified.`);
   // F76-1 (build __13_): the OVERDUE ALARM post is sent at the end of this function, after a fresh
   // GPS fix (max 5 s). The alarm screen and announcement below still appear immediately.
@@ -10032,13 +10151,16 @@ async function triggerGraceExpiryAlarm() {
   // 2. Audio alert + overlay — grace expiry is a loud alarm on the device
   // (worker is not in a covert situation; they simply missed their check-in)
   const _numContacts = [state.worker?.emgName, state.worker?.escName].filter(Boolean).length;
-  const _contactWord = _numContacts === 1 ? 'contact has' : 'contacts have';
+  // __21_ (R02, F89-5): say only what is true. Critical Timing alerts both contacts at once; a standard visit
+  // alerts the main contact now (server tier 1) and the second contact only at tier 4.
   const _announceMsg = _isCriticalTrip
     ? (navigator.onLine
-        ? `Safety Alarm Activated. Your emergency ${_contactWord} been notified.`
+        ? (_numContacts === 1 ? 'Safety Alarm Activated. Your emergency contact is being alerted.'
+                              : 'Safety Alarm Activated. Your emergency contacts are being alerted.')
         : 'Safety Alarm Activated. No signal — use the email or call buttons to reach your contacts.')
     : (navigator.onLine
-        ? `Safety Alarm Activated. Your emergency ${_contactWord} been notified.`
+        ? (_numContacts > 1 ? 'Safety Alarm Activated. Your main emergency contact is being alerted. Your second contact will be alerted if there is still no contact from you.'
+                            : 'Safety Alarm Activated. Your emergency contact is being alerted.')
         : 'Safety Alarm Activated. No signal — use the email or call buttons to reach your contacts.');
   announce(_announceMsg);
 
