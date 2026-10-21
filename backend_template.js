@@ -21,7 +21,7 @@
  *   - Lock busy: the run is skipped, logged to Audit, and one retry is scheduled for 1 hour
  *     later (archiveOldDataRetry). If the retry also fails, or the run throws, it sets
  *     ARCHIVE_FAILED, emails the health-report recipient, and the daily health email
- *     carries a banner until it has beena reported.
+ *     carries a banner until it has been reported.
  *   - Column K is read with String(), so a non-text cell no longer aborts the archive.
  *
  * __40_ (session 77, 16 Oct 2026) - F76-1:
@@ -122,7 +122,22 @@
  *     no longer writes col K (Audit 'handleWorkerPost:stale-alarm').
  *   - Item 9 / F83-5: numeric-looking ids (execution id, idempotency key, Visit ID) are written as text.
  *
- * DEPLOY CHECKLIST (every deployment): Deploy > Manage deployments > New version. Then open the Apps Script
+ * __46_ (session 92, 20 Oct 2026) - R01, R38, R36, R37, R40, R39 (no worker change; ntfy proxy must forward Click
+ * and Actions for the R40 buttons - proxy_ntfy__2_.php - otherwise they are simply dropped):
+ *   - R01: every standard overdue alert (tiers 1-3) goes to ntfy at 'urgent', as decided in session 73. Tier 4,
+ *     Critical Timing, PANIC/SOS/DURESS were already 'urgent'.
+ *   - R38: phone numbers. _cleanPhone restores the leading 0 that Sheets drops from a number cell (226003534 was
+ *     shown as "+22 6003534" and dialled +226...). Visits rows now store the phone numbers as text.
+ *   - R36: overdue alerts say how long overdue the worker is, counted from the due time and worked out at send
+ *     time, with the due time in am/pm: ntfy title and first line, email subject and body, SMS. Not on the All Clear.
+ *   - R37: standard overdue (tiers 1-4) email steps worded for friends and family as well as managers; tiers 2-3
+ *     say when the first alert went; tier 4 says it is the final automatic alert. Labels use plain hyphens.
+ *   - R40: ntfy alerts carry Click (tap to call the worker), a "Call worker" button and, when there is a GPS fix,
+ *     a "Map" button. Labels are RFC 2047 encoded words (Russell's design choice E); ASCII labels if encoding fails.
+ *   - R39: the Forms ledger records "Last known GPS: ..." from the Visits row when the post has no GPS fix (0,0).
+ *   - SMS (Decision 4): no emoji in any SMS text (it forced smaller SMS segments).
+ *
+ * DEPLOY CHECKLIST(every deployment): Deploy > Manage deployments > New version. Then open the Apps Script
  * editor, run ONE function from each installed trigger by hand (accept any permission prompt), and confirm
  * the Triggers list shows no failures.
  */
@@ -831,9 +846,9 @@ function handleResolvePost(p) {
         const ts = new Date();
         const dateStr = Utilities.formatDate(ts, CONFIG.TIMEZONE, "yyyy-MM-dd");
         const row = [
-            ts.toISOString(), dateStr, workerName, p['Worker Phone Number'], 
-            p['Emergency Contact Name'], p['Emergency Contact Number'], p['Emergency Contact Email'], 
-            p['Escalation Contact Name'], p['Escalation Contact Number'], p['Escalation Contact Email'], 
+            ts.toISOString(), dateStr, workerName, _txt_(p['Worker Phone Number']),   // __46_ (R38): phones as text
+            p['Emergency Contact Name'], _txt_(p['Emergency Contact Number']), p['Emergency Contact Email'],
+            p['Escalation Contact Name'], _txt_(p['Escalation Contact Number']), p['Escalation Contact Email'], 
             p['Alarm Status'], p['Notes'], p['Location Name'], p['Location Address'], 
             p['Last Known GPS'], p['Timestamp'], p['Battery Level'], "", "", "", "", "", "", "", ""
         ];
@@ -1147,13 +1162,13 @@ if (!rowUpdated) {
     const row = [
         ts.toISOString(), 
         dateStr, 
-        workerName, 
-        p['Worker Phone Number'], 
-        p['Emergency Contact Name'], 
-        emgPhone, // FIXED: Maps frontend 'Phone' to backend 'Number'
-        p['Emergency Contact Email'], 
-        p['Escalation Contact Name'], 
-        escPhone, // FIXED: Maps frontend 'Phone' to backend 'Number'
+        workerName,
+        _txt_(p['Worker Phone Number']),   // __46_ (R38): phone cells as text, so Sheets keeps the leading 0
+        p['Emergency Contact Name'],
+        _txt_(emgPhone), // FIXED: Maps frontend 'Phone' to backend 'Number'
+        p['Emergency Contact Email'],
+        p['Escalation Contact Name'],
+        _txt_(escPhone), // FIXED: Maps frontend 'Phone' to backend 'Number'
         p['Escalation Contact Email'], 
         p['Alarm Status'], 
         polishedNotes, 
@@ -1469,18 +1484,24 @@ function updateStaffStatus(p) {
 }
 
 function _cleanPhone(num) {
-    if (!num) return null;
-    // Strip non-numeric characters
-    let n = num.toString().replace(/[^0-9]/g, ''); 
+    if (num === null || num === undefined || num === '') return null;
+    // __46_ (R38): Sheets stores an unformatted phone cell as a NUMBER and drops its leading 0 (0226003534 is read
+    // back as 226003534). The old code then just added '+', giving +226003534 (Burkina Faso). Rules, in order:
+    //   written with + or 00            -> international as written
+    //   starts with 0                   -> national: country code replaces the 0
+    //   10+ digits starting with the country code digits -> international without its '+'
+    //   up to 10 digits otherwise       -> national number that lost its 0 (country code added)
+    //   anything longer                 -> '+' added
+    const raw = num.toString().trim();
+    let n = raw.replace(/[^0-9]/g, '');
     if (n.length < 5) return null;
-    
-    // Handle local '0' prefix (e.g., 021 becomes +6421)
-    if (n.startsWith('0')) { 
-        return (CONFIG.COUNTRY_CODE || "+64") + n.substring(1); 
-    }
-    
-    // Ensure the '+' prefix is present for Textbelt
-    return n.startsWith('+') ? n : "+" + n;
+    const cc = (String(CONFIG.COUNTRY_CODE || '').includes('%%') ? '' : String(CONFIG.COUNTRY_CODE || '')).replace(/[^0-9]/g, '') || '64';
+    if (raw.charAt(0) === '+') return '+' + n;
+    if (raw.indexOf('00') === 0) return '+' + n.substring(2);
+    if (n.charAt(0) === '0') return '+' + cc + n.substring(1);
+    if (n.length >= 10 && n.indexOf(cc) === 0) return '+' + n;
+    if (n.length <= 10) return '+' + cc + n;
+    return '+' + n;
 }
 
 /**
@@ -1761,8 +1782,30 @@ function triggerAlerts(p, type) {
             ${_threePointMapUrl ? `<tr style="background:#0f172a;"><td colspan="2" style="padding:8px 10px;border:1px solid #334155;text-align:center;"><a href="${_threePointMapUrl}" style="color:#38bdf8;font-weight:bold;">${_mapBtnLabel}</a><div style="font-size:11px;color:#64748b;margin-top:4px;">A = Departure &nbsp;·&nbsp; B = Last known &nbsp;·&nbsp; C = Destination</div></td></tr>` : ''}
         </table>` : '';
 
-    const sentAt        = Utilities.formatDate(
-                              new Date(), CONFIG.TIMEZONE, "dd/MM/yyyy, HH:mm:ss");
+    const sentAt        = _ampm_(Utilities.formatDate(
+                              new Date(), CONFIG.TIMEZONE, "dd/MM/yyyy, h:mm:ss a"));   // __46_: am/pm (Russell)
+
+    // __46_ (R36): how long overdue, counted from the DUE time (col U, or the phone's due time on a phone post), worked
+    // out now - at send time - so a late or re-sent alert shows the true figure. Missed-check-in alerts only: never
+    // PANIC/SOS/DURESS/TEST, and nothing before the due time (a Critical Timing welfare miss).
+    const _isOverdueFamily = !/DURESS|PANIC|SOS|TEST_ALERT/.test(status) && /OVERDUE|EMERGENCY|CRITICAL TIMING/.test(status);
+    const _dueAt     = _alertDue_(p['Anticipated Departure Time']);
+    const _nowMs     = new Date().getTime();
+    const _overMin   = (_isOverdueFamily && _dueAt && _nowMs >= _dueAt.getTime()) ? Math.floor((_nowMs - _dueAt.getTime()) / 60000) : null;
+    const _dueClock  = (_overMin !== null) ? _clockText_(_dueAt) : '';
+    const _stdTier   = LADDER_STD_STATUSES.indexOf(status) + 1;   // 1-4 on the standard ladder, 0 otherwise
+    const _firstAlertClock = (_overMin !== null && _stdTier > 1) ? _clockText_(new Date(_dueAt.getTime() + _graceMinutes_() * 60000)) : '';
+    const _dueSentence = (_overMin === null) ? '' :
+        `<strong>${workerName} was due to ${isTravel ? 'arrive' : 'check out'} at ${_dueClock}` +
+        (_overMin >= 1 ? ` and is now ${_overMin} minute${_overMin === 1 ? '' : 's'} overdue.` : ' and is now overdue.') + '</strong>';
+    // __46_ (R37): steps for any contact - a manager, a friend or family - who may not know the site.
+    const _plainSteps = isTravel
+        ? `<li><strong>Call or text ${workerFirst} now</strong> on ${workerPhoneLink}</li>
+            <li>If there is no answer, check whether they have arrived at <strong>${locationName}</strong> - contact someone there, or anyone who may know where they are</li>
+            <li>If you cannot reach them and are worried, <strong>call emergency services (${EMERGENCY_NUMBER})</strong> and give the departure point and destination below</li>`
+        : `<li><strong>Call or text ${workerFirst} now</strong> on ${workerPhoneLink}</li>
+            <li>If there is no answer, try anyone who may know where they are - the site, the person they were visiting, or their workplace</li>
+            <li>If you cannot reach them and are worried, <strong>call emergency services (${EMERGENCY_NUMBER})</strong> and give the location below</li>`;
 
     // Colour, urgency label and action guidance are tailored to each status.
     let   headerColour  = '#dc2626';  // red  — default for alarms
@@ -1827,6 +1870,7 @@ function triggerAlerts(p, type) {
             statusLabel  = 'SECOND ALERT — ' + statusLabel;
             whatHappened = `<strong>SECOND ALERT — there has still been no contact from ${workerName}.</strong> One final notice will follow if their safety is not confirmed.<br><br>` + whatHappened;
         }
+        if (_dueSentence) whatHappened = _dueSentence + '<br><br>' + whatHappened;   // __46_ (R36)
     }
     else if (status.includes('EMERGENCY')) {
         headerColour  = '#dc2626';
@@ -1836,6 +1880,11 @@ function triggerAlerts(p, type) {
         whatHappened  = isTravel
             ? `This worker was <strong>travelling to ${locationName}${travelDestAddr}</strong> and is <strong>significantly overdue</strong>. We have not been able to confirm their safety.`
             : `This worker is <strong>significantly overdue</strong> and we have not been able to confirm their safety. Their grace period has expired.`;
+        if (_dueSentence) {   // __46_ (R36/R37)
+            whatHappened = _dueSentence + (isTravel ? ` They were travelling to <strong>${locationName}${travelDestAddr}</strong>.` : '') +
+                ' We have not been able to confirm their safety.' +
+                (_stdTier === 4 ? `<br><br>The main contact was first alerted at ${_firstAlertClock}. All contacts have now been alerted. <strong>This is the final automatic alert.</strong>` : '');
+        }
         actionSteps   = isTravel
             ? `<li>Try to <strong>call ${workerFirst}</strong> on ${workerPhoneLink} immediately</li>
             <li>Check whether they have arrived at <strong>${locationName}</strong> — contact someone there if possible</li>
@@ -1843,6 +1892,7 @@ function triggerAlerts(p, type) {
             : `<li>Try to <strong>call ${workerFirst}</strong> on ${workerPhoneLink} immediately</li>
             <li>Contact someone at the site to check on the worker's welfare</li>
             <li>If unreachable after a reasonable effort, <strong>consider contacting emergency services (${EMERGENCY_NUMBER})</strong> and providing the location above</li>`;
+        actionSteps   = _plainSteps;   // __46_ (R37)
         noteToContact = isTravel
             ? `Before escalating to police, consider that the worker may still be en route, out of coverage, or have a flat battery. Try calling, texting, and checking with the destination first.`
             : `Before escalating to police, consider that the worker may be out of mobile data coverage, may have closed the app, or may have a flat battery. Try calling, texting, and checking with the site first.`;
@@ -1852,7 +1902,7 @@ function triggerAlerts(p, type) {
         statusLabel   = isTravel
             ? (isCriticalTiming ? 'OVERDUE TRAVEL — CRITICAL TIMING MODE ACTIVE' : 'OVERDUE TRAVEL — NOT YET ARRIVED')
             : (isCriticalTiming ? 'OVERDUE — CRITICAL TIMING MODE ACTIVE' : 'OVERDUE — MISSED CHECK-IN');
-        ntfyPriority  = isCriticalTiming ? 'urgent' : 'high';
+        ntfyPriority  = 'urgent';   // __46_ (R01, session 73 decision): every overdue alert is urgent, not only Critical Timing
         ntfyTags      = isCriticalTiming ? 'rotating_light,red_circle' : 'warning,yellow_circle';
         whatHappened  = isTravel
             ? (isCriticalTiming
@@ -1861,6 +1911,13 @@ function triggerAlerts(p, type) {
             : (isCriticalTiming
                 ? `This worker <strong>has not checked out as scheduled and had activated Critical Timing Mode</strong> before their visit. Critical Timing Mode is used when a worker has specific concern about the importance of timely contact. <strong>Please act on this promptly.</strong>`
                 : `This worker <strong>has not checked out as scheduled</strong>. They may be delayed, unreachable, or in difficulty.`);
+        if (_dueSentence) {   // __46_ (R36/R37)
+            whatHappened = isCriticalTiming
+                ? _dueSentence + '<br><br>' + whatHappened
+                : _dueSentence + (isTravel ? ` They were travelling to <strong>${locationName}${travelDestAddr}</strong> and may be delayed, unreachable, or in difficulty.`
+                                           : ' They may be delayed, unreachable, or in difficulty.');
+            if (_stdTier === 2 || _stdTier === 3) whatHappened += `<br><br>You were first alerted at ${_firstAlertClock}. <strong>There has still been no contact.</strong>`;
+        }
         actionSteps   = isTravel
             ? `<li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhoneLink}</li>
             <li>Check whether they have arrived at <strong>${locationName}</strong> — contact someone there if possible</li>
@@ -1868,6 +1925,7 @@ function triggerAlerts(p, type) {
             : `<li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhoneLink}</li>
             <li>If you cannot reach them, contact someone at the site and ask them to check on the worker's safety</li>
             <li>If they remain unreachable and you have concerns, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>`;
+        if (!isCriticalTiming) actionSteps = _plainSteps;   // __46_ (R37)
         noteToContact = isTravel
             ? (isCriticalTiming
                 ? `This worker had activated Critical Timing Mode before departing, indicating a specific concern about timing. Treat this alert with higher urgency than a standard overdue travel notification.`
@@ -1898,12 +1956,38 @@ function triggerAlerts(p, type) {
 
     const headerEmoji = status.includes('TEST_ALERT') ? '🧪' : '🚨';
 
+    // __46_ (R36, Decision 3): plain hyphens in every label; on an overdue alert the overdue time leads the ntfy title,
+    // the email subject and the SMS. The email header and Status line keep the descriptive label.
+    statusLabel = statusLabel.replace(/\s*—\s*/g, ' - ');
+    let _titleLabel = statusLabel;
+    if (_overMin !== null) {
+        if (isCriticalTiming && status.includes('CRITICAL TIMING FINAL NOTICE'))  _titleLabel = `FINAL NOTICE - CRITICAL TIMING - ${_overMin} MIN OVERDUE`;
+        else if (isCriticalTiming && status.includes('CRITICAL TIMING REPEAT'))   _titleLabel = `SECOND ALERT - CRITICAL TIMING - ${_overMin} MIN OVERDUE`;
+        else if (isCriticalTiming) _titleLabel = `CRITICAL TIMING - ${_overMin >= 1 ? _overMin + ' MIN OVERDUE' : 'OVERDUE NOW'} (due ${_dueClock})`;
+        else if (status.includes('EMERGENCY')) _titleLabel = `EMERGENCY - ${_overMin} MIN OVERDUE`;
+        else _titleLabel = `OVERDUE ${_overMin} MIN`;
+    }
+    const _alertTitle = `${headerEmoji} ${_titleLabel} - ${workerName}`;
+    const _smsLabel   = _titleLabel + ((_overMin !== null && _titleLabel.indexOf('(due ') < 0) ? ` (due ${_dueClock})` : '');
+
+    // __46_ (R40): tap the notification to call the worker; "Call worker" and (with a GPS fix) "Map" buttons.
+    // The proxy must forward Click and Actions (proxy_ntfy__2_.php); an older proxy drops them and the alert still goes.
+    // Labels: no commas or semicolons (Actions separators); the map comma is sent as %2C. No Click on a TEST alert.
+    const _ntfyExtra = {};
+    if (workerPhoneTel && !status.includes('TEST_ALERT')) _ntfyExtra.click = 'tel:' + workerPhoneTel;
+    const _ntfyActs = [];
+    if (workerPhoneTel) _ntfyActs.push('view, ' + _ntfyLabel_('📞 Call worker', 'Call worker') + ', tel:' + workerPhoneTel);
+    if (hasValidGps) _ntfyActs.push('view, ' + _ntfyLabel_('📍 Map', 'Map') + ', https://maps.google.com/?q=' + gpsLat + '%2C' + gpsLng);
+    if (_ntfyActs.length) _ntfyExtra.actions = _ntfyActs.join('; ');
+
     // __43_ (Decision C): ntfy FIRST. It is the instant, audible channel; email (about 4 s per contact) and SMS follow.
     // ── NTFY PUSH ROUTING ─────────────────────────────────────────────────
     // Sends an instant push notification to each contact's phone via the ntfy app.
     // Fires in addition to email and SMS — never instead of them. __43_: sent before them.
     // Silently skipped per-contact if no ntfy topic is configured.
     const ntfyMessage = [
+        (_overMin !== null) ? `Was due ${_dueClock} - ${_overMin >= 1 ? 'now ' + _overMin + ' min overdue' : 'overdue now'}. Call ${workerFirst} now.` : '',   // __46_ (R36)
+        (_overMin !== null && _stdTier === 4) ? 'This is the final automatic alert.' : '',
         `Worker: ${workerName} · ${workerPhone}`,
         `Site: ${locationName}`,
         locationAddr ? `Address: ${locationAddr}` : '',
@@ -1941,7 +2025,7 @@ function triggerAlerts(p, type) {
     ].filter(c => c.topic && c.topic.trim());
 
     ntfyContacts.forEach(c => {
-        _sendNtfy(c.topic, `${headerEmoji} ${statusLabel} — ${workerName}`, ntfyMessage, ntfyPriority, ntfyTags);
+        _sendNtfy(c.topic, _alertTitle, ntfyMessage, ntfyPriority, ntfyTags, _ntfyExtra);   // __46_ (R36, R40)
     });
 
     // ── BUILD HTML EMAIL ───────────────────────────────────────────────────
@@ -2055,7 +2139,7 @@ function triggerAlerts(p, type) {
     ].filter(c => c.email && c.email.includes('@'));
 
     contactPairs.forEach(contact => {
-        const subject  = `${headerEmoji} ${statusLabel} — ${workerName}`;
+        const subject  = _alertTitle;   // __46_ (R36)
         const htmlBody = buildHtml(contact.name, contact.ntfy);
         try {
             MailApp.sendEmail({ to: contact.email, subject, htmlBody });
@@ -2084,7 +2168,7 @@ function triggerAlerts(p, type) {
         const gpsSmsTxt = (hasGPS && numbers.length)
             ? `Location: ${reverseGeocode_(rawGPS.trim())}`
             : `Location: Not available`;
-        const smsBody = `🚨 ALERT: ${statusLabel}\nWorker: ${workerName}\nSite: ${locationName}\nPhone: ${workerPhone}\n${gpsSmsTxt}`;
+        const smsBody = `ALERT: ${_smsLabel}\nWorker: ${workerName}\nSite: ${locationName}\nPhone: ${workerPhone}\n${gpsSmsTxt}`;   // __46_ (R36, Decision 4: no emoji)
         Logger.log('[SMS] Preparing to send. Body: "' + smsBody + '"');
         numbers.forEach(num => { try { _sendSms_(num, smsBody); } catch(e) { _logSmsResult_(num, smsBody, e.toString(), true); } });
     }
@@ -2181,7 +2265,7 @@ function reverseGeocode_(rawGPS) {
  * Silently skipped if topic is blank or NTFY_SERVER is not configured.
  * All errors are caught — a failed push must never prevent email/SMS from sending.
  */
-function _sendNtfy(topic, title, message, priority, tags) {
+function _sendNtfy(topic, title, message, priority, tags, extra) {
     if (!topic || topic.trim() === '') return;
     const server = (CONFIG.NTFY_SERVER && !CONFIG.NTFY_SERVER.includes('%%'))
         ? CONFIG.NTFY_SERVER.replace(/\/$/, '')
@@ -2206,6 +2290,8 @@ function _sendNtfy(topic, title, message, priority, tags) {
                 'Title':    title,
                 'Priority': priority || 'default',
                 'Tags':     tags    || 'bell',
+                ...((extra && extra.click)   ? { 'Click':   extra.click }   : {}),   // __46_ (R40)
+                ...((extra && extra.actions) ? { 'Actions': extra.actions } : {}),
                 ...extraHeaders
             },
             payload:            message,
@@ -4302,7 +4388,8 @@ function _escalationPayload_(sheet, entry, newStatus, isDual) {
         'Location Address':          entry[13],
         'Last Known GPS':            entry[14],
         'GPS Timestamp':             entry[15] || '',
-        'Battery Level':             entry[16]
+        'Battery Level':             entry[16],
+        'Anticipated Departure Time': entry[20] || ''   // __46_ (R36): the due time, for "N MIN OVERDUE" in the alerts
     };
     return { payload: payload, type: isDual ? "CRITICAL ESCALATION" : "OVERDUE WARNING" };
 }
@@ -4465,7 +4552,7 @@ function _sendAllClear_(p, stillMonitored, scope) {
     } catch (_e) { console.warn('All Clear ntfy Staff lookup failed: ' + _e.toString()); }
 
     const allClearMsg = [
-        `Worker: ${p['Worker Name'] || 'Unknown'} · ${p['Worker Phone Number'] || ''}`,
+        `Worker: ${p['Worker Name'] || 'Unknown'} · ${workerPhone}`,   // __46_ (R38): formatted, leading 0 restored
         `Location: ${p['Location Name'] || 'Unknown'}`,
         `Cleared: ${resolvedAt}`,
         stillMonitored ? 'Their visit is still being monitored - you will be alerted again if they do not check in on time.' : ''  // __43_ D2
@@ -4495,7 +4582,7 @@ function _sendAllClear_(p, stillMonitored, scope) {
             p['Emergency Contact Number'] || p['Emergency Contact Phone'],
             p['Escalation Contact Number'] || p['Escalation Contact Phone']
         ].map(n => _cleanPhone(n)).filter(n => n);
-        const allClearBody = `${subject}. Alert resolved.` + (stillMonitored ? ' Visit still being monitored.' : ''); // __43_ D2
+        const allClearBody = `${subject.replace(/^✅\s*/, '').replace(/\s*—\s*/g, ' - ')}. Alert resolved.` + (stillMonitored ? ' Visit still being monitored.' : ''); // __43_ D2; __46_: no emoji in SMS
         numbers.forEach(num => { try { _sendSms_(num, allClearBody); } catch(e) { _logSmsResult_(num, allClearBody, e.toString(), true); } });
     }
 
@@ -4821,6 +4908,51 @@ function onEdit(e) {
 }
 
 // ==========================================
+// __46_ HELPERS (session 92): alert wording and ntfy buttons
+/** __46_ (R36): a due time (ISO string or Date from col U / the phone) as a Date, or null if unreadable. */
+function _alertDue_(v) {
+    if (v === null || v === undefined || v === '') return null;
+    const d = (v instanceof Date) ? v : new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+}
+/** __46_: "AM"/"PM" from Utilities.formatDate as "am"/"pm" (Russell prefers am/pm). */
+function _ampm_(s) { return String(s).replace(/\bAM\b/, 'am').replace(/\bPM\b/, 'pm'); }
+/** __46_ (R36): a clock time for alert text, e.g. "2:30 pm"; "2:30 pm on Mon 19 Oct" when not today. '' on failure. */
+function _clockText_(d) {
+    try {
+        const tz = CONFIG.TIMEZONE;
+        let t = _ampm_(Utilities.formatDate(d, tz, 'h:mm a'));
+        if (Utilities.formatDate(d, tz, 'yyyy-MM-dd') !== Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd')) {
+            t += ' on ' + Utilities.formatDate(d, tz, 'EEE d MMM');
+        }
+        return t;
+    } catch (_) { return ''; }
+}
+/** __46_ (R40): an ntfy Actions label as an RFC 2047 encoded word (Russell's design choice E); plain ASCII on failure. */
+function _ntfyLabel_(label, asciiFallback) {
+    try {
+        const b64 = Utilities.base64Encode(label, Utilities.Charset.UTF_8);
+        if (!b64 || /[,;]/.test(b64)) return asciiFallback;
+        return '=?UTF-8?B?' + b64 + '?=';
+    } catch (_) { return asciiFallback; }
+}
+/**
+ * __46_ (R39): the GPS for a Forms row. The post's own fix when it has one; otherwise the Visits row's last known
+ * position (col O), labelled "Last known GPS: ..."; otherwise blank. "0,0" is the phone's no-fix fallback, never a place.
+ */
+function _formsGps_(sheet, rowNum, p) {
+    const noFix = v => { const c = String(v || '').replace(/\s+/g, ''); return !c || /^0(\.0+)?,0(\.0+)?$/.test(c); };
+    const own = String((p && p['Last Known GPS']) || '').trim();
+    if (!noFix(own)) return own;
+    try {
+        if (sheet && rowNum) {
+            const v = String(sheet.getRange(rowNum, 15).getValue() || '').trim();   // col O: Last Known GPS
+            if (!noFix(v)) return 'Last known GPS: ' + v;
+        }
+    } catch (e) { console.warn('[forms] last-known GPS lookup failed: ' + e); }
+    return '';
+}
+
 // __41_ JOB HEARTBEATS, BUILD STAMP AND TRIGGER HEALTH (session 80, Layer 2)
 // ==========================================
 // Why: a trigger that stops, or a job that quietly does nothing, looked identical to a healthy one.
@@ -4831,7 +4963,7 @@ function onEdit(e) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__45_';
+const TEMPLATE_BUILD = 'backend__46_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
@@ -5079,7 +5211,7 @@ function _formsRecord_(ss, sheet, p, route, notes, distance, sig, p1, p2, p3, p4
     const fsh = _formsSheet_(ss);   // __45_: shared with the archive (header on create)
     fsh.appendRow([new Date().toISOString(), workerName, p['Template Name'] || '', route.status, _txt_(visitId), route.rowNum || '', route.link,
                    p['Visit Report Data'] || '', notes || '', (distance === '' || distance === null || distance === undefined) ? '' : distance,
-                   sig || '', p1 || '', p2 || '', p3 || '', p4 || '', p['Last Known GPS'] || '', _txt_(p.idempotencyKey || ''), p['Worker Build'] || '']);
+                   sig || '', p1 || '', p2 || '', p3 || '', p4 || '', _formsGps_(sheet, route.rowNum, p), _txt_(p.idempotencyKey || ''), p['Worker Build'] || '']);
     _audit_(ledger ? 'handleWorkerPost:form-ledger' : 'handleWorkerPost:form', workerName, route.rowNum || '', '', '', p['Alarm Status'], p.idempotencyKey,
             (ledger ? 'report also recorded in Forms tab row ' : 'form recorded in Forms tab row ') + fsh.getLastRow() + ' (' + route.link +
             (visitId ? ', Visit ID ' + visitId : '') + ')' + (ledger ? ' - Visits row written as before' : ' - trip row not written'));
