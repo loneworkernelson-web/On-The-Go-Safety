@@ -123,7 +123,8 @@ canvas { touch-action: none; background: #fff; border-radius: 0.5rem; cursor: cr
 @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
 
 /* 7. POCKET PROTECTION/BATTERY SAVER VISUALS */
-#batterySaver { 
+#batterySaver {
+ touch-action: pan-y; /* __22_ (R56): no pinch-zoom on the dimmed screen (the wake slider already uses pan-y) */
  background-color: #000;
  padding-top: env(safe-area-inset-top);
  padding-bottom: env(safe-area-inset-bottom);
@@ -637,7 +638,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
  <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety On-The-Go!</span>
- <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__21_</span>
+ <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__22_</span>
  </h1>
  </div>
  <div class="flex items-center">
@@ -1071,7 +1072,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
  <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
- <div id="appBuild" class="text-xs font-mono text-gray-400">worker__21_</div>
+ <div id="appBuild" class="text-xs font-mono text-gray-400">worker__22_</div>
  </div>
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">Backend Version</div>
@@ -1557,8 +1558,22 @@ const RISK_WELFARE_MAP = {
 //     DEPART_WATCHDOG_MS even if no GPS answer arrives; the report opens exactly once
 //  Y4 timings of every Depart / distance step go to the F74-3 diag log; the report data records _distLookup and
 //     _distSpeedIntervals (credited/still/capped)
+// __22_ changes (session 95, from __21_):
+//  R54 the amber warnings under a distance field of type NUMBER are appended to the field's outer wrapper, not to the
+//      narrow input row (the warning squeezed the input so a required distance could not be typed and the report
+//      could not be submitted)
+//  R46 times the worker sees, and the "Extended Nm at ..." Notes line, are 12-hour "4:45 pm"; the diag log and the
+//      diagnostics report use the same style. Unchanged on purpose: GPS Timestamp (machine value), decoy clock
+//  R11 withPinVerification() removed (no callers; it compared the PIN with no duress handling); the alarm-screen
+//      contact buttons are hidden whenever the alarm overlay is hidden, so they cannot survive a visit end (F82-3)
+//  R56 no pinch-zoom while the dimmed screen is up: viewport locked to scale 1 (restored on wake / visit end),
+//      touch-action on the overlay, two-finger touches and iOS gestures cancelled on the overlay
+//  R57 trip-start GPS: warmUpGps() (never called before) now runs while a trip is being set up and records its fix;
+//      Start uses a fix under 60 s old at once, else waits up to 5 s for a fresh one (was 3 s, fresh only);
+//      a trip that starts with no position adopts the first good fix that arrives (and geocodes it); the report
+//      data records _distStartFix and the form warns when the start position is missing or came late
 // =============================================================================
-const WORKER_BUILD = 'worker__21_';
+const WORKER_BUILD = 'worker__22_';
 
 const CONFIG = {
  url: '',
@@ -1892,11 +1907,31 @@ let isSubmitting = false; // Guard against double-fire of the submit slide pill
 // Records who calls what, and when, so a double DEPARTED can be traced.
 // Log is kept in localStorage (survives reload) and shown under the Event
 // Outbox panel in Settings. Remove once F74-3 is fixed.
+/**
+ * __22_ (R46): clock times shown to people, or written into Notes lines, are 12-hour "4:45 pm" (space, lower case)
+ * in the phone's own time zone - never the device's 12/24-hour setting or language. Seconds / milliseconds optional.
+ */
+function _fmtClock12(d, withSeconds, withMillis) {
+  const t = (d && typeof d.getTime === 'function') ? d : new Date(d);
+  if (isNaN(t.getTime())) return '?';
+  const h24 = t.getHours();
+  let out = (h24 % 12 || 12) + ':' + String(t.getMinutes()).padStart(2, '0');
+  if (withSeconds || withMillis) out += ':' + String(t.getSeconds()).padStart(2, '0');
+  if (withMillis) out += '.' + String(t.getMilliseconds()).padStart(3, '0');
+  return out + ' ' + (h24 >= 12 ? 'pm' : 'am');
+}
+/** __22_ (R46): "22/10/2026, 4:45:09 pm" (withYear) or "22/10, 4:45:09 pm" - diagnostics report. */
+function _fmtDateTime12(d, withYear) {
+  const t = (d && typeof d.getTime === 'function') ? d : new Date(d);
+  if (isNaN(t.getTime())) return '?';
+  return String(t.getDate()).padStart(2, '0') + '/' + String(t.getMonth() + 1).padStart(2, '0') +
+         (withYear ? '/' + t.getFullYear() : '') + ', ' + _fmtClock12(t, true);
+}
 const _DIAG_KEY = 'otg_f743_diag';
 function _diag(label, withStack) {
  try {
   const t = new Date();
-  const hms = t.toLocaleTimeString('en-NZ', { hour12: false }) + '.' + String(t.getMilliseconds()).padStart(3, '0');
+  const hms = _fmtClock12(t, true, true);   // __22_ (R46)
   const dm = String(t.getDate()).padStart(2, '0') + '/' + String(t.getMonth() + 1).padStart(2, '0'); // Y9 (build __18_)
   let line = dm + ' ' + hms + ' ' + label;
   if (withStack) {
@@ -2235,6 +2270,7 @@ function submitReport() {
    d.jsonPayload['_distWatchFailed']  = _gpsWatchPositionFailed ? 'yes' : 'no';
    d.jsonPayload['_distLookup']       = (calculatedDist && calculatedDist.trace) || '';   // Y4 (build __16_)
    d.jsonPayload['_distSpeedIntervals'] = _speedStats.credited + '/' + _speedStats.still + '/' + _speedStats.capped; // credited/still/capped
+   d.jsonPayload['_distStartFix']     = ((typeof state !== 'undefined' && state && state.activeVisit && state.activeVisit.startFixNote) || 'unknown');   // __22_ (R57): warm / fresh / late / none
  }
 
  // 4. BUILD PAYLOAD
@@ -2345,6 +2381,7 @@ function submitReport() {
 
  const _concludedIsTravel = state.activeVisit && (state.activeVisit.isTravel || state.activeVisit.locationId === 'travel');
  const _hadActiveVisit = !!state.activeVisit; // Z1 (build __19_)
+ _setSaverPinchLock(false);   // __22_ (R56): never leave the viewport locked after a visit
  state.activeVisit = null;
  state.selectedLocationId = null;
  state.isGeneralDest = false;
@@ -2449,6 +2486,35 @@ function setupLongPress(target, duration, callback) {
 // ============================================================================
 
 /**
+ * __22_ (R56): no pinch-zoom on the dimmed screen. Device 22 Oct: swipes were resisted but a pinch zoomed the
+ * battery-saver screen (the viewport allows zoom and the overlay set no touch-action). While the saver is up the
+ * viewport is locked to scale 1 and restored EXACTLY on wake or when the visit ends; the overlay allows only vertical
+ * panning (CSS) and cancels two-finger touches and iOS gesture events itself. Zoom elsewhere in the app is untouched.
+ */
+let _viewportSavedContent = null;
+function _setSaverPinchLock(on) {
+  try {
+    const m = document.querySelector('meta[name="viewport"]');
+    if (!m) return;
+    if (on) {
+      if (_viewportSavedContent === null) _viewportSavedContent = m.getAttribute('content') || '';
+      m.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover');
+    } else if (_viewportSavedContent !== null) {
+      m.setAttribute('content', _viewportSavedContent);
+      _viewportSavedContent = null;
+    }
+  } catch (_) { /* never let this affect the safety screen */ }
+}
+function _wireSaverPinchGuard() {
+  const saver = document.getElementById('batterySaver');
+  if (!saver) return;
+  const stop = e => { try { e.preventDefault(); } catch (_) {} };
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(ev => saver.addEventListener(ev, stop, { passive: false }));
+  ['touchstart', 'touchmove'].forEach(ev => saver.addEventListener(ev, e => { if (e.touches && e.touches.length > 1) stop(e); }, { passive: false }));
+}
+_wireSaverPinchGuard();
+
+/**
  * ACTIVATE: Show battery saver overlay.
  * Called ONLY by the inactivity timer (dimTimer).
  * Single path — no ambiguity.
@@ -2471,6 +2537,7 @@ function activateBatterySaver() {
  if (!saver) return;
 
  isBatterySaverActive = true;
+ _setSaverPinchLock(true);   // __22_ (R56)
 
  // Show overlay
  saver.classList.remove('hidden');
@@ -2514,6 +2581,7 @@ function deactivateBatterySaver() {
  const main = document.getElementById('lockedPage');
 
  isBatterySaverActive = false;
+ _setSaverPinchLock(false);   // __22_ (R56)
 
  // Hide overlay
  if (saver) saver.classList.add('hidden');
@@ -2616,6 +2684,95 @@ function _gpsHaversineMetres(lat1, lng1, lat2, lng2) {
  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+/*
+ * __22_ (R57): trip-start GPS.
+ * Before: warmUpGps() existed but nothing called it, so the GPS chip was cold at Start; Start asked for a brand-new
+ * fix and gave up after 3 s; a missed fix left the start position "0,0" for the whole trip (no start breadcrumb, no
+ * start address, no distance), and nothing ever filled it in. Now: the warm-up runs while a trip is being set up and
+ * records its fix; Start uses a fix under START_FIX_MAX_AGE_MS old at once, else waits at most START_FIX_WAIT_MS; the
+ * trip ALWAYS starts (the server must hear about it); and if there was no fix the first good fix that arrives (watch
+ * or poller) becomes the start position, with the delay recorded and shown on the report.
+ */
+const START_FIX_WAIT_MS     = 5000;    // longest Start waits for a fix before the trip starts anyway
+const START_FIX_MAX_AGE_MS  = 60000;   // a fix this recent (from the warm-up or tracking) is used at once
+const START_FIX_MAX_ACC_M   = 150;     // a fix worse than this (metres) is not adopted as the start position
+const START_FIX_LATE_NOTE_S = 30;      // the report warns when the start fix came later than this
+let _lastFixInfo = null;               // { lat, lng, acc, ts } - newest fix from the warm-up, the poller or the watch
+
+function _noteFix(pos) {
+  try {
+    const c = pos && pos.coords;
+    if (!c || !isFinite(c.latitude) || !isFinite(c.longitude)) return;
+    _lastFixInfo = { lat: c.latitude, lng: c.longitude, acc: c.accuracy, ts: Date.now() };
+  } catch (_) {}
+}
+
+/** The newest fix as { gps: "lat,lng", acc, ageMs } if it is recent and accurate enough, else null. */
+function _recentGoodFix(maxAgeMs) {
+  const f = _lastFixInfo;
+  if (!f) return null;
+  const ageMs = Date.now() - f.ts;
+  if (ageMs > maxAgeMs || !(f.acc <= START_FIX_MAX_ACC_M)) return null;
+  const gps = f.lat.toFixed(6) + ',' + f.lng.toFixed(6);
+  return _isValidGPS(gps) ? { gps: gps, acc: f.acc, ageMs: ageMs } : null;
+}
+
+/** Get the trip's start position without holding Start for long. Resolves { gps, note }; gps is "0,0" if none. */
+async function _acquireStartFix() {
+  const t0 = Date.now();
+  const warm = _recentGoodFix(START_FIX_MAX_AGE_MS);
+  if (warm) return { gps: warm.gps, note: 'warm ' + Math.round(warm.ageMs / 1000) + 's old, ' + Math.round(warm.acc) + ' m' };
+  let why = '';
+  try {
+    const pos = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject,
+        { enableHighAccuracy: true, timeout: START_FIX_WAIT_MS, maximumAge: 30000 });
+    });
+    _noteFix(pos);
+    const gps = pos.coords.latitude.toFixed(6) + ',' + pos.coords.longitude.toFixed(6);
+    if (_isValidGPS(gps)) return { gps: gps, note: 'fresh ' + (Date.now() - t0) + ' ms, ' + Math.round(pos.coords.accuracy) + ' m' };
+    why = ' (0,0 fix)';
+  } catch (e) {
+    why = ' (' + ((e && e.code) || (e && e.name) || 'error') + ')';
+  }
+  return { gps: '0,0', note: 'none after ' + (Date.now() - t0) + ' ms' + why };
+}
+
+/** Reverse-geocode the trip's start (async, fills state.activeVisit.startAddress for the report form). */
+function _geocodeStartAddress(latStr, lonStr) {
+  const gps = latStr + ',' + lonStr;
+  fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latStr}&lon=${lonStr}`,
+    { headers: { 'Accept-Language': 'en' } })
+    .then(r => r.json())
+    .then(data => {
+      if (state.activeVisit) { state.activeVisit.startAddress = data.display_name || gps; saveState(); }
+    })
+    .catch(() => {
+      if (state.activeVisit) { state.activeVisit.startAddress = gps; saveState(); }   // raw coords fallback
+    });
+}
+
+/** A trip that started with no position adopts the first good fix. Returns true when it did. */
+function _adoptLateStartFix(pos) {
+  try {
+    const v = state && state.activeVisit;
+    if (!v || !v.isTravel || _isValidGPS(v.startGPS)) return false;
+    const c = pos && pos.coords;
+    if (!c || !(c.accuracy <= START_FIX_MAX_ACC_M)) return false;
+    const gps = c.latitude.toFixed(6) + ',' + c.longitude.toFixed(6);
+    if (!_isValidGPS(gps)) return false;
+    const lateS = Math.max(0, Math.round((Date.now() - v.startTime) / 1000));
+    v.startGPS = gps;
+    v.startFixLateS = lateS;
+    v.startFixNote = 'late +' + lateS + 's, ' + Math.round(c.accuracy) + ' m';
+    if (!gpsTrail.length) gpsTrail.push({ lat: c.latitude, lng: c.longitude });
+    try { _diag('R57: trip had no start position - adopted the first good fix (+' + lateS + ' s, ' + Math.round(c.accuracy) + ' m)'); } catch (_) {}
+    saveState();
+    _geocodeStartAddress(c.latitude.toFixed(6), c.longitude.toFixed(6));
+    return true;
+  } catch (_) { return false; }
+}
+
 function startGPSMonitoring() {
  if (gpsWatchId !== null) {
  clearTimeout(gpsWatchId);
@@ -2640,6 +2797,7 @@ function _takeSingleGPSFix() {
  const lat = pos.coords.latitude;
  const lng = pos.coords.longitude;
  lastGPS = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+ _noteFix(pos); _adoptLateStartFix(pos);   // __22_ (R57)
  updateGPSBars(pos);
  // F76-1 (build __13_): the alarm post went out before any fix existed - send the position the moment one lands
  // (the regular alarm pulse is 2 minutes apart). Only while an alarm is still active.
@@ -2768,6 +2926,7 @@ function startTravelWatchPosition() {
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
       lastGPS = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+      _noteFix(pos); _adoptLateStartFix(pos);   // __22_ (R57)
       updateGPSBars(pos);
       _consecutiveGPSFailures = 0;
 
@@ -3168,7 +3327,9 @@ function _injectTripEndpointFields(container) {
       _existingDistInput.classList.add('bg-green-900/20');
       _existingDistInput.dispatchEvent(new Event('input', { bubbles: true }));
     }
-    distWrapper = _existingDistInput.closest('div') || _existingDistInput.parentNode;
+    // __22_ (R54): the OUTER wrapper (.mb-5). For a NUMBER field the nearest div is the .input-group flex row
+    // (fixed height, overflow hidden); appending the amber warnings there squeezed the input to nothing.
+    distWrapper = _existingDistInput.closest('.mb-5') || _existingDistInput.closest('div') || _existingDistInput.parentNode;
   } else {
     // No template distance field — inject one
     const distField = makeField('Distance (km)', 'Distance (km)', distVal, 'Enter distance');
@@ -3198,6 +3359,21 @@ function _injectTripEndpointFields(container) {
     gpsNote.setAttribute('role', 'note');
     gpsNote.textContent = '⚠️ A GPS tracking issue occurred during this trip — distance may be inaccurate. Correct the value above if needed.';
     distWrapper.appendChild(gpsNote);
+  }
+
+  // __22_ (R57): say so when the trip's start position is missing or came late (distance may be short or absent)
+  const _av = state.activeVisit;
+  const _startMissing = !_isValidGPS(_av.startGPS);
+  const _lateS = Number(_av.startFixLateS) || 0;
+  if (_startMissing || _lateS >= START_FIX_LATE_NOTE_S) {
+    const startNote = document.createElement('div');
+    startNote.className = 'p-3 bg-amber-900/20 border-l-4 border-amber-500 rounded-r-xl text-xs text-amber-100 font-medium italic leading-relaxed mt-2';
+    startNote.setAttribute('role', 'note');
+    startNote.textContent = _startMissing
+      ? '⚠️ No start position was captured for this trip - enter the distance yourself.'
+      : '⚠️ GPS found your start position ' + (_lateS >= 120 ? Math.round(_lateS / 60) + ' minutes' : _lateS + ' seconds') +
+        ' after you started - the distance may be short. Check this figure and correct it if needed.';
+    distWrapper.appendChild(startNote);
   }
 
   // Prepend Start Point and Destination at top (Distance is either already in
@@ -3670,6 +3846,7 @@ function directDepart() {
  state.isGeneralDest = false;
  state.visitDurationMinutes = 0;
  state.photoStore = {};
+ _setSaverPinchLock(false);   // __22_ (R56): never leave the viewport locked after a trip
  // Reset per-trip no-report flag now that the trip is over.
  // Restore org default (mandatory) or worker's saved preference if org allows.
  state.travelNoReport = CONFIG.reqTravelReport ? false : !!(state.travelNoReportDefault);
@@ -4143,7 +4320,7 @@ function iamSafe() {
     const _afterDue = Date.now() >= (state.activeVisit.anticipatedDepartureTime || 0);
     _clearAlarmState(); // overlay, interceptor, pulses, panic flags - the phase is set below
     // The alarm-screen contact buttons belong to the alarm, not the running visit (a reload hides them too).
-    ['btnDirectAlert', 'btnCallICE'].forEach(id => { const b = document.getElementById(id); if (b) b.classList.add('hidden'); });
+    _hideAlarmContactButtons();   // __22_ (R11 / F82-3)
     if (_afterDue) {
       _applyNewDueTime(Date.now() + PIN_CLEAR_EXTRA_MINS * 60000);
     } else {
@@ -4411,7 +4588,7 @@ function tick() {
  // UPDATE ANTICIPATED TIME
  if (state.activeVisit.anticipatedDepartureTime && anticipatedTimeEl) {
  const antTime = new Date(state.activeVisit.anticipatedDepartureTime);
- anticipatedTimeEl.innerText = antTime.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', hour12: true});
+ anticipatedTimeEl.innerText = _fmtClock12(antTime);   // __22_ (R46)
  }
 }
 
@@ -4873,7 +5050,7 @@ function setQuickDuration(mins) {
  const due = document.getElementById('durationDue');
  if (due) {
  const dueTime = new Date(Date.now() + mins * 60000);
- due.textContent = 'Due: ' + dueTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', hour12: true});
+ due.textContent = 'Due: ' + _fmtClock12(dueTime);   // __22_ (R46)
  }
 
  // Highlight selected button, clear others
@@ -5014,6 +5191,7 @@ function toggleTripMode() {
   state.visitDurationMinutes = 0;
   updateDurationDisplay();
  } else {
+  warmUpGps();   // __22_ (R57): wake the GPS while the destination is being chosen
   // Entering trip mode — clear any previously selected site tile
   state.selectedLocationId = null;
   state.isGeneralDest = false;
@@ -5025,6 +5203,7 @@ function toggleTripMode() {
 /** Selects (or deselects) "General" as the trip destination. */
 function selectGeneralDest() {
  if (!state.isTravelActive) return;
+ warmUpGps();   // __22_ (R57)
  state.isGeneralDest = !state.isGeneralDest;
  if (state.isGeneralDest) {
   // General and a named tile are mutually exclusive
@@ -5081,6 +5260,7 @@ function createLocationTile(loc) {
  
  tile.onclick = () => {
  state.selectedLocationId = (state.selectedLocationId === loc.id) ? null : loc.id;
+ if (state.isTravelActive) warmUpGps();   // __22_ (R57)
  if (state.selectedLocationId) state.isGeneralDest = false; // named tile overrides General
  updateWelfareSelector(state.selectedLocationId);
  renderLocations();
@@ -5148,6 +5328,7 @@ function createLocationRow(loc) {
  row.onclick = (e) => {
  if (e.target.closest('button')) return;
  state.selectedLocationId = (state.selectedLocationId === loc.id) ? null : loc.id;
+ if (state.isTravelActive) warmUpGps();   // __22_ (R57)
  if (state.selectedLocationId) state.isGeneralDest = false;
  updateWelfareSelector(state.selectedLocationId);
  renderLocations();
@@ -5526,19 +5707,15 @@ async function startVisit(isSkipCheck = false) {
  // capturing the phone's physical position implies a precision that isn't meaningful
  // (worker may be selecting the site from home / office) and misleads the monitor map.
  let verifiedStartGPS = "0,0";
+ let _startFixNote = '';   // __22_ (R57): how the start position was obtained - goes to the report data
  if (isTravelMode || locId === 'travel') {
  showToast('📍 Locking GPS signal...');
- try {
- const freshPos = await new Promise((resolve, reject) => {
- navigator.geolocation.getCurrentPosition(resolve, reject, { 
- enableHighAccuracy: true, timeout: 3000 
- });
- });
- verifiedStartGPS = `${freshPos.coords.latitude.toFixed(6)},${freshPos.coords.longitude.toFixed(6)}`;
- lastGPS = verifiedStartGPS;
- } catch (e) {
- console.warn('GPS signal lock deferred.');
- }
+ const _sf = await _acquireStartFix();   // __22_ (R57): warm fix at once, else up to START_FIX_WAIT_MS; the trip starts either way
+ verifiedStartGPS = _sf.gps;
+ _startFixNote = _sf.note;
+ if (_isValidGPS(verifiedStartGPS)) lastGPS = verifiedStartGPS;
+ try { _diag('startVisit: start fix ' + _sf.note); } catch (_) {}
+ if (!_isValidGPS(verifiedStartGPS)) showToast('⚠️ No GPS yet - your trip has started. Step outside if you can; the start position is added when GPS locks.', 6000);
  if (typeof startGPSMonitoring === 'function') {
  // Reset breadcrumb trail and speed accumulator for this trip, then seed
  // the trail with the verified start position.
@@ -5592,6 +5769,7 @@ async function startVisit(isSkipCheck = false) {
  duration: durationSec,
  anticipatedDepartureTime: anticipatedDeparture,
  startGPS: verifiedStartGPS,
+ startFixNote: _startFixNote,   // __22_ (R57)
  highRisk: isHighRisk,
  checkinIntervalMins: _resolvedWelfare, // welfare check interval for this visit
  phase: VISIT_PHASES.ACTIVE,
@@ -5622,21 +5800,7 @@ async function startVisit(isSkipCheck = false) {
   // prevents a stale write if the worker ends a very short trip before fetch resolves.
   if (isTravelMode && verifiedStartGPS && verifiedStartGPS !== '0,0') {
     const [_bgLat, _bgLon] = verifiedStartGPS.split(',');
-    fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${_bgLat}&lon=${_bgLon}`,
-      { headers: { 'Accept-Language': 'en' } })
-      .then(r => r.json())
-      .then(data => {
-        if (state.activeVisit) {
-          state.activeVisit.startAddress = data.display_name || verifiedStartGPS;
-          saveState();
-        }
-      })
-      .catch(() => {
-        if (state.activeVisit) {
-          state.activeVisit.startAddress = verifiedStartGPS; // raw coords fallback
-          saveState();
-        }
-      });
+    _geocodeStartAddress(_bgLat, _bgLon);   // __22_ (R57): shared with the late start fix
   }
 
  const alarmStatus = isTravelMode ? "TRAVELLING" : "ARRIVED";
@@ -6443,7 +6607,13 @@ function showAlarmOverlay(mode) {
   el.classList.add(mode === 'duress' ? 'alarm-duress' : 'alarm-panic');
 }
 
+/** __22_ (R11 / F82-3): the alarm screen's email and call buttons must never outlive the alarm. */
+function _hideAlarmContactButtons() {
+  ['btnDirectAlert', 'btnCallICE'].forEach(id => { const b = document.getElementById(id); if (b) b.classList.add('hidden'); });
+}
+
 function hideAlarmOverlay() {
+  _hideAlarmContactButtons();   // __22_ (R11 / F82-3): also on visit end, visit start and every alarm clear
   const el = document.getElementById('alarmOverlay');
   if (!el) return;
   el.classList.remove('alarm-panic', 'alarm-duress');
@@ -6771,13 +6941,16 @@ async function _evaluateDecoyPin(entered) {
 function warmUpGps() {
  if (gpsWarm) return;
  gpsWarm = true;
- 
+ // __22_ (R57): this was never called, and its fix was thrown away. Now called while a trip is being set up
+ // (toggleTripMode, destination taps) and the fix is kept for startVisit(). Debounced to once per 30 s.
+ if (!navigator.geolocation) return;
+
  navigator.geolocation.getCurrentPosition(
- () => {},
+ (pos) => { _noteFix(pos); },
  (err) => {
  if (err.code === 1) showToast("📍 GPS Permission Required");
  },
- { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+ { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
  );
  
  setTimeout(() => {
@@ -7434,7 +7607,7 @@ function toggleDiagnostics() {
 async function _buildDiagReport() {
  const L = [];
  const add = (k, v) => L.push(k + ': ' + (v === undefined || v === null || v === '' ? '-' : v));
- const nz = (t) => { try { return new Date(t).toLocaleString('en-NZ', { hour12: false }); } catch (_) { return String(t); } };
+ const nz = (t) => { try { return _fmtDateTime12(new Date(t), true); } catch (_) { return String(t); } };   // __22_ (R46)
  const safe = (f, d) => { try { const v = f(); return (v === undefined || v === null) ? d : v; } catch (_) { return d; } };
  const now = new Date();
 
@@ -7487,7 +7660,7 @@ async function _buildDiagReport() {
   const cnt = s => all.filter(r => r.status === s).length;
   add('Pending / sent / failed', cnt('pending') + ' / ' + cnt('sent') + ' / ' + cnt('failed'));
   // Y9 (build __18_): dd/mm hh:mm:ss, and failed events listed with their reason (the count alone hid them).
-  const nzShort = (t) => { try { return new Date(t).toLocaleString('en-NZ', { hour12: false, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }); } catch (_) { return '?'; } };
+  const nzShort = (t) => { try { return _fmtDateTime12(new Date(t), false); } catch (_) { return '?'; } };   // __22_ (R46)
   const failedRows = all.filter(r => r.status === 'failed').sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 10);
   if (failedRows.length) {
    L.push('Failed events (newest first):');
@@ -8042,7 +8215,7 @@ async function updateOutboxStatus() {
  const lastSent = sent.sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt))[0];
  if (lastSent?.sentAt) {
  const d = new Date(lastSent.sentAt);
- lastSentEl.textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+ lastSentEl.textContent = _fmtClock12(d)   // __22_ (R46)
  + ' ' + d.toLocaleDateString([], { day: 'numeric', month: 'short' });
  } else {
  lastSentEl.textContent = 'Never';
@@ -8060,7 +8233,7 @@ async function updateOutboxStatus() {
 
  historyEl.innerHTML = recent.map(r => {
  const alarmStatus = r.payload?.['Alarm Status'] || 'LOG';
- const ts = r.createdAt ? new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '?';
+ const ts = r.createdAt ? _fmtClock12(new Date(r.createdAt), true) : '?';   // __22_ (R46)
  // F74-3 diagnostic (build __11_): show which site and whether a signature travelled
  const _site = escapeHtml(String(r.payload?.['Location Name'] || '').slice(0, 24));
  const _sig = String(r.payload?.['Signature'] || '').length;
@@ -8126,7 +8299,7 @@ async function populateVisitHistory() {
  const icon = isTravel ? '🚗' : '📍';
  const typeLabel = isTravel ? '<span class="text-indigo-400">Travel</span>' : '<span class="text-green-400">Site visit</span>';
  const pending = r.status !== 'sent';
- const time = new Date(r.createdAt).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' });
+ const time = _fmtClock12(new Date(r.createdAt));   // __22_ (R46)
  return `<div class="flex items-center gap-3 py-2 border-b border-gray-700/50 last:border-0">
  <span class="text-lg leading-none">${icon}</span>
  <div class="flex-1 min-w-0">
@@ -8382,7 +8555,7 @@ function confirmExtension(minutes) {
 
  _applyNewDueTime(newDue); // W1 (build __14_): shared with the PIN clear after due
 
- const _hhmm = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+ const _hhmm = _fmtClock12(new Date());   // __22_ (R46): "Extended 10m at 4:45 pm"
  processUploadQueue(buildPayload({
  'Alarm Status': 'EXTENDED',
  // The time keeps two identical extensions distinct in Notes (the backend skips a repeated line).
@@ -8883,7 +9056,7 @@ function _fetchJsonWithTimeout(url, ms) {
 }
 
 async function getDistance(p1, p2, trail = []) {
-  if (!_isValidGPS(p1) || !_isValidGPS(p2)) return { km: 0, type: 'none' };
+  if (!_isValidGPS(p1) || !_isValidGPS(p2)) return { km: 0, type: 'none', trace: (!_isValidGPS(p1) ? 'no start fix' : 'no end fix') };   // __22_ (R57)
 
   const _t0 = Date.now();
   const _budgetLeft = () => DISTANCE_LOOKUP_BUDGET_MS - (Date.now() - _t0);
@@ -9925,33 +10098,8 @@ function showCurrentSiteInfo() {
  }
 }
 
-/**
- * MISSION-CRITICAL: PIN Verification & Visual Deception Engine
- * Logic: Distinguishes between standard resets and silent duress transitions.
- */
-function withPinVerification(isDuress, successCallback) {
- showModal('pin');
- const input = document.getElementById('pinInput');
- const confirmBtn = document.getElementById('btnPinConfirm');
- input.value = '';
- input.focus();
-
- confirmBtn.onclick = () => {
-   const entered = input.value;
-   const correctStd = state.pins.std;
-
-   // Standard PIN — invoke the success callback
-   if (entered === correctStd) {
-     closeModal('pin');
-     successCallback();
-   } else {
-     // Wrong PIN — shake feedback
-     showToast('❌ Incorrect PIN');
-     input.value = '';
-     if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-   }
- };
-}
+// __22_ (R11): withPinVerification() removed. It had no callers; it compared the entered PIN with no duress
+// handling (the alarm PIN prompt, _alarmPinPrompt(), is the one path for PIN entry).
 
 /**
  * RE-ENGINEERED: Priority-Aware Notice Engine
@@ -10222,10 +10370,8 @@ function sendDirectAlert() {
  const location = v.locationName || 'Unknown Location';
  const address = v.locationAddress || '';
  const gps = lastGPS || v.startGPS || null;
- const alarmTime = new Date().toLocaleString([], {
- year: 'numeric', month: 'short', day: 'numeric',
- hour: '2-digit', minute: '2-digit'
- });
+ const alarmTime = (() => { const _n = new Date();   // __22_ (R46): "22 Oct 2026, 4:45 pm"
+   return _n.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' }) + ', ' + _fmtClock12(_n); })();
 
  const mapsLine = (gps && gps !== '0,0')
  ? `GPS Location: https://maps.google.com/?q=${gps}`
