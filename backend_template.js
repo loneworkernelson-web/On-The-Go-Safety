@@ -137,6 +137,23 @@
  *   - R39: the Forms ledger records "Last known GPS: ..." from the Visits row when the post has no GPS fix (0,0).
  *   - SMS (Decision 4): no emoji in any SMS text (it forced smaller SMS segments).
  *
+ * __47_ (session 94, 22 Oct 2026) - R45, R46, R47, R39, R51, Note to Self photo (no worker change):
+ *   - R45: DURESS alerts have no tap-to-call (Click) - a stray tap must not ring the worker's phone in front of a
+ *     threat. The "Call worker" button stays. ntfy first line and an email step: the call may be overheard; listen
+ *     for an agreed code phrase.
+ *   - R46: every time people read is local am/pm ("3:16 pm"): Notes tags, All Clear, form email, GPS time, Health
+ *     and diagnostics, job lines, travel report sheet. Col A, Forms/Audit first column and Audit notes stay ISO UTC.
+ *   - R47: Visits col B is the local date and time as text ("22 Oct 2026, 3:16 pm"), set once at row creation.
+ *     New display-only columns: Visits col AC "Last Update (local)" (written with every col A write), Forms
+ *     "Received (local)", Audit "Time (local)". Nothing reads them; col A stays the machine timestamp.
+ *   - R39: the form / report email shows "Last known GPS (from the visit record)" when the post had no fix.
+ *   - R51 (dark window): ladder alerts say when the last position was recorded ("at 7:53 pm (31 min ago)"). A site
+ *     visit with no live fix shows the site's stored coordinates (Sites col M), labelled as the site's position,
+ *     with a "Site map" button. Trips: "Expected to arrive", "Heading to" (General trip: not given), last known
+ *     position and time, or "not reported since the trip started".
+ *   - Note to Self: photos and signatures are no longer saved to Drive (they sat there link-shared); the email still
+ *     carries them inline.
+ *
  * DEPLOY CHECKLIST(every deployment): Deploy > Manage deployments > New version. Then open the Apps Script
  * editor, run ONE function from each installed trigger by hand (accept any permission prompt), and confirm
  * the Triggers list shows no failures.
@@ -203,10 +220,15 @@ const FORMS_SHEET_NAME      = 'Forms';
 // __45_ (F90-2/F90-3): one header list for the Forms tab and its archive.
 const FORMS_HEADERS         = ['Received (UTC)', 'Worker', 'Template', 'Status', 'Visit ID', 'Visits Row (at receipt)', 'Visit Link',
                                'Form Data', 'Notes', 'Distance (km)', 'Signature', 'Photo 1', 'Photo 2', 'Photo 3', 'Photo 4',
-                               'Last Known GPS', 'Idempotency Key', 'Worker Build'];
+                               'Last Known GPS', 'Idempotency Key', 'Worker Build', 'Received (local)'];   // __47_ (R47)
 const FORMS_ARCHIVE_SHEET_NAME = 'FormsArchive';
 const VISIT_ID_COL          = 28;            // col AB (Z reserved, AA ladder memory)
 const VISIT_ID_HEADER       = 'Visit ID';
+// __47_ (R47): display-only local-time columns. Nothing reads them back.
+const LOCAL_UPDATE_COL      = 29;            // Visits col AC
+const LOCAL_UPDATE_HEADER   = 'Last Update (local)';
+const AUDIT_LOCAL_HEADER    = 'Time (local)';  // Audit col K
+let _LOCAL_HDR_DONE = {};        // per execution: header cells already checked
 let _AUDIT_EXEC = null;          // short id shared by every audit row from one execution
 let _AUDIT_LOCKWAIT_MS = null;   // doPost only: how long it waited for the script lock
 // __43_ (F86-2): sends queued while the script lock is held, run after it is released (doPost only).
@@ -765,7 +787,7 @@ function generateWorkerTravelReport() {
 
   // ── Data rows ────────────────────────────────────────────────────────────────
   const rows = trips.map(function(t) {
-    var dateStr = Utilities.formatDate(t.date, tz, "dd/MM/yyyy HH:mm");
+    var dateStr = _ampm_(Utilities.formatDate(t.date, tz, "dd/MM/yyyy h:mm a"));   // __47_ (R46)
     var fixed   = [t.worker, dateStr, t.site, t.company, t.from, t.to, t.dist !== '' ? t.dist : '-'];
     var extra   = extraKeys.map(function(k) {
       var val = t.json[k];
@@ -844,7 +866,7 @@ function handleResolvePost(p) {
     // Fallback: If no active visit is found, log the resolution as a new entry
     if (!rowUpdated) {
         const ts = new Date();
-        const dateStr = Utilities.formatDate(ts, CONFIG.TIMEZONE, "yyyy-MM-dd");
+        const dateStr = _localCell_(ts);   // __47_ (R47): col B "22 Oct 2026, 3:16 pm" (text)
         const row = [
             ts.toISOString(), dateStr, workerName, _txt_(p['Worker Phone Number']),   // __46_ (R38): phones as text
             p['Emergency Contact Name'], _txt_(p['Emergency Contact Number']), p['Emergency Contact Email'],
@@ -853,7 +875,8 @@ function handleResolvePost(p) {
             p['Last Known GPS'], p['Timestamp'], p['Battery Level'], "", "", "", "", "", "", "", ""
         ];
         sheet.appendRow(row);
-        _audit_('handleResolvePost:new', workerName, sheet.getLastRow(), '', p['Alarm Status'], p['Alarm Status'], p.idempotencyKey, 'no open alarm row - new row appended');
+        _localColSet_(sheet, sheet.getLastRow(), ts);   // __47_ (R47)
+        _audit_('handleResolvePost:new',workerName, sheet.getLastRow(), '', p['Alarm Status'], p['Alarm Status'], p.idempotencyKey, 'no open alarm row - new row appended');
     }
 
     // NEW: TRIGGER "ALL CLEAR" NOTIFICATIONS
@@ -914,14 +937,18 @@ function handleWorkerPost(p) {
     const _statusAsSent = String(p['Alarm Status'] || '');   // __45_ (ledger): before any restore / merge rewrites it
 
     let p1="", p2="", p3="", p4="", sig="";
-    if(p['Photo 1']) p1 = saveImage(p['Photo 1'], workerName);
-    if(p['Photo 2']) p2 = saveImage(p['Photo 2'], workerName);
-    if(p['Photo 3']) p3 = saveImage(p['Photo 3'], workerName);
-    if(p['Photo 4']) p4 = saveImage(p['Photo 4'], workerName);
-    if(p['Signature']) sig = saveImage(p['Signature'], workerName, true); 
+    // __47_: a Note to Self is private - its photos and signature are not saved to Drive (they sat there link-shared and
+    // were never removed). The email to the worker still carries them inline from the payload.
+    if (!isNoteToSelf) {
+        if(p['Photo 1']) p1 = saveImage(p['Photo 1'], workerName);
+        if(p['Photo 2']) p2 = saveImage(p['Photo 2'], workerName);
+        if(p['Photo 3']) p3 = saveImage(p['Photo 3'], workerName);
+        if(p['Photo 4']) p4 = saveImage(p['Photo 4'], workerName);
+        if(p['Signature']) sig = saveImage(p['Signature'], workerName, true);
+    }
 
     const ts = new Date();
-    const dateStr = Utilities.formatDate(ts, CONFIG.TIMEZONE, "yyyy-MM-dd");
+    const dateStr = _localCell_(ts);   // __47_ (R47): col B "22 Oct 2026, 3:16 pm" (text), set once at row creation
     let polishedNotes = p['Notes'] || "";
     const hasFormData = p['Visit Report Data'] && p['Visit Report Data'].length > 2;
 
@@ -997,7 +1024,8 @@ function handleWorkerPost(p) {
                     
                     if (!isClosed) {
                         const targetRow = startRow + i;
-                        sheet.getRange(targetRow, 1).setValue(ts.toISOString()); 
+                        sheet.getRange(targetRow, 1).setValue(ts.toISOString());
+                        _localColSet_(sheet, targetRow, ts);   // __47_ (R47): col AC
                         // Guard col K against downgrades.
                         // HIGH_SEVERITY statuses (EMERGENCY, PANIC, DURESS, OVERDUE ALARM) must
                         // never be overwritten by lower-priority statuses (OVERDUE, ALARM_GPS_PULSE).
@@ -1041,7 +1069,7 @@ function handleWorkerPost(p) {
                         let _pinClearNote = '';
                         if (_origIncoming.toUpperCase().includes('USER_SAFE')) {
                             const _clrDue = new Date(rowData[20]);
-                            const _clrTime = Utilities.formatDate(ts, CONFIG.TIMEZONE, 'HH:mm:ss');
+                            const _clrTime = _fmtLocal_(ts, 'h:mm:ss a');   // __47_ (R46): am/pm
                             if (rowData[20] && !isNaN(_clrDue.getTime())) {
                                 const _restored = String(rowData[11] || '').includes('Travel to') ? 'TRAVELLING' : 'ARRIVED';
                                 p['Alarm Status'] = _restored;
@@ -1066,7 +1094,7 @@ function handleWorkerPost(p) {
                         // __44_ (item 8): OVERDUE / LOW BATTERY / WELFARE_OK never write col K on an existing row.
                         const _isRoutineNoK   = ROUTINE_NO_K_STATUSES.indexOf(_incomingStatus.trim()) > -1;
                         if (ROUTINE_NOTE_TAG.indexOf(_incomingStatus.trim()) > -1) {
-                            polishedNotes = '[' + _incomingStatus.trim() + ' ' + Utilities.formatDate(ts, CONFIG.TIMEZONE, 'HH:mm:ss') + '] ' + (polishedNotes || '');
+                            polishedNotes = '[' + _incomingStatus.trim() + ' ' + _fmtLocal_(ts, 'h:mm:ss a') + '] ' + (polishedNotes || '');   // __47_ (R46)
                         }
                         // ALARM_GPS_PULSE must never update col K — it is a location-only update.
                         // Writing ALARM_GPS_PULSE to col K replaces TRAVELLING, causing the monitor's
@@ -1188,6 +1216,7 @@ if (!rowUpdated) {
     ];
     sheet.appendRow(row);
     _visitIdSet_(sheet, sheet.getLastRow(), String(p.idempotencyKey || '') || _visitIdNew_(sheet.getLastRow()));   // __44_: col AB
+    _localColSet_(sheet, sheet.getLastRow(), ts);   // __47_ (R47): col AC
     _audit_('handleWorkerPost:new', workerName, sheet.getLastRow(), '', p['Alarm Status'], p['Alarm Status'], p.idempotencyKey, 'new row');
     _ledgerRow = sheet.getLastRow(); _ledgerNew = true;   // __45_ (ledger)
 }
@@ -1201,6 +1230,7 @@ if (!rowUpdated) {
         try {
             const reportObj = JSON.parse(p['Visit Report Data']);
             const _fp = Object.assign({}, p), _fNotes = polishedNotes;
+            try { _fp['_lastKnownGps'] = _formsGps_(sheet, _ledgerRow, p); } catch (_) {}   // __47_ (R39)
             _sendOrQueue_('form-email', function () {   // __43_: after lock release
                 try { processFormEmail(_fp, reportObj, _fNotes, p1, p2, p3, p4, sig); } catch (e2) { console.error("Email Error: " + e2); }
             });
@@ -1362,12 +1392,22 @@ function processFormEmail(p, reportObj, polishedNotes, p1, p2, p3, p4, sig) {
             <p style="margin:0 0 10px 0; font-size:11px; font-weight:800; color:#1e40af; text-transform:uppercase;">📍 Visit Location Intelligence</p>
             <a href="${mapUrl}" style="display:inline-block; padding:12px 24px; background:#1e40af; color:#ffffff; text-decoration:none; border-radius:6px; font-weight:bold;">View Location on Google Maps</a>
         </div>`;
+    } else if (/^Last known GPS: /.test(String(p['_lastKnownGps'] || ''))) {
+        // __47_ (R39): no fix in the post - the visit record's last known position, labelled as such.
+        const _lk = String(p['_lastKnownGps']).replace(/^Last known GPS: /, '').trim();
+        const _lkUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(_lk)}`;
+        mapHtml = `
+        <div style="margin-top:20px; padding:15px; background:#f0f7ff; border-radius:8px; border:1px solid #cfe2ff; text-align:center;">
+            <p style="margin:0 0 10px 0; font-size:11px; font-weight:800; color:#1e40af; text-transform:uppercase;">📍 Last known GPS (from the visit record)</p>
+            <p style="margin:0 0 10px 0; font-size:12px; color:#374151;">The phone had no GPS fix when this was sent. This is the last position the visit record holds: ${_lk}</p>
+            <a href="${_lkUrl}" style="display:inline-block; padding:12px 24px; background:#1e40af; color:#ffffff; text-decoration:none; border-radius:6px; font-weight:bold;">View Last Known Position</a>
+        </div>`;
     }
 
     let subject = (safeTName === 'note to self') ? `[PRIVATE] Note to Self` : `[${templateName}] - ${p['Worker Name']}`;
     let html = `<div style="font-family:Arial,sans-serif;padding:20px;max-width:600px;border:1px solid #eee;border-radius:12px;background-color:#ffffff;color:#333;">
         <h2 style="color:#1e40af;margin-top:0;">${templateName}</h2>
-        <p style="color:#666;font-size:12px;">Worker: ${p['Worker Name']} | Sent: ${new Date().toLocaleString()}</p>
+        <p style="color:#666;font-size:12px;">Worker: ${p['Worker Name']} | Sent: ${_fmtLocal_(new Date(), 'dd/MM/yyyy, h:mm:ss a')}</p>
         <hr style="border:0;border-top:1px solid #eee;margin:20px 0;">
         
         <div style="background:#f9fafb;padding:15px;border-radius:8px;margin-bottom:20px;border-left:4px solid #1e40af;">
@@ -1678,7 +1718,7 @@ function triggerAlerts(p, type) {
     const gpsLink  = hasGPS
         ? `https://maps.google.com/?q=${encodeURIComponent(rawGPS.trim())}`
         : null;
-    const gpsText  = hasGPS
+    let   gpsText  = hasGPS   // __47_ (R51): let - the time or the site position is added below
         ? `<a href="${gpsLink}" style="color:#2563eb;">${rawGPS.trim()}</a>`
         : `Not available — please use the address above to locate the worker.`;
     // __43_ (Decision C): the SMS-only reverse geocode moved into the SMS step below. It used to run here, first,
@@ -1688,6 +1728,8 @@ function triggerAlerts(p, type) {
     const status        = (p['Alarm Status'] || '').toUpperCase();
     const workerName    = p['Worker Name']    || 'The worker';
     const workerFirst   = workerName.split(' ')[0];
+    // __47_ (R45, wording approved by Russell 22 Oct): for DURESS alerts (ntfy first line and an email step).
+    const _duressCallLine = `If you call: the call may be overheard. Keep it calm and ordinary, and listen for any code phrase you have agreed with ${workerFirst}.`;
     const workerPhone    = _formatPhoneDisplay(p['Worker Phone Number']);
     // Clean tel: number (no spaces) for href — used in HTML email links only.
     // Plain text uses workerPhone; ntfy/SMS also use workerPhone (not the link).
@@ -1723,7 +1765,19 @@ function triggerAlerts(p, type) {
     // GPS strings are stored as "lat, lng" (with space) — strip for URL use.
     const _gpsUrl = (gps) => gps ? gps.replace(/\s/g, '') : null;
     const currentGPS      = (p['Last Known GPS'] || '').trim();
-    const currentGPSTs    = p['GPS Timestamp'] ? Utilities.formatDate(new Date(p['GPS Timestamp']), CONFIG.TIMEZONE, "dd/MM/yyyy HH:mm") : null;
+    // __47_ (R51, R46): when the last position was recorded (col P on a ladder alert), in am/pm with how long ago. Only a
+    // Date or ISO text is trusted: a phone's locale text ("22/10/2026, 3:16:05 pm") could be read as the wrong time.
+    const _gpsAt          = _gpsTime_(p['GPS Timestamp']);
+    const _gpsAtText      = _gpsAt ? _seenText_(_gpsAt) : '';
+    const currentGPSTs    = _gpsAtText || null;
+    const _isGeneralTrip  = isTravel && /^general travel$/i.test(String(locationName).trim());
+    const _r51Due         = _alertDue_(p['Anticipated Departure Time']);
+    // __47_ (R51, option d): a named-site visit with no live fix shows the site's stored position (Sites col M), labelled
+    // as the site's. Never on a trip (the destination is not where the worker is) and never on a TEST.
+    const _siteFix        = (!isTravel && !hasValidGps && !status.includes('TEST_ALERT')) ? _siteCoords_(locationName) : null;
+    const _siteMapUrl     = _siteFix ? 'https://maps.google.com/?q=' + _siteFix.lat + '%2C' + _siteFix.lng : '';
+    if (hasGPS && _gpsAtText) gpsText += ` <span style="color:#6b7280;">(at ${_gpsAtText})</span>`;
+    else if (!hasGPS && _siteFix) gpsText = `<a href="${_siteMapUrl}" style="color:#2563eb;">${_siteFix.lat}, ${_siteFix.lng}</a> - the site's recorded position, not a live position from the worker's phone.`;
     const startGPSClean   = startGPS   ? _gpsUrl(startGPS)   : null;
     const currentGPSClean = currentGPS ? _gpsUrl(currentGPS) : null;
 
@@ -1732,9 +1786,10 @@ function triggerAlerts(p, type) {
         ? `<a href="https://www.google.com/maps?q=${startGPSClean}" style="color:#93c5fd;">Departure point (map)</a>`
         : null;
     const currentMapLink = currentGPSClean && currentGPSClean !== '0,0'
-        ? `<a href="https://www.google.com/maps?q=${currentGPSClean}" style="color:#93c5fd;">Last known position${currentGPSTs ? `, ${currentGPSTs}` : ''} (map)</a>`
+        ? `<a href="https://www.google.com/maps?q=${currentGPSClean}" style="color:#93c5fd;">Last known position${currentGPSTs ? ` at ${currentGPSTs}` : ''} (map)</a>`
         : null;
-    const destMapLink    = locationAddr
+    const destMapLink    = _isGeneralTrip ? '<strong>Not given (general travel)</strong>'   // __47_ (R51)
+        : locationAddr
         ? `<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(locationAddr)}" style="color:#93c5fd;">${locationName}${travelDestAddr} (map)</a>`
         : `<strong>${locationName}</strong>`;
 
@@ -1744,7 +1799,7 @@ function triggerAlerts(p, type) {
     const _threePointMapUrl = (() => {
         if (!startGPSClean) return null;
         const waypoint = (currentGPSClean && currentGPSClean !== '0,0') ? currentGPSClean : null;
-        const dest     = locationAddr ? encodeURIComponent(locationAddr)
+        const dest     = (locationAddr && !_isGeneralTrip) ? encodeURIComponent(locationAddr)   // __47_: no 'Field Work' pin
                        : (waypoint ? waypoint : null);
         if (!dest) return null;
         let url = `https://www.google.com/maps/dir/?api=1&origin=${startGPSClean}&destination=${dest}`;
@@ -1757,7 +1812,7 @@ function triggerAlerts(p, type) {
     // Label for the map button — reflects how many distinct points are included.
     const _mapBtnLabel = (() => {
         const hasCurrent = currentGPSClean && currentGPSClean !== '0,0';
-        const hasDest    = !!(locationAddr);
+        const hasDest    = !!(locationAddr) && !_isGeneralTrip;
         if (hasCurrent && hasDest) return '📍 View all three locations on Google Maps →';
         if (hasCurrent || hasDest) return '📍 View route on Google Maps →';
         return '📍 View on Google Maps →';
@@ -1773,11 +1828,15 @@ function triggerAlerts(p, type) {
             </tr>
             <tr style="background:#0f172a;">
                 <td style="padding:8px 10px;border:1px solid #334155;color:#94a3b8;font-weight:bold;">Most recent location</td>
-                <td style="padding:8px 10px;border:1px solid #334155;color:#e2e8f0;">${currentMapLink || '<em style="color:#64748b;">Not yet reported</em>'}</td>
+                <td style="padding:8px 10px;border:1px solid #334155;color:#e2e8f0;">${currentMapLink || '<em style="color:#64748b;">Not reported since the trip started</em>'}</td>
             </tr>
             <tr style="background:#1e293b;">
                 <td style="padding:8px 10px;border:1px solid #334155;color:#94a3b8;font-weight:bold;">Intended destination</td>
                 <td style="padding:8px 10px;border:1px solid #334155;color:#e2e8f0;">${destMapLink}</td>
+            </tr>
+            <tr style="background:#0f172a;">
+                <td style="padding:8px 10px;border:1px solid #334155;color:#94a3b8;font-weight:bold;">Expected arrival</td>
+                <td style="padding:8px 10px;border:1px solid #334155;color:#e2e8f0;">${_r51Due ? _clockText_(_r51Due) : '<em style="color:#64748b;">Not recorded</em>'}</td>
             </tr>
             ${_threePointMapUrl ? `<tr style="background:#0f172a;"><td colspan="2" style="padding:8px 10px;border:1px solid #334155;text-align:center;"><a href="${_threePointMapUrl}" style="color:#38bdf8;font-weight:bold;">${_mapBtnLabel}</a><div style="font-size:11px;color:#64748b;margin-top:4px;">A = Departure &nbsp;·&nbsp; B = Last known &nbsp;·&nbsp; C = Destination</div></td></tr>` : ''}
         </table>` : '';
@@ -1824,6 +1883,7 @@ function triggerAlerts(p, type) {
         whatHappened  = `This worker has activated a <strong>DURESS signal</strong>. This may mean they are under threat and unable to speak freely. <strong>Please treat this as a real emergency.</strong>`;
         actionSteps   = `
             <li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhoneLink}</li>
+            <li><strong>${_duressCallLine}</strong></li>
             <li>If there is no answer within a few minutes, contact someone at the site and ask them to check on the worker's safety</li>
             <li>If you believe they are in danger, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>
             <li>Once contact is made, ask them to resolve the alert using their safety app or call their Safety Manager</li>`;
@@ -1974,10 +2034,12 @@ function triggerAlerts(p, type) {
     // The proxy must forward Click and Actions (proxy_ntfy__2_.php); an older proxy drops them and the alert still goes.
     // Labels: no commas or semicolons (Actions separators); the map comma is sent as %2C. No Click on a TEST alert.
     const _ntfyExtra = {};
-    if (workerPhoneTel && !status.includes('TEST_ALERT')) _ntfyExtra.click = 'tel:' + workerPhoneTel;
+    // __47_ (R45): no tap-to-call on DURESS - a stray tap must not ring the worker's phone in front of a threat.
+    if (workerPhoneTel && !status.includes('TEST_ALERT') && !status.includes('DURESS')) _ntfyExtra.click = 'tel:' + workerPhoneTel;
     const _ntfyActs = [];
     if (workerPhoneTel) _ntfyActs.push('view, ' + _ntfyLabel_('📞 Call worker', 'Call worker') + ', tel:' + workerPhoneTel);
     if (hasValidGps) _ntfyActs.push('view, ' + _ntfyLabel_('📍 Map', 'Map') + ', https://maps.google.com/?q=' + gpsLat + '%2C' + gpsLng);
+    else if (_siteFix) _ntfyActs.push('view, ' + _ntfyLabel_('📍 Site map', 'Site map') + ', ' + _siteMapUrl);   // __47_ (R51)
     if (_ntfyActs.length) _ntfyExtra.actions = _ntfyActs.join('; ');
 
     // __43_ (Decision C): ntfy FIRST. It is the instant, audible channel; email (about 4 s per contact) and SMS follow.
@@ -1985,13 +2047,19 @@ function triggerAlerts(p, type) {
     // Sends an instant push notification to each contact's phone via the ntfy app.
     // Fires in addition to email and SMS — never instead of them. __43_: sent before them.
     // Silently skipped per-contact if no ntfy topic is configured.
+    // __47_ (R51): the position line - live fix with its time, else (site) the site's stored position, else (trip) not reported.
+    const _ntfyGpsLine = hasGPS
+        ? (isTravel ? `Last known position${_gpsAtText ? ' at ' + _gpsAtText : ''}: ${gpsLink}` : `GPS${_gpsAtText ? ' (at ' + _gpsAtText + ')' : ''}: ${gpsLink}`)
+        : (isTravel ? 'Last known position: not reported since the trip started'
+                    : (_siteFix ? `Site location (the site's recorded position, not a live one): ${_siteMapUrl}` : 'GPS: Not available'));
     const ntfyMessage = [
-        (_overMin !== null) ? `Was due ${_dueClock} - ${_overMin >= 1 ? 'now ' + _overMin + ' min overdue' : 'overdue now'}. Call ${workerFirst} now.` : '',   // __46_ (R36)
+        status.includes('DURESS') ? _duressCallLine : '',   // __47_ (R45)
+        (_overMin !== null) ? `${isTravel ? 'Expected to arrive' : 'Was due'} ${_dueClock} - ${_overMin >= 1 ? 'now ' + _overMin + ' min overdue' : 'overdue now'}. Call ${workerFirst} now.` : '',   // __46_ (R36); __47_ (R51) trips
         (_overMin !== null && _stdTier === 4) ? 'This is the final automatic alert.' : '',
         `Worker: ${workerName} · ${workerPhone}`,
-        `Site: ${locationName}`,
-        locationAddr ? `Address: ${locationAddr}` : '',
-        hasGPS ? `GPS: ${gpsLink}` : 'GPS: Not available',
+        isTravel ? `Heading to: ${_isGeneralTrip ? 'not given (general travel)' : locationName + (locationAddr ? ' (' + locationAddr + ')' : '')}` : `Site: ${locationName}`,   // __47_ (R51)
+        (!isTravel && locationAddr) ? `Address: ${locationAddr}` : '',
+        _ntfyGpsLine,
         `Battery: ${battery}`,
         `Sent: ${sentAt}`
     ].filter(Boolean).join('\n');
@@ -2166,9 +2234,10 @@ function triggerAlerts(p, type) {
         // Nominatim is unavailable. Email and ntfy retain the full gpsLink above.
         // __43_: computed here, only when an SMS is actually going out.
         const gpsSmsTxt = (hasGPS && numbers.length)
-            ? `Location: ${reverseGeocode_(rawGPS.trim())}`
-            : `Location: Not available`;
-        const smsBody = `ALERT: ${_smsLabel}\nWorker: ${workerName}\nSite: ${locationName}\nPhone: ${workerPhone}\n${gpsSmsTxt}`;   // __46_ (R36, Decision 4: no emoji)
+            ? ((_gpsAt ? `Last seen ${_clockText_(_gpsAt)}: ` : 'Location: ') + reverseGeocode_(rawGPS.trim()))   // __47_ (R51)
+            : (isTravel ? 'Location: not reported since the trip started' : (_siteFix ? 'Location: the site (no live position)' : 'Location: Not available'));
+        const _smsPlace = isTravel ? `Heading to: ${_isGeneralTrip ? 'not given' : locationName}` : `Site: ${locationName}`;   // __47_ (R51)
+        const smsBody = `ALERT: ${_smsLabel}\nWorker: ${workerName}\n${_smsPlace}\nPhone: ${workerPhone}\n${gpsSmsTxt}`;// __46_ (R36, Decision 4: no emoji)
         Logger.log('[SMS] Preparing to send. Body: "' + smsBody + '"');
         numbers.forEach(num => { try { _sendSms_(num, smsBody); } catch(e) { _logSmsResult_(num, smsBody, e.toString(), true); } });
     }
@@ -2619,7 +2688,7 @@ function _sendHealthEmailImpl_() {
     const now = new Date();
     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const tz = CONFIG.TIMEZONE || 'UTC';
-    const fmtTime = d => Utilities.formatDate(new Date(d), tz, "dd MMM yyyy HH:mm z");
+    const fmtTime = d => _ampm_(Utilities.formatDate(new Date(d), tz, "dd MMM yyyy, h:mm a z"));   // __47_ (R46)
 
     // --- 1. Read Visits sheet ---
     const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -3180,7 +3249,7 @@ function runDiagnostics() {
         diagTopic,
         '🔧 OTG Diagnostics Test',
         'OTG system diagnostic ran at ' +
-            Utilities.formatDate(now, tz, 'dd MMM yyyy HH:mm z') +
+            _ampm_(Utilities.formatDate(now, tz, 'dd MMM yyyy, h:mm a z')) +   // __47_ (R46)
             '. If you received this, ntfy push notifications are working correctly.' +
             ' Topic: ' + diagTopic,
         'default',
@@ -3418,7 +3487,7 @@ function runDiagnostics() {
 '<div style="background:' + headerColour + ';padding:20px 24px;border-radius:6px 6px 0 0">' +
 '<h2 style="margin:0;color:#fff;font-size:18px">🔧 OTG System Diagnostics — ' + CONFIG.ORG_NAME + '</h2>' +
 '<p style="margin:6px 0 0;color:rgba(255,255,255,0.85);font-size:13px">' +
-'Run ' + Utilities.formatDate(now, tz, 'dd MMM yyyy HH:mm z') +
+'Run ' + _ampm_(Utilities.formatDate(now, tz, 'dd MMM yyyy, h:mm a z')) +
 ' &nbsp;·&nbsp; ' + overallIcon + ' ' + overallStatus + '</p>' +
 '</div>' +
 '<div style="background:#f4f6f9;padding:20px 24px">' +
@@ -3814,6 +3883,12 @@ function _archiveForms_(ss, cutoff) {
     if (created || fa.getLastRow() === 0) {
         fa.getRange(1, 1, 1, width).setValues([data[0]]);
         try { fa.setFrozenRows(1); } catch (_) {}
+    } else {
+        // __47_ (R47): an archive made before a new Forms column gets the missing header cells
+        const h = fa.getRange(1, 1, 1, width).getValues()[0];
+        let changed = false;
+        for (let c = 0; c < width; c++) if (!String(h[c] || '').trim() && data[0][c]) { h[c] = data[0][c]; changed = true; }
+        if (changed) fa.getRange(1, 1, 1, width).setValues([h]);
     }
     _sheetFitRows_(fa, fa.getLastRow() + move.length);
     fa.getRange(fa.getLastRow() + 1, 1, move.length, width).setValues(move);
@@ -4336,6 +4411,7 @@ function _escalationWrite_(sheet, entry, newStatus, isDual, rowNum) {
     const escalationTs = new Date().toISOString();
     const updatedNotes = (entry[11] || '') + ` [AUTO-${newStatus}]`;
     sheet.getRange(rowNum, 1).setValue(escalationTs);   // col A: Timestamp
+    _localColSet_(sheet, rowNum, new Date(escalationTs));   // __47_ (R47): col AC
     // __42_ (B1, A7): never overwrite PANIC/SOS/DURESS (rank 4+) in col K. The ladder's memory is in
     // col AA, so col K no longer needs the tier text. Col A, the Notes tag and the alerts are unchanged.
     if (_alarmRank_(String(entry[10] || '')) >= 4) {
@@ -4489,7 +4565,7 @@ function _sendAllClear_(p, stillMonitored, scope) {
     const subject    = `✅ ALL CLEAR — ${p['Worker Name']} is safe`;
     const workerName = p['Worker Name'] || 'The worker';
     const workerPhone = _formatPhoneDisplay(p['Worker Phone Number']);
-    const resolvedAt  = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "dd/MM/yyyy, HH:mm:ss");
+    const resolvedAt  = _fmtLocal_(new Date(), "dd/MM/yyyy, h:mm:ss a");   // __47_ (R46)
     const workerPhoneTel2  = _cleanPhone((p['Worker Phone Number'] || '').toString()) || '';
     const workerPhoneLink2 = workerPhoneTel2
         ? `<a href="tel:${workerPhoneTel2}" style="color:inherit;font-weight:bold;text-decoration:none;">${workerPhone}</a>`
@@ -4722,18 +4798,26 @@ function _audit_(source, worker, row, kBefore, kAfter, incoming, key, note) {
         if (!sh) {
             sh = ss.insertSheet(AUDIT_SHEET_NAME);
             sh.appendRow(['Time (UTC)', 'Execution', 'Source', 'Worker', 'Visits Row', 'Col K Before',
-                          'Col K After', 'Incoming Status', 'Idempotency Key', 'Note']);
+                          'Col K After', 'Incoming Status', 'Idempotency Key', 'Note', AUDIT_LOCAL_HEADER]);
             sh.setFrozenRows(1);
             try { sh.hideSheet(); } catch (_) {}
+            _LOCAL_HDR_DONE.audit = true;
         }
+        if (!_LOCAL_HDR_DONE.audit) {   // __47_ (R47): an Audit tab made before __47_ gets the header once
+            _LOCAL_HDR_DONE.audit = true;
+            const hc = sh.getRange(1, 11);
+            if (!String(hc.getValue() || '').trim()) hc.setValue(AUDIT_LOCAL_HEADER);
+        }
+        const _aNow = new Date();
         let n = String(note || '');
         if (_AUDIT_LOCKWAIT_MS !== null) n = (n ? n + ' | ' : '') + 'lockWait=' + _AUDIT_LOCKWAIT_MS + 'ms';
         if (_AUDIT_CTX) n = (n ? n + ' | ' : '') + _AUDIT_CTX;   // __43_ (F86-7)
         n = (n ? n + ' | ' : '') + 'build=' + TEMPLATE_BUILD;   // __41_: shows which template wrote the row
         sh.appendRow([
-            new Date().toISOString(), _txt_(_auditExecId_()), String(source || ''), String(worker || ''),
+            _aNow.toISOString(), _txt_(_auditExecId_()), String(source || ''), String(worker || ''),
             row || '', kBefore == null ? '' : String(kBefore), kAfter == null ? '' : String(kAfter),
-            String(incoming || ''), _txt_(String(key || '')), n   // __45_ (item 9 / F83-5): ids stay text
+            String(incoming || ''), _txt_(String(key || '')), n,   // __45_ (item 9 / F83-5): ids stay text
+            _localCell_(_aNow)                                     // __47_ (R47): Time (local)
         ]);
     } catch (e) {
         try { console.warn('[audit] write failed: ' + e); } catch (_) {}
@@ -4928,7 +5012,76 @@ function _clockText_(d) {
         return t;
     } catch (_) { return ''; }
 }
-/** __46_ (R40): an ntfy Actions label as an RFC 2047 encoded word (Russell's design choice E); plain ASCII on failure. */
+// __47_ HELPERS (session 94): local time (R46, R47), last-seen time and site position (R51)
+/** __47_ (R46): a time people read, in local time with am/pm (pattern uses Utilities.formatDate tokens). '' on failure. */
+function _fmtLocal_(d, pattern) {
+    try {
+        const x = (Object.prototype.toString.call(d) === '[object Date]') ? d : new Date(d);
+        if (isNaN(x.getTime())) return '';
+        return _ampm_(Utilities.formatDate(x, CONFIG.TIMEZONE, pattern));
+    } catch (_) { return ''; }
+}
+/** __47_ (R47): "22 Oct 2026, 3:16 pm". */
+function _localStamp_(d) { return _fmtLocal_(d, 'd MMM yyyy, h:mm a'); }
+/** __47_ (R47): the same as a text cell - the apostrophe stops Sheets turning it into a date shown in its own format. */
+function _localCell_(d) { const t = _localStamp_(d); return t ? "'" + t : ''; }
+/** __47_ (R47): Visits col AC "Last Update (local)", written next to every col A write. Display only. Never throws. */
+function _localColSet_(sheet, rowNum, d) {
+    try {
+        if (!sheet || !rowNum) return;
+        if (sheet.getMaxColumns() < LOCAL_UPDATE_COL) sheet.insertColumnsAfter(sheet.getMaxColumns(), LOCAL_UPDATE_COL - sheet.getMaxColumns());
+        if (!_LOCAL_HDR_DONE.visits) {
+            _LOCAL_HDR_DONE.visits = true;
+            const hc = sheet.getRange(1, LOCAL_UPDATE_COL);
+            if (!String(hc.getValue() || '').trim()) hc.setValue(LOCAL_UPDATE_HEADER);
+        }
+        sheet.getRange(rowNum, LOCAL_UPDATE_COL).setValue(_localCell_(d));
+    } catch (e) {
+        _audit_('localTime:FAILED', '', rowNum, '', '', '', '', String(e).substring(0, 200));
+    }
+}
+/** __47_ (R51): a GPS time (col P: a Date or ISO text) as a Date, or null. A phone's locale text is not trusted. */
+function _gpsTime_(v) {
+    if (Object.prototype.toString.call(v) === '[object Date]') return isNaN(v.getTime()) ? null : v;
+    const t = String(v == null ? '' : v).trim();
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(t)) return null;
+    const d = new Date(t);
+    return isNaN(d.getTime()) ? null : d;
+}
+/** __47_ (R51): "7:53 pm (31 min ago)" - the clock time and how long ago. */
+function _seenText_(d) {
+    const t = _clockText_(d);
+    if (!t) return '';
+    const m = Math.floor((new Date().getTime() - d.getTime()) / 60000);
+    if (m < 1) return t + ' (just now)';
+    if (m < 60) return t + ' (' + m + ' min ago)';
+    const h = Math.floor(m / 60), r = m % 60;
+    return t + ' (' + h + ' h' + (r ? ' ' + r + ' min' : '') + ' ago)';
+}
+/**
+ * __47_ (R51, option d): the stored position of a named site (Sites col M), or null. The Visits row holds the site as
+ * "Company - Site" when the site has a company (the worker app's buildPayload), so both forms are matched.
+ */
+function _siteCoords_(locName) {
+    try {
+        const name = String(locName || '').trim();
+        if (!name) return null;
+        const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Sites');
+        if (!sh || sh.getLastRow() < 2) return null;
+        const data = sh.getRange(2, 1, sh.getLastRow() - 1, 13).getValues();
+        for (let i = 0; i < data.length; i++) {
+            const site = String(data[i][3] || '').trim(), co = String(data[i][2] || '').trim();
+            if (!site || !(name === site || (co && name === co + ' - ' + site))) continue;
+            const m = /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/.exec(String(data[i][12] || ''));
+            if (!m) return null;
+            const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
+            if (Math.abs(lat) <= 0.001 || Math.abs(lng) <= 0.001 || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+            return { lat: lat, lng: lng };
+        }
+    } catch (e) { console.warn('[R51] site position lookup failed: ' + e); }
+    return null;
+}
+/** __46_ (R40): an ntfy Actions label as an RFC 2047 encoded word(Russell's design choice E); plain ASCII on failure. */
 function _ntfyLabel_(label, asciiFallback) {
     try {
         const b64 = Utilities.base64Encode(label, Utilities.Charset.UTF_8);
@@ -4963,7 +5116,7 @@ function _formsGps_(sheet, rowNum, p) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__46_';
+const TEMPLATE_BUILD = 'backend__47_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
@@ -5059,7 +5212,7 @@ function _jobAgeText_(h) {
 
 /** One diagnostics-style line for a job status (used by the Health email and runDiagnostics). */
 function _jobDescribe_(j, tz) {
-    const fmt = function (d) { return Utilities.formatDate(d, tz, 'dd MMM HH:mm'); };
+    const fmt = function (d) { return _ampm_(Utilities.formatDate(d, tz, 'dd MMM, h:mm a')); };   // __47_ (R46)
     switch (j.status) {
         case 'OK':
             return 'Last success ' + fmt(j.lastOk.time) + ' (' + _jobAgeText_(j.ageHours) + ' ago)' +
@@ -5209,9 +5362,11 @@ function _formsRecord_(ss, sheet, p, route, notes, distance, sig, p1, p2, p3, p4
     const workerName = p['Worker Name'];
     const visitId = (route.rowNum && sheet) ? _visitIdGet_(sheet, route.rowNum, true) : '';
     const fsh = _formsSheet_(ss);   // __45_: shared with the archive (header on create)
-    fsh.appendRow([new Date().toISOString(), workerName, p['Template Name'] || '', route.status, _txt_(visitId), route.rowNum || '', route.link,
+    const _fNow = new Date();
+    fsh.appendRow([_fNow.toISOString(), workerName, p['Template Name'] || '', route.status, _txt_(visitId), route.rowNum || '', route.link,
                    p['Visit Report Data'] || '', notes || '', (distance === '' || distance === null || distance === undefined) ? '' : distance,
-                   sig || '', p1 || '', p2 || '', p3 || '', p4 || '', _formsGps_(sheet, route.rowNum, p), _txt_(p.idempotencyKey || ''), p['Worker Build'] || '']);
+                   sig || '', p1 || '', p2 || '', p3 || '', p4 || '', _formsGps_(sheet, route.rowNum, p), _txt_(p.idempotencyKey || ''), p['Worker Build'] || '',
+                   _localCell_(_fNow)]);   // __47_ (R47): Received (local)
     _audit_(ledger ? 'handleWorkerPost:form-ledger' : 'handleWorkerPost:form', workerName, route.rowNum || '', '', '', p['Alarm Status'], p.idempotencyKey,
             (ledger ? 'report also recorded in Forms tab row ' : 'form recorded in Forms tab row ') + fsh.getLastRow() + ' (' + route.link +
             (visitId ? ', Visit ID ' + visitId : '') + ')' + (ledger ? ' - Visits row written as before' : ' - trip row not written'));
@@ -5224,6 +5379,15 @@ function _formsSheet_(ss) {
         fsh = ss.insertSheet(FORMS_SHEET_NAME);
         fsh.appendRow(FORMS_HEADERS.slice());
         try { fsh.setFrozenRows(1); } catch (_) {}
+        _LOCAL_HDR_DONE.forms = true;
+    }
+    if (!_LOCAL_HDR_DONE.forms) {   // __47_ (R47): a Forms tab made before __47_ gets the new header cell once
+        _LOCAL_HDR_DONE.forms = true;
+        try {
+            _sheetFitCols_(fsh, FORMS_HEADERS.length);
+            const hc = fsh.getRange(1, FORMS_HEADERS.length);
+            if (!String(hc.getValue() || '').trim()) hc.setValue(FORMS_HEADERS[FORMS_HEADERS.length - 1]);
+        } catch (e) { console.warn('[forms] local header failed: ' + e); }
     }
     return fsh;
 }
