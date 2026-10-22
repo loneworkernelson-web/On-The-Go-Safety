@@ -154,6 +154,25 @@
  *   - Note to Self: photos and signatures are no longer saved to Drive (they sat there link-shared); the email still
  *     carries them inline.
  *
+ * __48_ (session 97, 22 Oct 2026) - R04 worker reminders and the Settings tab (no worker change needed to deploy):
+ *   - Settings tab (key / value / note), created by the checker with safe defaults; values already there are never
+ *     changed. Keys: WELFARE_CHECKS Off, WELFARE_DEFAULT_MINS 60, WELFARE_GRACE_MINS 2 (these three take effect with
+ *     worker __23_ and backend __49_), WORKER_WARNINGS On, WORKER_WARNING_DAILY_CAP 100, WORKER_APP_URL (optional).
+ *     Sent to the phone in the sync as meta.settings.
+ *   - Worker topic: Staff col J, "otg-" + 24 random characters, made by the backend on request (action workerTopic,
+ *     from the app's "Set up phone alerts" screen in worker __23_). Returned in the sync (meta.workerTopic) only to the
+ *     phone bound in Staff col E. action workerTopicTest sends one test (urgent) a minute at most.
+ *   - Reminders to the worker's own phone (checker): W1 at due - 5 min (all visits and trips, priority high); W2 at
+ *     due + (grace - 3) min (not Critical Timing; none when the grace is 3 min or less; urgent). Decided once per due
+ *     time and recorded in Visits col Z, claimed before sending; never re-sent; none once the moment is more than
+ *     3 min past. Sent after the lock is released and AFTER the contact alerts. No GPS and no contact names.
+ *   - HARD RULE: no push to the worker's phone while col K holds an alarm (OVERDUE ALARM, a tier, EMERGENCY, PANIC,
+ *     SOS, DURESS) or contacts were alerted for the due time - checked when deciding AND again just before sending.
+ *     The test reply never says why it was refused (the phone screen may be seen).
+ *   - Budget guard: worker reminders and tests count against WORKER_WARNING_DAILY_CAP a day (Script Properties);
+ *     contact alarms are never counted or capped. Audit row when the cap stops reminders; Health email line.
+ *   - Contact escalation (tiers, col AA claims, All Clear audience) is unchanged.
+ *
  * DEPLOY CHECKLIST(every deployment): Deploy > Manage deployments > New version. Then open the Apps Script
  * editor, run ONE function from each installed trigger by hand (accept any permission prompt), and confirm
  * the Triggers list shows no failures.
@@ -198,7 +217,7 @@ let _orsVersion = null;
 // __38_ (F74-1): audit trail + Critical Timing ladder memory. Helpers at end of file.
 const AUDIT_SHEET_NAME   = 'Audit';
 const AUDIT_MAX_ROWS     = 5000;   // trimmed daily by sendHealthEmail()
-const LADDER_MEM_COL     = 27;     // col AA. Col Z is reserved for the Stage 1 warned flag.
+const LADDER_MEM_COL     = 27;     // col AA. Col Z holds the worker reminders (__48_, WARN_COL).
 const LADDER_MEM_HEADER  = 'Escalation Memory';
 const LADDER_STATUSES    = ['EMERGENCY - CRITICAL TIMING BREACH',
                             'EMERGENCY - CRITICAL TIMING REPEAT',
@@ -231,6 +250,22 @@ const AUDIT_LOCAL_HEADER    = 'Time (local)';  // Audit col K
 let _LOCAL_HDR_DONE = {};        // per execution: header cells already checked
 let _AUDIT_EXEC = null;          // short id shared by every audit row from one execution
 let _AUDIT_LOCKWAIT_MS = null;   // doPost only: how long it waited for the script lock
+// __48_ (session 97, R04 / R33): worker reminders, Settings tab, worker topic. Helpers at the end of the file.
+const WARN_COL            = 26;    // Visits col Z "Worker Warnings": "<due ISO>|W1,W2|<claim ISO>" (W1x / W2x = skipped)
+const WARN_HEADER         = 'Worker Warnings';
+const WORKER_TOPIC_COL    = 10;    // Staff col J: the worker's own ntfy topic (made by the backend, on request)
+const WORKER_TOPIC_HEADER = 'Worker Alert Topic';
+const SETTINGS_SHEET_NAME = 'Settings';
+const SETTINGS_DEFAULTS   = [      // [key, default value, note] - added to the Settings tab when missing, never changed
+    ['WELFARE_CHECKS', 'Off', 'On or Off. Periodic "Are you OK?" checks during site visits, escalated by the server if missed. Takes effect with worker __23_ and backend __49_.'],
+    ['WELFARE_DEFAULT_MINS', 60, 'Minutes between welfare checks when the site has no risk level (5 to 240). Takes effect with worker __23_.'],
+    ['WELFARE_GRACE_MINS', 2, 'Minutes the worker has to answer a welfare check (1 to 10). Takes effect with worker __23_ and backend __49_.'],
+    ['WORKER_WARNINGS', 'On', 'On or Off. Reminders to the worker\'s own phone 5 min before a visit or trip is due, and 3 min before contacts are alerted. Only for workers who set up phone alerts in the app.'],
+    ['WORKER_WARNING_DAILY_CAP', 100, 'Most worker reminders sent in one day (0 to 5000). Contact alarms are never limited. Protects the ntfy message allowance.'],
+    ['WORKER_APP_URL', '', 'Optional. The worker app web address (https://...). Tapping a reminder opens it.']
+];
+const WARN_TEST_BUSY_MSG  = 'Test not sent - please try again in a minute.';
+let _SETTINGS = null;              // per execution: the Settings tab, read once (_settings_)
 // __43_ (F86-2): sends queued while the script lock is held, run after it is released (doPost only).
 let _DEFER = null;               // { sends: [{label, fn}], keys: [idempotency keys to register after the sends] }
 let _AUDIT_CTX = '';             // __43_ (F86-7): 'tpl=... wb=...' appended to every audit row of a doPost run
@@ -269,6 +304,7 @@ function onOpen() {
 // ==========================================
 function doGet(e) {
   try {
+      _settingsReset_();   // __48_: Settings are read once per execution
       if(!e || !e.parameter) return sendResponse(e, {status:"error", message:"No Params"});
       const p = e.parameter;
    // NEW: Version Ping for System Info
@@ -305,6 +341,7 @@ function doPost(e) {
   if(!e || !e.parameter) return sendJSON({status:"error"});
   if(e.parameter.key !== CONFIG.MASTER_KEY && e.parameter.key !== CONFIG.WORKER_KEY) return sendJSON({status:"error"});
   const _ep = e.parameter;
+  _settingsReset_();   // __48_: Settings are read once per execution
   _AUDIT_CTX = _auditCtxFor_(_ep); // __43_ (F86-7): template name + worker build on every audit row of this run
   const _epStatusIn = String(_ep['Alarm Status'] || ''); // __44_: as sent - handleWorkerPost may rewrite it (PIN clear)
 
@@ -379,6 +416,8 @@ function _doPostRoute_(p) {
     if (p.action === 'uploadEmergencyProcedures') { updateSiteEmergencyProcedures(p); handleWorkerPost(p); return { status: 'success' }; }
     if (p.action === 'notifySafety') return handleSafetyResolution(p);
     if (p.action === 'broadcast') return handleBroadcast(p);
+    if (p.action === 'workerTopic') return handleWorkerTopic(p);           // __48_ (R04): "Set up phone alerts"
+    if (p.action === 'workerTopicTest') return handleWorkerTopicTest(p);   // __48_ (R04): one test a minute
     handleWorkerPost(p);
     return { status: 'success' };
 }
@@ -2410,6 +2449,7 @@ function checkOverdueVisits() {
     //  2. The script lock (shared with doPost) is held only to read the sheet, claim col AA and write col A/K/L.
     //     Alerts go out after it is released. Session 86: holding it through the step 1 send (about 9 s, two contacts)
     //     made a phone OVERDUE ALARM wait 9,559 ms of its 10,000 ms limit.
+    _settingsReset_();   // __48_: Settings are read once per execution
     const guard = _checkerGuardAcquire_();
     if (!guard) { console.log('[checkOverdueVisits] Skipped - another checker run is still going.'); return; }
     try {
@@ -2424,10 +2464,11 @@ function checkOverdueVisits() {
             return;
         }
         const sends = [];
+        const warns = [];   // __48_ (R04): reminders to workers' own phones, sent after the contact alerts
         let completed = false, lockHeldMs = 0;
         const _h0 = Date.now();
         try {
-            completed = _checkOverdueLocked_(sends);
+            completed = _checkOverdueLocked_(sends, warns);
             _ladderSendingFlags_(sends, true); // All Clears for these workers wait until the alerts have gone
         } finally {
             // __38_: commit pending sheet writes before the next execution can take the lock.
@@ -2437,6 +2478,7 @@ function checkOverdueVisits() {
         }
         // ---- lock released: send ----
         _runLadderSends_(sends);
+        _runWarnSends_(warns);   // __48_ (R04): after the contact alerts, never before; hard rule re-checked per send
         if (sends.length) {
             _audit_('checker:lock', '', '', '', '', '', '', 'lockWait=' + lockWaitMs + 'ms lockHeld=' + lockHeldMs + 'ms sends=' +
                     sends.length + ' (sent after lock release) guard=' + guard.kind);
@@ -2455,9 +2497,11 @@ function checkOverdueVisits() {
  * are pushed onto `sends` and go out after the lock is released (_runLadderSends_). Returns false on an early return
  * (no Visits sheet), true when the loop ran.
  */
-function _checkOverdueLocked_(sends) {
+function _checkOverdueLocked_(sends, warns) {
     // Record successful trigger execution time for health email reporting
     try { sp.setProperty('LAST_TRIGGER_TIME', new Date().toISOString()); } catch(e) {}
+    _settingsEnsure_();   // __48_: Settings tab with defaults (at most hourly; never throws)
+    const warnCtx = {};   // __48_ (R04): Settings and Staff topics, loaded only when a reminder is due
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName('Visits');
@@ -2494,6 +2538,14 @@ function _checkOverdueLocked_(sends) {
                 // A12: String() - Sheets may store Notes as a number or date, and .includes()
                 // on those threw, skipping this worker every minute.
                 const isCritical = String(entry[11] || '').includes("[CRITICAL_TIMING]");
+
+                // __48_ (R04): reminder to the worker's own phone (W1 at due - 5, W2 at due + grace - 3). Decided and
+                // claimed in col Z here, sent after the lock is released and after the contact alerts. Its own
+                // try/catch: a reminder problem never stops the contact escalation below.
+                if (warns) {
+                    try { _warnCheck_(sheet, latest[worker].r, entry, worker, due, diffMins, isCritical, status, warns, warnCtx); }
+                    catch (wErr) { _audit_('warn:error', worker, latest[worker].r, status, '', '', '', String(wErr).substring(0, 200) + ' - escalation unaffected'); }
+                }
 
                 // 1. CRITICAL TIMING: own three-step ladder, both contacts every step.
                 //    Step 1 at due, step 2 at due + 5, step 3 (final notice) at due + 10,
@@ -2685,6 +2737,7 @@ function _checkerGuardRelease_(g) {
 function sendHealthEmail() { _jobRun_('sendHealthEmail', _sendHealthEmailImpl_); }
 
 function _sendHealthEmailImpl_() {
+    _settingsReset_();   // __48_: Settings are read once per execution
     const now = new Date();
     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const tz = CONFIG.TIMEZONE || 'UTC';
@@ -2822,6 +2875,10 @@ function _sendHealthEmailImpl_() {
       <tr>
         <td style="padding:10px 12px;border-top:1px solid #eee">Escalation engine last ran</td>
         <td style="padding:10px 12px;border-top:1px solid #eee">${lastTriggerStr}</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 12px;border-top:1px solid #eee">Worker phone reminders <em style="font-size:11px;color:#888">(Settings tab)</em></td>
+        <td style="padding:10px 12px;border-top:1px solid #eee">${_warnHealthHtml_()}</td>
       </tr>
     </table>
 
@@ -4165,6 +4222,13 @@ function getSyncData(workerName, deviceId) {
             workerGroups = (stData[i][3] || "").toString().toLowerCase(); 
             meta.lastVehCheck = stData[i][5];
             meta.wofExpiry = stData[i][6];
+            // __48_ (R04): the worker's reminder topic once it exists (Staff col J) - only to the phone bound in col E.
+            const _wt = String(stData[i][WORKER_TOPIC_COL - 1] == null ? '' : stData[i][WORKER_TOPIC_COL - 1]).trim();
+            const _bound = String(stData[i][4] || '').trim();
+            if (_wt && _topicOk_(_wt) && (!_bound || _bound === String(deviceId || '').trim())) {
+                meta.workerTopic = _wt;
+                meta.ntfyServer = _ntfyPublicServer_();
+            }
             break; 
         }
     }
@@ -4245,6 +4309,7 @@ function getSyncData(workerName, deviceId) {
         meta.resources = resources;
     }
     
+    meta.settings = _settingsForPhone_();   // __48_ (R04, R33): the Settings tab; the phone uses it before config.json
     return {sites, forms, cachedTemplates, meta, version: CONFIG.VERSION};
 }
 /**
@@ -5116,7 +5181,7 @@ function _formsGps_(sheet, rowNum, p) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__47_';
+const TEMPLATE_BUILD = 'backend__48_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
@@ -5432,4 +5497,447 @@ function _visitIdSet_(sheet, rowNum, id) {
         _audit_('visitId:FAILED', '', rowNum, '', '', '', '', String(e).substring(0, 200));
         return false;
     }
+}
+
+// ==========================================
+// __48_ (session 97): R04 WORKER REMINDERS, SETTINGS TAB, WORKER TOPIC, BUDGET GUARD
+// ==========================================
+
+/** __48_: forget a Settings read from an earlier execution (Apps Script starts each execution fresh; tests do not). */
+function _settingsReset_() { _SETTINGS = null; }
+
+/** __48_: "On" / "Off" (also yes / no, true / false, 1 / 0, a ticked checkbox). undefined when unreadable. */
+function _settingOnOff_(v) {
+    if (v === true || v === false) return v;
+    const t = String(v == null ? '' : v).trim().toLowerCase();
+    if (['on', 'yes', 'y', 'true', '1'].indexOf(t) > -1) return true;
+    if (['off', 'no', 'n', 'false', '0'].indexOf(t) > -1) return false;
+    return undefined;
+}
+
+/**
+ * __48_ (R04, R33): the organisation's switches from the Settings tab (key / value / note), read once per execution.
+ * A missing tab, key or blank value gives the default; an unreadable value gives the default and is listed in .bad
+ * (shown in the Health email). Never throws and never writes: the sync (doGet) calls it without the script lock.
+ */
+function _settings_() {
+    if (_SETTINGS) return _SETTINGS;
+    const raw = {};
+    let found = false, readErr = '';
+    try {
+        const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SETTINGS_SHEET_NAME);
+        if (sh) {
+            found = true;
+            const last = sh.getLastRow();
+            if (last >= 2) {
+                sh.getRange(2, 1, last - 1, 2).getValues().forEach(function (r) {
+                    const k = String(r[0] == null ? '' : r[0]).trim().toUpperCase();
+                    if (k && !(k in raw)) raw[k] = r[1];
+                });
+            }
+        }
+    } catch (e) { readErr = String(e).substring(0, 120); }
+    const bad = [];
+    const blank = function (v) { return v === '' || v === null || v === undefined; };
+    const onOff = function (k, def) {
+        if (!(k in raw) || blank(raw[k])) return def;
+        const b = _settingOnOff_(raw[k]);
+        if (b === undefined) { bad.push(k); return def; }
+        return b;
+    };
+    const num = function (k, def, lo, hi) {
+        if (!(k in raw) || blank(raw[k])) return def;
+        const n = Number(String(raw[k]).trim());
+        if (!isFinite(n) || Math.floor(n) !== n || n < lo || n > hi) { bad.push(k); return def; }
+        return n;
+    };
+    const url = function (k) {
+        if (!(k in raw) || blank(raw[k])) return '';
+        const u = String(raw[k]).trim();
+        if (!/^https:\/\/[^\s"'<>]+$/i.test(u) || u.length > 500) { bad.push(k); return ''; }
+        return u;
+    };
+    _SETTINGS = {
+        found: found, readErr: readErr,
+        welfareChecks:         onOff('WELFARE_CHECKS', false),
+        welfareDefaultMins:    num('WELFARE_DEFAULT_MINS', 60, 5, 240),
+        welfareGraceMins:      num('WELFARE_GRACE_MINS', 2, 1, 10),
+        workerWarnings:        onOff('WORKER_WARNINGS', true),
+        workerWarningDailyCap: num('WORKER_WARNING_DAILY_CAP', 100, 0, 5000),
+        workerAppUrl:          url('WORKER_APP_URL'),
+        bad: bad
+    };
+    return _SETTINGS;
+}
+
+/** __48_ (R04, R33): the Settings the phone needs (sync meta.settings). The phone uses these before config.json. */
+function _settingsForPhone_() {
+    const st = _settings_();
+    return { welfareChecks: st.welfareChecks, welfareDefaultMins: st.welfareDefaultMins, welfareGraceMins: st.welfareGraceMins,
+             workerWarnings: st.workerWarnings, source: st.found ? 'sheet' : 'defaults' };
+}
+
+/**
+ * __48_: create the Settings tab with its defaults when missing, and add any key a later build introduces. Called by the
+ * checker (script lock held), at most once an hour (CacheService). Values already in the tab are never changed.
+ * Never throws.
+ */
+function _settingsEnsure_() {
+    try {
+        const cache = CacheService.getScriptCache();
+        if (cache.get('SETTINGS_ENSURED') === '1') return;
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        let sh = ss.getSheetByName(SETTINGS_SHEET_NAME);
+        if (!sh) {
+            sh = ss.insertSheet(SETTINGS_SHEET_NAME);
+            sh.appendRow(['Key', 'Value', 'Note']);
+            try { sh.setFrozenRows(1); } catch (_) {}
+        }
+        const last = sh.getLastRow();
+        const have = {};
+        if (last >= 2) sh.getRange(2, 1, last - 1, 1).getValues().forEach(function (r) { have[String(r[0] == null ? '' : r[0]).trim().toUpperCase()] = 1; });
+        const added = [];
+        SETTINGS_DEFAULTS.forEach(function (d) { if (!have[d[0]]) { sh.appendRow(d.slice()); added.push(d[0]); } });
+        if (added.length) {
+            _audit_('settings:added', '', '', '', '', '', '', 'Settings tab: added ' + added.join(', ') + ' with default values');
+            _settingsReset_();
+        }
+        cache.put('SETTINGS_ENSURED', '1', 3600);
+    } catch (e) {
+        _audit_('settings:ensure-FAILED', '', '', '', '', '', '', String(e).substring(0, 200) + ' - defaults in use');
+    }
+}
+
+/** __48_: an ntfy topic name (letters, digits, _ and -, up to 64). */
+function _topicOk_(t) { return /^[A-Za-z0-9_-]{1,64}$/.test(String(t == null ? '' : t)); }
+
+/** __48_ (R04): a new unguessable worker topic, "otg-" + 24 random hex characters. */
+function _workerTopicNew_() {
+    let h = '';
+    for (let i = 0; i < 4 && h.length < 24; i++) h += String(Utilities.getUuid()).replace(/[^0-9a-f]/gi, '').toLowerCase();
+    if (h.length < 24) throw new Error('could not generate a topic');
+    return 'otg-' + h.substring(0, 24);
+}
+
+/** __48_ (R04): the ntfy server the worker subscribes on (the Factory's ntfy Server, else ntfy.sh). */
+function _ntfyPublicServer_() {
+    const v = String(CONFIG.NTFY_SERVER || '');
+    return (v && v.indexOf('%%') < 0 && /^https:\/\//i.test(v)) ? v.replace(/\/$/, '') : 'https://ntfy.sh';
+}
+
+/**
+ * __48_ (R04): the Staff row for a worker, matched as getSyncData matches (lower case, trimmed).
+ * { sheet, row, name, topic } or { error }. Inactive workers and a phone other than the one bound in col E are refused.
+ */
+function _staffFor_(workerName, deviceId) {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Staff');
+    if (!sheet) return { error: 'Staff sheet missing.' };
+    const want = String(workerName == null ? '' : workerName).toLowerCase().trim();
+    if (!want) return { error: 'Worker name missing.' };
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+        if (String(data[i][0] == null ? '' : data[i][0]).toLowerCase().trim() !== want) continue;
+        if (String(data[i][2] || '').trim().toLowerCase() === 'inactive') return { error: 'Access Denied.' };
+        const bound = String(data[i][4] || '').trim();
+        if (bound && bound !== String(deviceId == null ? '' : deviceId).trim()) return { error: 'This phone is not the one registered for this worker.' };
+        const t = data[i][WORKER_TOPIC_COL - 1];
+        return { sheet: sheet, row: i + 1, name: String(data[i][0]).trim(), topic: String(t == null ? '' : t).trim() };
+    }
+    return { error: 'Worker not found in Staff registry' };
+}
+
+/**
+ * __48_ (R04, D-OPTIN): action 'workerTopic' - the worker's own reminder topic (Staff col J), made on the first request.
+ * Called from the app's "Set up phone alerts" screen (worker __23_). doPost: the script lock is held.
+ * The topic is never written to the Audit sheet (it must stay unguessable).
+ */
+function handleWorkerTopic(p) {
+    const st = _staffFor_(p['Worker Name'], p.deviceId);
+    if (st.error) {
+        _audit_('workerTopic:refused', p['Worker Name'], '', '', '', '', '', st.error);
+        return { status: 'error', message: st.error };
+    }
+    let topic = st.topic;
+    if (topic && !_topicOk_(topic)) {
+        _audit_('workerTopic:refused', st.name, '', '', '', '', '', 'Staff row ' + st.row + ' col J is not a valid ntfy topic name - not changed');
+        return { status: 'error', message: 'Staff column J for this worker holds an invalid topic name. Ask your administrator to clear it.' };
+    }
+    if (!topic) {
+        topic = _workerTopicNew_();
+        const hdr = st.sheet.getRange(1, WORKER_TOPIC_COL);
+        if (!String(hdr.getValue() || '').trim()) hdr.setValue(WORKER_TOPIC_HEADER);
+        st.sheet.getRange(st.row, WORKER_TOPIC_COL).setValue(topic);
+        _audit_('workerTopic:created', st.name, '', '', '', '', '', 'Staff row ' + st.row + ' col J set (topic not logged)');
+    }
+    return { status: 'success', workerTopic: topic, ntfyServer: _ntfyPublicServer_(), workerWarnings: _settings_().workerWarnings };
+}
+
+/**
+ * __48_ (R04): action 'workerTopicTest' - one urgent test reminder to the worker's own topic, at most one a minute.
+ * HARD RULE: never during an alarm. The reply then reads exactly like the once-a-minute refusal, so the phone screen
+ * never shows that an alarm (a DURESS clear looks normal on the phone) is active. Counts against the daily cap.
+ */
+function handleWorkerTopicTest(p) {
+    const st = _staffFor_(p['Worker Name'], p.deviceId);
+    if (st.error) return { status: 'error', message: st.error };
+    if (!st.topic || !_topicOk_(st.topic)) return { status: 'error', message: 'Set up phone alerts first.' };
+    const cache = CacheService.getScriptCache();
+    const ck = 'WTTEST_' + st.name.toLowerCase().substring(0, 200);
+    let recent = false;
+    try { recent = cache.get(ck) === '1'; } catch (_) {}
+    if (recent) return { status: 'error', message: WARN_TEST_BUSY_MSG };
+    const why = _workerAlarmActive_(st.name);
+    if (why) {
+        _audit_('workerTopicTest:skip', st.name, '', '', '', '', '', 'test not sent: ' + why + ' - hard rule: no push to the worker during an alarm');
+        return { status: 'error', message: WARN_TEST_BUSY_MSG };
+    }
+    const set = _settings_();
+    if (!_warnBudgetTake_(set.workerWarningDailyCap)) {
+        return { status: 'error', message: 'Daily reminder limit reached - test not sent. Contact alarms are not affected.' };
+    }
+    try { cache.put(ck, '1', 60); } catch (_) {}
+    const topic = st.topic, click = set.workerAppUrl;
+    _sendOrQueue_('workerTopicTest', function () {
+        const r = _sendNtfy(topic, 'Test - safety reminders work',
+            'This is a test from ' + CONFIG.ORG_NAME + '. If it arrived with your phone locked, safety reminders will reach you.',
+            'urgent', 'white_check_mark', click ? { click: click } : null);
+        if (!r || !r.ok) throw new Error('ntfy did not accept the test' + (r && r.code ? ' (HTTP ' + r.code + ')' : ''));
+    });
+    _audit_('workerTopicTest:queued', st.name, '', '', '', '', '', 'test reminder queued (sent after the lock is released)');
+    return { status: 'success', message: 'Test sent. It should arrive within a minute.' };
+}
+
+/**
+ * __48_ (R04 hard rule): why this Visits row (array, col A = index 0) has an alarm active, or ''. Active = open and
+ * col K rank 2+ (OVERDUE ALARM, an OVERDUE tier, EMERGENCY, PANIC, SOS, DURESS) or contacts alerted for its due time.
+ */
+function _rowAlarmReason_(row) {
+    if (!row) return '';
+    const st = String(row[10] || '').toUpperCase();
+    if (st.includes('DEPARTED') || st.includes('COMPLETED') || st.includes('DATA_ENTRY_ONLY') || st.includes('USER_SAFE')) return '';
+    if (_alarmRank_(st) >= 2) return 'alarm active (col K ' + st.substring(0, 40) + ')';
+    if (_alertAudience_(row) !== 'none') return 'contacts already alerted for this due time';
+    return '';
+}
+
+/** __48_ (R04 hard rule): the reason the worker's latest Visits row has an alarm active, or ''. Reads only; unsure = a reason. */
+function _workerAlarmActive_(name) {
+    try {
+        const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Visits');
+        if (!sh) return '';
+        const last = sh.getLastRow();
+        if (last < 2) return '';
+        const start = Math.max(2, last - 300);
+        const data = sh.getRange(start, 1, last - start + 1, _readWidth_(sh)).getValues();
+        const want = String(name == null ? '' : name).toLowerCase().trim();
+        let best = null, bestT = -Infinity;
+        for (let i = 0; i < data.length; i++) {
+            if (String(data[i][2] == null ? '' : data[i][2]).toLowerCase().trim() !== want) continue;
+            let t = new Date(data[i][0]).getTime();
+            if (isNaN(t)) t = -Infinity;
+            if (!best || t >= bestT) { best = data[i]; bestT = t; }
+        }
+        return _rowAlarmReason_(best);
+    } catch (e) {
+        return 'Visits could not be read (' + String(e).substring(0, 60) + ')';
+    }
+}
+
+/** __48_ (D-BUDGET): a day key in local time, "yyyy-MM-dd". */
+function _warnDay_(d) {
+    const t = String(_fmtLocal_(d, 'yyyy-MM-dd') || '').substring(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : d.toISOString().substring(0, 10);
+}
+function _warnCountParse_(raw) {
+    const p = String(raw == null ? '' : raw).split('|');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(p[0] || '')) return null;
+    return { day: p[0], n: parseInt(p[1], 10) || 0, hit: p[2] === '1' };
+}
+
+/**
+ * __48_ (D-BUDGET): take one worker reminder (or test) from today's allowance. false = the cap is reached. Contact alarms
+ * never come here. Every caller holds the script lock (checker, doPost). Never throws: if the counter itself fails the
+ * reminder still goes (a broken counter must not silence every reminder).
+ */
+function _warnBudgetTake_(cap) {
+    try {
+        const today = _warnDay_(new Date());
+        const raw = sp.getProperty('WORKER_WARN_DAY');
+        let cur = _warnCountParse_(raw);
+        if (!cur || cur.day !== today) {
+            if (cur) sp.setProperty('WORKER_WARN_PREV', raw);
+            cur = { day: today, n: 0, hit: false };
+        }
+        const save = function () { sp.setProperty('WORKER_WARN_DAY', cur.day + '|' + cur.n + '|' + (cur.hit ? '1' : '0')); };
+        if (cur.n >= cap) {
+            if (!cur.hit) {
+                cur.hit = true;
+                _audit_('warn:cap-reached', '', '', '', '', '', '', cur.n + ' worker reminders sent today (cap ' + cap +
+                        ') - no more today. Contact alarms are not affected. The cap is WORKER_WARNING_DAILY_CAP in the Settings tab.');
+            }
+            save();
+            return false;
+        }
+        cur.n++;
+        save();
+        return true;
+    } catch (e) {
+        try { console.warn('[warn] budget counter failed: ' + e); } catch (_) {}
+        return true;
+    }
+}
+
+/** __48_ (D-BUDGET): the Health email cell - on/off, reminders sent per day, the cap, unreadable Settings values. */
+function _warnHealthHtml_() {
+    try {
+        const set = _settings_();
+        const fmt = function (raw) { const c = _warnCountParse_(raw); return c ? (c.day + ': ' + c.n + (c.hit ? ' - CAP REACHED' : '')) : ''; };
+        const days = [fmt(sp.getProperty('WORKER_WARN_PREV')), fmt(sp.getProperty('WORKER_WARN_DAY'))].filter(Boolean);
+        let html = '<strong>' + (set.workerWarnings ? 'On' : 'Off') + '</strong> - sent ' + _escHtml(days.join('; ') || 'none yet') +
+                   ' (cap ' + set.workerWarningDailyCap + ' a day; contact alarms are never capped)';
+        if (!set.found) html += '<br><span style="font-size:11px;color:#e67e22">Settings tab not found - defaults in use (the escalation engine creates it).</span>';
+        if (set.bad.length) html += '<br><span style="font-size:11px;color:#c0392b">Settings tab: unreadable value for ' + _escHtml(set.bad.join(', ')) + ' - default used.</span>';
+        return html;
+    } catch (e) { return 'unavailable'; }
+}
+
+/** __48_ (R04): what Visits col Z holds for THIS due time. Format "<due ISO>|W1,W2x|<claim ISO>". */
+function _warnMemInfo_(raw, dueIso) {
+    const t = String(raw == null ? '' : raw).trim();
+    if (!t) return { has: false, same: false, tokens: [] };
+    const parts = t.split('|');
+    const same = parts[0] === dueIso;
+    return { has: true, same: same, tokens: same ? String(parts[1] || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean) : [] };
+}
+
+/** __48_ (R04): record a reminder decision in col Z (claim before send). '' when it could not be written. Never throws. */
+function _warnMemClaim_(sheet, rowNum, dueIso, z, tok, worker) {
+    try {
+        if (sheet.getMaxColumns() < WARN_COL) sheet.insertColumnsAfter(sheet.getMaxColumns(), WARN_COL - sheet.getMaxColumns());
+        const hdr = sheet.getRange(1, WARN_COL);
+        if (!String(hdr.getValue() || '').trim()) hdr.setValue(WARN_HEADER);
+        const val = dueIso + '|' + (z.same ? z.tokens : []).concat([tok]).join(',') + '|' + new Date().toISOString();
+        sheet.getRange(rowNum, WARN_COL).setValue(val);
+        _audit_('warn:claim', worker, rowNum, '', '', '', '', 'col Z = ' + val);
+        return val;
+    } catch (e) {
+        _audit_('warn:claim-FAILED', worker, rowNum, '', '', '', '', String(e).substring(0, 200) + ' - reminder not sent');
+        return '';
+    }
+}
+
+/** __48_ (R04): Settings and Staff topics for one checker run, loaded the first time a reminder is due. */
+function _warnCtx_(ctx) {
+    if (ctx.loaded) return ctx;
+    ctx.loaded = true;
+    ctx.settings = _settings_();
+    ctx.topics = {};
+    if (!ctx.settings.workerWarnings) return ctx;
+    try {
+        const st = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Staff');
+        if (st) st.getDataRange().getValues().forEach(function (r, i) {
+            if (i === 0) return;
+            const n = String(r[0] == null ? '' : r[0]).toLowerCase().trim();
+            const t = String(r[WORKER_TOPIC_COL - 1] == null ? '' : r[WORKER_TOPIC_COL - 1]).trim();
+            if (n && t && _topicOk_(t) && String(r[2] || '').trim().toLowerCase() !== 'inactive') ctx.topics[n] = t;
+        });
+    } catch (e) { _audit_('warn:staff-read-FAILED', '', '', '', '', '', '', String(e).substring(0, 200)); }
+    return ctx;
+}
+
+/**
+ * __48_ (R04): decide a reminder to the worker's own phone for this row. Checker, script lock held.
+ *   W1 at due - 5 min: all visits and trips (priority high).
+ *   W2 at due + (grace - 3) min: not Critical Timing, none when the grace is 3 min or less (urgent).
+ * A reminder whose moment passed more than 3 min ago is not sent; W2's window also ends when contacts are alerted.
+ * Decided once per due time: col Z gets W1 / W2 (claimed before the send) or W1x / W2x (skipped, with an Audit row).
+ * HARD RULE: never a push while an alarm is active on the row (_rowAlarmReason_). Checked again just before sending.
+ * Nothing is written for a worker with no topic (Staff col J) or when WORKER_WARNINGS is Off.
+ */
+function _warnCheck_(sheet, rowNum, entry, worker, due, diffMins, isCritical, status, warns, ctx) {
+    const g = _graceMinutes_();
+    const w = (diffMins >= -5 && diffMins <= -2) ? 1
+            : (!isCritical && g > 3 && diffMins >= g - 3 && diffMins < g) ? 2 : 0;
+    if (!w) return;
+    const dueIso = due.toISOString();
+    const z = _warnMemInfo_(entry[WARN_COL - 1], dueIso);
+    if (z.tokens.indexOf('W' + w) > -1 || z.tokens.indexOf('W' + w + 'x') > -1) return;   // decided already
+    _warnCtx_(ctx);
+    if (!ctx.settings.workerWarnings) return;
+    const topic = ctx.topics[String(worker == null ? '' : worker).toLowerCase().trim()];
+    if (!topic) return;
+    let skip = _rowAlarmReason_(entry);
+    if (skip) skip += ' - hard rule: no push to the worker during an alarm';
+    else if (!_warnBudgetTake_(ctx.settings.workerWarningDailyCap)) skip = 'daily cap reached (' + ctx.settings.workerWarningDailyCap + ')';
+    const claim = _warnMemClaim_(sheet, rowNum, dueIso, z, 'W' + w + (skip ? 'x' : ''), worker);
+    if (skip) {
+        _audit_('warn:skip', worker, rowNum, status, '', '', '', 'W' + w + ' not sent: ' + skip + ' (diff=' + diffMins.toFixed(1) + 'm)');
+        return;
+    }
+    if (!claim) return;   // not recorded = not sent (an unrecorded reminder would repeat every minute)
+    warns.push({ worker: worker, rowNum: rowNum, w: w, topic: topic, dueIso: dueIso, claimVal: claim,
+                 alertIso: new Date(due.getTime() + g * 60000).toISOString(),
+                 loc: String(entry[12] == null ? '' : entry[12]), isTrip: String(status).toUpperCase().indexOf('TRAVEL') > -1,
+                 click: ctx.settings.workerAppUrl });
+}
+
+/**
+ * __48_ (R04 hard rule, at send time): why this reminder must not go now, or ''. Re-reads the row without the lock:
+ * an alarm, a departure or an extension that landed since the decision stops the push. Unreadable = do not push.
+ */
+function _warnStillOk_(sh, w) {
+    if (!sh) return 'Visits sheet not readable';
+    let row;
+    try { row = sh.getRange(w.rowNum, 1, 1, _readWidth_(sh)).getValues()[0]; }
+    catch (e) { return 'row could not be re-read'; }
+    if (String(row[2]) !== String(w.worker)) return 'row changed';
+    const st = String(row[10] || '').toUpperCase();
+    if (st.includes('DEPARTED') || st.includes('COMPLETED') || st.includes('DATA_ENTRY_ONLY') || st.includes('USER_SAFE')) return 'visit closed';
+    if (!_sameDue_(row[20], w.dueIso)) return 'due time changed';
+    const a = _rowAlarmReason_(row);
+    return a ? a + ' - hard rule: no push to the worker during an alarm' : '';
+}
+
+/** __48_ (R04): reminder wording. Site or destination name and the due time only - no GPS, no contact names. */
+function _warnMessage_(w) {
+    const due = new Date(w.dueIso);
+    const t = _clockText_(due) || 'the due time';
+    const place = String(w.loc || '').replace(/\s+/g, ' ').trim().substring(0, 80);
+    const where = place ? (w.isTrip ? 'Heading to ' + place : place) + ' - ' : '';
+    const act = w.isTrip ? 'Open the app to extend or end the trip.' : 'Open the app to extend or depart.';
+    const minsTo = function (iso) { return Math.max(1, Math.ceil((new Date(iso).getTime() - Date.now()) / 60000)); };
+    if (w.w === 1) {
+        return { title: (w.isTrip ? 'Trip' : 'Visit') + ' ends in ' + minsTo(w.dueIso) + ' min', body: where + 'due ' + t + '.\n' + act,
+                 tags: 'hourglass_flowing_sand' };
+    }
+    return { title: 'Check in now - your contact will be alerted in ' + minsTo(w.alertIso) + ' min', body: where + 'was due ' + t + '.\n' + act,
+             tags: 'warning' };
+}
+
+/**
+ * __48_ (R04): send the reminders decided by the checker - lock released, after the contact alerts. Each is checked
+ * against the hard rule again first. A failed send is audited and NOT retried (a reminder only: contacts are still
+ * alerted on time, and a retry would spend the message allowance).
+ */
+function _runWarnSends_(warns) {
+    if (!warns || !warns.length) return;
+    let sh = null;
+    try { sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Visits'); } catch (_) {}
+    warns.forEach(function (w) {
+        const t0 = Date.now();
+        try {
+            const why = _warnStillOk_(sh, w);
+            if (why) { _audit_('warn:skip-at-send', w.worker, w.rowNum, '', '', '', '', 'W' + w.w + ' not sent: ' + why); return; }
+            const m = _warnMessage_(w);
+            const r = _sendNtfy(w.topic, m.title, m.body, w.w === 1 ? 'high' : 'urgent', m.tags, w.click ? { click: w.click } : null);
+            if (r && r.ok) {
+                _audit_('warn:sent', w.worker, w.rowNum, '', '', '', '', 'W' + w.w + ' sent in ' + (Date.now() - t0) + 'ms (' + r.via + ')');
+            } else {
+                _audit_('warn:send-FAILED', w.worker, w.rowNum, '', '', '', '', 'W' + w.w + ' not accepted' + (r && r.code ? ' (HTTP ' + r.code + ')' : '') +
+                        ' - not retried (a reminder only; contacts are still alerted on time)');
+            }
+        } catch (e) {
+            _audit_('warn:send-FAILED', w.worker, w.rowNum, '', '', '', '', 'W' + w.w + ' threw: ' + String(e).substring(0, 200) + ' - not retried');
+        }
+    });
 }
