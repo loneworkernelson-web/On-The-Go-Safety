@@ -173,6 +173,25 @@
  *     contact alarms are never counted or capped. Audit row when the cap stops reminders; Health email line.
  *   - Contact escalation (tiers, col AA claims, All Clear audience) is unchanged.
  *
+ * __49_ (session 99, 23 Oct 2026) - R60: worker reminders only when the phone has gone quiet (no worker change needed):
+ *   - New Visits col AF "Last Heard (UTC)": the server time of every accepted phone post that writes the visit row
+ *     (any status, with or without a GPS fix - col P only moves with a fix). Written in the doPost lock next to col A.
+ *     A failed stamp never fails the post. Cols AD / AE stay free for R03 (welfare checks, backend __50_).
+ *   - W1 ("ends in 5 min", due - 5 to due - 2) now ONLY for Critical Timing visits and trips, and only when nothing has
+ *     been heard from the phone for more than WORKER_WARN_QUIET_W1_MINS (default 3). Standard visits and trips get no
+ *     W1 (the grace period is their buffer).
+ *   - W2 ("check in now", due + grace - 3 to due + grace) for standard visits and trips only, as before, and only when
+ *     nothing has been heard for more than WORKER_WARN_QUIET_W2_MINS (default 6). 0 = always send (the __48_ rule).
+ *   - A phone heard recently is looked at again at every checker run while the 3-minute window is open, so a phone
+ *     that goes quiet inside the window still gets the reminder. Nothing is claimed for a "heard" result; col Z gets a
+ *     W1h / W2h marker once (one Audit row "phone heard N min ago"). A missing or unreadable stamp = silent (sent).
+ *   - The HARD RULE (no push during an alarm, at decision and again at send) is unchanged and beats all of this.
+ *   - Old phones are silent before the due time on site visits, so a Critical Timing site visit gets W1 until worker
+ *     __23_ adds its liveness heartbeat; a Critical Timing visit shorter than about 6 minutes may get no W1 because its
+ *     start post is still recent.
+ *   - Settings tab: two new keys added with their defaults (existing values never changed); Health email shows them.
+ *   - Contact escalation (tiers, Critical ladder, col AA claims, All Clear audience) is unchanged.
+ *
  * DEPLOY CHECKLIST(every deployment): Deploy > Manage deployments > New version. Then open the Apps Script
  * editor, run ONE function from each installed trigger by hand (accept any permission prompt), and confirm
  * the Triggers list shows no failures.
@@ -251,20 +270,26 @@ let _LOCAL_HDR_DONE = {};        // per execution: header cells already checked
 let _AUDIT_EXEC = null;          // short id shared by every audit row from one execution
 let _AUDIT_LOCKWAIT_MS = null;   // doPost only: how long it waited for the script lock
 // __48_ (session 97, R04 / R33): worker reminders, Settings tab, worker topic. Helpers at the end of the file.
-const WARN_COL            = 26;    // Visits col Z "Worker Warnings": "<due ISO>|W1,W2|<claim ISO>" (W1x / W2x = skipped)
+const WARN_COL            = 26;    // Visits col Z "Worker Warnings": "<due ISO>|W1,W2|<claim ISO>" (W1x / W2x = skipped,
+                                   // W1h / W2h = __49_: held back once because the phone was heard - not a decision)
 const WARN_HEADER         = 'Worker Warnings';
 const WORKER_TOPIC_COL    = 10;    // Staff col J: the worker's own ntfy topic (made by the backend, on request)
 const WORKER_TOPIC_HEADER = 'Worker Alert Topic';
 const SETTINGS_SHEET_NAME = 'Settings';
 const SETTINGS_DEFAULTS   = [      // [key, default value, note] - added to the Settings tab when missing, never changed
-    ['WELFARE_CHECKS', 'Off', 'On or Off. Periodic "Are you OK?" checks during site visits, escalated by the server if missed. Takes effect with worker __23_ and backend __49_.'],
+    ['WELFARE_CHECKS', 'Off', 'On or Off. Periodic "Are you OK?" checks during site visits, escalated by the server if missed. Takes effect with worker __23_ and backend __50_.'],
     ['WELFARE_DEFAULT_MINS', 60, 'Minutes between welfare checks when the site has no risk level (5 to 240). Takes effect with worker __23_.'],
-    ['WELFARE_GRACE_MINS', 2, 'Minutes the worker has to answer a welfare check (1 to 10). Takes effect with worker __23_ and backend __49_.'],
-    ['WORKER_WARNINGS', 'On', 'On or Off. Reminders to the worker\'s own phone 5 min before a visit or trip is due, and 3 min before contacts are alerted. Only for workers who set up phone alerts in the app.'],
+    ['WELFARE_GRACE_MINS', 2, 'Minutes the worker has to answer a welfare check (1 to 10). Takes effect with worker __23_ and backend __50_.'],
+    ['WORKER_WARNINGS', 'On', 'On or Off. Reminders to the worker\'s own phone, only when the phone has gone quiet: 5 min before a Critical Timing visit or trip is due, and 3 min before contacts are alerted on a standard one. Only for workers who set up phone alerts in the app.'],
     ['WORKER_WARNING_DAILY_CAP', 100, 'Most worker reminders sent in one day (0 to 5000). Contact alarms are never limited. Protects the ntfy message allowance.'],
-    ['WORKER_APP_URL', '', 'Optional. The worker app web address (https://...). Tapping a reminder opens it.']
+    ['WORKER_APP_URL', '', 'Optional. The worker app web address (https://...). Tapping a reminder opens it.'],
+    ['WORKER_WARN_QUIET_W1_MINS', 3, 'Critical Timing visits and trips: the "ends in 5 min" reminder goes only if nothing has been heard from the phone for more than this many minutes (0 to 30; 0 = always send).'],
+    ['WORKER_WARN_QUIET_W2_MINS', 6, 'Standard visits and trips: the "check in now" reminder goes only if nothing has been heard from the phone for more than this many minutes (0 to 30; 0 = always send).']
 ];
 const WARN_TEST_BUSY_MSG  = 'Test not sent - please try again in a minute.';
+// __49_ (session 99, R60): when the server last heard from the phone on this visit row. Cols AD / AE are R03's.
+const LAST_HEARD_COL      = 32;    // Visits col AF "Last Heard (UTC)" (ISO), written by every accepted post to the row
+const LAST_HEARD_HEADER   = 'Last Heard (UTC)';
 let _SETTINGS = null;              // per execution: the Settings tab, read once (_settings_)
 // __43_ (F86-2): sends queued while the script lock is held, run after it is released (doPost only).
 let _DEFER = null;               // { sends: [{label, fn}], keys: [idempotency keys to register after the sends] }
@@ -1065,6 +1090,7 @@ function handleWorkerPost(p) {
                         const targetRow = startRow + i;
                         sheet.getRange(targetRow, 1).setValue(ts.toISOString());
                         _localColSet_(sheet, targetRow, ts);   // __47_ (R47): col AC
+                        _lastHeardSet_(sheet, targetRow, ts);  // __49_ (R60): col AF - the phone was heard (any status)
                         // Guard col K against downgrades.
                         // HIGH_SEVERITY statuses (EMERGENCY, PANIC, DURESS, OVERDUE ALARM) must
                         // never be overwritten by lower-priority statuses (OVERDUE, ALARM_GPS_PULSE).
@@ -1256,6 +1282,7 @@ if (!rowUpdated) {
     sheet.appendRow(row);
     _visitIdSet_(sheet, sheet.getLastRow(), String(p.idempotencyKey || '') || _visitIdNew_(sheet.getLastRow()));   // __44_: col AB
     _localColSet_(sheet, sheet.getLastRow(), ts);   // __47_ (R47): col AC
+    _lastHeardSet_(sheet, sheet.getLastRow(), ts);  // __49_ (R60): col AF
     _audit_('handleWorkerPost:new', workerName, sheet.getLastRow(), '', p['Alarm Status'], p['Alarm Status'], p.idempotencyKey, 'new row');
     _ledgerRow = sheet.getLastRow(); _ledgerNew = true;   // __45_ (ledger)
 }
@@ -5181,7 +5208,7 @@ function _formsGps_(sheet, rowNum, p) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__48_';
+const TEMPLATE_BUILD = 'backend__49_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
@@ -5565,6 +5592,8 @@ function _settings_() {
         workerWarnings:        onOff('WORKER_WARNINGS', true),
         workerWarningDailyCap: num('WORKER_WARNING_DAILY_CAP', 100, 0, 5000),
         workerAppUrl:          url('WORKER_APP_URL'),
+        workerWarnQuietW1Mins: num('WORKER_WARN_QUIET_W1_MINS', 3, 0, 30),   // __49_ (R60)
+        workerWarnQuietW2Mins: num('WORKER_WARN_QUIET_W2_MINS', 6, 0, 30),   // __49_ (R60)
         bad: bad
     };
     return _SETTINGS;
@@ -5794,7 +5823,9 @@ function _warnHealthHtml_() {
         const fmt = function (raw) { const c = _warnCountParse_(raw); return c ? (c.day + ': ' + c.n + (c.hit ? ' - CAP REACHED' : '')) : ''; };
         const days = [fmt(sp.getProperty('WORKER_WARN_PREV')), fmt(sp.getProperty('WORKER_WARN_DAY'))].filter(Boolean);
         let html = '<strong>' + (set.workerWarnings ? 'On' : 'Off') + '</strong> - sent ' + _escHtml(days.join('; ') || 'none yet') +
-                   ' (cap ' + set.workerWarningDailyCap + ' a day; contact alarms are never capped)';
+                   ' (cap ' + set.workerWarningDailyCap + ' a day; contact alarms are never capped)' +
+                   '<br><span style="font-size:11px;color:#888">Sent only when the phone has gone quiet: Critical Timing "ends in 5 min" after ' +
+                   _quietText_(set.workerWarnQuietW1Mins) + '; standard "check in now" after ' + _quietText_(set.workerWarnQuietW2Mins) + '.</span>';
         if (!set.found) html += '<br><span style="font-size:11px;color:#e67e22">Settings tab not found - defaults in use (the escalation engine creates it).</span>';
         if (set.bad.length) html += '<br><span style="font-size:11px;color:#c0392b">Settings tab: unreadable value for ' + _escHtml(set.bad.join(', ')) + ' - default used.</span>';
         return html;
@@ -5846,17 +5877,20 @@ function _warnCtx_(ctx) {
 }
 
 /**
- * __48_ (R04): decide a reminder to the worker's own phone for this row. Checker, script lock held.
- *   W1 at due - 5 min: all visits and trips (priority high).
+ * __48_ (R04), changed in __49_ (R60): decide a reminder to the worker's own phone for this row. Checker, lock held.
+ *   W1 at due - 5 min: Critical Timing visits and trips ONLY (priority high) - __49_.
  *   W2 at due + (grace - 3) min: not Critical Timing, none when the grace is 3 min or less (urgent).
+ * __49_ (R60): sent only when the phone has gone quiet - nothing heard (Visits col AF) for more than
+ * WORKER_WARN_QUIET_W1_MINS / _W2_MINS (0 = always). Heard recently = not sent and NOT claimed: the next run inside the
+ * window looks again. A W1h / W2h marker in col Z keeps the "heard" Audit row to one per due time.
  * A reminder whose moment passed more than 3 min ago is not sent; W2's window also ends when contacts are alerted.
  * Decided once per due time: col Z gets W1 / W2 (claimed before the send) or W1x / W2x (skipped, with an Audit row).
- * HARD RULE: never a push while an alarm is active on the row (_rowAlarmReason_). Checked again just before sending.
- * Nothing is written for a worker with no topic (Staff col J) or when WORKER_WARNINGS is Off.
+ * HARD RULE: never a push while an alarm is active on the row (_rowAlarmReason_). Checked first, and again just before
+ * sending. Nothing is written for a worker with no topic (Staff col J) or when WORKER_WARNINGS is Off.
  */
 function _warnCheck_(sheet, rowNum, entry, worker, due, diffMins, isCritical, status, warns, ctx) {
     const g = _graceMinutes_();
-    const w = (diffMins >= -5 && diffMins <= -2) ? 1
+    const w = (isCritical && diffMins >= -5 && diffMins <= -2) ? 1
             : (!isCritical && g > 3 && diffMins >= g - 3 && diffMins < g) ? 2 : 0;
     if (!w) return;
     const dueIso = due.toISOString();
@@ -5866,9 +5900,23 @@ function _warnCheck_(sheet, rowNum, entry, worker, due, diffMins, isCritical, st
     if (!ctx.settings.workerWarnings) return;
     const topic = ctx.topics[String(worker == null ? '' : worker).toLowerCase().trim()];
     if (!topic) return;
-    let skip = _rowAlarmReason_(entry);
+    let skip = _rowAlarmReason_(entry), heardNote = '';
     if (skip) skip += ' - hard rule: no push to the worker during an alarm';
-    else if (!_warnBudgetTake_(ctx.settings.workerWarningDailyCap)) skip = 'daily cap reached (' + ctx.settings.workerWarningDailyCap + ')';
+    else {
+        // __49_ (R60): only when the phone has gone quiet. Before the budget: a held-back reminder costs nothing.
+        const quiet = w === 1 ? ctx.settings.workerWarnQuietW1Mins : ctx.settings.workerWarnQuietW2Mins;
+        const heard = _warnHeard_(entry[LAST_HEARD_COL - 1], quiet);
+        if (heard.alive) {
+            if (z.tokens.indexOf('W' + w + 'h') < 0 && _warnMemClaim_(sheet, rowNum, dueIso, z, 'W' + w + 'h', worker)) {
+                _audit_('warn:skip', worker, rowNum, status, '', '', '', 'W' + w + ' held back: phone heard ' + heard.mins.toFixed(1) +
+                        ' min ago (sent only after more than ' + quiet + ' min of silence) - looked at again each minute while the window is open' +
+                        ' (diff=' + diffMins.toFixed(1) + 'm)');
+            }
+            return;   // not decided: no claim, so the next run looks again
+        }
+        heardNote = heard.note;
+        if (!_warnBudgetTake_(ctx.settings.workerWarningDailyCap)) skip = 'daily cap reached (' + ctx.settings.workerWarningDailyCap + ')';
+    }
     const claim = _warnMemClaim_(sheet, rowNum, dueIso, z, 'W' + w + (skip ? 'x' : ''), worker);
     if (skip) {
         _audit_('warn:skip', worker, rowNum, status, '', '', '', 'W' + w + ' not sent: ' + skip + ' (diff=' + diffMins.toFixed(1) + 'm)');
@@ -5878,7 +5926,7 @@ function _warnCheck_(sheet, rowNum, entry, worker, due, diffMins, isCritical, st
     warns.push({ worker: worker, rowNum: rowNum, w: w, topic: topic, dueIso: dueIso, claimVal: claim,
                  alertIso: new Date(due.getTime() + g * 60000).toISOString(),
                  loc: String(entry[12] == null ? '' : entry[12]), isTrip: String(status).toUpperCase().indexOf('TRAVEL') > -1,
-                 click: ctx.settings.workerAppUrl });
+                 click: ctx.settings.workerAppUrl, heardNote: heardNote });
 }
 
 /**
@@ -5931,7 +5979,8 @@ function _runWarnSends_(warns) {
             const m = _warnMessage_(w);
             const r = _sendNtfy(w.topic, m.title, m.body, w.w === 1 ? 'high' : 'urgent', m.tags, w.click ? { click: w.click } : null);
             if (r && r.ok) {
-                _audit_('warn:sent', w.worker, w.rowNum, '', '', '', '', 'W' + w.w + ' sent in ' + (Date.now() - t0) + 'ms (' + r.via + ')');
+                _audit_('warn:sent', w.worker, w.rowNum, '', '', '', '', 'W' + w.w + ' sent in ' + (Date.now() - t0) + 'ms (' + r.via + ')' +
+                        (w.heardNote ? ' - ' + w.heardNote : ''));
             } else {
                 _audit_('warn:send-FAILED', w.worker, w.rowNum, '', '', '', '', 'W' + w.w + ' not accepted' + (r && r.code ? ' (HTTP ' + r.code + ')' : '') +
                         ' - not retried (a reminder only; contacts are still alerted on time)');
@@ -5941,3 +5990,53 @@ function _runWarnSends_(warns) {
         }
     });
 }
+
+// ==========================================
+// __49_ (session 99): R60 - WORKER REMINDERS ONLY WHEN THE PHONE HAS GONE QUIET
+// ==========================================
+
+/**
+ * __49_ (R60): Visits col AF "Last Heard (UTC)" - the server time (ISO) of the latest accepted phone post that wrote this
+ * row, whatever its status and whether or not it had a GPS fix. Called inside the doPost lock, next to the col A write.
+ * Never throws: a failed stamp must not fail the post. A missing stamp makes the phone look silent, so the reminder is
+ * sent - the safe side.
+ */
+function _lastHeardSet_(sheet, rowNum, d) {
+    try {
+        if (!sheet || !rowNum) return;
+        if (sheet.getMaxColumns() < LAST_HEARD_COL) sheet.insertColumnsAfter(sheet.getMaxColumns(), LAST_HEARD_COL - sheet.getMaxColumns());
+        if (!_LOCAL_HDR_DONE.lastHeard) {
+            _LOCAL_HDR_DONE.lastHeard = true;
+            const hc = sheet.getRange(1, LAST_HEARD_COL);
+            if (!String(hc.getValue() || '').trim()) hc.setValue(LAST_HEARD_HEADER);
+        }
+        sheet.getRange(rowNum, LAST_HEARD_COL).setValue(d.toISOString());
+    } catch (e) {
+        _audit_('lastHeard:FAILED', '', rowNum, '', '', '', '', String(e).substring(0, 200) + ' - reminders treat this phone as silent');
+    }
+}
+
+/** __49_ (R60): a Last Heard cell (a Date, or ISO text) as milliseconds, or null when empty or unreadable. */
+function _lastHeardMs_(v) {
+    if (Object.prototype.toString.call(v) === '[object Date]') { const t = v.getTime(); return isNaN(t) ? null : t; }
+    const s = String(v == null ? '' : v).trim();
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) return null;
+    const t = new Date(s).getTime();
+    return isNaN(t) ? null : t;
+}
+
+/**
+ * __49_ (R60): has the phone been heard within `quiet` minutes? { alive, mins, note }. quiet 0 = never alive (always send).
+ * Empty, unreadable or future (more than 1 min ahead) stamps = silent: when in doubt the reminder goes.
+ */
+function _warnHeard_(raw, quiet) {
+    if (!(quiet > 0)) return { alive: false, mins: null, note: 'quiet threshold 0 - always sent' };
+    const t = _lastHeardMs_(raw), now = Date.now();
+    if (t === null || t > now + 60000) return { alive: false, mins: null, note: 'no readable Last Heard stamp (col AF) - treated as silent' };
+    const mins = Math.max(0, (now - t) / 60000);
+    if (mins > quiet) return { alive: false, mins: mins, note: 'phone silent ' + mins.toFixed(1) + ' min' };
+    return { alive: true, mins: mins, note: '' };
+}
+
+/** __49_ (R60): a quiet threshold for the Health email. */
+function _quietText_(n) { return n > 0 ? 'more than ' + n + ' min of silence' : 'always (threshold 0)'; }
