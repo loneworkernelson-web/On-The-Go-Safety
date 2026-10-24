@@ -638,7 +638,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
  <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety On-The-Go!</span>
- <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__22_</span>
+ <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__23_</span>
  </h1>
  </div>
  <div class="flex items-center">
@@ -1028,6 +1028,34 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  💾 Save Settings
  </button>
 
+ <!-- __23_ (R04): the worker's own phone alerts (ntfy reminders when the phone has gone quiet) -->
+ <div class="mb-6" id="phoneAlertsSection">
+ <h2 class="text-xl font-bold text-amber-400 mb-1">Phone alerts</h2>
+ <p class="text-xs text-gray-300 font-bold mb-3">Optional. If your phone goes quiet near the end of a visit or trip, the app can send a reminder to this phone through the free ntfy app, so you can check in before your contact is alerted. A working app normally sends none: reminders only come when the phone has gone quiet. They never replace the alerts to your contacts.</p>
+ <div id="phoneAlertsOff" class="hidden bg-gray-900 p-4 rounded-xl text-xs text-gray-400 font-bold">Phone alerts are switched off for your organisation.</div>
+ <div id="phoneAlertsSetup" class="hidden">
+ <button id="btnPhoneAlertsSetup" onclick="setupPhoneAlerts()" class="w-full py-3 bg-amber-700 hover:bg-amber-600 text-white font-bold rounded-xl shadow mb-2">Set up phone alerts</button>
+ </div>
+ <div id="phoneAlertsReady" class="hidden bg-gray-900 p-4 rounded-xl">
+ <div class="text-xs text-gray-400 font-bold mb-1">Your alert topic name</div>
+ <div id="phoneAlertTopic" class="text-sm font-mono text-amber-300 break-all mb-1"></div>
+ <div id="phoneAlertServer" class="hidden text-xs font-mono text-gray-400 break-all mb-2"></div>
+ <ol class="text-xs text-gray-300 font-bold list-decimal pl-5 space-y-1 mb-3">
+ <li>Install the free <b>ntfy</b> app (Google Play, F-Droid or the App Store).</li>
+ <li><b>Android:</b> tap "Open in ntfy" below and confirm. <b>iPhone:</b> tap "Copy topic name", open ntfy, tap + and paste the name.</li>
+ <li>In your phone's notification settings, let ntfy make a sound for urgent messages even when Do Not Disturb is on.</li>
+ <li>Android: turn battery optimisation off for ntfy.</li>
+ <li><b>Lock your phone</b>, then tap "Send test" and check that it sounds.</li>
+ </ol>
+ <div class="flex gap-2 mb-2">
+ <a id="phoneAlertAndroidLink" href="#" class="flex-1 text-center bg-blue-700 hover:bg-blue-600 text-white py-3 rounded-xl text-xs font-black tracking-wide shadow">Open in ntfy (Android)</a>
+ <button onclick="copyPhoneAlertTopic()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-xl text-xs font-black tracking-wide shadow">Copy topic name</button>
+ </div>
+ <button id="btnPhoneAlertTest" onclick="sendPhoneAlertTest()" class="w-full py-3 bg-green-700 hover:bg-green-600 text-white font-bold rounded-xl shadow">Send test</button>
+ </div>
+ <p id="phoneAlertsStatus" class="hidden text-xs font-bold mt-2"></p>
+ </div>
+
  <!-- Personal Sites Transfer -->
  <div class="mb-6">
  <h2 class="text-xl font-bold text-green-400 mb-1">My Sites</h2>
@@ -1072,7 +1100,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
  <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
- <div id="appBuild" class="text-xs font-mono text-gray-400">worker__22_</div>
+ <div id="appBuild" class="text-xs font-mono text-gray-400">worker__23_</div>
  </div>
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">Backend Version</div>
@@ -1572,8 +1600,21 @@ const RISK_WELFARE_MAP = {
 //      Start uses a fix under 60 s old at once, else waits up to 5 s for a fresh one (was 3 s, fresh only);
 //      a trip that starts with no position adopts the first good fix that arrives (and geocodes it); the report
 //      data records _distStartFix and the form warns when the start position is missing or came late
+// __23_ changes (session 100, from __22_):
+//  F99-1 an overdue STANDARD site visit posts OVERDUE at the due time and every 5 min in EVERY screen mode (it only
+//      did so behind the dim battery-saver screen, so an awake phone in use looked silent to the server). The post
+//      code moved unchanged into _overdueGpsPush(); the dim-screen branch calls it exactly as before. Trips and
+//      Critical Timing visits are not changed in full-screen mode (trips pulse every 2 min; Critical fires its alarm)
+//  R60 Critical Timing SITE visits send a liveness-only heartbeat (no position, no GPS started) every 2 min from
+//      due - 15 min to the due time, so the server can tell a quiet phone from a working one; stopped at depart,
+//      alarm or due time, and restarted from the new due - 15 after an extend or PIN clear (tick() starts it)
+//  F98-1 the closing report of a trip carries the last real position (0,0 when there is none - the server then keeps
+//      the last pulse position) instead of the start position
+//  R04 Settings > Phone alerts: set up the worker's own ntfy topic (server action workerTopic), shown again from the
+//      sync after a reinstall, Android one-tap link, copy button for iPhone, "Send test" (action workerTopicTest,
+//      reply shown as the server wrote it). Needs backend __48_ or later. R03 phone side is NOT in this build
 // =============================================================================
-const WORKER_BUILD = 'worker__22_';
+const WORKER_BUILD = 'worker__23_';
 
 const CONFIG = {
  url: '',
@@ -1878,6 +1919,7 @@ let welfareIntervalId = null; // Drives the periodic welfare check schedule
 let welfareCountdownId = null; // Drives the 2-minute countdown within the modal
 let travellingInterval;
 let arrivedPulseInterval = null; // Repeating 5-min GPS pulse during overdue named-site visits
+let ctHeartbeatInterval = null; // __23_ (R60): 2-min liveness heartbeat on a Critical Timing SITE visit
 // timerInt retired: tickIntervalId is the sole interval handle for tick().
 let deferredPrompt;
 let lastAlertTime = 0;
@@ -2063,6 +2105,7 @@ function navigate(page) {
  updateSystemInfo(); // Update backend connection status
  updateMySitesSummary(); // Refresh personal sites count
  populateVisitHistory(); // Refresh visit history log
+ if (typeof _renderPhoneAlerts === 'function') _renderPhoneAlerts(); // __23_ (R04)
  }
  
  resetInactivityTimer();
@@ -2341,8 +2384,14 @@ function submitReport() {
  }
  
  // 7. HANDSHAKE: Send to spreadsheet with the correct action key
+ // __23_ (F98-1): the closing report of a TRIP carries the last real position. Before, buildPayload fell back to the
+ // start position, so the closed row showed the worker back at the start. 0,0 = "no position": the server ignores it
+ // and keeps the last pulse position. Other reports are unchanged.
+ const _closingTrip = alarmStatus === "DEPARTED" && !!(state.activeVisit && (state.activeVisit.isTravel || state.activeVisit.locationId === 'travel'));
+ const _closingGps = _closingTrip ? { "Last Known GPS": (typeof lastGPS !== 'undefined' && _isValidGPS(lastGPS)) ? lastGPS : "0,0" } : {};
  processUploadQueue(buildPayload({
  ...fd,
+ ..._closingGps,
  "action": backendAction, 
  "Alarm Status": alarmStatus,
  "Notes": d.notes || ""
@@ -2393,6 +2442,7 @@ function submitReport() {
 
  if (typeof travelTargetName !== 'undefined') travelTargetName = ""; 
  if (tickIntervalId) { clearInterval(tickIntervalId); tickIntervalId = null; }
+ _stopCtHeartbeat();   // __23_ (R60)
  if (travellingInterval) { clearInterval(travellingInterval); travellingInterval = null; }
  if (arrivedPulseInterval) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; }
  _stopAlarmGpsPulse();
@@ -3853,6 +3903,7 @@ function directDepart() {
  updateDurationDisplay();
  if (typeof travelTargetName !== 'undefined') travelTargetName = '';
  if (tickIntervalId) { clearInterval(tickIntervalId); tickIntervalId = null; }
+ _stopCtHeartbeat();   // __23_ (R60)
  if (typeof travellingInterval !== 'undefined' && travellingInterval) {
  clearInterval(travellingInterval); travellingInterval = null;
  if (arrivedPulseInterval) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; }
@@ -4398,6 +4449,86 @@ function formatCountdown(totalSeconds) {
  return sign + m + ':' + String(s).padStart(2, '0');
 }
 
+/**
+ * __23_ (F99-1): the first OVERDUE post of an overdue visit (at the due time) and the 5-minute OVERDUE repeats.
+ * The body is the code that used to sit inside tick()'s battery-saver branch, moved here unchanged. It is called from
+ * that branch (as before) and, new in __23_, from the full-screen branch for a STANDARD site visit - so the server
+ * hears an awake phone whatever its screen shows.
+ */
+function _overdueGpsPush() {
+ if (!state || !state.activeVisit) return;
+ if (!state.activeVisit.overdueGpsSent) {
+ if (typeof startGPSMonitoring === 'function') startGPSMonitoring();
+ // F76-1 (build __13_): wait (max 5 s) for a fresh fix before posting, as the SOS path does.
+ // The flag is set first so the next tick cannot start a second request while this one is pending.
+ state.activeVisit.overdueGpsSent = true;
+ saveState();
+ _freshAlarmFix().then(() => {
+ if (!state || !state.activeVisit) return; // visit ended while waiting
+ processUploadQueue(buildPayload({
+ 'Alarm Status': 'OVERDUE',
+ 'Notes': 'Worker is overdue. GPS tracking active.',
+ 'Last Known GPS': typeof lastGPS !== 'undefined' ? lastGPS : "0,0"
+ }));
+ });
+ if (!arrivedPulseInterval) {
+ arrivedPulseInterval = setInterval(() => {
+ if (!state || !state.activeVisit) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; return; }
+ processUploadQueue(buildPayload({
+ 'Alarm Status': 'OVERDUE',
+ 'Last Known GPS': typeof lastGPS !== 'undefined' ? lastGPS : "0,0"
+ }));
+ }, 5 * 60 * 1000);
+ }
+ }
+}
+
+/**
+ * __23_ (R60): liveness heartbeat for a Critical Timing SITE visit. The server holds back the worker's phone
+ * reminder only when it has recently heard from the phone, and a Critical Timing site visit posts nothing before the
+ * due time - so for the last 15 minutes the phone says "still here" every 2 minutes: ALARM_GPS_PULSE with the position
+ * 0,0 (the server ignores 0,0 positions and never lets this status write the alarm column). No GPS is started and no
+ * position is collected: the principle is that workers are not watched before the due time.
+ * Trips are not covered (they already pulse every 2 min); standard visits get no heartbeat.
+ */
+const CT_HEARTBEAT_WINDOW_MIN = 15;
+const CT_HEARTBEAT_EVERY_MS = 120000;
+
+function _ctHeartbeatEligible() {
+ const v = (typeof state !== 'undefined' && state) ? state.activeVisit : null;
+ if (!v || !v.highRisk) return false;
+ if (v.isTravel || v.locationId === 'travel') return false;
+ if (v.criticalSent) return false;   // the alarm pulse has taken over
+ if (typeof isPanicActive !== 'undefined' && isPanicActive) return false;
+ if (typeof isDuressActive !== 'undefined' && isDuressActive) return false;
+ const remaining = v.duration - (Date.now() - v.startTime) / 1000;
+ if (!(remaining > 0)) return false;   // at the due time the alarm takes over
+ const minsToDue = (v.anticipatedDepartureTime - Date.now()) / 60000;
+ return minsToDue <= CT_HEARTBEAT_WINDOW_MIN;
+}
+
+function _ctHeartbeatBeat() {
+ if (!_ctHeartbeatEligible()) { _stopCtHeartbeat(); return; }
+ processUploadQueue(buildPayload({
+  'Alarm Status': 'ALARM_GPS_PULSE',
+  'Notes': 'Heartbeat - Critical Timing visit.',
+  'Last Known GPS': '0,0'   // explicit: buildPayload would otherwise fall back to the start position
+ }));
+}
+
+/** Called from tick(). Starts the heartbeat when the visit is inside its window; a running one stops itself. */
+function _ctHeartbeatEnsure() {
+ if (ctHeartbeatInterval) return;
+ if (!_ctHeartbeatEligible()) return;
+ _diag('R60 heartbeat start');
+ _ctHeartbeatBeat();   // first beat at once
+ ctHeartbeatInterval = setInterval(_ctHeartbeatBeat, CT_HEARTBEAT_EVERY_MS);
+}
+
+function _stopCtHeartbeat() {
+ if (ctHeartbeatInterval) { clearInterval(ctHeartbeatInterval); ctHeartbeatInterval = null; _diag('R60 heartbeat stop'); }
+}
+
 function tick() {
  if (!state || !state.activeVisit) return;
 
@@ -4409,6 +4540,8 @@ function tick() {
  
  // Capture state for the battery saver HUD
  state.timerDisplay = formatCountdown(remaining);
+ // __23_ (R60): Critical Timing site visit heartbeat (starts inside the last 15 min; never allowed to break tick)
+ try { _ctHeartbeatEnsure(); } catch (e) { console.warn('[R60] heartbeat: ' + (e && e.message)); }
 
  // 2. UI THROTTLE BRANCH
  // If Battery Saver is active, update the HUD and EXIT early to save GPU/CPU.
@@ -4476,30 +4609,7 @@ function tick() {
  updateBatterySaverHUD();
  if (remaining <= 0) {
  // GPS PUSH: fires at grace period start and every 5 minutes — runs behind battery saver.
- if (!state.activeVisit.overdueGpsSent) {
- if (typeof startGPSMonitoring === 'function') startGPSMonitoring();
- // F76-1 (build __13_): wait (max 5 s) for a fresh fix before posting, as the SOS path does.
- // The flag is set first so the next tick cannot start a second request while this one is pending.
- state.activeVisit.overdueGpsSent = true;
- saveState();
- _freshAlarmFix().then(() => {
- if (!state || !state.activeVisit) return; // visit ended while waiting
- processUploadQueue(buildPayload({
- 'Alarm Status': 'OVERDUE',
- 'Notes': 'Worker is overdue. GPS tracking active.',
- 'Last Known GPS': typeof lastGPS !== 'undefined' ? lastGPS : "0,0"
- }));
- });
- if (!arrivedPulseInterval) {
- arrivedPulseInterval = setInterval(() => {
- if (!state || !state.activeVisit) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; return; }
- processUploadQueue(buildPayload({
- 'Alarm Status': 'OVERDUE',
- 'Last Known GPS': typeof lastGPS !== 'undefined' ? lastGPS : "0,0"
- }));
- }, 5 * 60 * 1000);
- }
- }
+ _overdueGpsPush();   // __23_ (F99-1): the block moved unchanged into _overdueGpsPush()
  // Critical Timing fires immediately at due time; normal mode waits for grace expiry.
  // isSafeConfirmed guard prevents re-triggering after worker clears the alarm.
  const _shouldAlarm = isHighRiskActive
@@ -4524,6 +4634,8 @@ function tick() {
  const anticipatedTimeEl = document.getElementById('lockedAnticipatedTime');
 
  if (remaining <= 0) {
+ // __23_ (F99-1): same OVERDUE posts as the dim screen, for a standard site visit (not a trip, not Critical Timing)
+ if (!isHighRiskActive && !state.activeVisit.isTravel && state.activeVisit.locationId !== 'travel') _overdueGpsPush();
  const isAlarmed = state.activeVisit.criticalSent;
  const isSafeConfirmed = state.activeVisit.isSafeConfirmed;
 
@@ -5020,6 +5132,7 @@ window.addEventListener('beforeunload', () => {
  stopTravelWatchPosition();
  stopGPSMonitoring();
  stopWelfareChecks();
+ _stopCtHeartbeat();   // __23_ (R60)
  if (travellingInterval) clearInterval(travellingInterval);
  if (arrivedPulseInterval) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; }
  _stopAlarmGpsPulse();
@@ -7720,6 +7833,127 @@ async function shareDiagReport() {
  }
  // No share sheet on this device: fall back to copying.
  await copyDiagReport();
+}
+
+// ============================================================================
+// PHONE ALERTS (__23_, R04) - the worker's own ntfy topic for safety reminders
+// ============================================================================
+// The reminders are courtesies sent to the worker's own phone ONLY when the phone has gone quiet (R60). They never
+// replace the alerts to the contacts. The topic is made by the backend on request (action workerTopic), given back in
+// every sync (state.meta.workerTopic, so it survives a reinstall) and tested with action workerTopicTest. The reply
+// text of the test is shown exactly as the server wrote it - the app never adds a reason.
+const PHONE_ALERT_TOPIC_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const PHONE_ALERT_SERVER_RE = /^https:\/\/[A-Za-z0-9.-]+(:\d+)?(\/[A-Za-z0-9._~\/-]*)?$/;
+const PHONE_ALERT_DEFAULT_SERVER = 'https://ntfy.sh';
+const PHONE_ALERT_TIMEOUT_MS = 20000;
+
+function _phoneAlertTopic() {
+ const t = String((state && state.meta && state.meta.workerTopic) || '').trim();
+ return PHONE_ALERT_TOPIC_RE.test(t) ? t : '';
+}
+
+function _phoneAlertServer() {
+ const v = String((state && state.meta && state.meta.ntfyServer) || '').trim().replace(/\/$/, '');
+ return PHONE_ALERT_SERVER_RE.test(v) ? v : PHONE_ALERT_DEFAULT_SERVER;
+}
+
+/** Off only when the server says so (meta.settings.workerWarnings === false); unknown = on. */
+function _phoneAlertsOn() {
+ const st = state && state.meta && state.meta.settings;
+ return !(st && st.workerWarnings === false);
+}
+
+function _phoneAlertAndroidLink(topic, server) {
+ return 'ntfy://' + String(server).replace(/^https:\/\//, '') + '/' + topic + '?display=Safety%20reminders';
+}
+
+function _phoneAlertMsg(text, isError) {
+ const el = document.getElementById('phoneAlertsStatus');
+ if (!el) return;
+ el.textContent = text || '';
+ el.classList.toggle('hidden', !text);
+ el.classList.toggle('text-red-400', !!isError);
+ el.classList.toggle('text-green-400', !isError);
+}
+
+function _renderPhoneAlerts() {
+ const $ = id => document.getElementById(id);
+ if (!$('phoneAlertsSection')) return;
+ const canUse = !!(state && state.worker && state.worker.name && CONFIG.key && CONFIG.key.length >= 3 && CONFIG.url && CONFIG.url.length >= 10);
+ const on = _phoneAlertsOn();
+ const topic = _phoneAlertTopic();
+ $('phoneAlertsOff').classList.toggle('hidden', on);
+ $('phoneAlertsSetup').classList.toggle('hidden', !(on && canUse && !topic));
+ $('phoneAlertsReady').classList.toggle('hidden', !(on && topic));
+ if (on && topic) {
+  const server = _phoneAlertServer();
+  $('phoneAlertTopic').textContent = topic;
+  $('phoneAlertAndroidLink').setAttribute('href', _phoneAlertAndroidLink(topic, server));
+  const srvEl = $('phoneAlertServer');
+  srvEl.textContent = server === PHONE_ALERT_DEFAULT_SERVER ? '' : 'ntfy server: ' + server + ' (use it as the server when you subscribe)';
+  srvEl.classList.toggle('hidden', server === PHONE_ALERT_DEFAULT_SERVER);
+ }
+}
+
+/** POST one of the two actions and read the JSON reply (like registerDevice). null = no usable reply. */
+async function _phoneAlertPost(action) {
+ try {
+  if (!state || !state.worker || !state.worker.name) return { status: 'error', message: 'Finish setting up your profile first.' };
+  const body = new URLSearchParams({ 'action': action, 'key': CONFIG.key, 'Worker Name': state.worker.name, 'deviceId': state.deviceId || getDeviceID() }).toString();
+  const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const timer = setTimeout(() => { if (ctl) ctl.abort(); }, PHONE_ALERT_TIMEOUT_MS);
+  try {
+   const resp = await fetch(CONFIG.url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body, signal: ctl ? ctl.signal : undefined });
+   return await resp.json();
+  } finally { clearTimeout(timer); }
+ } catch (e) { return null; }
+}
+
+async function setupPhoneAlerts() {
+ const btn = document.getElementById('btnPhoneAlertsSetup');
+ if (btn) btn.disabled = true;
+ _phoneAlertMsg('Setting up...', false);
+ const r = await _phoneAlertPost('workerTopic');
+ if (btn) btn.disabled = false;
+ if (r && r.status === 'success' && PHONE_ALERT_TOPIC_RE.test(String(r.workerTopic || ''))) {
+  if (!state.meta) state.meta = {};
+  state.meta.workerTopic = String(r.workerTopic);
+  if (r.ntfyServer) state.meta.ntfyServer = String(r.ntfyServer);
+  if (typeof r.workerWarnings === 'boolean') state.meta.settings = Object.assign({}, state.meta.settings || {}, { workerWarnings: r.workerWarnings });
+  try { saveState(); } catch (_) {}
+  _phoneAlertMsg('', false);
+  _renderPhoneAlerts();
+  return;
+ }
+ _phoneAlertMsg((r && r.message) ? String(r.message) : 'Could not set up phone alerts - check your connection and try again.', true);
+}
+
+async function sendPhoneAlertTest() {
+ const btn = document.getElementById('btnPhoneAlertTest');
+ if (btn) btn.disabled = true;
+ _phoneAlertMsg('Sending test...', false);
+ const r = await _phoneAlertPost('workerTopicTest');
+ const ok = !!(r && r.status === 'success');
+ _phoneAlertMsg((r && r.message) ? String(r.message) : (ok ? 'Test sent.' : 'Could not reach the server - check your connection and try again.'), !ok);
+ setTimeout(() => { if (btn) btn.disabled = false; }, 5000);
+}
+
+async function copyPhoneAlertTopic() {
+ const t = _phoneAlertTopic();
+ if (!t) return;
+ let ok = false;
+ try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(t); ok = true; } } catch (_) { ok = false; }
+ if (!ok) {
+  try {
+   const ta = document.createElement('textarea');
+   ta.value = t; ta.setAttribute('readonly', '');
+   ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;';
+   document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, t.length);
+   ok = document.execCommand('copy');
+   ta.remove();
+  } catch (_) { ok = false; }
+ }
+ showToast(ok ? 'Topic name copied' : 'Copy blocked - select the name and copy it');
 }
 
 function populateSettingsForm() {
