@@ -192,6 +192,25 @@
  *   - Settings tab: two new keys added with their defaults (existing values never changed); Health email shows them.
  *   - Contact escalation (tiers, Critical ladder, col AA claims, All Clear audience) is unchanged.
  *
+ * __50_ (session 101, 26 Oct 2026) - R03 server-side welfare checks, R62 Audit retention (no worker change needed to deploy;
+ * worker __24_ is the phone side - until then only an old phone's own missed-check post can start a welfare escalation):
+ *   - Settings WELFARE_CHECKS On + a visit start (ARRIVED, never a trip - D-TRIP) carrying "Welfare Interval": Visits col AD
+ *     "Welfare Due" = "<next welfare time ISO>|<minutes>". A WELFARE_OK or a PIN clear moves it to now + interval.
+ *   - Checker: at the welfare time, one urgent push to the worker's own phone (needs phone alerts set up; hard rule, daily
+ *     cap). Not answered by the end of WELFARE_GRACE_MINS (D-MARGIN, no extra margin): the visit is overdue from that moment
+ *     (D-ESC option (c)) - the existing ladder runs from an effective due time (standard: tier 1 now, then +15/+30/+45,
+ *     tier 4 to both; Critical Timing: both contacts now, repeat +5, final +10). Col AE "Welfare Memory" =
+ *     "<welfare time ISO>|<P,Px,M>|<effective due ISO>|<written ISO>"; col AA claims are keyed to the effective due.
+ *   - Phone status WELFARE_MISSED (worker __24_), or an old phone's OVERDUE ALARM before the due time while welfare checks
+ *     are On: the same escalation, started at once from doPost (claimed in col AA, so the checker never sends it twice).
+ *   - WELFARE_OK after contacts were alerted = a clear: All Clear to whoever was alerted (visit still monitored), col K back
+ *     to ARRIVED, next welfare time set. Never while col K holds DURESS / PANIC / SOS (no welfare escalation or push then).
+ *   - _alertAudience_ (All Clear, hard rule) also accepts a col AA entry keyed to the welfare effective due time.
+ *   - Alert wording for a welfare escalation: "did not answer a welfare check at 2:00 pm" (not "was due to check out").
+ *   - R62: the Audit tab keeps AUDIT_KEEP_DAYS (7) days or AUDIT_MAX_ROWS (10,000) rows, whichever limit is hit first
+ *     (Settings tab). Trimmed daily by sendHealthEmail BEFORE the email, as its own step (a failed email cannot skip it).
+ *   - Contact escalation for a visit with no welfare checks is unchanged.
+ *
  * DEPLOY CHECKLIST(every deployment): Deploy > Manage deployments > New version. Then open the Apps Script
  * editor, run ONE function from each installed trigger by hand (accept any permission prompt), and confirm
  * the Triggers list shows no failures.
@@ -235,7 +254,7 @@ let _orsVersion = null;
 
 // __38_ (F74-1): audit trail + Critical Timing ladder memory. Helpers at end of file.
 const AUDIT_SHEET_NAME   = 'Audit';
-const AUDIT_MAX_ROWS     = 5000;   // trimmed daily by sendHealthEmail()
+const AUDIT_MAX_ROWS     = 10000;  // __50_ (R62): default only - the Settings tab (AUDIT_MAX_ROWS, AUDIT_KEEP_DAYS) decides
 const LADDER_MEM_COL     = 27;     // col AA. Col Z holds the worker reminders (__48_, WARN_COL).
 const LADDER_MEM_HEADER  = 'Escalation Memory';
 const LADDER_STATUSES    = ['EMERGENCY - CRITICAL TIMING BREACH',
@@ -277,19 +296,26 @@ const WORKER_TOPIC_COL    = 10;    // Staff col J: the worker's own ntfy topic (
 const WORKER_TOPIC_HEADER = 'Worker Alert Topic';
 const SETTINGS_SHEET_NAME = 'Settings';
 const SETTINGS_DEFAULTS   = [      // [key, default value, note] - added to the Settings tab when missing, never changed
-    ['WELFARE_CHECKS', 'Off', 'On or Off. Periodic "Are you OK?" checks during site visits, escalated by the server if missed. Takes effect with worker __23_ and backend __50_.'],
-    ['WELFARE_DEFAULT_MINS', 60, 'Minutes between welfare checks when the site has no risk level (5 to 240). Takes effect with worker __23_.'],
-    ['WELFARE_GRACE_MINS', 2, 'Minutes the worker has to answer a welfare check (1 to 10). Takes effect with worker __23_ and backend __50_.'],
+    ['WELFARE_CHECKS', 'Off', 'On or Off. Periodic "Are you OK?" checks during site visits, escalated by the server if missed (backend __50_; the phone side is worker __24_).'],
+    ['WELFARE_DEFAULT_MINS', 60, 'Minutes between welfare checks when the site has no risk level (5 to 240). Used by worker __24_.'],
+    ['WELFARE_GRACE_MINS', 2, 'Minutes the worker has to answer a welfare check (1 to 10). The server alerts contacts when it runs out (backend __50_).'],
     ['WORKER_WARNINGS', 'On', 'On or Off. Reminders to the worker\'s own phone, only when the phone has gone quiet: 5 min before a Critical Timing visit or trip is due, and 3 min before contacts are alerted on a standard one. Only for workers who set up phone alerts in the app.'],
     ['WORKER_WARNING_DAILY_CAP', 100, 'Most worker reminders sent in one day (0 to 5000). Contact alarms are never limited. Protects the ntfy message allowance.'],
     ['WORKER_APP_URL', '', 'Optional. The worker app web address (https://...). Tapping a reminder opens it.'],
     ['WORKER_WARN_QUIET_W1_MINS', 3, 'Critical Timing visits and trips: the "ends in 5 min" reminder goes only if nothing has been heard from the phone for more than this many minutes (0 to 30; 0 = always send).'],
-    ['WORKER_WARN_QUIET_W2_MINS', 6, 'Standard visits and trips: the "check in now" reminder goes only if nothing has been heard from the phone for more than this many minutes (0 to 30; 0 = always send).']
+    ['WORKER_WARN_QUIET_W2_MINS', 6, 'Standard visits and trips: the "check in now" reminder goes only if nothing has been heard from the phone for more than this many minutes (0 to 30; 0 = always send).'],
+    ['AUDIT_KEEP_DAYS', 7, 'Days of Audit rows kept (1 to 90). The Audit tab is a debugging trail - Visits and Forms are the permanent records. Trimmed daily before the Health email.'],
+    ['AUDIT_MAX_ROWS', 10000, 'Most Audit rows kept (1000 to 50000). Older rows beyond AUDIT_KEEP_DAYS or beyond this number - whichever limit is reached first - are removed daily.']
 ];
 const WARN_TEST_BUSY_MSG  = 'Test not sent - please try again in a minute.';
 // __49_ (session 99, R60): when the server last heard from the phone on this visit row. Cols AD / AE are R03's.
 const LAST_HEARD_COL      = 32;    // Visits col AF "Last Heard (UTC)" (ISO), written by every accepted post to the row
 const LAST_HEARD_HEADER   = 'Last Heard (UTC)';
+// __50_ (session 101, R03): server-side welfare checks. Helpers at the end of the file.
+const WELFARE_DUE_COL     = 30;    // Visits col AD "Welfare Due": "<next welfare time ISO>|<interval minutes>"
+const WELFARE_DUE_HEADER  = 'Welfare Due';
+const WELFARE_MEM_COL     = 31;    // Visits col AE "Welfare Memory": "<welfare time ISO>|<P,Px,M>|<effective due ISO>|<written ISO>"
+const WELFARE_MEM_HEADER  = 'Welfare Memory';
 let _SETTINGS = null;              // per execution: the Settings tab, read once (_settings_)
 // __43_ (F86-2): sends queued while the script lock is held, run after it is released (doPost only).
 let _DEFER = null;               // { sends: [{label, fn}], keys: [idempotency keys to register after the sends] }
@@ -1036,6 +1062,7 @@ function handleWorkerPost(p) {
     let existingVisitNotes = ''; // captured from matched row for use in triggerAlerts
     let _latestClosed = null;    // __42_ B4: the worker's latest row when it is closed
     let criticalBridgeSuppressed = false; // merge: server ladder already alerting for this visit
+    let _wfMissDone = false;     // __50_ (R03): a missed welfare check was escalated by the welfare path (no Critical bridge)
     let _mergeMark = null;       // __43_: the phone-merged BREACH claim, marked '|SENT' once its alerts have gone
     let _ledgerRow = null, _ledgerNew = false;   // __45_ (ledger): the Visits row this post wrote, and whether it was new
     // __44_ (Decision A / F87-3 / HANDOVER_84 item 2): a form record goes to the Forms tab and never writes the trip row.
@@ -1158,6 +1185,10 @@ function handleWorkerPost(p) {
                                                 _isEarlierDue_(p['Anticipated Departure Time'], rowData[20]);
                         // __44_ (item 8): OVERDUE / LOW BATTERY / WELFARE_OK never write col K on an existing row.
                         const _isRoutineNoK   = ROUTINE_NO_K_STATUSES.indexOf(_incomingStatus.trim()) > -1;
+                        // __50_ (R03): a missed welfare check - WELFARE_MISSED (worker __24_), or an old phone's OVERDUE ALARM before
+                        // the due time while welfare checks are On. Col K is written by the ladder step (_welfareMissFromPhone_), not here.
+                        const _wfMiss         = !_pinClearNote && !criticalBridgeSuppressed && !_staleAlarm && _welfareMissPost_(_origIncoming, p, rowData, ts);
+                        if (_wfMiss) polishedNotes = '[WELFARE MISSED ' + _fmtLocal_(ts, 'h:mm:ss a') + '] ' + (polishedNotes || '');
                         if (ROUTINE_NOTE_TAG.indexOf(_incomingStatus.trim()) > -1) {
                             polishedNotes = '[' + _incomingStatus.trim() + ' ' + _fmtLocal_(ts, 'h:mm:ss a') + '] ' + (polishedNotes || '');   // __47_ (R46)
                         }
@@ -1167,7 +1198,7 @@ function handleWorkerPost(p) {
                         // nor JOURNEY_CLOSED_STATUSES — the journey enters limbo and the worker
                         // disappears from the map. All other non-pulse payloads: guard against
                         // HIGH_SEVERITY downgrades only.
-                        if (!_isGpsPulse && !_isRoutineNoK && !_staleAlarm && !criticalBridgeSuppressed && !(_existingIsHigh && _incomingIsLow)) {
+                        if (!_isGpsPulse && !_isRoutineNoK && !_wfMiss && !_staleAlarm && !criticalBridgeSuppressed && !(_existingIsHigh && _incomingIsLow)) {
                             sheet.getRange(targetRow, 11).setValue(p['Alarm Status']);
                             _audit_(_pinClearNote ? 'handleWorkerPost:pin-clear' : 'handleWorkerPost', workerName, targetRow, rowData[10], p['Alarm Status'], _origIncoming, p.idempotencyKey,
                                     _mergedBreachDue ? 'Critical Timing merge: OVERDUE ALARM recorded as BREACH' : _pinClearNote);
@@ -1177,8 +1208,9 @@ function handleWorkerPost(p) {
                                 if (_cv) _mergeMark = { rowNum: targetRow, worker: workerName, claimVal: _cv };
                             }
                         } else if (!_isGpsPulse) {
-                            _audit_(_staleAlarm ? 'handleWorkerPost:stale-alarm' : _isRoutineNoK ? 'handleWorkerPost:k-kept' : 'handleWorkerPost:skip', workerName, targetRow, rowData[10], '', _origIncoming, p.idempotencyKey,
-                                    _staleAlarm ? 'standard OVERDUE ALARM for an earlier due time - col K not written (F89-4)'
+                            _audit_(_wfMiss ? 'handleWorkerPost:welfare-miss' : _staleAlarm ? 'handleWorkerPost:stale-alarm' : _isRoutineNoK ? 'handleWorkerPost:k-kept' : 'handleWorkerPost:skip', workerName, targetRow, rowData[10], '', _origIncoming, p.idempotencyKey,
+                                    _wfMiss ? 'missed welfare check - col K is written by the ladder step (R03)'
+                                    : _staleAlarm ? 'standard OVERDUE ALARM for an earlier due time - col K not written (F89-4)'
                                     : _isRoutineNoK ? 'routine status - col K not written (item 8)'
                                     : criticalBridgeSuppressed ? 'Critical Timing ladder already started - col K not written'
                                                              : 'A6 guard - lower-severity status not written over an alarm');
@@ -1221,6 +1253,21 @@ function handleWorkerPost(p) {
                         if (p2  && p2Col  > -1) sheet.getRange(targetRow, p2Col  + 1).setValue(p2);
                         if (p3  && p3Col  > -1) sheet.getRange(targetRow, p3Col  + 1).setValue(p3);
                         if (p4  && p4Col  > -1) sheet.getRange(targetRow, p4Col  + 1).setValue(p4);
+                        // __50_ (R03): a reported miss escalates now (one round: claimed in col AA); a WELFARE_OK or a PIN clear sets the
+                        // next welfare time and, after a miss, ends the escalation. If the welfare path cannot act, the post is
+                        // recorded in col K as before and the old Critical Timing bridge stays on (fail safe).
+                        if (_wfMiss) {
+                            _wfMissDone = _welfareMissFromPhone_(sheet, targetRow, workerName, ts, _origIncoming);
+                            if (!_wfMissDone) {
+                                sheet.getRange(targetRow, 11).setValue(p['Alarm Status']);
+                                _audit_('welfare:fallback', workerName, targetRow, rowData[10], p['Alarm Status'], _origIncoming, p.idempotencyKey,
+                                        'welfare path could not start an escalation - col K written as before');
+                            }
+                        } else if (_incomingStatus.trim() === 'WELFARE_OK') {
+                            _welfareOk_(sheet, targetRow, rowData, p, ts, workerName);
+                        } else if (_pinClearNote.indexOf('restored') > -1) {
+                            _welfareAfterPinClear_(sheet, targetRow, rowData, ts, workerName);
+                        }
                         existingVisitNotes = String(rowData[11] || '');
                         rowUpdated = true;
                         _ledgerRow = targetRow;   // __45_ (ledger)
@@ -1284,6 +1331,7 @@ if (!rowUpdated) {
     _localColSet_(sheet, sheet.getLastRow(), ts);   // __47_ (R47): col AC
     _lastHeardSet_(sheet, sheet.getLastRow(), ts);  // __49_ (R60): col AF
     _audit_('handleWorkerPost:new', workerName, sheet.getLastRow(), '', p['Alarm Status'], p['Alarm Status'], p.idempotencyKey, 'new row');
+    _welfareArm_(sheet, sheet.getLastRow(), p, ts);   // __50_ (R03): col AD when welfare checks are On for this visit
     _ledgerRow = sheet.getLastRow(); _ledgerNew = true;   // __45_ (ledger)
 }
         // __45_ (Forms ledger): every post that carries report data also gets a Forms row, so Forms holds every report
@@ -1312,7 +1360,7 @@ if (!rowUpdated) {
     } else if(p['Alarm Status'].includes("EMERGENCY") || p['Alarm Status'].includes("PANIC") || p['Alarm Status'].includes("DURESS")) {
         p['Visit Notes'] = p['Visit Notes'] || existingVisitNotes;
         _queueImmediateAlert_(p, _mergeMark);   // __43_: sent after the lock is released
-    } else if (p['Alarm Status'].includes("OVERDUE ALARM") && p['Critical Timing'] === 'true') {
+    } else if (p['Alarm Status'].includes("OVERDUE ALARM") && p['Critical Timing'] === 'true' && !_wfMissDone) {   // __50_: not after a welfare miss
         // Critical timing OVERDUE ALARM — fire ntfy immediately via the doPost execution context,
         // which can reach ntfy.sh. Standard (non-critical) OVERDUE ALARM escalation continues to
         // rely solely on checkOverdueVisits() (dead-man's switch principle preserved).
@@ -1385,7 +1433,7 @@ function _alarmRank_(statusUpper) {
     if (s.includes('DURESS')) return 5;
     if (s.includes('PANIC') || s.includes('SOS')) return 4;
     if (s.includes('EMERGENCY')) return 3;
-    if (s.includes('OVERDUE ALARM') || s.includes('OVERDUE -')) return 2;
+    if (s.includes('OVERDUE ALARM') || s.includes('OVERDUE -') || s.includes('WELFARE_MISSED')) return 2;   // __50_: WELFARE_MISSED
     return 0;
 }
 
@@ -1920,9 +1968,18 @@ function triggerAlerts(p, type) {
     const _dueClock  = (_overMin !== null) ? _clockText_(_dueAt) : '';
     const _stdTier   = LADDER_STD_STATUSES.indexOf(status) + 1;   // 1-4 on the standard ladder, 0 otherwise
     const _firstAlertClock = (_overMin !== null && _stdTier > 1) ? _clockText_(new Date(_dueAt.getTime() + _graceMinutes_() * 60000)) : '';
-    const _dueSentence = (_overMin === null) ? '' :
+    let   _dueSentence = (_overMin === null) ? '' :
         `<strong>${workerName} was due to ${isTravel ? 'arrive' : 'check out'} at ${_dueClock}` +
         (_overMin >= 1 ? ` and is now ${_overMin} minute${_overMin === 1 ? '' : 's'} overdue.` : ' and is now overdue.') + '</strong>';
+    // __50_ (R03): a missed welfare check. The ladder runs from an effective due time worked out from the miss, so "was due
+    // to check out at ... N minutes overdue" would be wrong: say which welfare check was not answered, and when.
+    const _wfAt    = (_overMin !== null) ? _alertDue_(p['Welfare Missed At']) : null;
+    const _wfMin   = _wfAt ? Math.max(0, Math.floor((_nowMs - _wfAt.getTime()) / 60000)) : null;
+    const _wfClock = _wfAt ? _clockText_(_wfAt) : '';
+    const _wfVisitDue = _wfAt ? _alertDue_(p['Visit Due']) : null;
+    if (_wfAt) _dueSentence = `<strong>${workerName} did not answer a welfare check at ${_wfClock}` +
+        (_wfMin >= 1 ? ` (${_wfMin} minute${_wfMin === 1 ? '' : 's'} ago).` : '.') + '</strong>' +
+        (_wfVisitDue ? ` Their visit was due to end at ${_clockText_(_wfVisitDue)}.` : '');
     // __46_ (R37): steps for any contact - a manager, a friend or family - who may not know the site.
     const _plainSteps = isTravel
         ? `<li><strong>Call or text ${workerFirst} now</strong> on ${workerPhoneLink}</li>
@@ -2080,6 +2137,24 @@ function triggerAlerts(p, type) {
         noteToContact = '';
     }
 
+    // __50_ (R03): welfare wording replaces the "did not check out" text of the ladder steps.
+    if (_wfAt) {
+        const _wfFinal = status.includes('CRITICAL TIMING FINAL NOTICE'), _wfRepeat = status.includes('CRITICAL TIMING REPEAT');
+        if (isCriticalTiming) {
+            statusLabel  = (_wfFinal ? 'FINAL NOTICE - ' : _wfRepeat ? 'SECOND ALERT - ' : '') + 'WELFARE CHECK NOT ANSWERED (CRITICAL TIMING)';
+            whatHappened = _dueSentence + '<br><br>' +
+                (_wfFinal ? `<strong>FINAL NOTICE - ${workerName} is still unaccounted for.</strong> This is the third and final automatic alert. <strong>No further alerts will be sent - please act now.</strong><br><br>`
+                 : _wfRepeat ? `<strong>SECOND ALERT - there has still been no contact from ${workerName}.</strong> One final notice will follow if their safety is not confirmed.<br><br>` : '') +
+                `${workerName} had activated Critical Timing Mode for this visit, so timely contact matters. <strong>Please treat this as a genuine emergency.</strong>`;
+            noteToContact = `The safety app asked ${workerFirst} "Are you OK?" at ${_wfClock} and there was no answer. Critical Timing Mode was on, so treat this with the same urgency as a manual panic alarm.`;
+        } else {
+            statusLabel  = (_stdTier === 4 ? 'EMERGENCY - ' : '') + 'WELFARE CHECK NOT ANSWERED';
+            whatHappened = _dueSentence + ' They may be unwell, unable to reach their phone, or in difficulty.' +
+                ((_stdTier === 2 || _stdTier === 3) ? `<br><br>You were first alerted at ${_firstAlertClock}. <strong>There has still been no contact.</strong>` : '') +
+                (_stdTier === 4 ? `<br><br>The main contact was first alerted at ${_firstAlertClock}. All contacts have now been alerted. <strong>This is the final automatic alert.</strong>` : '');
+            noteToContact = `The safety app asked ${workerFirst} "Are you OK?" at ${_wfClock} and there was no answer. Before calling emergency services, consider that the phone may be out of reach, out of coverage or flat - try calling, texting and the site first.`;
+        }
+    }
     const headerEmoji = status.includes('TEST_ALERT') ? '🧪' : '🚨';
 
     // __46_ (R36, Decision 3): plain hyphens in every label; on an overdue alert the overdue time leads the ntfy title,
@@ -2093,8 +2168,13 @@ function triggerAlerts(p, type) {
         else if (status.includes('EMERGENCY')) _titleLabel = `EMERGENCY - ${_overMin} MIN OVERDUE`;
         else _titleLabel = `OVERDUE ${_overMin} MIN`;
     }
+    if (_wfAt) _titleLabel = isCriticalTiming   // __50_ (R03)
+        ? (status.includes('CRITICAL TIMING FINAL NOTICE') ? 'FINAL NOTICE - CRITICAL TIMING - WELFARE CHECK NOT ANSWERED'
+           : status.includes('CRITICAL TIMING REPEAT') ? 'SECOND ALERT - CRITICAL TIMING - WELFARE CHECK NOT ANSWERED'
+           : `CRITICAL TIMING - WELFARE CHECK NOT ANSWERED (${_wfClock})`)
+        : (_stdTier === 4 ? `EMERGENCY - WELFARE CHECK NOT ANSWERED (${_wfClock})` : `WELFARE CHECK NOT ANSWERED (${_wfClock})`);
     const _alertTitle = `${headerEmoji} ${_titleLabel} - ${workerName}`;
-    const _smsLabel   = _titleLabel + ((_overMin !== null && _titleLabel.indexOf('(due ') < 0) ? ` (due ${_dueClock})` : '');
+    const _smsLabel   = _titleLabel + ((_overMin !== null && !_wfAt && _titleLabel.indexOf('(due ') < 0) ? ` (due ${_dueClock})` : '');
 
     // __46_ (R40): tap the notification to call the worker; "Call worker" and (with a GPS fix) "Map" buttons.
     // The proxy must forward Click and Actions (proxy_ntfy__2_.php); an older proxy drops them and the alert still goes.
@@ -2120,6 +2200,7 @@ function triggerAlerts(p, type) {
                     : (_siteFix ? `Site location (the site's recorded position, not a live one): ${_siteMapUrl}` : 'GPS: Not available'));
     const ntfyMessage = [
         status.includes('DURESS') ? _duressCallLine : '',   // __47_ (R45)
+        _wfAt ? `Did not answer a welfare check at ${_wfClock}${_wfMin >= 1 ? ' (' + _wfMin + ' min ago)' : ''}. Call ${workerFirst} now.` :   // __50_ (R03)
         (_overMin !== null) ? `${isTravel ? 'Expected to arrive' : 'Was due'} ${_dueClock} - ${_overMin >= 1 ? 'now ' + _overMin + ' min overdue' : 'overdue now'}. Call ${workerFirst} now.` : '',   // __46_ (R36); __47_ (R51) trips
         (_overMin !== null && _stdTier === 4) ? 'This is the final automatic alert.' : '',
         `Worker: ${workerName} · ${workerPhone}`,
@@ -2553,7 +2634,7 @@ function _checkOverdueLocked_(sends, warns) {
             const isClosed = status.includes("DEPARTED") || status.includes("COMPLETED") || status.includes("DATA_ENTRY_ONLY") || status.includes("USER_SAFE");
             
             if(!isClosed && dueTimeStr) {
-                const due = new Date(dueTimeStr);
+                let due = new Date(dueTimeStr);   // __50_ (R03): let - a missed welfare check brings it forward
                 // A12 (session 72): an unreadable due time used to give NaN and silently never
                 // escalate. Record it so the daily health email reports it.
                 if (isNaN(due.getTime())) {
@@ -2561,10 +2642,18 @@ function _checkOverdueLocked_(sends, warns) {
                     try { sp.setProperty('LAST_DUE_PARSE_ERROR', new Date().toISOString() + ' | ' + worker + ' | col U = "' + String(dueTimeStr).substring(0, 60) + '"'); } catch (_) {}
                     return;
                 }
-                const diffMins = (now - due) / 60000; 
                 // A12: String() - Sheets may store Notes as a number or date, and .includes()
                 // on those threw, skipping this worker every minute.
                 const isCritical = String(entry[11] || '').includes("[CRITICAL_TIMING]");
+                // __50_ (R03): server-side welfare check. A welfare check not answered makes the visit overdue from that moment:
+                // the ladders below then run from the effective due time (col AA claims keyed to it). Also queues the welfare
+                // push to the worker's own phone at the welfare time. Its own try/catch: a welfare problem never stops the
+                // escalation for the visit's own due time.
+                let _wf = null;
+                try { _wf = _welfareCheck_(sheet, latest[worker].r, entry, worker, due, status, isCritical, warns, warnCtx); }
+                catch (wfErr) { _audit_('welfare:error', worker, latest[worker].r, status, '', '', '', String(wfErr).substring(0, 200) + ' - the visit due time still escalates'); }
+                if (_wf) due = _wf.eff;
+                const diffMins = (now - due) / 60000;
 
                 // __48_ (R04): reminder to the worker's own phone (W1 at due - 5, W2 at due + grace - 3). Decided and
                 // claimed in col Z here, sent after the lock is released and after the contact alerts. Its own
@@ -2622,7 +2711,7 @@ function _checkOverdueLocked_(sends, warns) {
                             const claimVal = _ladderMemClaim_(sheet, rowNum, due, next, 'ladder', worker);
                             // __43_: col A/K/L written now (under the lock); the alerts go out after release.
                             sends.push({ src: 'ladder', worker: worker, rowNum: rowNum, step: next, status: LADDER_STATUSES[next - 1],
-                                         claimVal: claimVal, job: _escalationWrite_(sheet, entry, LADDER_STATUSES[next - 1], true, rowNum) });
+                                         claimVal: claimVal, job: _welfareJob_(_escalationWrite_(sheet, entry, LADDER_STATUSES[next - 1], true, rowNum), _wf) });
                         } else if (_ladderResendDue_(mem, now.getTime())) {
                             // __43_: this step was claimed 3+ minutes ago and its alerts never confirmed sent (the run died
                             // or the send threw). Send it again, once. No sheet writes besides the new claim.
@@ -2631,7 +2720,7 @@ function _checkOverdueLocked_(sends, warns) {
                                     'step ' + rs + ' claimed at ' + new Date(mem.claimMs).toISOString() + ' was never marked sent - re-sending once');
                             const claimVal = _ladderMemClaim_(sheet, rowNum, due, rs, 'ladder', worker, null, true);
                             sends.push({ src: 'ladder', worker: worker, rowNum: rowNum, step: rs, status: LADDER_STATUSES[rs - 1], resend: true,
-                                         claimVal: claimVal, job: _escalationPayload_(sheet, entry, LADDER_STATUSES[rs - 1], true) });
+                                         claimVal: claimVal, job: _welfareJob_(_escalationPayload_(sheet, entry, LADDER_STATUSES[rs - 1], true), _wf) });
                         }
                     }
                     return;
@@ -2661,7 +2750,7 @@ function _checkOverdueLocked_(sends, warns) {
                         const claimVal = _ladderMemClaim_(sheet, rowNum, due, target, 'ladder-std', worker, LADDER_STD_LABELS);
                         // __43_: sheet written now; the alert goes out after the lock is released.
                         sends.push({ src: 'ladder-std', worker: worker, rowNum: rowNum, step: target, status: LADDER_STD_STATUSES[target - 1],
-                                     claimVal: claimVal, job: _escalationWrite_(sheet, entry, LADDER_STD_STATUSES[target - 1], target === 4, rowNum) });
+                                     claimVal: claimVal, job: _welfareJob_(_escalationWrite_(sheet, entry, LADDER_STD_STATUSES[target - 1], target === 4, rowNum), _wf) });
                     } else if (target >= 1 && target === sent && _ladderResendDue_(mem, now.getTime())) {
                         // __43_: claimed 3+ minutes ago, never confirmed sent - re-send once.
                         const rs = mem.step;
@@ -2669,7 +2758,7 @@ function _checkOverdueLocked_(sends, warns) {
                                 'step ' + rs + ' claimed at ' + new Date(mem.claimMs).toISOString() + ' was never marked sent - re-sending once');
                         const claimVal = _ladderMemClaim_(sheet, rowNum, due, rs, 'ladder-std', worker, LADDER_STD_LABELS, true);
                         sends.push({ src: 'ladder-std', worker: worker, rowNum: rowNum, step: rs, status: LADDER_STD_STATUSES[rs - 1], resend: true,
-                                     claimVal: claimVal, job: _escalationPayload_(sheet, entry, LADDER_STD_STATUSES[rs - 1], rs === 4) });
+                                     claimVal: claimVal, job: _welfareJob_(_escalationPayload_(sheet, entry, LADDER_STD_STATUSES[rs - 1], rs === 4), _wf) });
                     }
                 }
             }
@@ -2761,9 +2850,14 @@ function _checkerGuardRelease_(g) {
  *   - Timestamp of the last successful checkOverdueVisits() trigger run
  *   - Any workers with an open visit older than 24 hours (likely a missed departure)
  */
-function sendHealthEmail() { _jobRun_('sendHealthEmail', _sendHealthEmailImpl_); }
+function sendHealthEmail() {
+    // __50_ (R62): the Audit trim is its own step, BEFORE the email, so a failed email (quota, outage) cannot skip it.
+    _settingsReset_();
+    const _trim = _auditTrimStep_();
+    _jobRun_('sendHealthEmail', function () { return _sendHealthEmailImpl_(_trim); });
+}
 
-function _sendHealthEmailImpl_() {
+function _sendHealthEmailImpl_(trim) {
     _settingsReset_();   // __48_: Settings are read once per execution
     const now = new Date();
     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -2907,6 +3001,14 @@ function _sendHealthEmailImpl_() {
         <td style="padding:10px 12px;border-top:1px solid #eee">Worker phone reminders <em style="font-size:11px;color:#888">(Settings tab)</em></td>
         <td style="padding:10px 12px;border-top:1px solid #eee">${_warnHealthHtml_()}</td>
       </tr>
+      <tr>
+        <td style="padding:10px 12px;border-top:1px solid #eee">Welfare checks <em style="font-size:11px;color:#888">(Settings tab)</em></td>
+        <td style="padding:10px 12px;border-top:1px solid #eee">${_welfareHealthHtml_()}</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 12px;border-top:1px solid #eee">Audit trail <em style="font-size:11px;color:#888">(Settings tab)</em></td>
+        <td style="padding:10px 12px;border-top:1px solid #eee">${_auditTrimHtml_(trim)}</td>
+      </tr>
     </table>
 
     ${_jobSectionHtml}
@@ -2966,7 +3068,7 @@ function _sendHealthEmailImpl_() {
     sp.deleteProperty('LAST_FAIL_DETAIL');
     sp.deleteProperty('LAST_DUE_PARSE_ERROR'); // A12: reported - clear until it recurs
     sp.deleteProperty('ARCHIVE_FAILED'); // __39_: reported - clear until it recurs
-    _auditTrim_(); // __38_: keep the Audit sheet to the last AUDIT_MAX_ROWS rows
+    // __50_ (R62): the Audit trim now runs before the email (sendHealthEmail), as its own step.
 
     console.log(`Health email sent to ${recipient}. Visits: ${visitCount}, Escalations: ${escalationCount}, Fails: ${failCount}, Stalled: ${stalledVisits.length}`);
 }
@@ -4916,14 +5018,60 @@ function _audit_(source, worker, row, kBefore, kAfter, incoming, key, note) {
     }
 }
 
-/** Keep the Audit sheet to the last AUDIT_MAX_ROWS rows. Called daily by sendHealthEmail(). */
+/**
+ * __50_ (R62): keep the Audit sheet within BOTH limits - rows newer than AUDIT_KEEP_DAYS days AND at most AUDIT_MAX_ROWS rows
+ * (Settings tab; whichever limit is reached first). Oldest rows are at the top (appended in time order), so the rows
+ * removed are rows 2..n+1. The age scan stops at the first row that is new enough or whose time cannot be read (never
+ * removes a row it cannot date by age). The newest row always stays (Sheets cannot delete every non-frozen row).
+ * Never throws. Returns { ok, removed, byAge, byRows, kept, keepDays, maxRows, note }.
+ */
 function _auditTrim_() {
+    const r = { ok: true, removed: 0, byAge: 0, byRows: 0, kept: 0, keepDays: null, maxRows: null, note: '' };
     try {
+        const set = _settings_();
+        r.keepDays = set.auditKeepDays; r.maxRows = set.auditMaxRows;
         const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(AUDIT_SHEET_NAME);
-        if (!sh) return;
-        const extra = sh.getLastRow() - 1 - AUDIT_MAX_ROWS;
-        if (extra > 0) sh.deleteRows(2, extra);
-    } catch (e) { console.warn('[audit] trim failed: ' + e); }
+        if (!sh) { r.note = 'no Audit tab yet'; return r; }
+        const total = Math.max(0, sh.getLastRow() - 1);
+        if (total < 2) { r.kept = total; r.note = 'nothing to trim (' + total + ' row' + (total === 1 ? '' : 's') + ')'; return r; }
+        const cutoff = Date.now() - r.keepDays * 86400000;
+        const col = sh.getRange(2, 1, total, 1).getValues();
+        let byAge = 0;
+        while (byAge < total) {
+            const t = _lastHeardMs_(col[byAge][0]);
+            if (t === null || t >= cutoff) break;
+            byAge++;
+        }
+        const byRows = Math.max(0, total - r.maxRows);
+        const n = Math.min(total - 1, Math.max(byAge, byRows));
+        if (n > 0) sh.deleteRows(2, n);
+        r.byAge = byAge; r.byRows = byRows; r.removed = Math.max(0, n); r.kept = total - r.removed;
+        r.note = 'removed ' + r.removed + ' row(s) (older than ' + r.keepDays + ' days: ' + byAge + '; over the ' + r.maxRows +
+                 '-row limit: ' + byRows + '), ' + r.kept + ' kept';
+    } catch (e) {
+        r.ok = false; r.note = 'trim failed: ' + String(e).substring(0, 150);
+        try { console.warn('[audit] ' + r.note); } catch (_) {}
+    }
+    return r;
+}
+
+/** __50_ (R62): the daily trim plus one Audit row saying what it did. Never throws. */
+function _auditTrimStep_() {
+    const r = _auditTrim_();
+    _audit_(r.ok ? 'audit:trim' : 'audit:trim-FAILED', '', '', '', '', '', '', r.note);
+    return r;
+}
+
+/** __50_ (R62): the Health email cell for the Audit trail. */
+function _auditTrimHtml_(t) {
+    try {
+        const set = _settings_();
+        const n = function (v) { return String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
+        let h = 'Keeps <strong>' + set.auditKeepDays + ' days or ' + n(set.auditMaxRows) + ' rows</strong>, whichever limit is reached first. ' +
+                'It is a debugging trail - Visits and Forms are the permanent records.';
+        if (t) h += '<br><span style="font-size:11px;color:' + (t.ok ? '#888' : '#c0392b') + '">' + _escHtml(t.ok ? 'This run: ' + t.note : t.note) + '</span>';
+        return h;
+    } catch (e) { return 'unavailable'; }
 }
 
 /** Critical Timing ladder step shown in a col K status: 0 none, 1 BREACH, 2 REPEAT, 3 FINAL NOTICE. */
@@ -5024,9 +5172,9 @@ function _sameDue_(a, b) {
 
 /** __42_: how many columns to read so col AA is included, without reading past the sheet edge. */
 function _readWidth_(sheet) {
-    let max = LADDER_MEM_COL;
+    let max = WELFARE_MEM_COL;
     try { max = sheet.getMaxColumns(); } catch (_) {}
-    return Math.max(21, Math.min(LADDER_MEM_COL, max));
+    return Math.max(21, Math.min(WELFARE_MEM_COL, max));   // __50_: through col AE (welfare) - was col AA
 }
 
 /**
@@ -5208,7 +5356,7 @@ function _formsGps_(sheet, rowNum, p) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__49_';
+const TEMPLATE_BUILD = 'backend__50_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
@@ -5375,11 +5523,15 @@ function _alertAudience_(row) {
     if (_alarmRank_(st) >= 3) return 'both';
     if (st.includes('OVERDUE ALARM') && String(row[11] || '').includes('[CRITICAL_TIMING]')) return 'both';
     let aud = st.includes('OVERDUE - ') ? 'primary' : 'none';
+    const raw = String(row[LADDER_MEM_COL - 1] || '');
+    const keys = [];
     const dueRaw = row[20];
     const due = new Date(dueRaw);
-    if (dueRaw && !isNaN(due.getTime())) {
-        const raw = String(row[LADDER_MEM_COL - 1] || '');
-        const mem = _ladderMemInfo_(raw, due.toISOString());
+    if (dueRaw && !isNaN(due.getTime())) keys.push(due.toISOString());
+    const wf = _welfareActive_(row);              // __50_ (R03): a welfare escalation keys col AA to its effective due time
+    if (wf) keys.push(wf.effIso);
+    for (let i = 0; i < keys.length; i++) {
+        const mem = _ladderMemInfo_(raw, keys[i]);
         if (mem.same && mem.step >= 1) {
             const isStd = LADDER_STD_LABELS.indexOf(String(raw.split('|')[2] || '').trim()) > -1;
             if (!isStd || mem.step >= 4) return 'both';
@@ -5594,6 +5746,8 @@ function _settings_() {
         workerAppUrl:          url('WORKER_APP_URL'),
         workerWarnQuietW1Mins: num('WORKER_WARN_QUIET_W1_MINS', 3, 0, 30),   // __49_ (R60)
         workerWarnQuietW2Mins: num('WORKER_WARN_QUIET_W2_MINS', 6, 0, 30),   // __49_ (R60)
+        auditKeepDays:         num('AUDIT_KEEP_DAYS', 7, 1, 90),                // __50_ (R62)
+        auditMaxRows:          num('AUDIT_MAX_ROWS', AUDIT_MAX_ROWS, 1000, 50000),   // __50_ (R62)
         bad: bad
     };
     return _SETTINGS;
@@ -5941,13 +6095,22 @@ function _warnStillOk_(sh, w) {
     if (String(row[2]) !== String(w.worker)) return 'row changed';
     const st = String(row[10] || '').toUpperCase();
     if (st.includes('DEPARTED') || st.includes('COMPLETED') || st.includes('DATA_ENTRY_ONLY') || st.includes('USER_SAFE')) return 'visit closed';
-    if (!_sameDue_(row[20], w.dueIso)) return 'due time changed';
+    if (w.w === 3) {   // __50_ (R03): the welfare push - stop it if the check was answered (col AD moved) or cleared
+        const wd = _welfareDueInfo_(row[WELFARE_DUE_COL - 1]);
+        if (!wd || wd.wIso !== w.welfareIso) return 'welfare check answered or moved';
+    } else if (!_sameDue_(row[20], w.dueIso)) return 'due time changed';
     const a = _rowAlarmReason_(row);
     return a ? a + ' - hard rule: no push to the worker during an alarm' : '';
 }
 
 /** __48_ (R04): reminder wording. Site or destination name and the due time only - no GPS, no contact names. */
 function _warnMessage_(w) {
+    if (w.w === 3) {   // __50_ (R03): welfare check push. Site name and times only.
+        const place3 = String(w.loc || '').replace(/\s+/g, ' ').trim().substring(0, 80);
+        return { title: 'Welfare check - open the app and tap I\'m OK',
+                 body: (place3 ? place3 + ' - ' : '') + 'your contact will be alerted at ' + (_clockText_(new Date(w.alertIso)) || 'the end of the check') +
+                       ' if there is no answer.', tags: 'bell' };
+    }
     const due = new Date(w.dueIso);
     const t = _clockText_(due) || 'the due time';
     const place = String(w.loc || '').replace(/\s+/g, ' ').trim().substring(0, 80);
@@ -6040,3 +6203,316 @@ function _warnHeard_(raw, quiet) {
 
 /** __49_ (R60): a quiet threshold for the Health email. */
 function _quietText_(n) { return n > 0 ? 'more than ' + n + ' min of silence' : 'always (threshold 0)'; }
+
+// ==========================================
+// __50_ (session 101): R03 - SERVER-SIDE WELFARE CHECKS
+// ==========================================
+// Design: claude/R03_R04_DESIGN_S95.md section 4 and the R03 register row (D-ESC option (c), D-MARGIN, D-TRIP).
+//   Col AD "Welfare Due"    = "<next welfare time ISO>|<interval minutes>"  (blank = no server welfare checks on this row)
+//   Col AE "Welfare Memory" = "<welfare time ISO>|<tokens>|<effective due ISO>|<written ISO>"
+//                             tokens: P = welfare push claimed, Px = push decided not to send, M = missed - escalating.
+// A miss makes the visit overdue from that moment: the existing ladders run from an EFFECTIVE DUE time (standard: the miss
+// minus the grace period, so tier 1 goes at the miss; Critical Timing: the miss itself). It is stored in col AE so a Settings
+// change can never move it (a moved key would restart the ladder). The escalation stays on until a WELFARE_OK, a PIN clear
+// or the end of the visit, whatever WELFARE_CHECKS says later (an escalation that has started is never silently stopped).
+
+/** __50_: col AD as { wMs, wIso, mins } (mins null when not readable), or null when blank or unreadable. */
+function _welfareDueInfo_(raw) {
+    const s = String(raw == null ? '' : raw).trim();
+    if (!s) return null;
+    const p = s.split('|');
+    const t = _lastHeardMs_(p[0]);
+    if (t === null) return null;
+    const m = parseInt(p[1], 10);
+    return { wMs: t, wIso: new Date(t).toISOString(), mins: (m >= 1 && m <= 480) ? m : null };
+}
+
+/** __50_: col AE as { has, wIso, tokens, effMs, effIso }. */
+function _welfareMemInfo_(raw) {
+    const s = String(raw == null ? '' : raw).trim();
+    if (!s) return { has: false, wIso: '', tokens: [], effMs: null, effIso: '' };
+    const p = s.split('|');
+    const w = _lastHeardMs_(p[0]);
+    const e = p[2] ? _lastHeardMs_(p[2]) : null;
+    return { has: true, wIso: w === null ? '' : new Date(w).toISOString(),
+             tokens: String(p[1] || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean),
+             effMs: e, effIso: e === null ? '' : new Date(e).toISOString() };
+}
+
+/**
+ * __50_: the welfare escalation running on this Visits row (array, col A = index 0), or null.
+ * Running = col AE holds M with a readable effective due, for the welfare time col AD still names (a WELFARE_OK or a PIN clear
+ * moves col AD, which ends it). An old phone never fills col AD: then col AE alone decides (cleared by the clear itself).
+ */
+function _welfareActive_(row) {
+    if (!row) return null;
+    const m = _welfareMemInfo_(row[WELFARE_MEM_COL - 1]);
+    if (!m.has || m.tokens.indexOf('M') < 0 || m.effMs === null) return null;
+    const d = _welfareDueInfo_(row[WELFARE_DUE_COL - 1]);
+    if (d && d.wIso !== m.wIso) return null;
+    return { wIso: m.wIso, effIso: m.effIso, eff: new Date(m.effMs) };
+}
+
+/** __50_: make sure cols AD / AE exist and have their headers (once per execution). Throws if the sheet refuses. */
+function _welfareColsReady_(sheet) {
+    if (sheet.getMaxColumns() < WELFARE_MEM_COL) sheet.insertColumnsAfter(sheet.getMaxColumns(), WELFARE_MEM_COL - sheet.getMaxColumns());
+    if (_LOCAL_HDR_DONE.welfare) return;
+    _LOCAL_HDR_DONE.welfare = true;
+    const h1 = sheet.getRange(1, WELFARE_DUE_COL), h2 = sheet.getRange(1, WELFARE_MEM_COL);
+    if (!String(h1.getValue() || '').trim()) h1.setValue(WELFARE_DUE_HEADER);
+    if (!String(h2.getValue() || '').trim()) h2.setValue(WELFARE_MEM_HEADER);
+}
+
+/** __50_: write col AD (date null = blank). Never throws; false when it could not. */
+function _welfareDueSet_(sheet, rowNum, d, mins, worker) {
+    try {
+        _welfareColsReady_(sheet);
+        sheet.getRange(rowNum, WELFARE_DUE_COL).setValue(d ? d.toISOString() + '|' + mins : '');
+        return true;
+    } catch (e) {
+        _audit_('welfare:due-FAILED', worker, rowNum, '', '', '', '', String(e).substring(0, 200));
+        return false;
+    }
+}
+
+/** __50_: write col AE (tokens null = blank). Returns the value written ('' for blank or on failure). Never throws. */
+function _welfareMemWrite_(sheet, rowNum, wIso, tokens, effIso, worker) {
+    try {
+        _welfareColsReady_(sheet);
+        const val = tokens ? wIso + '|' + tokens.join(',') + '|' + (effIso || '') + '|' + new Date().toISOString() : '';
+        sheet.getRange(rowNum, WELFARE_MEM_COL).setValue(val);
+        return val;
+    } catch (e) {
+        _audit_('welfare:memory-FAILED', worker, rowNum, '', '', '', '', String(e).substring(0, 200));
+        return '';
+    }
+}
+
+/** __50_: a welfare interval from a post, clamped to 5-480 minutes (the phone's own range). null when absent or unreadable. */
+function _welfareMins_(v) {
+    const s = String(v == null ? '' : v).trim();
+    if (!s) return null;
+    const n = parseInt(s, 10);
+    if (!(n >= 1)) return null;
+    return Math.min(480, Math.max(5, n));
+}
+
+/**
+ * __50_ (R03): arm the server welfare check on a new visit row. Only for ARRIVED (never a trip - D-TRIP), only when the post
+ * carries "Welfare Interval" (the phone is running welfare checks: worker __24_) and WELFARE_CHECKS is On. Never throws.
+ */
+function _welfareArm_(sheet, rowNum, p, ts) {
+    const worker = p && p['Worker Name'];
+    try {
+        if (String(p['Alarm Status'] || '').trim().toUpperCase() !== 'ARRIVED') return;
+        const raw = p['Welfare Interval'];
+        if (raw === undefined || raw === null || String(raw).trim() === '') return;
+        if (String(p['Notes'] || '').indexOf('Travel to') > -1) return;
+        const set = _settings_();
+        if (!set.welfareChecks) {
+            _audit_('welfare:not-armed', worker, rowNum, '', '', 'ARRIVED', p.idempotencyKey,
+                    'the phone sent a welfare interval but WELFARE_CHECKS is Off in the Settings tab - no server welfare checks on this visit');
+            return;
+        }
+        let mins = _welfareMins_(raw), note = '';
+        if (mins === null) { mins = set.welfareDefaultMins; note = ' (interval "' + String(raw).substring(0, 20) + '" unreadable - Settings default used)'; }
+        else if (String(mins) !== String(raw).trim()) note = ' (sent "' + String(raw).substring(0, 20) + '" - kept within 5 to 480)';
+        const w = new Date(ts.getTime() + mins * 60000);
+        if (_welfareDueSet_(sheet, rowNum, w, mins, worker)) {
+            _audit_('welfare:armed', worker, rowNum, '', '', 'ARRIVED', p.idempotencyKey,
+                    'first welfare check at ' + w.toISOString() + ' (every ' + mins + ' min, ' + set.welfareGraceMins + ' min to answer)' + note);
+        }
+    } catch (e) { _audit_('welfare:arm-FAILED', worker, rowNum, '', '', '', '', String(e).substring(0, 200)); }
+}
+
+/**
+ * __50_ (R03): checker, lock held. Returns the running escalation { wIso, effIso, eff } when its effective due time is earlier
+ * than the visit's own due time (the caller then escalates from it), else null. On the way it:
+ *   - records a miss (col AE M) once the welfare time + WELFARE_GRACE_MINS has passed (D-MARGIN: no extra margin);
+ *   - inside the grace period, queues one push to the worker's own phone (needs phone alerts; hard rule; daily cap).
+ * Nothing new happens when WELFARE_CHECKS is Off, on a trip (D-TRIP), when the welfare time is at or after the visit's due
+ * time (the normal ladder covers it), or while col K holds EMERGENCY / PANIC / SOS / DURESS (already alerted).
+ */
+function _welfareCheck_(sheet, rowNum, entry, worker, dueU, status, isCritical, warns, ctx) {
+    const act = _welfareActive_(entry);
+    if (act) return act.eff.getTime() < dueU.getTime() ? act : null;
+    const d = _welfareDueInfo_(entry[WELFARE_DUE_COL - 1]);
+    if (!d) return null;
+    const set = _settings_();
+    if (!set.welfareChecks) return null;
+    if (d.wMs >= dueU.getTime()) return null;
+    if (String(status).toUpperCase().indexOf('TRAVEL') > -1 || String(entry[11] || '').indexOf('Travel to') > -1) return null;
+    if (_alarmRank_(String(status)) >= 3) return null;
+    const now = Date.now();
+    if (now < d.wMs) return null;
+    const missMs = d.wMs + set.welfareGraceMins * 60000;
+    if (now < missMs) {
+        if (warns) {
+            try { _welfarePush_(sheet, rowNum, entry, worker, d, missMs, status, warns, ctx); }
+            catch (e) { _audit_('welfare:push-error', worker, rowNum, status, '', '', '', String(e).substring(0, 200) + ' - the escalation is unaffected'); }
+        }
+        return null;
+    }
+    const effMs = Math.min(dueU.getTime(), isCritical ? missMs : missMs - _graceMinutes_() * 60000);
+    if (effMs >= dueU.getTime()) return null;
+    const effIso = new Date(effMs).toISOString();
+    const m = _welfareMemInfo_(entry[WELFARE_MEM_COL - 1]);
+    const toks = (m.has && m.wIso === d.wIso) ? m.tokens.filter(function (t) { return t !== 'M'; }) : [];
+    _welfareMemWrite_(sheet, rowNum, d.wIso, toks.concat(['M']), effIso, worker);   // a failed write: the next run decides the same again
+    _audit_('welfare:missed', worker, rowNum, status, '', '', '', 'welfare check at ' + d.wIso + ' not answered within ' + set.welfareGraceMins +
+            ' min - the visit is overdue from now (' + (isCritical ? 'Critical Timing ladder, both contacts' : 'standard ladder, tier 1 to the main contact') +
+            '); effective due ' + effIso + ' (server)');
+    return { wIso: d.wIso, effIso: effIso, eff: new Date(effMs) };
+}
+
+/** __50_ (R03): the welfare push to the worker's own phone (once per welfare time). Same rules as the R04 reminders. */
+function _welfarePush_(sheet, rowNum, entry, worker, d, missMs, status, warns, ctx) {
+    const m = _welfareMemInfo_(entry[WELFARE_MEM_COL - 1]);
+    const toks = (m.has && m.wIso === d.wIso) ? m.tokens : [];
+    if (toks.indexOf('P') > -1 || toks.indexOf('Px') > -1) return;
+    _warnCtx_(ctx);
+    if (!ctx.settings.workerWarnings) return;
+    const topic = ctx.topics[String(worker == null ? '' : worker).toLowerCase().trim()];
+    if (!topic) return;
+    let skip = _rowAlarmReason_(entry);
+    if (skip) skip += ' - hard rule: no push to the worker during an alarm';
+    else if (!_warnBudgetTake_(ctx.settings.workerWarningDailyCap)) skip = 'daily cap reached (' + ctx.settings.workerWarningDailyCap + ')';
+    const val = _welfareMemWrite_(sheet, rowNum, d.wIso, toks.concat([skip ? 'Px' : 'P']), '', worker);
+    if (skip) { _audit_('warn:skip', worker, rowNum, status, '', '', '', 'W3 (welfare check) not sent: ' + skip); return; }
+    if (!val) return;   // not recorded = not sent (an unrecorded push would repeat every minute)
+    warns.push({ worker: worker, rowNum: rowNum, w: 3, topic: topic, dueIso: d.wIso, welfareIso: d.wIso,
+                 alertIso: new Date(missMs).toISOString(), loc: String(entry[12] == null ? '' : entry[12]), isTrip: false,
+                 click: ctx.settings.workerAppUrl, heardNote: 'welfare check at ' + d.wIso });
+}
+
+/** __50_: the welfare fields for the alert wording. job unchanged when wf is null. */
+function _welfareJob_(job, wf) {
+    if (!wf || !job || !job.payload) return job;
+    job.payload['Visit Due'] = job.payload['Anticipated Departure Time'] || '';
+    job.payload['Anticipated Departure Time'] = wf.effIso;
+    job.payload['Welfare Missed At'] = wf.wIso;
+    return job;
+}
+
+/**
+ * __50_ (R03): is this phone post a missed welfare check? WELFARE_MISSED always (the phone asked and nobody answered); an old
+ * phone's OVERDUE ALARM only before the due time, on a site visit, while WELFARE_CHECKS is On (a Critical Timing one that
+ * was merged into a BREACH is not). Never while col K holds EMERGENCY / PANIC / SOS / DURESS (already alerted).
+ */
+function _welfareMissPost_(incoming, p, rowData, ts) {
+    const s = String(incoming || '').trim().toUpperCase();
+    if (_alarmRank_(String(rowData[10] || '')) >= 3) return false;
+    if (s === 'WELFARE_MISSED') return true;
+    if (s.indexOf('OVERDUE ALARM') < 0 || String(p['Alarm Status'] || '').toUpperCase().indexOf('OVERDUE ALARM') < 0) return false;
+    const due = _alertDue_(rowData[20]);
+    if (!due || ts.getTime() >= due.getTime()) return false;
+    if (String(rowData[11] || '').indexOf('Travel to') > -1 || String(rowData[10] || '').toUpperCase().indexOf('TRAVEL') > -1) return false;
+    return _settings_().welfareChecks === true;
+}
+
+/**
+ * __50_ (R03): a missed welfare check reported by the phone, inside doPost (lock held). Records the miss (col AE M) and sends
+ * ladder step 1 now - standard: tier 1 to the main contact; Critical Timing: BREACH to both - claimed in col AA first, so the
+ * checker never sends it again (it re-sends once only if the send is never confirmed). Returns true when the welfare path
+ * handled it (escalation started, or already running), false when it could not (the caller records the post as before).
+ */
+function _welfareMissFromPhone_(sheet, rowNum, worker, ts, incoming) {
+    try {
+        const row = sheet.getRange(rowNum, 1, 1, _readWidth_(sheet)).getValues()[0];
+        if (_welfareActive_(row)) {
+            _audit_('welfare:missed-again', worker, rowNum, row[10], '', incoming, '',
+                    'the phone reported a missed welfare check while that escalation is already running - nothing more sent');
+            return true;
+        }
+        const dueU = _alertDue_(row[20]);
+        if (!dueU) return false;
+        const isCritical = String(row[11] || '').indexOf('[CRITICAL_TIMING]') > -1;
+        const set = _settings_();
+        const d = _welfareDueInfo_(row[WELFARE_DUE_COL - 1]);
+        const wIso = d ? d.wIso : new Date(ts.getTime() - set.welfareGraceMins * 60000).toISOString();
+        const missMs = ts.getTime();
+        const effMs = Math.min(dueU.getTime(), isCritical ? missMs : missMs - _graceMinutes_() * 60000);
+        if (effMs >= dueU.getTime()) return false;
+        const effIso = new Date(effMs).toISOString();
+        const m = _welfareMemInfo_(row[WELFARE_MEM_COL - 1]);
+        const toks = (m.has && m.wIso === wIso) ? m.tokens.filter(function (t) { return t !== 'M'; }) : [];
+        _welfareMemWrite_(sheet, rowNum, wIso, toks.concat(['M']), effIso, worker);
+        _audit_('welfare:missed', worker, rowNum, row[10], '', incoming, '', 'the phone reported a welfare check not answered (' + incoming +
+                ') - ' + (isCritical ? 'Critical Timing step 1 to both contacts' : 'standard tier 1 to the main contact') + ' now; effective due ' + effIso + ' (phone)');
+        const st = isCritical ? LADDER_STATUSES[0] : LADDER_STD_STATUSES[0];
+        const claimVal = _ladderMemClaim_(sheet, rowNum, new Date(effMs), 1, 'welfare', worker, isCritical ? null : LADDER_STD_LABELS);
+        const job = _welfareJob_(_escalationWrite_(sheet, row, st, isCritical, rowNum), { wIso: wIso, effIso: effIso });
+        const mark = { worker: worker, rowNum: rowNum, claimVal: claimVal };
+        _sendOrQueue_('welfare-alerts', function () {
+            triggerAlerts(job.payload, job.type);
+            if (claimVal) _withShortLock_('welfare:mark-sent', function (got) {
+                if (!got) return;   // unmarked: the checker re-sends it once after 3 minutes (a duplicate beats a miss)
+                const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Visits');
+                if (sh) _ladderMarkSent_(sh, mark);
+            });
+        });
+        return true;
+    } catch (e) {
+        _audit_('welfare:miss-FAILED', worker, rowNum, '', '', incoming, '', String(e).substring(0, 200));
+        return false;
+    }
+}
+
+/**
+ * __50_ (R03): a WELFARE_OK on an open visit row (rowData = the row as read before this post). Never while col K holds
+ * DURESS / PANIC / SOS. After a miss (escalation running): All Clear to whoever was alerted (the visit is still monitored),
+ * col K back to the visit status, the escalation ended, next welfare time set. Otherwise: next welfare time = now + interval.
+ */
+function _welfareOk_(sheet, rowNum, rowData, p, ts, worker) {
+    try {
+        if (_alarmRank_(String(rowData[10] || '')) >= 4) return;
+        const d = _welfareDueInfo_(rowData[WELFARE_DUE_COL - 1]);
+        const mins = _welfareMins_(p['Welfare Interval']) || (d ? d.mins : null);
+        const act = _welfareActive_(rowData);
+        if (!act) {
+            if (d && mins) _welfareDueSet_(sheet, rowNum, new Date(ts.getTime() + mins * 60000), mins, worker);
+            return;
+        }
+        const aud = _alertAudience_(rowData);
+        if (_alarmRank_(String(rowData[10] || '')) >= 2) {
+            sheet.getRange(rowNum, 11).setValue(String(rowData[11] || '').indexOf('Travel to') > -1 ? 'TRAVELLING' : 'ARRIVED');
+        }
+        _welfareMemWrite_(sheet, rowNum, '', null, '', worker);
+        if (mins) _welfareDueSet_(sheet, rowNum, new Date(ts.getTime() + mins * 60000), mins, worker);
+        else _welfareDueSet_(sheet, rowNum, null, null, worker);
+        const cur = String(sheet.getRange(rowNum, 12).getValue() || '');
+        sheet.getRange(rowNum, 12).setValue((cur + '\n[WELFARE CLEAR ' + _fmtLocal_(ts, 'h:mm:ss a') + '] Welfare check answered after it was missed - ' +
+                                             (aud === 'none' ? 'no contact had been alerted yet.' : 'All Clear sent.')).trim());
+        _audit_('welfare:cleared', worker, rowNum, rowData[10], String(rowData[11] || '').indexOf('Travel to') > -1 ? 'TRAVELLING' : 'ARRIVED', 'WELFARE_OK', p.idempotencyKey,
+                'WELFARE_OK after a missed welfare check - escalation ended; All Clear to ' + (aud === 'none' ? 'nobody (none sent yet)' : aud === 'primary' ? 'the main contact' : 'both contacts') +
+                (mins ? '; next welfare check in ' + mins + ' min' : ''));
+        if (aud !== 'none') {
+            const acP = Object.assign({}, p);
+            _sendOrQueue_('allclear', function () { _sendAllClear_(acP, true, aud); });
+        }
+    } catch (e) { _audit_('welfare:ok-FAILED', worker, rowNum, '', '', 'WELFARE_OK', p && p.idempotencyKey, String(e).substring(0, 200)); }
+}
+
+/** __50_ (R03): a PIN clear that restored the visit: end any welfare escalation (the All Clear is the PIN clear's) and set the next welfare time. */
+function _welfareAfterPinClear_(sheet, rowNum, rowData, ts, worker) {
+    try {
+        const m = _welfareMemInfo_(rowData[WELFARE_MEM_COL - 1]);
+        const d = _welfareDueInfo_(rowData[WELFARE_DUE_COL - 1]);
+        if (!m.has && !d) return;
+        const act = _welfareActive_(rowData);
+        if (m.has) _welfareMemWrite_(sheet, rowNum, '', null, '', worker);
+        if (d && d.mins) _welfareDueSet_(sheet, rowNum, new Date(ts.getTime() + d.mins * 60000), d.mins, worker);
+        if (act) _audit_('welfare:cleared', worker, rowNum, rowData[10], '', 'USER_SAFE_CONFIRMED', '', 'PIN clear ended the missed-welfare escalation' +
+                         (d && d.mins ? '; next welfare check in ' + d.mins + ' min' : ''));
+    } catch (e) { _audit_('welfare:pin-FAILED', worker, rowNum, '', '', '', '', String(e).substring(0, 200)); }
+}
+
+/** __50_ (R03): the Health email cell for welfare checks. */
+function _welfareHealthHtml_() {
+    try {
+        const set = _settings_();
+        if (!set.welfareChecks) return '<strong>Off</strong> - no server welfare checks (switch on with WELFARE_CHECKS).';
+        return '<strong>On</strong> - a welfare check not answered within ' + set.welfareGraceMins + ' min alerts the contacts (needs worker __24_ or later ' +
+               'to send the interval; an older phone only reports its own missed checks).';
+    } catch (e) { return 'unavailable'; }
+}
