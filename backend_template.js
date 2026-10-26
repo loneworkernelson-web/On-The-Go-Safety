@@ -192,6 +192,32 @@
  *   - Settings tab: two new keys added with their defaults (existing values never changed); Health email shows them.
  *   - Contact escalation (tiers, Critical ladder, col AA claims, All Clear audience) is unchanged.
  *
+ * __51_ (session 102, 27 Oct 2026) - R55 Travel Report distance method, R63 site-safety upload fix (F101-2), R66(a) Settings note
+ * (no worker change needed to deploy; the alarm path, the ladders and every Visits column are untouched):
+ *   - R55: the Travel Report gets a "Distance method" column after "Total km" (plain words for the worker app's _distMethod:
+ *     road route along the GPS trail / straight lines along the trail / road route start to end / straight line start to end /
+ *     not measured, with "raised to the minimum worked out from speed" when the app applied its speed floor) and a note under
+ *     the totals. Keys beginning with "_" (diagnostics such as _distBreadcrumbs) are no longer taken as the distance and are
+ *     never listed as extra columns - before, a trip with no km field could report its breadcrumb count as kilometres.
+ *   - R63: updateSiteEmergencyProcedures() was never matching (it read siteName / companyName / photos[], which the worker app
+ *     never sends), so an uploaded site-safety photo stayed in the form record and Sites col J stayed empty. It now finds the
+ *     site from siteName, else the form's Site Name / Company Name fields, else Location Name ("Company - Site"); the FIRST
+ *     source that names a site is the only one used. Photos are the Photo 1-4 fields, saved to Drive. A new upload REPLACES the
+ *     site's procedures, but the old links are archived FIRST in the append-only "Procedures History" tab (a failed archive,
+ *     no photo, a failed photo, no match or an ambiguous site name stops the replace; the old cell is never blanked). Every
+ *     refusal is an Audit row (procedures:*) and the form is still saved. A duplicate delivery (same idempotency key) does not
+ *     save photos or archive twice. Drive photos are never deleted.
+ *   - R66(a): the WORKER_APP_URL Settings note says to leave it blank unless tested on the workers' phones, and to include
+ *     index.html if used (new Settings tabs only - an existing note is never changed).
+ *   - F102-1 (welfare, Opus): an EXTENDED post restarts a welfare check whose time had already passed (next = now +
+ *     interval). Before, a check skipped because it fell at or after the old due time became "due and missed" the moment
+ *     the worker extended, and the main contact got "WELFARE CHECK NOT ANSWERED" straight away. A running missed-check
+ *     escalation is not ended by an extend (R64 item 10). Audit welfare:restarted / welfare:extend-FAILED.
+ *   - The phone sync carries meta.backendBuild (this file's build), so worker __24_ posts WELFARE_MISSED only to a backend
+ *     that knows it (__51_+) and an old phone-style OVERDUE ALARM otherwise (which __50_ treats as a missed welfare check).
+ *   - R55 phase 2: when worker __24_'s _distCalcKm (the distance the app calculated) differs from the reported km, the
+ *     Distance method column adds "- edited by the worker (app calculated 12.4 km)".
+ *
  * __50_ (session 101, 26 Oct 2026) - R03 server-side welfare checks, R62 Audit retention (no worker change needed to deploy;
  * worker __24_ is the phone side - until then only an old phone's own missed-check post can start a welfare escalation):
  *   - Settings WELFARE_CHECKS On + a visit start (ARRIVED, never a trip - D-TRIP) carrying "Welfare Interval": Visits col AD
@@ -301,7 +327,7 @@ const SETTINGS_DEFAULTS   = [      // [key, default value, note] - added to the 
     ['WELFARE_GRACE_MINS', 2, 'Minutes the worker has to answer a welfare check (1 to 10). The server alerts contacts when it runs out (backend __50_).'],
     ['WORKER_WARNINGS', 'On', 'On or Off. Reminders to the worker\'s own phone, only when the phone has gone quiet: 5 min before a Critical Timing visit or trip is due, and 3 min before contacts are alerted on a standard one. Only for workers who set up phone alerts in the app.'],
     ['WORKER_WARNING_DAILY_CAP', 100, 'Most worker reminders sent in one day (0 to 5000). Contact alarms are never limited. Protects the ntfy message allowance.'],
-    ['WORKER_APP_URL', '', 'Optional. The worker app web address (https://...). Tapping a reminder opens it.'],
+    ['WORKER_APP_URL', '', 'Optional - leave blank unless you have tested it on your workers\' phones. If used: the full address of the worker app including index.html (https://.../index.html). Tapping a reminder then tries to open the app, but some phones open a browser copy instead.'],
     ['WORKER_WARN_QUIET_W1_MINS', 3, 'Critical Timing visits and trips: the "ends in 5 min" reminder goes only if nothing has been heard from the phone for more than this many minutes (0 to 30; 0 = always send).'],
     ['WORKER_WARN_QUIET_W2_MINS', 6, 'Standard visits and trips: the "check in now" reminder goes only if nothing has been heard from the phone for more than this many minutes (0 to 30; 0 = always send).'],
     ['AUDIT_KEEP_DAYS', 7, 'Days of Audit rows kept (1 to 90). The Audit tab is a debugging trail - Visits and Forms are the permanent records. Trimmed daily before the Health email.'],
@@ -464,7 +490,17 @@ function _doPostRoute_(p) {
     if (p.action === 'resolve') { handleResolvePost(p); return { status: 'success' }; }
     if (p.action === 'registerDevice') return handleRegisterDevice(p);
     if (p.action === 'acknowledgeNotice') return handleNoticeAck(p);   // NEW 3: Notice Acknowledgments
-    if (p.action === 'uploadEmergencyProcedures') { updateSiteEmergencyProcedures(p); handleWorkerPost(p); return { status: 'success' }; }
+    if (p.action === 'uploadEmergencyProcedures') {
+        // __51_ (R63): a duplicate delivery must not save the photos or archive the old links a second time. The reply stays
+        // 'success' (the form is saved by handleWorkerPost and the phone must not retry); a refusal is an Audit row (procedures:*).
+        let _proc = { status: 'skipped' };
+        if (!(p.idempotencyKey && _idemSeen_(p.idempotencyKey))) {
+            try { _proc = updateSiteEmergencyProcedures(p); }
+            catch (perr) { _proc = { status: 'error', message: String(perr).substring(0, 160) }; _audit_('procedures:error', p['Worker Name'], '', '', '', 'PROCEDURES_UPDATED', p.idempotencyKey, String(perr).substring(0, 160)); }
+        }
+        handleWorkerPost(p);
+        return _proc.status === 'error' ? { status: 'success', procedures: 'not saved: ' + _proc.message } : { status: 'success' };
+    }
     if (p.action === 'notifySafety') return handleSafetyResolution(p);
     if (p.action === 'broadcast') return handleBroadcast(p);
     if (p.action === 'workerTopic') return handleWorkerTopic(p);           // __48_ (R04): "Set up phone alerts"
@@ -823,15 +859,21 @@ function generateWorkerTravelReport() {
     var dist = '';
     for (var k in json) {
       if (SKIP_KEYS.has(k)) continue;
+      if (k.charAt(0) === '_') continue;   // __51_ (R55): diagnostics such as _distBreadcrumbs are not the distance
       if (/km|odo|dist/i.test(k)) {
         var v = parseFloat(json[k]);
         if (!isNaN(v)) { dist = v; break; }
       }
     }
 
+    // __51_ (R55): how the worker app worked the distance out (Visit Report Data _distMethod; the keys were lower-cased above)
+    var method = json.hasOwnProperty('_distmethod') ? json['_distmethod'] : '';
+    var calcKm = json.hasOwnProperty('_distcalckm') ? json['_distcalckm'] : '';   // __51_ (R55 phase 2, worker __24_)
+
     // Collect remaining keys as extra columns (stable insertion order)
     for (var ek in json) {
       if (SKIP_KEYS.has(ek)) continue;
+      if (ek.charAt(0) === '_') continue;   // __51_ (R55): diagnostics are never extra columns
       if (/km|odo|dist/i.test(ek)) continue;
       if (!extraKeySet.has(ek)) {
         extraKeySet.add(ek);
@@ -839,7 +881,7 @@ function generateWorkerTravelReport() {
       }
     }
 
-    trips.push({ date: d, worker: worker, site: site, company: company, from: from, to: to, dist: dist, json: json });
+    trips.push({ date: d, worker: worker, site: site, company: company, from: from, to: to, dist: dist, method: method, calcKm: calcKm, json: json });
   });
 
   if (trips.length === 0) {
@@ -860,7 +902,7 @@ function generateWorkerTravelReport() {
   }
 
   // ── Build header row ─────────────────────────────────────────────────────────
-  const FIXED_HEADERS = ["Worker Name", "Date", "Site Name", "Company", "From", "To", "Total km"];
+  const FIXED_HEADERS = ["Worker Name", "Date", "Site Name", "Company", "From", "To", "Total km", "Distance method"];   // __51_ (R55)
   const allHeaders    = FIXED_HEADERS.concat(extraKeys.map(toTitleCase));
   const numCols       = allHeaders.length;
 
@@ -878,7 +920,7 @@ function generateWorkerTravelReport() {
   // ── Data rows ────────────────────────────────────────────────────────────────
   const rows = trips.map(function(t) {
     var dateStr = _ampm_(Utilities.formatDate(t.date, tz, "dd/MM/yyyy h:mm a"));   // __47_ (R46)
-    var fixed   = [t.worker, dateStr, t.site, t.company, t.from, t.to, t.dist !== '' ? t.dist : '-'];
+    var fixed   = [t.worker, dateStr, t.site, t.company, t.from, t.to, t.dist !== '' ? t.dist : '-', _distMethodLabel_(t.method) + _distEditedNote_(t.calcKm, t.dist)];
     var extra   = extraKeys.map(function(k) {
       var val = t.json[k];
       if (val === undefined || val === null || val === '') return '';
@@ -904,6 +946,10 @@ function generateWorkerTravelReport() {
     .setBorder(true, false, false, false, false, false);
 
   reportSheet.autoResizeColumns(1, numCols);
+  // __51_ (R55): the figures may be used for travel claims, so say how to read the method column.
+  var methodNote = reportSheet.getRange(5 + rows.length, 1);
+  methodNote.setValue('Distance method: how the worker app worked the km figure out. The worker can overwrite the figure after the app has calculated it; from worker build __24_ the column says when the reported km differs from the calculated one.');
+  methodNote.setFontStyle('italic');
   ui.alert("Travel Report generated — " + trips.length + " trip(s) for " + monthStr + ".");
 }
 
@@ -1267,6 +1313,8 @@ function handleWorkerPost(p) {
                             _welfareOk_(sheet, targetRow, rowData, p, ts, workerName);
                         } else if (_pinClearNote.indexOf('restored') > -1) {
                             _welfareAfterPinClear_(sheet, targetRow, rowData, ts, workerName);
+                        } else if (_incomingStatus.trim() === 'EXTENDED') {
+                            _welfareAfterExtend_(sheet, targetRow, rowData, ts, workerName);   // __51_ (F102-1)
                         }
                         existingVisitNotes = String(rowData[11] || '');
                         rowUpdated = true;
@@ -4439,6 +4487,7 @@ function getSyncData(workerName, deviceId) {
     }
     
     meta.settings = _settingsForPhone_();   // __48_ (R04, R33): the Settings tab; the phone uses it before config.json
+    meta.backendBuild = TEMPLATE_BUILD;     // __51_: worker __24_ posts WELFARE_MISSED only to a backend that knows it
     return {sites, forms, cachedTemplates, meta, version: CONFIG.VERSION};
 }
 /**
@@ -4473,53 +4522,7 @@ function handleBroadcast(p) {
     }
 }
 
-/**
- * BACKEND logic: Specifically updates the 'Sites' tab
- */
-function updateSiteEmergencyProcedures(payload) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const siteSheet = ss.getSheetByName("Sites");
-  if (!siteSheet) return { status: 'error', message: 'Sites tab not found' };
-
-  const data = siteSheet.getDataRange().getValues();
-  const headers = data[0];
-  
-  // 1. Identify "Emergency Procedures" column
-  let colIdx = headers.indexOf("Emergency Procedures");
-  if (colIdx === -1) {
-    colIdx = headers.length;
-    siteSheet.getRange(1, colIdx + 1).setValue("Emergency Procedures");
-  }
-
-  // 2. Locate the specific site row
-  let targetRow = -1;
-  const siteCol = headers.indexOf("Site Name");
-  const compCol = headers.indexOf("Company Name");
-
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][siteCol] === payload.siteName && data[i][compCol] === payload.companyName) {
-      targetRow = i + 1;
-      break;
-    }
-  }
-
-  if (targetRow === -1) return { status: 'error', message: 'Site match failed' };
-
-  // 3. Process Photos & Generate Links
-  const photoUrls = [];
-  const folder = DriveApp.getFolderById(CONFIG.PHOTOS_FOLDER_ID);
-  
-  (payload.photos || []).forEach((base64, idx) => {
-    const blob = Utilities.newBlob(Utilities.base64Decode(base64.split(",")[1]), "image/jpeg", `EP_${payload.siteName}_${idx}.jpg`);
-    const file = folder.createFile(blob);
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    photoUrls.push(file.getUrl());
-  });
-
-  // 4. Update the Sites cell
-  siteSheet.getRange(targetRow, colIdx + 1).setValue(photoUrls.join(", "));
-  return { status: 'success', links: photoUrls };
-}
+// __51_ (R63, F101-2): updateSiteEmergencyProcedures() now lives at the end of the file (section 51).
 
 /**
  * MISSION-CRITICAL: Notice Acknowledgment Logger
@@ -5356,7 +5359,7 @@ function _formsGps_(sheet, rowNum, p) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__50_';
+const TEMPLATE_BUILD = 'backend__51_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
@@ -6515,4 +6518,199 @@ function _welfareHealthHtml_() {
         return '<strong>On</strong> - a welfare check not answered within ' + set.welfareGraceMins + ' min alerts the contacts (needs worker __24_ or later ' +
                'to send the interval; an older phone only reports its own missed checks).';
     } catch (e) { return 'unavailable'; }
+}
+
+// ============================================================================
+// __51_ (session 102): R55 Travel Report "Distance method" + R63 site-safety upload fix (F101-2).
+// Added at the end of the file by patch51.py. updateSiteEmergencyProcedures() replaces the old function of the same name.
+// ============================================================================
+
+const PROCEDURES_HISTORY_SHEET   = 'Procedures History';
+const PROCEDURES_HISTORY_HEADERS = ['Time (UTC)', 'Time (local)', 'Site', 'Company', 'Sites Row', 'Worker', 'Previous Links', 'New Links', 'Matched By'];
+
+/**
+ * R55: plain words for the worker app's _distMethod value (road-trail, trail-crow, road, crow, none; any of them may carry
+ * "+speed-floor" when the app raised a too-low figure to the minimum worked out from the phone's speed). Unknown values
+ * are shown as they are, so a new method never hides.
+ */
+function _distMethodLabel_(m) {
+  let key = String(m === undefined || m === null ? '' : m).trim();
+  if (!key) return '';
+  let floored = false;
+  if (/\+speed-floor$/i.test(key)) { floored = true; key = key.replace(/\+speed-floor$/i, ''); }
+  const labels = {
+    'road-trail': 'Road route along the GPS trail',
+    'trail-crow': 'Straight lines along the GPS trail',
+    'road':       'Road route, start to end',
+    'crow':       'Straight line, start to end',
+    'none':       'Not measured - entered by the worker'
+  };
+  const lk = key.toLowerCase();
+  const base = labels.hasOwnProperty(lk) ? labels[lk] : key;
+  return floored ? base + ' (raised to the minimum worked out from speed)' : base;
+}
+
+/** R63: compare site and company names the way a person would - case, spacing and surrounding blanks do not matter. */
+function _procNorm_(v) { return String(v === undefined || v === null ? '' : v).replace(/\s+/g, ' ').trim().toLowerCase(); }
+
+/**
+ * R63 (F101-2): where does this upload say it belongs? The worker app never sent siteName / companyName / photos[] (the
+ * old code read only those, so no upload ever matched). Order of trust:
+ *   1. explicit siteName (+ companyName) - for a later worker build;
+ *   2. the form's own Site Name / Company Name fields (the app fills them in from the site the panel was opened for);
+ *   3. Location Name, "Company - Site" - the visit or the selected site tile (the least certain).
+ * The first source that names a site is the only one used: if it matches nothing the upload is refused, never moved on to
+ * a weaker source (that could file the procedures under the wrong site).
+ * Returns { how, tries: [ { site, company } ] } or null when the upload names no site.
+ */
+function _procCandidates_(payload) {
+  const str = function (v) { return String(v === undefined || v === null ? '' : v).trim(); };
+  if (str(payload.siteName)) return { how: 'siteName field', tries: [{ site: str(payload.siteName), company: str(payload.companyName) }] };
+  let fs = '', fc = '';
+  Object.keys(payload).forEach(function (key) {
+    const kl = key.toLowerCase().replace(/[\s_:]+/g, ' ').trim();
+    if (!fs && (kl === 'site name' || kl === 'site') && str(payload[key])) fs = str(payload[key]);
+    if (!fc && (kl === 'company name' || kl === 'company') && str(payload[key])) fc = str(payload[key]);
+  });
+  if (fs) return { how: 'form fields', tries: [{ site: fs, company: fc }] };
+  const ln = str(payload['Location Name']);
+  if (!ln) return null;
+  const tries = [];
+  let at = ln.indexOf(' - ');
+  while (at > -1) {   // "Company - Site": every " - " could be the split (either name may contain one)
+    tries.push({ company: ln.substring(0, at).trim(), site: ln.substring(at + 3).trim() });
+    at = ln.indexOf(' - ', at + 1);
+  }
+  tries.push({ site: ln, company: '' });   // a site with no company is sent as the bare site name
+  return { how: 'Location Name', tries: tries };
+}
+
+/**
+ * R63 (F101-2): save the photos of an "Update Site Procedures" form as the site's safety information (Sites col J).
+ * A new upload REPLACES the old (Russell, 25 Oct), but the old links are ARCHIVED FIRST in the append-only "Procedures
+ * History" tab, and nothing is ever replaced when anything is wrong:
+ *   no site named / no match / more than one company with that site name -> refused;
+ *   no photo, or a photo that could not be saved to Drive                  -> refused (never blank or half-replace a cell);
+ *   the archive row cannot be written                                      -> refused (the old links stay).
+ * Every refusal writes an Audit row (procedures:*) and the form itself is still saved by handleWorkerPost. Drive photos are
+ * never deleted, so every archived link keeps working. Returns { status, message?, links?, rows? }.
+ * Photos are saved again by handleWorkerPost into the worker's visit/forms record - two Drive files per photo (accepted).
+ */
+function updateSiteEmergencyProcedures(payload) {
+  const worker = String(payload['Worker Name'] || '');
+  const fail = function (src, msg) {
+    _audit_(src, worker, '', '', '', 'PROCEDURES_UPDATED', payload.idempotencyKey, msg);
+    return { status: 'error', message: msg };
+  };
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const siteSheet = ss.getSheetByName('Sites');
+    if (!siteSheet) return fail('procedures:no-sites-tab', 'Sites tab not found - nothing saved');
+    const data = siteSheet.getDataRange().getValues();
+    const headers = (data[0] || []).map(function (h) { return String(h === undefined || h === null ? '' : h).trim(); });
+
+    // 1. The Emergency Procedures column (the app reads Sites col J). Never guess a new column.
+    let colIdx = headers.indexOf('Emergency Procedures');
+    if (colIdx === -1) {
+      if (!headers[9]) { siteSheet.getRange(1, 10).setValue('Emergency Procedures'); colIdx = 9; }
+      else return fail('procedures:no-column', 'Sites tab has no "Emergency Procedures" column and col J is in use - nothing saved');
+    }
+    let siteCol = headers.indexOf('Site Name');   if (siteCol === -1) siteCol = 3;
+    let compCol = headers.indexOf('Company Name'); if (compCol === -1) compCol = 2;
+
+    // 2. Which site? (see _procCandidates_)
+    const cand = _procCandidates_(payload);
+    if (!cand) return fail('procedures:no-site', 'the upload names no site - nothing saved');
+    let rowsHit = [], used = null;
+    for (let t = 0; t < cand.tries.length && !rowsHit.length; t++) {
+      const want = cand.tries[t];
+      for (let i = 1; i < data.length; i++) {
+        if (_procNorm_(data[i][siteCol]) !== _procNorm_(want.site)) continue;
+        if (want.company && _procNorm_(data[i][compCol]) !== _procNorm_(want.company)) continue;
+        rowsHit.push(i + 1);
+      }
+      if (rowsHit.length) used = want;
+    }
+    if (!rowsHit.length) {
+      return fail('procedures:no-match', 'no site matched ' + cand.tries.map(function (w) { return '"' + (w.company ? w.company + ' - ' : '') + w.site + '"'; }).join(' / ') +
+                  ' (found by ' + cand.how + ') - nothing saved');
+    }
+    const companies = {};
+    rowsHit.forEach(function (r) { companies[_procNorm_(data[r - 1][compCol])] = true; });
+    if (Object.keys(companies).length > 1) {
+      return fail('procedures:ambiguous', 'the site name "' + used.site + '" belongs to more than one company and the upload does not say which - nothing saved');
+    }
+
+    // 3. Photos: all of them must be saved, or nothing is replaced.
+    const photoKeys = ['Photo 1', 'Photo 2', 'Photo 3', 'Photo 4'].filter(function (kk) { return payload[kk]; });
+    if (!photoKeys.length) return fail('procedures:no-photos', 'the upload has no photos - existing safety information left as it is');
+    const links = [];
+    for (let q = 0; q < photoKeys.length; q++) {
+      const link = saveImage(payload[photoKeys[q]], worker);
+      if (!/^https?:\/\//i.test(String(link || ''))) {
+        return fail('procedures:photo-FAILED', photoKeys[q] + ' could not be saved to Drive (' + String(link || 'no link').substring(0, 80) + ') - existing safety information left as it is');
+      }
+      links.push(link);
+    }
+    const newCell = links.join(', ');
+
+    // 4. Archive the old links FIRST. If this cannot be written, nothing is replaced.
+    const siteName = String(data[rowsHit[0] - 1][siteCol] || '').trim();
+    const compName = String(data[rowsHit[0] - 1][compCol] || '').trim();
+    try {
+      let hist = ss.getSheetByName(PROCEDURES_HISTORY_SHEET);
+      if (!hist) {
+        hist = ss.insertSheet(PROCEDURES_HISTORY_SHEET);
+        hist.appendRow(PROCEDURES_HISTORY_HEADERS);
+        try { hist.setFrozenRows(1); } catch (_) {}
+      }
+      const now = new Date();
+      rowsHit.forEach(function (r) {
+        hist.appendRow([now.toISOString(), _localCell_(now), siteName, compName, r, worker,
+                        String(data[r - 1][colIdx] === undefined || data[r - 1][colIdx] === null ? '' : data[r - 1][colIdx]), newCell, cand.how]);
+      });
+    } catch (herr) {
+      return fail('procedures:archive-FAILED', 'could not write the Procedures History tab (' + String(herr).substring(0, 120) + ') - existing safety information left as it is');
+    }
+
+    // 5. Replace.
+    rowsHit.forEach(function (r) { siteSheet.getRange(r, colIdx + 1).setValue(newCell); });
+    _audit_('procedures:updated', worker, '', '', '', 'PROCEDURES_UPDATED', payload.idempotencyKey,
+            'site "' + siteName + '" company "' + compName + '" Sites row(s) ' + rowsHit.join(',') + ' - ' + links.length + ' photo(s); matched by ' + cand.how + '; old links archived in ' + PROCEDURES_HISTORY_SHEET);
+    return { status: 'success', links: links, rows: rowsHit };
+  } catch (err) {
+    return fail('procedures:error', 'unexpected error (' + String(err).substring(0, 160) + ') - nothing saved');
+  }
+}
+
+/**
+ * __51_ (F102-1, session 102, Opus): an extend restarts a welfare check whose time has already passed. A check at or after
+ * the visit's due time is skipped (correctly), but once the worker extended, that old check time was suddenly "before the
+ * new due time" and long past, so the checker alerted the main contact at once - "WELFARE CHECK NOT ANSWERED" caused by
+ * nothing but an extend (60-minute visit, 60-minute checks, overdue, extend). An extend is proof the worker is there: the
+ * next check becomes now + interval. A check still ahead is kept; a running missed-check escalation is NOT ended (R64
+ * item 10 - only "I'm OK", a PIN clear or departing end it). Worker __24_ restarts its own clock the same way. Never throws.
+ */
+function _welfareAfterExtend_(sheet, rowNum, rowData, ts, worker) {
+    try {
+        const d = _welfareDueInfo_(rowData[WELFARE_DUE_COL - 1]);
+        if (!d || !d.mins) return;
+        if (_welfareActive_(rowData)) return;
+        if (d.wMs > ts.getTime()) return;
+        if (_welfareDueSet_(sheet, rowNum, new Date(ts.getTime() + d.mins * 60000), d.mins, worker)) {
+            _audit_('welfare:restarted', worker, rowNum, rowData[10], '', 'EXTENDED', '', 'extend: the welfare check due ' + d.wIso +
+                    ' had already passed - next check in ' + d.mins + ' min (F102-1)');
+        }
+    } catch (e) { _audit_('welfare:extend-FAILED', worker, rowNum, '', '', '', '', String(e).substring(0, 200)); }
+}
+
+/**
+ * __51_ (R55 phase 2, Russell 27 Oct): worker __24_ also records the distance the app CALCULATED (_distCalcKm). When the
+ * figure in the report differs from it, the method column says the worker changed it. '' when there is nothing to say.
+ */
+function _distEditedNote_(calcRaw, dist) {
+    const c = parseFloat(calcRaw);
+    if (isNaN(c) || typeof dist !== 'number' || isNaN(dist)) return '';
+    if (Math.abs(c - dist) < 0.05) return '';
+    return ' - edited by the worker (app calculated ' + c.toFixed(2).replace(/\.?0+$/, '') + ' km)';
 }
