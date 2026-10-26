@@ -638,7 +638,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
  <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety On-The-Go!</span>
- <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__23_</span>
+ <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__24_</span>
  </h1>
  </div>
  <div class="flex items-center">
@@ -889,6 +889,11 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div id="welfareBadge" class="hidden text-teal-400 font-black text-xs tracking-widest border border-teal-700 inline-block px-3 py-1 rounded-lg mb-2">
  🔔 Welfare every <span id="welfareBadgeMins"></span>
  </div>
+ <!-- __24_ (R65, F101-3 b): early welfare check-in and the phone-alerts warning - shown by _welfareUi() -->
+ <div id="welfareCheckInWrap" class="hidden mx-auto max-w-xs mb-2">
+ <button id="btnWelfareCheckIn" type="button" onclick="confirmWelfare()" aria-label="Check in now - tell your contacts' system you are OK"
+ class="w-full py-2 bg-teal-700 active:bg-teal-600 text-white font-black text-sm rounded-xl tracking-widest border border-teal-400">✅ Check in now</button>
+ </div>
  <div id="overdueLabel" class="hidden text-red-500 font-black text-2xl animate-pulse my-2 tracking-[0.2em] border-2 border-red-500 inline-block px-6 py-2 rounded-xl ">
  OVERDUE
  </div>
@@ -1100,7 +1105,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
  <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
- <div id="appBuild" class="text-xs font-mono text-gray-400">worker__23_</div>
+ <div id="appBuild" class="text-xs font-mono text-gray-400">worker__24_</div>
  </div>
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">Backend Version</div>
@@ -1440,8 +1445,8 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 </div>
 
 <!-- WELFARE CHECK MODAL
- Shown at CONFIG.checkinInterval-minute intervals during active visits when
- CONFIG.checkinEnabled === true. Worker has 2 minutes to tap confirm before
+ __24_: shown when a welfare check falls due (the Settings tab switches them on; interval per visit; never on trips).
+ The worker has WELFARE_GRACE_MINS (default 2) to tap confirm before
  the safety alarm fires. z-[550] sits above all normal modals but below the
  shake/volume confirmation overlays (z-[500] is theirs — note shake is 500
  but this is 550 so it appears on top; shake is a 5-second self-dismissing
@@ -1613,8 +1618,30 @@ const RISK_WELFARE_MAP = {
 //  R04 Settings > Phone alerts: set up the worker's own ntfy topic (server action workerTopic), shown again from the
 //      sync after a reinstall, Android one-tap link, copy button for iPhone, "Send test" (action workerTopicTest,
 //      reply shown as the server wrote it). Needs backend __48_ or later. R03 phone side is NOT in this build
+// __24_ changes (session 102, Opus, from __23_). Needs backend __50_ or later (backend __51_ for WELFARE_MISSED and F102-1):
+//  R03 welfare checks are server-backed. On/off, the default interval and the answer time come from the Google Sheet
+//      Settings tab (sync meta.settings), then the last good copy of it, then config.json, then OFF (was: config.json,
+//      default ON). Never on trips. The visit start and every "I'm OK" carry "Welfare Interval" (the server arms its own
+//      clock from it). The phone's clock is worked out from the last "I'm OK" (F101-5) by a 10 s poll instead of a fixed
+//      setInterval, so a check that fell due while the phone was locked shows AT ONCE on opening and one whose answer time
+//      ran out is a miss (F95-3, F101-4). A check at or after the due time is skipped (as on the server). A miss posts
+//      WELFARE_MISSED (alarm lane) with "Welfare check not answered" (F95-4); an older backend gets OVERDUE ALARM
+//  F102-1 an extend restarts a welfare check whose time had passed (the server does the same in backend __51_)
+//  R65 "Check in now" on the visit screen while welfare checks are on (same as "I'm OK"; the next check counts from then)
+//  F101-3 (b) a warning on the start screen and the visit screen when welfare checks are on and phone alerts are not set up
+//  R66 (b) a running visit open in a browser tab shows "This is a browser copy - close it and open the Safety App from your
+//      home screen" instead of the install banner
+//  F101-8 storage name from a hash of the whole backend address (was the last 8 base64 characters - about 1 pair in 14
+//      clashed for two organisations on one web host); a one-off move keeps the running visit, registration and queued
+//      records. "Reset app data" and "Force App Update" touch only this organisation's data and service worker
+//  F102-6 two companies with a site of the same name ("Head Office") now get different site ids - before, every lookup
+//      found the first, so a visit, its alerts (company and ADDRESS), the info panel and the upload used the wrong company's
+//      site. Ids keep only letters, digits, _ and - (an apostrophe in a name broke the info button). Unique plain names keep
+//      their id
+//  R63 the "Update Site Procedures" upload names its site (siteName / companyName). R55 the travel report data also
+//      records the distance the app calculated (_distCalcKm). The diagnostics report shows the welfare settings in force
 // =============================================================================
-const WORKER_BUILD = 'worker__23_';
+const WORKER_BUILD = 'worker__24_';
 
 const CONFIG = {
  url: '',
@@ -1639,10 +1666,10 @@ const CONFIG = {
 // =============================================================================
 // STORAGE NAMESPACE — prevents cross-PWA contamination when two deployments
 // share the same browser origin (e.g. both served from the same localhost or
-// file:// path during testing). In production each org has its own subdomain
-// so this is a testing-environment safeguard only.
+// file:// path during testing, or two organisations installed from one web host -
+// nzchurchsafety.com/SafetyBuddy and nzchurchsafety.com/WorkplaceSupport share one origin).
 //
-// _storageNs is set to a stable 8-char slug derived from the backend URL in
+// __24_ (F101-8): _storageNs is 'u' + a hash of the WHOLE backend URL, set in
 // applyConfig() (the first place CONFIG.url is known). It defaults to
 // 'default' until then so that module-scope code that runs before config is
 // loaded always has a valid (if generic) value.
@@ -1652,6 +1679,134 @@ const CONFIG = {
 // =============================================================================
 let _storageNs = 'default';
 function _sk(key) { return _storageNs + '_' + key; }
+
+// __24_ (F101-8, SAFETY): the storage name now comes from a hash of the WHOLE backend address. The old name was the
+// last 8 characters of base64(backend URL); every Apps Script URL ends in "/exec", so it rested on one or two random
+// characters and about 1 pair of organisations in 14 got the same name. Two organisations installed from the same web
+// host (one address before the first "/", e.g. nzchurchsafety.com/SafetyBuddy and nzchurchsafety.com/WorkplaceSupport)
+// then shared one state: worker identity, contacts, PINs and the running visit. (Queued outbox records were never sent
+// to the wrong backend - each carries its own targetUrl.)
+// One-off move: if the new name has never been used on this phone, everything stored under the old name is copied to the
+// new one (the old copy is left in place, marked as moved), so a running visit, the registration and queued alarms
+// survive the update. If another organisation on this phone already moved that old name to ITS new name (the clash case),
+// only the device id is copied and this app starts fresh (set up again). Queued outbox records are moved by their
+// targetUrl, so only this organisation's records come across.
+function _nsHash(str) {
+  let h1 = 0x811c9dc5, h2 = 0x9e3779b9;
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
+    h2 = Math.imul(h2 ^ c, 0x5bd1e995) >>> 0; h2 = (h2 ^ (h2 >>> 15)) >>> 0;
+  }
+  return h1.toString(36).padStart(7, '0') + h2.toString(36).padStart(7, '0');
+}
+function _nsFor(url) { const u = String(url || '').trim(); return u ? 'u' + _nsHash(u) : 'default'; }
+function _nsLegacy(url) {
+  try { const slug = btoa(String(url || '')).replace(/[^a-zA-Z0-9]/g, '').slice(-8); return slug || 'default'; } catch (e) { return 'default'; }
+}
+let _NS_MIGRATION = null;   // { from, state, copied, reason } - read by _outboxMigrateNs() and the diagnostics
+
+/** Copy the old-name data to the new name once (see above). Never throws; never deletes anything. */
+function _nsMigrate(url) {
+  const res = { from: '', state: false, copied: 0, reason: '' };
+  try {
+    const oldNs = _nsLegacy(url);
+    if (!url || oldNs === 'default' || oldNs === _storageNs) { res.reason = 'nothing to move'; return res; }
+    const ready = _storageNs + '_otg_ns_ready';
+    if (localStorage.getItem(ready) !== null) { res.reason = 'already done'; return res; }
+    const pre = oldNs + '_', marker = oldNs + '_otg_ns_moved_to';
+    const movedTo = localStorage.getItem(marker);
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf(pre) === 0 && k !== marker) keys.push(k); }
+    if (movedTo && movedTo !== _storageNs) {
+      // The old name belonged to another organisation on this phone, which has already taken it. Same phone: keep the id.
+      const dev = localStorage.getItem(pre + 'otg_device_id');
+      if (dev !== null && localStorage.getItem(_storageNs + '_otg_device_id') === null) localStorage.setItem(_storageNs + '_otg_device_id', dev);
+      res.reason = 'old name already moved to another organisation - starting fresh (device id kept)';
+    } else if (localStorage.getItem(pre + 'loneWorkerState') !== null) {
+      keys.forEach(k => { localStorage.setItem(_storageNs + '_' + k.slice(pre.length), localStorage.getItem(k)); });
+      localStorage.setItem(marker, _storageNs);
+      res.from = oldNs; res.state = true; res.copied = keys.length; res.reason = 'moved';
+    } else {
+      res.reason = 'no data under the old name';
+    }
+    localStorage.setItem(ready, '1');
+  } catch (e) { res.reason = 'error: ' + (e && e.message || e); }
+  return res;
+}
+
+/**
+ * Move this organisation's unsent outbox records from the old-name database to the new one (by targetUrl; a record with
+ * no targetUrl only when the state itself was moved). A record is removed from the old database only once it is safely
+ * in the new one (or already there). Fire-and-forget at start-up; never throws.
+ */
+async function _outboxMigrateNs() {
+  const mig = _NS_MIGRATION;
+  if (!mig || !mig.from || typeof indexedDB === 'undefined') return;
+  const oldName = 'otg-outbox-' + mig.from;
+  let oldDb = null, moved = 0, failed = 0;
+  try {
+    oldDb = await new Promise(resolve => {
+      let created = false;
+      const req = indexedDB.open(oldName);
+      req.onupgradeneeded = () => { created = true; };
+      req.onsuccess = e => {
+        const db = e.target.result;
+        if (created || !db.objectStoreNames.contains('events')) { db.close(); if (created) { try { indexedDB.deleteDatabase(oldName); } catch (_) {} } resolve(null); }
+        else resolve(db);
+      };
+      req.onerror = () => resolve(null);
+    });
+    if (!oldDb) return;
+    const recs = await new Promise(resolve => {
+      const rq = oldDb.transaction('events', 'readonly').objectStore('events').getAll();
+      rq.onsuccess = e => resolve(e.target.result || []); rq.onerror = () => resolve([]);
+    });
+    const mine = recs.filter(r => r && r.status !== 'sent' && (r.targetUrl ? r.targetUrl === CONFIG.url : mig.state === true));
+    if (!mine.length) return;
+    const db = await _outboxDB();
+    const done = [];
+    for (const r of mine) {
+      const copy = Object.assign({}, r); delete copy.id;
+      const ok = await new Promise(resolve => {
+        const tx = db.transaction('events', 'readwrite');
+        const rq = tx.objectStore('events').add(copy);
+        rq.onsuccess = () => resolve(true);
+        rq.onerror = e => { const dup = !!(e && e.target && e.target.error && e.target.error.name === 'ConstraintError');
+          if (e && e.preventDefault) e.preventDefault(); resolve(dup); };   // already there (same idempotency key) = moved
+      });
+      if (ok) done.push(r.id); else failed++;
+    }
+    if (done.length) {
+      await new Promise(resolve => {
+        const tx = oldDb.transaction('events', 'readwrite'); const st = tx.objectStore('events');
+        done.forEach(id => st.delete(id));
+        tx.oncomplete = () => resolve(); tx.onerror = () => resolve(); tx.onabort = () => resolve();
+      });
+    }
+    moved = done.length;
+  } catch (e) {
+    try { _diag('[F101-8] outbox move error: ' + (e && e.message || e), true); } catch (_) {}
+  } finally {
+    try { if (oldDb) oldDb.close(); } catch (_) {}
+  }
+  try { _diag('[F101-8] outbox moved from the old storage name: ' + moved + ' record(s)' + (failed ? ', ' + failed + ' left in place (could not copy)' : ''), true); } catch (_) {}
+  if (moved && typeof outboxProcess === 'function') outboxProcess();
+}
+
+/** "Reset app data": remove only THIS organisation's data (another organisation installed from the same host keeps its own). */
+function _clearOwnStorage() {
+  const own = [_storageNs + '_'];
+  try {
+    const legacy = _nsLegacy(CONFIG.url);
+    if (legacy !== 'default' && localStorage.getItem(legacy + '_otg_ns_moved_to') === _storageNs) own.push(legacy + '_');   // our moved copy
+  } catch (_) {}
+  const ks = [];
+  for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && own.some(p => k.indexOf(p) === 0)) ks.push(k); }
+  ks.forEach(k => localStorage.removeItem(k));
+  try { localStorage.setItem(_storageNs + '_otg_ns_ready', '1'); } catch (_) {}   // never copy old data back after a reset
+  return ks.length;
+}
 
 // =============================================================================
 // CONFIG BOOT — fetch ./config.json, populate CONFIG, apply theme, then init
@@ -1683,12 +1838,8 @@ function applyTheme(theme) {
 function applyConfig(cfg) {
  // Establish storage namespace first — must happen before any localStorage
  // access so that config-version checks below use the correct namespaced key.
- _storageNs = (function() {
-   try {
-     const slug = btoa(cfg.backendUrl || '').replace(/[^a-zA-Z0-9]/g, '').slice(-8);
-     return slug || 'default';
-   } catch(e) { return 'default'; }
- })();
+ _storageNs = _nsFor(cfg.backendUrl);   // __24_ (F101-8): was the last 8 base64 characters of the URL
+ _NS_MIGRATION = _nsMigrate(cfg.backendUrl || '');   // one-off copy from the old name (see _nsMigrate)
 
  // Core
  CONFIG.url = cfg.backendUrl || '';
@@ -1703,7 +1854,8 @@ function applyConfig(cfg) {
  if (cfg.features) {
  CONFIG.mileageEnabled = !!cfg.features.mileageEnabled;
  CONFIG.vehEnabled = !!cfg.features.vehicleEnabled;
- CONFIG.checkinEnabled = cfg.features.checkinEnabled !== false; // default true
+ CONFIG.checkinEnabled = cfg.features.checkinEnabled !== false; // default true (no longer read for welfare - see _welfareSettings)
+ CONFIG.checkinConfigured = typeof cfg.features.checkinEnabled === 'boolean' ? cfg.features.checkinEnabled : null;   // __24_ (R03)
  CONFIG.reqTravelReport = !!cfg.features.requireTravelReport;
  }
 
@@ -2060,6 +2212,33 @@ document.addEventListener('touchstart', initAudio, { once: true });
  }, { passive: true });
 });
 // ============================================================================
+// SITE IDS - __24_ (F102-6, session 102)
+// The phone gave each synced site the id 'site_' + its name without spaces. Two companies with a site of the same name
+// ("Head Office") got ONE id, and every lookup found the first: a visit started on Company B's Head Office ran as
+// Company A's - the wrong company and the WRONG ADDRESS in the alerts to contacts - and its info panel and safety
+// upload were Company A's. Also an apostrophe in a site name ("St John's Hall") broke the info button's onclick.
+// Now: the id keeps letters (incl. macrons), digits, "_" and "-" only; a name shared by more than one company gets the
+// company added; any id still shared by two different sites gets _2, _3 ... A site with a plain unique name keeps
+// exactly the id it had (so the "Recent" pin survives).
+// ============================================================================
+function _siteIdsFor(sites) {
+  const clean = v => String(v == null ? '' : v).replace(/[^\p{L}\p{N}_-]/gu, '');
+  const norm = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().toLowerCase();
+  const list = Array.isArray(sites) ? sites : [];
+  const companiesByName = {};
+  list.forEach(s => { const b = 'site_' + clean(s && s.siteName); (companiesByName[b] = companiesByName[b] || new Set()).add(norm(s && s.company)); });
+  const owner = {};   // id -> the site (company|name) that holds it
+  return list.map(s => {
+    const b = 'site_' + clean(s && s.siteName);
+    let id = companiesByName[b].size > 1 ? b + '__' + (clean(s && s.company) || 'nocompany') : b;
+    const key = norm(s && s.company) + '|' + norm(s && s.siteName);
+    if (owner[id] !== undefined && owner[id] !== key) { let n = 2; while (owner[id + '_' + n] !== undefined && owner[id + '_' + n] !== key) n++; id = id + '_' + n; }
+    owner[id] = key;
+    return id;
+  });
+}
+
+// ============================================================================
 // STATE PERSISTENCE
 // ============================================================================
 function loadState() {
@@ -2204,7 +2383,7 @@ function announce(text) {
 // ============================================================================
 // UPDATED: MISSION-CRITICAL SAFETY LOGGING
 // ============================================================================
-async function logSafety(type, message) {
+async function logSafety(type, message, extra) {   // __24_: extra = more fields (e.g. Welfare Interval)
  console.log(`[${type}] ${message}`);
  
  // Construct the precise payload required by the Google Script backend
@@ -2216,6 +2395,7 @@ async function logSafety(type, message) {
  'Battery Level': await getBatteryPercent(),
  'App Version': CONFIG.buildVersion
  };
+ if (extra && typeof extra === 'object') Object.assign(data, extra);
 
  // Pass this through buildPayload to add worker credentials and action keys
  const fullPayload = buildPayload(data);
@@ -2314,6 +2494,8 @@ function submitReport() {
    d.jsonPayload['_distLookup']       = (calculatedDist && calculatedDist.trace) || '';   // Y4 (build __16_)
    d.jsonPayload['_distSpeedIntervals'] = _speedStats.credited + '/' + _speedStats.still + '/' + _speedStats.capped; // credited/still/capped
    d.jsonPayload['_distStartFix']     = ((typeof state !== 'undefined' && state && state.activeVisit && state.activeVisit.startFixNote) || 'unknown');   // __22_ (R57): warm / fresh / late / none
+   // __24_ (R55): the km the app calculated, so the Travel Report can say when the worker changed the figure (backend __51_)
+   d.jsonPayload['_distCalcKm']       = (calculatedDist && calculatedDist.type !== 'none' && calculatedDist.km !== '' && calculatedDist.km != null) ? String(calculatedDist.km) : '';
  }
 
  // 4. BUILD PAYLOAD
@@ -2342,6 +2524,11 @@ function submitReport() {
  if (currentActiveTemplate === "Update Site Procedures") {
  backendAction = 'uploadEmergencyProcedures';
  alarmStatus = "PROCEDURES_UPDATED";
+ // __24_ (R63): name the site the panel was opened for (else the running visit's) - backend __51_ files it there
+ if (formExecutionContext && formExecutionContext.siteName) {
+ fd.siteName = String(formExecutionContext.siteName);
+ fd.companyName = String(formExecutionContext.companyName || '');
+ }
  } else if (currentActiveTemplate === "Note to Self") {
  backendAction = 'logNote';
  alarmStatus = "NOTE_LOGGED";
@@ -3116,129 +3303,242 @@ function captureGPS(btn) {
 // CHECK-IN TIMER
 // ============================================================================
 // ============================================================================
-// WELFARE CHECK ENGINE
-// Only active when CONFIG.checkinEnabled === true (set by Factory at build time).
-// Fires a full-screen "Are You OK?" modal every CONFIG.checkinInterval minutes
-// during an active visit. Worker has 2 minutes to confirm. If the countdown
-// expires without a tap, triggerGraceExpiryAlarm() fires immediately.
-//
-// Suppressed while: alarm already active, no active visit, modal already showing.
-// Cleared on: visit end, preDepart, app unload.
+// WELFARE CHECK ENGINE - __24_ (session 102, R03 phone side; F95-3, F95-4, F101-3/4/5, R65, F102-1)
+// ----------------------------------------------------------------------------
+// On or off: the Google Sheet Settings tab (sync meta.settings.welfareChecks), else the last good copy of it, else
+// config.json features.checkinEnabled, else OFF. Answer time: WELFARE_GRACE_MINS (default 2). Never on trips (D-TRIP).
+// The server (backend __50_+) runs the same clock: the visit start carries "Welfare Interval" and arms it, every
+// "I'm OK" (WELFARE_OK, also carrying the interval) moves the next check to that moment + interval (F101-5), a PIN
+// clear after an alarm does the same, and an extend restarts a check whose time had already passed (F102-1).
+// The phone no longer uses a fixed setInterval cadence (it froze while locked and restarted from zero - F95-3): a
+// 10 s poll works the next check out from the last "I'm OK" (or the visit start), so after a lock, reload or
+// resume a check that is due shows AT ONCE (F101-4), and one whose answer time ran out is a miss.
+// A check at or after the visit's due time is skipped (the server skips it too). No prompt during an alarm.
+// A miss posts WELFARE_MISSED (backend __51_+; an older backend gets OVERDUE ALARM, which __50_ treats the same).
 // ============================================================================
+const WELFARE_POLL_MS = 10000;
+let _welfarePromptFor = 0;   // deadline of the prompt now on screen (0 = none) - vibrate / speak once per prompt
+
+/** The welfare settings in force: server (Settings tab) first, then the last good server copy, then config.json, then off. */
+function _welfareSettings() {
+  const num = (v, lo, hi) => { const n = Number(v); return (isFinite(n) && n > 0) ? Math.min(hi, Math.max(lo, Math.round(n))) : null; };
+  const live = state && state.meta && state.meta.settings;
+  const src = (live && typeof live.welfareChecks === 'boolean') ? live
+            : (state && state.welfareSettingsLast && typeof state.welfareSettingsLast.welfareChecks === 'boolean') ? state.welfareSettingsLast : null;
+  if (src) return { on: src.welfareChecks === true, defMins: num(src.welfareDefaultMins, 5, 480), grace: num(src.welfareGraceMins, 1, 10) || 2,
+                    source: src === live ? 'server' : 'server (saved)' };
+  if (typeof CONFIG !== 'undefined' && CONFIG.checkinConfigured === true) return { on: true, defMins: null, grace: 2, source: 'config.json' };
+  return { on: false, defMins: null, grace: 2, source: (typeof CONFIG !== 'undefined' && CONFIG.checkinConfigured === false) ? 'config.json' : 'default (off)' };
+}
+function _welfareEnabled() { return _welfareSettings().on; }
+function _welfareDefaultMins() { return _welfareSettings().defMins || (typeof CONFIG !== 'undefined' && CONFIG.checkinInterval) || 60; }
+function _welfareGraceMs() { return _welfareSettings().grace * 60000; }
+
+/** Minutes between checks for this visit (5-480, the server's range). */
+function _welfareMinsFor(v) {
+  const n = Number(v && v.checkinIntervalMins);
+  return (isFinite(n) && n > 0) ? Math.min(480, Math.max(5, Math.round(n))) : Math.min(480, Math.max(5, _welfareDefaultMins()));
+}
+
+/** True when this visit runs welfare checks now: decided at the visit start (welfareOn), never a trip, still switched on. */
+function _welfareForVisit(v) {
+  if (!v || v.welfareOn !== true) return false;
+  if (v.isTravel || v.locationId === 'travel') return false;
+  return _welfareEnabled();
+}
+
+/** Time of the next check: last "I'm OK" (or PIN clear / extend restart / visit start) + interval. */
+function _welfareNextAt(v) {
+  return (Number(v.lastWelfareCheck) || Number(v.startTime) || Date.now()) + _welfareMinsFor(v) * 60000;
+}
+
+function _welfareInAlarm(v) {
+  return !!((v && (v.criticalSent || v.isPanic || v.isDuress)) || isPanicActive || isDuressActive);
+}
 
 /**
- * Start the welfare check schedule for an active visit.
- * No-op if CONFIG.checkinEnabled is false — the timer simply never starts,
- * so deployments without the feature are completely unaffected.
+ * Start (or restart) the welfare schedule for the running visit. Safe to call repeatedly (visit start, reload,
+ * enterLockedScreen). Runs a check straight away, so a check that fell due while the phone was locked shows at once.
  */
 function startWelfareChecks() {
- if (!CONFIG.checkinEnabled) return;
- stopWelfareChecks(); // clear any stale interval first
-
- // Priority: per-visit override set at visit start → CONFIG global fallback.
- // The per-visit value is resolved from (in order): worker's manual selector,
- // site's persistent override, site risk level, then CONFIG.checkinInterval.
- // It is already baked into state.activeVisit.checkinIntervalMins by startVisit().
- const intervalMins = (state && state.activeVisit && state.activeVisit.checkinIntervalMins)
- || CONFIG.checkinInterval
- || 60;
- const intervalMs = intervalMins * 60 * 1000;
- welfareIntervalId = setInterval(() => {
- if (!state || !state.activeVisit) return;
- // Don't interrupt if the alarm is already active — the worker has
- // bigger problems than a welfare check.
- if (state.activeVisit.criticalSent || state.activeVisit.isPanic) return;
- // Don't stack if the modal is already visible (shouldn't happen, but guard it).
- const modal = document.getElementById('welfareCheckModal');
- if (modal && !modal.classList.contains('hidden')) return;
-
- _showWelfareModal();
- }, intervalMs);
+  stopWelfareChecks();
+  const v = state && state.activeVisit;
+  if (_welfareForVisit(v)) {
+    welfareIntervalId = setInterval(_welfareTick, WELFARE_POLL_MS);
+    _welfareTick();
+  }
+  _welfareUi();
 }
 
-/** Stop the welfare check schedule and dismiss any in-progress modal. */
+/** Stop the welfare schedule and dismiss any prompt on screen (the visit's saved deadline is left for a reload to judge). */
 function stopWelfareChecks() {
- if (welfareIntervalId) { clearInterval(welfareIntervalId); welfareIntervalId = null; }
- _clearWelfareCountdown();
- const modal = document.getElementById('welfareCheckModal');
- if (modal) modal.classList.add('hidden');
+  if (welfareIntervalId) { clearInterval(welfareIntervalId); welfareIntervalId = null; }
+  _clearWelfareCountdown();
+  _welfarePromptFor = 0;
+  const modal = document.getElementById('welfareCheckModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+/** The welfare decision, every 10 s and on every resume. Never throws (a welfare fault must not stop the visit timer). */
+function _welfareTick() {
+  try {
+    const v = state && state.activeVisit;
+    if (!v) return;
+    if (!_welfareForVisit(v)) {
+      if (v.welfareDeadline) { v.welfareDeadline = null; saveState(); }
+      _welfareHidePrompt();
+      return;
+    }
+    if (_welfareInAlarm(v)) { _welfareHidePrompt(); return; }   // the alarm owns the screen; a PIN clear restarts the clock
+    const now = Date.now();
+    if (v.welfareDeadline) {
+      if (now >= v.welfareDeadline) { _welfareMissed(); return; }
+      _showWelfareModal(v.welfareDeadline);
+      return;
+    }
+    const next = _welfareNextAt(v);
+    if (now < next) return;
+    if (next >= (Number(v.anticipatedDepartureTime) || 0)) return;   // at or after the due time: the server skips it too
+    v.welfareDeadline = next + _welfareGraceMs();   // the server's miss time: the check time + the answer time (not "now")
+    v.welfareDueAt = next;
+    saveState();
+    try { _diag('[R03] welfare check due ' + _fmtClock12(new Date(next)) + ', answer by ' + _fmtClock12(new Date(v.welfareDeadline)), true); } catch (_) {}
+    if (now >= v.welfareDeadline) { _welfareMissed(); return; }   // F95-3: the whole answer time passed while locked
+    _showWelfareModal(v.welfareDeadline);
+  } catch (e) {
+    try { _diag('[R03] welfare tick error: ' + (e && e.message || e), true); } catch (_) {}
+  }
+}
+
+/** Show the "Are you OK?" prompt counting down to the deadline (re-entrant: vibrates and speaks once per deadline). */
+function _showWelfareModal(deadline) {
+  const modal = document.getElementById('welfareCheckModal');
+  const countEl = document.getElementById('welfareCountdown');
+  if (!modal || !deadline) return;
+  const paint = () => {
+    const rem = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+    if (countEl) countEl.textContent = `${Math.floor(rem / 60)}:${String(rem % 60).padStart(2, '0')}`;
+    return rem;
+  };
+  modal.classList.remove('hidden');
+  paint();
+  if (_welfarePromptFor !== deadline) {
+    _welfarePromptFor = deadline;
+    if (navigator.vibrate) navigator.vibrate([400, 150, 400, 150, 400]);
+    announce('Welfare check. Are you OK? Please tap the confirm button.');
+  }
+  if (welfareCountdownId) return;   // already counting
+  let said30 = false;
+  welfareCountdownId = setInterval(() => {
+    const rem = paint();
+    if (!said30 && rem <= 30 && rem > 25) { said30 = true; announce('Welfare check. 30 seconds remaining.'); }
+    if (rem <= 0) { _clearWelfareCountdown(); _welfareTick(); }
+  }, 1000);
+}
+
+function _welfareHidePrompt() {
+  _clearWelfareCountdown();
+  _welfarePromptFor = 0;
+  const modal = document.getElementById('welfareCheckModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+/** No answer by the deadline: the alarm, with welfare wording and status (contacts are alerted by the server too). */
+function _welfareMissed() {
+  const v = state && state.activeVisit;
+  if (!v) return;
+  v.welfareDeadline = null;
+  v.welfareMissedAt = Date.now();
+  saveState();
+  _welfareHidePrompt();
+  _welfareUi();
+  if (_welfareInAlarm(v)) return;
+  try { _diag('[R03] welfare check not answered - alarm', true); } catch (_) {}
+  triggerGraceExpiryAlarm('welfare');
+}
+
+/** Restart the phone's welfare clock from this moment (an "I'm OK", a PIN clear after an alarm, an extend restart). */
+function _welfareResetClock(at) {
+  const v = state && state.activeVisit;
+  if (!v || v.welfareOn !== true) return;
+  v.lastWelfareCheck = at || Date.now();
+  v.welfareDeadline = null;
+  saveState();
+  _welfareHidePrompt();
 }
 
 /**
- * Display the welfare check modal and start the 2-minute countdown.
- * If the countdown reaches zero the alarm fires.
+ * F102-1: an extend restarts a check whose time has already passed (it was skipped because it fell at or after the
+ * old due time, or is on screen now). The server does the same when it receives the EXTENDED post (backend __51_).
  */
-function _showWelfareModal() {
- const modal = document.getElementById('welfareCheckModal');
- const countEl = document.getElementById('welfareCountdown');
- if (!modal) return;
-
- // Persist the deadline so the iOS suspension catch-up can detect a missed
- // check even if the countdown never ran while the app was backgrounded.
- const deadline = Date.now() + 120_000; // 2 minutes
- if (state && state.activeVisit) {
- state.activeVisit.welfareDeadline = deadline;
- saveState();
- }
-
- modal.classList.remove('hidden');
- if (navigator.vibrate) navigator.vibrate([400, 150, 400, 150, 400]);
- announce('Welfare check. Are you OK? Please tap the confirm button.');
-
- // Countdown — ticks every second, hides modal and fires alarm at zero.
- let remaining = 120;
- if (countEl) countEl.textContent = '2:00';
-
- _clearWelfareCountdown();
- welfareCountdownId = setInterval(() => {
- remaining--;
- if (countEl) {
- const m = Math.floor(remaining / 60);
- const s = remaining % 60;
- countEl.textContent = `${m}:${s.toString().padStart(2, '0')}`;
- }
- // Announce at 30s remaining so a nearby person can help
- if (remaining === 30) announce('Welfare check. 30 seconds remaining.');
-
- if (remaining <= 0) {
- _clearWelfareCountdown();
- modal.classList.add('hidden');
- if (state && state.activeVisit) {
- state.activeVisit.welfareDeadline = null;
- saveState();
- }
- // Missed welfare check — escalate to alarm unless one is already active.
- // NOTE: deliberately does NOT check isSafeConfirmed so the alarm can
- // re-fire after a worker has cleared a prior alarm via PIN but remains
- // in an active overdue visit.
- if (state?.activeVisit && !state.activeVisit.criticalSent) {
- console.warn('Welfare check timed out — triggering alarm');
- triggerGraceExpiryAlarm();
- }
- }
- }, 1000);
+function _welfareAfterExtend(at) {
+  const v = state && state.activeVisit;
+  if (!_welfareForVisit(v) || _welfareInAlarm(v)) return;
+  const now = at || Date.now();
+  if (v.welfareDeadline || _welfareNextAt(v) <= now) _welfareResetClock(now);
+  _welfareUi();
 }
 
-/** Worker (or bystander) tapped "I'm OK". Log it and reset. */
+/** Backend build number from the sync (meta.backendBuild 'backend__51_' -> 51); 0 when unknown (older backend). */
+function _backendBuildNo() {
+  const m = /backend__(\d+)_/.exec(String((state && state.meta && state.meta.backendBuild) || ''));
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+/**
+ * Worker (or a bystander) tapped "I'm OK" on the prompt, or "Check in now" (R65) on the visit screen. The next check
+ * counts from now (the server does the same), so an early check-in brings the following check earlier too.
+ */
 function confirmWelfare() {
- _clearWelfareCountdown();
- const modal = document.getElementById('welfareCheckModal');
- if (modal) modal.classList.add('hidden');
-
- if (state && state.activeVisit) {
- state.activeVisit.lastWelfareCheck = Date.now();
- state.activeVisit.welfareDeadline = null;
- saveState();
- }
-
- logSafety('WELFARE_OK', 'Worker confirmed welfare check-in.');
- showToast('✅ Welfare check-in confirmed');
- if (navigator.vibrate) navigator.vibrate(50);
+  const v = state && state.activeVisit;
+  if (!_welfareForVisit(v) || _welfareInAlarm(v)) { _welfareHidePrompt(); _welfareUi(); return; }
+  const now = Date.now();
+  const mins = _welfareMinsFor(v);
+  _welfareResetClock(now);
+  logSafety('WELFARE_OK', 'Worker confirmed welfare check-in.', { 'Welfare Interval': String(mins) });
+  showToast('✅ Checked in - next check at ' + _fmtClock12(new Date(now + mins * 60000)));
+  if (navigator.vibrate) navigator.vibrate(50);
+  _welfareUi();
 }
 
-/** Cancel the in-modal countdown interval. Safe to call even if not running. */
+/** Cancel the prompt's countdown interval. Safe to call even if not running. */
 function _clearWelfareCountdown() {
- if (welfareCountdownId) { clearInterval(welfareCountdownId); welfareCountdownId = null; }
+  if (welfareCountdownId) { clearInterval(welfareCountdownId); welfareCountdownId = null; }
+}
+
+/** F101-3 (b): the warning text when welfare checks are on but this worker has not set up phone alerts. */
+const WELFARE_NO_ALERTS_TEXT = 'Welfare checks are on. Keep the app open or set up phone alerts, or your contacts will be alerted if you miss a check.';
+
+/** Make (once) and show/hide a warning line inside a parent element. textContent only. */
+function _welfareWarnLine(parent, id, show) {
+  if (!parent) return;
+  let el = document.getElementById(id);
+  if (!el && show && typeof document.createElement === 'function') {
+    el = document.createElement('div');
+    el.id = id;
+    el.setAttribute('role', 'note');
+    el.className = 'mt-2 text-xs font-bold text-amber-300 bg-amber-900/40 border border-amber-600/60 rounded-lg px-2 py-1.5 text-left';
+    el.textContent = WELFARE_NO_ALERTS_TEXT;
+    parent.appendChild(el);
+  }
+  if (el) el.classList.toggle('hidden', !show);
+}
+
+/** Visit screen: welfare badge, "Check in now" button (R65) and the phone-alerts warning (F101-3 b). */
+function _welfareUi() {
+  try {
+    const v = state && state.activeVisit;
+    const on = _welfareForVisit(v);
+    const badge = document.getElementById('welfareBadge');
+    const minsEl = document.getElementById('welfareBadgeMins');
+    if (badge) {
+      if (on && minsEl) { const m = _welfareMinsFor(v); minsEl.textContent = m >= 60 ? `${+(m / 60).toFixed(2)}hr` : `${m}m`; }
+      badge.classList.toggle('hidden', !on);
+    }
+    const wrap = document.getElementById('welfareCheckInWrap');
+    if (wrap) wrap.classList.toggle('hidden', !(on && !_welfareInAlarm(v)));
+    _welfareWarnLine(wrap, 'welfareLockedWarn', !!(on && !_phoneAlertTopic()));
+  } catch (e) { try { _diag('[R03] welfare UI error: ' + (e && e.message || e), true); } catch (_) {} }
 }
 
 // ============================================================================
@@ -4266,18 +4566,8 @@ function enterLockedScreen() {
  // visibilitychange handler re-acquires it when the page returns to the foreground.
  if (typeof requestWakeLock === 'function') requestWakeLock();
 
- startWelfareChecks(); // Only fires if CONFIG.checkinEnabled — no-op otherwise
- 
- // Update welfare badge on locked screen
- if (CONFIG.checkinEnabled && state && state.activeVisit) {
- const mins = state.activeVisit.checkinIntervalMins || CONFIG.checkinInterval || 60;
- const badge = document.getElementById('welfareBadge');
- const minsEl = document.getElementById('welfareBadgeMins');
- if (badge && minsEl) {
- minsEl.textContent = mins >= 60 ? `${mins / 60}hr` : `${mins}m`;
- badge.classList.remove('hidden');
- }
- }
+ startWelfareChecks(); // __24_ (R03): runs a check at once if one fell due while the app was closed; draws the welfare UI
+ if (typeof _browserCopyCheck === 'function') _browserCopyCheck();   // __24_ (R66 b)
  
  _lockOrientation(); // Prevent landscape rotation for the duration of the visit
 }
@@ -4384,12 +4674,15 @@ function iamSafe() {
         'Alarm Status': 'USER_SAFE_CONFIRMED',
         'Notes': 'Worker confirmed safe via PIN entry.' + (_afterDue ? ` Due time moved to now + ${PIN_CLEAR_EXTRA_MINS} min.` : '')
       }));
+      // __24_ (R03): the server restarts its welfare clock on this PIN clear (now + interval) - so does the phone.
+      if (typeof _welfareResetClock === 'function') _welfareResetClock(Date.now());
     } else if (_afterDue) {
       // No alarm had gone out (e.g. PIN asked for at the 2-minute warning) - still tell the server the new due time.
       processUploadQueue(buildPayload({
         'Alarm Status': 'EXTENDED',
         'Notes': `Safety PIN entered after the due time - ${PIN_CLEAR_EXTRA_MINS} more minutes.`
       }));
+      if (typeof _welfareAfterExtend === 'function') _welfareAfterExtend(Date.now());   // __24_ (F102-1): as the server does for EXTENDED
     }
     const _msg = _afterDue
       ? `Safety confirmed. You have ${PIN_CLEAR_EXTRA_MINS} more minutes - extend or end your visit.`
@@ -5054,6 +5347,39 @@ function checkIosInstall() {
  }
 }
 
+
+// __24_ (R66 b, F101-7): a browser-tab copy of the app while a visit is running - for example opened by tapping a
+// reminder on a phone that cannot route links to the installed app. It shares the installed app's data but runs its own
+// timers, so the worker is told plainly to close it, instead of being offered "Install Safety App". Never shown in the
+// installed app; with no visit running nothing changes (the install banner stays for first-time installs).
+const BROWSER_COPY_TEXT = '⚠️ This is a browser copy - close it and open the Safety App from your home screen';
+function _isInstalledApp() {
+  try {
+    return !!((window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true ||
+              String(document.referrer || '').indexOf('android-app://') > -1);
+  } catch (_) { return false; }
+}
+function _browserCopyCheck() {
+  try {
+    const show = !!(state && state.activeVisit) && !_isInstalledApp();
+    let b = document.getElementById('browserCopyBanner');
+    if (show && !b && document.body) {
+      b = document.createElement('div');
+      b.id = 'browserCopyBanner';
+      b.setAttribute('role', 'alert');
+      b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:9999;background:#b45309;color:#fff;font-weight:800;font-size:13px;text-align:center;padding:12px;';
+      b.textContent = BROWSER_COPY_TEXT;
+      document.body.appendChild(b);
+    }
+    if (b) b.style.display = show ? 'block' : 'none';
+    if (show) {
+      ['installBanner', 'iosInstallModal'].forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
+      if (!_browserCopyCheck._logged) { _browserCopyCheck._logged = true; try { _diag('[R66] running visit open in a browser tab - browser-copy banner shown', true); } catch (_) {} }
+    }
+    return show;
+  } catch (_) { return false; }
+}
+
 // ============================================================================
 // PWA SETUP
 // ============================================================================
@@ -5120,6 +5446,8 @@ window.addEventListener('beforeinstallprompt', e => {
  deferredPrompt = e;
  
  // 3. Show your custom banner if the user hasn't dismissed it previously
+ // __24_ (R66 b): never while a running visit is open in a browser tab (the browser-copy banner says what to do)
+ if (typeof _browserCopyCheck === 'function' && _browserCopyCheck()) return;
  if (!localStorage.getItem(_sk('otg_install_dismissed'))) {
  const banner = document.getElementById('installBanner');
  if (banner) banner.classList.remove('hidden');
@@ -5475,11 +5803,11 @@ function updateWelfareSelector(locationId) {
    }
  }
 
- if (!CONFIG.checkinEnabled) return;
-
  const row = document.getElementById('welfareIntervalRow');
+ if (!_welfareEnabled()) { if (row) row.classList.add('hidden'); return; }   // __24_ (R03): the Settings tab decides
  if (!row) return;
  row.classList.remove('hidden');
+ _welfareWarnLine(row, 'welfareRowWarn', !_phoneAlertTopic());   // __24_ (F101-3 b)
 
  const loc = locationId ? state.locations.find(l => l.id === locationId) : null;
 
@@ -5498,7 +5826,7 @@ function updateWelfareSelector(locationId) {
  }
  hint = null; // already set via className above
  } else {
- defaultMins = CONFIG.checkinInterval || 60;
+ defaultMins = _welfareDefaultMins();   // __24_: Settings tab WELFARE_DEFAULT_MINS first
  hint = 'Global default';
  }
 
@@ -5868,7 +6196,7 @@ async function startVisit(isSkipCheck = false) {
  if (state.visitWelfareOverride) return state.visitWelfareOverride;
  if (loc.welfareIntervalMins) return loc.welfareIntervalMins;
  if (loc.riskLevel && RISK_WELFARE_MAP[loc.riskLevel]) return RISK_WELFARE_MAP[loc.riskLevel];
- return CONFIG.checkinInterval || 60;
+ return _welfareDefaultMins();   // __24_
  })();
  state.visitWelfareOverride = null; // consume — reset for next visit
 
@@ -5885,6 +6213,8 @@ async function startVisit(isSkipCheck = false) {
  startFixNote: _startFixNote,   // __22_ (R57)
  highRisk: isHighRisk,
  checkinIntervalMins: _resolvedWelfare, // welfare check interval for this visit
+ welfareOn: _welfareEnabled() && !isTravelMode && (locId || 'travel') !== 'travel',   // __24_ (R03): decided at the start, never on trips
+ lastWelfareCheck: startTime,   // __24_ (F101-5): the welfare clock starts at the visit start (the server's does too)
  phase: VISIT_PHASES.ACTIVE,
  isPanic: false,
  isDuress: false,
@@ -5931,6 +6261,8 @@ async function startVisit(isSkipCheck = false) {
  if (isTravelMode || locId === 'travel') {
  arrivalPayload['Last Known GPS'] = verifiedStartGPS;
  }
+ // __24_ (R03): the server arms its own welfare clock from this (backend __50_+; an older backend ignores it).
+ if (state.activeVisit.welfareOn) arrivalPayload['Welfare Interval'] = String(_welfareMinsFor(state.activeVisit));
  processUploadQueue(buildPayload(arrivalPayload));
 
   announce(((isTravelMode && loc.id !== 'travel') ? `Travelling to ${loc.name}.` : isTravelMode ? 'Travel started.' : `${loc.name} started.`) + (isHighRisk ? ` Critical timing mode activated.` : ``));
@@ -6195,6 +6527,7 @@ function _outboxIsAlarmRecord(record) {
  if (st.includes('ALARM_GPS_PULSE')) return false;
  if (st.includes('PANIC') || st.includes('DURESS')) return true;
  if (st.includes('OVERDUE ALARM') && p['Critical Timing'] === 'true') return true;
+ if (st.includes('WELFARE_MISSED')) return true;   // __24_ (R03): an alarm - never marked failed, never behind routine records
  return false;
 }
 
@@ -7610,6 +7943,7 @@ function _initApp() {
  // 4. System Initialization
  updateOnlineStatus();
  checkIosInstall();
+ _browserCopyCheck();   // __24_ (R66 b): after checkIosInstall, so it can hide the install prompt
  
  if (!state.worker || !state.worker.name) {
  navigate('setup');
@@ -7684,6 +8018,7 @@ function _initApp() {
 
  // OUTBOX: Migrate any events still in the localStorage legacy queue to
  // the durable IndexedDB store. No-op if the queue is already empty.
+ _outboxMigrateNs();   // __24_ (F101-8): this organisation's unsent records from the old storage name
  _outboxDrainLegacy();
 
  // __21_ (R49 / F93-1): restart delivery on app start, on every return to the foreground (visit or not)
@@ -7736,6 +8071,9 @@ async function _buildDiagReport() {
  add('Battery', safe(() => currentBatteryLevel, '-'));
  add('Screen / page', safe(() => document.visibilityState, '-'));
  add('Installed app', safe(() => (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) ? 'yes' : 'no (browser tab)', '-'));
+ add('Welfare checks', safe(() => { const w = _welfareSettings(); return (w.on ? 'On' : 'Off') + ' (' + w.source + '), default ' + _welfareDefaultMins() + ' min, answer time ' + w.grace + ' min'; }, '-'));   // __24_
+ add('Backend build (sync)', safe(() => (state.meta && state.meta.backendBuild) || 'not sent (older than __51_)', '-'));   // __24_
+ add('Storage name', safe(() => _storageNs + (_NS_MIGRATION ? ' - ' + _NS_MIGRATION.reason + (_NS_MIGRATION.copied ? ' (' + _NS_MIGRATION.copied + ' items from ' + _NS_MIGRATION.from + ')' : '') : ''), '-'));   // __24_ (F101-8)
  add('Device', safe(() => navigator.userAgent, '-'));
 
  L.push('', '--- VISIT ---');
@@ -8208,7 +8546,7 @@ function clearFormsCache() {
 function clearData() {
  if (confirm('⚠️ WARNING: This will erase ALL app data including settings, locations, and queued uploads.\n\nAre you absolutely sure?')) {
  if (confirm('⚠️ FINAL WARNING: There is NO UNDO. All data will be permanently deleted.\n\nContinue?')) {
- localStorage.clear();
+ _clearOwnStorage();   // __24_ (F101-8): this used to clear ALL storage on the host - including any other organisation's app
  showToast('🗑️ All data cleared - Reloading...');
  setTimeout(() => location.reload(), 1000);
  }
@@ -8270,7 +8608,9 @@ async function forceAppUpdate() {
 
  // 2. Unregister the SW — removes the stale controller entirely
  if ('serviceWorker' in navigator) {
- const regs = await navigator.serviceWorker.getRegistrations();
+ // __24_ (F101-8): only THIS app's service worker - another organisation's app on the same host keeps its own.
+ const _ownReg = await navigator.serviceWorker.getRegistration();
+ const regs = _ownReg ? [_ownReg] : [];
  await Promise.all(regs.map(r => r.unregister()));
  console.log(`[UPDATE] Unregistered ${regs.length} service worker(s).`);
  }
@@ -8788,6 +9128,7 @@ function confirmExtension(minutes) {
  const newDue = base + (minutes * 60000);
 
  _applyNewDueTime(newDue); // W1 (build __14_): shared with the PIN clear after due
+ if (typeof _welfareAfterExtend === 'function') _welfareAfterExtend(Date.now());   // __24_ (F102-1): a passed welfare check restarts
 
  const _hhmm = _fmtClock12(new Date());   // __22_ (R46): "Extended 10m at 4:45 pm"
  processUploadQueue(buildPayload({
@@ -8960,8 +9301,9 @@ function forceSync(showUI) {
  
  // 2. DATA MERGE: Sites, Forms, and Metadata
  const existingManual = state.locations.filter(x => x && x.id && x.id.startsWith('loc_'));
- const backendSites = (data.sites || []).map(s => ({
- id: 'site_' + s.siteName.replace(/\s/g, ''),
+ const _siteIds = _siteIdsFor(data.sites || []);   // __24_ (F102-6): one id per site, even when two companies share a site name
+ const backendSites = (data.sites || []).map((s, _si) => ({
+ id: _siteIds[_si],
  name: s.siteName,
  address: s.address,
  companyName: s.company,
@@ -8982,6 +9324,12 @@ function forceSync(showUI) {
  state.globalForms = data.forms || [];
  state.cachedForms = data.cachedTemplates || {};
  state.meta = data.meta || {};
+ // __24_ (R03): keep the last good welfare settings from the server for an offline start (or an older backend's sync)
+ if (state.meta.settings && typeof state.meta.settings.welfareChecks === 'boolean') {
+   const _ws = state.meta.settings;
+   state.welfareSettingsLast = { welfareChecks: _ws.welfareChecks, welfareDefaultMins: _ws.welfareDefaultMins, welfareGraceMins: _ws.welfareGraceMins, at: new Date().toISOString() };
+ }
+ if (typeof _welfareUi === 'function') _welfareUi();
 
  // 3. INTEGRITY: Update timestamp ONLY on verified success
  state.lastSyncTime = new Date().toISOString();
@@ -10041,6 +10389,7 @@ function _unlockOrientation() {
 function exitLockedScreen() {
  releaseWakeLock();
  _unlockOrientation();
+ if (typeof _browserCopyCheck === 'function') setTimeout(_browserCopyCheck, 0);   // __24_ (R66 b): hide once the visit has ended
 }
 
 function checkWizPinMatch() {
@@ -10148,8 +10497,8 @@ function populateSiteInfoModal(location) {
  </div>`;
  }
 
- // 4. WELFARE CHECK SECTION — only shown when checkinEnabled
- if (CONFIG.checkinEnabled) {
+ // 4. WELFARE CHECK SECTION — only shown when welfare checks are on (__24_: the Settings tab decides)
+ if (_welfareEnabled()) {
  // Risk level badge (read-only — set by supervisor in the Sites sheet)
  const riskColours = {
  Low: 'bg-green-900/40 text-green-400 border-green-700',
@@ -10164,7 +10513,7 @@ function populateSiteInfoModal(location) {
 
  // Persistent site override — what interval is currently saved for this site
  const savedMins = location.welfareIntervalMins || '';
- const effectiveMins = savedMins || (location.riskLevel && RISK_WELFARE_MAP[location.riskLevel]) || CONFIG.checkinInterval || 60;
+ const effectiveMins = savedMins || (location.riskLevel && RISK_WELFARE_MAP[location.riskLevel]) || _welfareDefaultMins();
  const effectiveLabel = savedMins
  ? `${savedMins}m (site default)`
  : (location.riskLevel && RISK_WELFARE_MAP[location.riskLevel])
@@ -10193,7 +10542,7 @@ function populateSiteInfoModal(location) {
  </div>
  <p class="text-xs text-gray-500 mt-1.5 italic">Saved here as the default for every visit to this site. Adjust per-visit on the home screen.</p>
  </div>`;
- } // end if (CONFIG.checkinEnabled)
+ } // end if (_welfareEnabled())
 
  // 5. REPORT REQUIRED TOGGLE — worker-settable default for this site
  // Travel locations are handled separately via Travel Settings.
@@ -10503,7 +10852,8 @@ function renderNoticeArchive() {
  * GRACE EXPIRY: Critical Alarm Activation
  * Logic: Locks UI to Alarm mode and notifies contacts via backend.
  */
-async function triggerGraceExpiryAlarm() {
+async function triggerGraceExpiryAlarm(reason) {
+  const _isWelfareMiss = reason === 'welfare';   // __24_ (R03, F95-4): a missed welfare check, before the due time
   setVisitPhase(VISIT_PHASES.ALARMING);
   saveState();
   isPanicActive = true;
@@ -10527,6 +10877,8 @@ async function triggerGraceExpiryAlarm() {
     : (navigator.onLine
         ? `${CONFIG.escalationMinutes || 15}-minute grace period expired. Alert being sent to contacts.`   // __21_ (R02)
         : `${CONFIG.escalationMinutes || 15}-minute grace period expired. Device was offline — contacts not yet notified.`);
+  const _wfNote = navigator.onLine ? 'Welfare check not answered. Alert being sent to contacts.'
+                                   : 'Welfare check not answered. Device was offline - contacts not yet notified.';
   // F76-1 (build __13_): the OVERDUE ALARM post is sent at the end of this function, after a fresh
   // GPS fix (max 5 s). The alarm screen and announcement below still appear immediately.
 
@@ -10544,7 +10896,7 @@ async function triggerGraceExpiryAlarm() {
         ? (_numContacts > 1 ? 'Safety Alarm Activated. Your main emergency contact is being alerted. Your second contact will be alerted if there is still no contact from you.'
                             : 'Safety Alarm Activated. Your emergency contact is being alerted.')
         : 'Safety Alarm Activated. No signal — use the email or call buttons to reach your contacts.');
-  announce(_announceMsg);
+  announce((_isWelfareMiss ? 'Welfare check not answered. ' : '') + _announceMsg);
 
   showAlarmOverlay('panic');
 
@@ -10566,8 +10918,10 @@ async function triggerGraceExpiryAlarm() {
   const _gotFix = await _freshAlarmFix();
   if (!isPanicActive) return; // alarm cleared (PIN) while waiting - do not revive it on the server
   processUploadQueue(buildPayload({
-    'Alarm Status': 'OVERDUE ALARM',
-    'Notes': _alarmNote,
+    // __24_: WELFARE_MISSED to a backend that knows it (meta.backendBuild __51_+); an older one gets OVERDUE ALARM, which
+    // backend __50_ treats as a missed welfare check (before the due time, welfare checks On).
+    'Alarm Status': _isWelfareMiss && _backendBuildNo() >= 51 ? 'WELFARE_MISSED' : 'OVERDUE ALARM',
+    'Notes': _isWelfareMiss ? _wfNote : _alarmNote,
     'Last Known GPS': lastGPS || '0,0',
     'Critical Timing': _isCriticalTrip ? 'true' : ''
   }));
@@ -10802,6 +11156,7 @@ function updateBatterySaverHUD() {
  */
 document.addEventListener("visibilitychange", async () => {
  if (document.visibilityState === 'visible') {
+ if (typeof _browserCopyCheck === 'function') _browserCopyCheck();   // __24_ (R66 b)
  // Re-acquire wake lock whenever a visit is active and the page returns to
  // the foreground. The WakeLock API automatically releases the lock when
  // the page is hidden (e.g. user switches apps) — we must re-request it on
@@ -10855,55 +11210,10 @@ document.addEventListener("visibilitychange", async () => {
  }
  }
 
- // iOS SUSPENSION CATCH-UP — WELFARE CHECK
- // If a welfare check was in progress (modal was shown) while the app
- // was backgrounded, the 2-minute countdown stopped ticking. On restore,
- // check if the deadline has already passed and fire the alarm if so.
- // If the deadline is still in the future, re-show the modal with the
- // adjusted (remaining) countdown so the worker can still confirm.
- if (CONFIG.checkinEnabled && v.welfareDeadline) {
- const now = Date.now();
- if (now >= v.welfareDeadline) {
- // Deadline passed while suspended — treat as missed
- v.welfareDeadline = null;
- saveState();
- const modal = document.getElementById('welfareCheckModal');
- if (modal) modal.classList.add('hidden');
- _clearWelfareCountdown();
- if (!v.criticalSent && !v.isSafeConfirmed) {
- console.warn('iOS catch-up: welfare check deadline passed during suspension — firing alarm');
- triggerGraceExpiryAlarm();
- }
- } else {
- // Deadline not yet passed — re-show modal with remaining time
- // The existing welfareCountdownId is dead (interval was suspended);
- // _showWelfareModal will clear it and restart from remaining seconds.
- _clearWelfareCountdown();
- const remainingSecs = Math.ceil((v.welfareDeadline - now) / 1000);
- const modal = document.getElementById('welfareCheckModal');
- const countEl = document.getElementById('welfareCountdown');
- if (modal && countEl) {
- modal.classList.remove('hidden');
- let rem = remainingSecs;
- const m = Math.floor(rem / 60);
- const s = rem % 60;
- countEl.textContent = `${m}:${s.toString().padStart(2, '0')}`;
- welfareCountdownId = setInterval(() => {
- rem--;
- const mm = Math.floor(rem / 60);
- const ss = rem % 60;
- countEl.textContent = `${mm}:${ss.toString().padStart(2, '0')}`;
- if (rem <= 0) {
- _clearWelfareCountdown();
- modal.classList.add('hidden');
- v.welfareDeadline = null;
- saveState();
- if (!v.criticalSent && !v.isSafeConfirmed) triggerGraceExpiryAlarm();
- }
- }, 1000);
- }
- }
- }
+ // __24_ (R03, F95-3, F101-4): welfare - a check that fell due while the phone was locked or the app was in the background
+ // shows AT ONCE; one whose answer time ran out is a miss (the server escalates it too). Replaces the old catch-up,
+ // which only knew about a prompt already on screen and never about a check that fell due while locked.
+ if (typeof _welfareTick === 'function') _welfareTick();
  }
  }
 });
