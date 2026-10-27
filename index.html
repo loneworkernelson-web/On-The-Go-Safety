@@ -2,6 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <!-- index__14_ (S103): CARTO map key field (R50/D37); welfare checkbox replaced by a pointer to the Settings tab (D-FACTORY);
+       worker build written to config.json as workerBuild and shown on the download step (R08); blank grace period defaults to 15 (R09);
+       archive trigger wording monthly (R10); proxy template forwards Click and Actions (R40/D32); Staff blueprint columns match the sheet;
+       service worker caches are per install folder (F102-2). Built from index__13_ by patch_fac14.py. -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏭</text></svg>">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>On-The-Go App Factory v84.0 — Config Model</title>
@@ -329,10 +333,9 @@
                     <p class="text-[10px] text-gray-400 ml-9 mt-1 leading-tight italic">When on, all travel sessions require a report on departure (org policy). When off, workers set their own default in the app's Travel Settings.</p>
                 </div>
 
-                <div>
-                    <label class="flex items-center gap-3 cursor-pointer"><input type="checkbox" id="chkCheckin" class="w-6 h-6 rounded bg-gray-700" onchange="toggleCheckin(); saveInput(this)"><span class="text-sm font-black text-gray-200 uppercase">Periodic Welfare Check-in</span></label>
-                    <div id="checkinOptions" class="hidden ml-9 mt-1 items-center gap-2 font-black"><input type="number" id="checkinMins" value="60" class="bg-gray-800 border border-gray-600 rounded p-1 w-16 text-center text-white" oninput="saveInput(this)"><span>mins</span></div>
-                    <p class="text-[10px] text-gray-400 ml-9 mt-1 leading-tight italic">Worker's device will prompt "Are you OK?" at this interval. If unanswered within 2 minutes, the safety alarm fires. Recommended for high-risk lone workers.</p>
+                <div id="welfarePointer" class="p-3 bg-gray-900 rounded-xl border border-teal-700/50">
+                    <p class="text-sm font-black text-gray-200">Welfare check-ins ("Are you OK?")</p>
+                    <p class="text-[10px] text-gray-300 mt-1 leading-tight italic">No longer set here. Switch them on in the <strong>Settings</strong> tab of your Google Sheet: <code>WELFARE_CHECKS</code> = On (they are <strong>Off</strong> by default), <code>WELFARE_DEFAULT_MINS</code> = how often, <code>WELFARE_GRACE_MINS</code> = how long the worker has to answer. The backend creates the Settings tab within a minute of its first trigger run. Phones pick the change up at their next sync - no new config.json is needed. Workers who lock their phone also need <strong>phone alerts</strong> set up (Settings page in the app), or their contacts will be alerted at each check.</p>
                 </div>
                 <div>
                     <label class="flex items-center gap-3 cursor-pointer"><input type="checkbox" id="chkVehicle" class="w-6 h-6 rounded bg-gray-700" onchange="toggleVehicle(); saveInput(this)" checked><span class="text-sm font-black text-gray-200 uppercase">Vehicle Maintenance Tracking</span></label>
@@ -380,7 +383,8 @@
             <div><div class="flex justify-between items-end mb-1"><label for="geminiKey" class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">Gemini AI Key (Grammar)</label><a href="https://aistudio.google.com/app/apikey" target="_blank" class="link">Get Key</a></div><input type="text" id="geminiKey" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Used to automatically professionalise worker reports and fix spelling.</p></div>
             <div><div class="flex justify-between items-end mb-1"><label for="orsKey" class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">ORS Key (Mileage Tracking)</label><a href="https://openrouteservice.org/dev/#/signup" target="_blank" class="link">Get Key</a></div><input type="text" id="orsKey" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Required for road-accurate mileage tracking. This key is hidden from workers.</p></div>
             <div><div class="flex justify-between items-end mb-1"><label for="w3wKey" class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">what3words Key (Location Codes)</label><a href="https://accounts.what3words.com/select-plan" target="_blank" class="link">Get Key</a></div><input type="text" id="w3wKey" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Adds a memorable 3-word location code (e.g. ///filled.count.soap) to emergency email alerts, the monitor dashboard, and the worker's panic screen — useful for relaying precise location to emergency services. <strong class="text-emerald-400">Free for registered charities and NGOs</strong> — select the Free plan, then <a href="https://what3words.com/contact-us" target="_blank" class="link">contact what3words</a> to request a charity upgrade. Paid plans required for commercial use.</p></div>
-            <div><div class="flex justify-between items-end mb-1"><label for="folderId" class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">Photo Folder ID</label><a onclick="document.getElementById('driveHelpModal').style.display='flex'" class="link">Where is this?</a></div><input type="text" id="folderId" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Organises all report photos into a dedicated Drive folder for the Diocese.</p></div>
+            <div><div class="flex justify-between items-end mb-1"><label for="cartoKey" class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">CARTO Map Key (Monitor map)</label><a href="https://carto.com/basemaps/apikey/" target="_blank" class="link">Get Key</a></div><input type="text" id="cartoKey" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" autocomplete="off" oninput="saveInput(this)"><p class="help-text italic leading-tight">Gives the Monitor map the clearer CARTO "Voyager" background. <strong class="text-emerald-400">Free</strong> for non-commercial use, including non-profits (CARTO states 5 million map tiles a month - far more than a Monitor uses). Click <em>Get Key</em>, fill in the short form, and CARTO emails the key straight back (no CARTO account needed). <strong>Leave the website restriction blank:</strong> the Monitor runs as a saved file, which a restriction can block. Keep the key to your own organisation - CARTO asks that it is not shared. <strong>Leave this blank</strong> and the Monitor uses OpenStreetMap's own map (fine for a few supervisors; OpenStreetMap's tile policy does not allow heavy use). If CARTO ever refuses the key the Monitor switches to OpenStreetMap by itself. The key is written into the downloaded Monitor file, so treat that file like a password.</p></div>
+            <div><div class="flex justify-between items-end mb-1"><label for="folderId" class="text-[11px] font-black text-indigo-300 uppercase tracking-widest">Photo Folder ID</label><a onclick="document.getElementById('driveHelpModal').style.display='flex'" class="link">Where is this?</a></div><input type="text" id="folderId" class="input-field py-2 text-xs font-mono font-bold" placeholder="Optional" oninput="saveInput(this)"><p class="help-text italic leading-tight">Organises all report photos into a dedicated Drive folder for your organisation.</p></div>
             <div class="pt-4 border-t border-gray-700">
                 <label for="healthEmail" class="text-[11px] font-black text-emerald-300 uppercase tracking-widest block mb-1">System Health Report Email</label>
                 <input type="email" id="healthEmail" class="input-field py-2 text-xs font-mono font-bold" placeholder="admin@yourorg.com (optional)" oninput="saveInput(this)">
@@ -527,12 +531,12 @@
                       <h4 class="font-black text-purple-300 text-xs uppercase tracking-[0.2em]">D. Data Archiver</h4>
                       <span class="text-[10px] font-black text-purple-500/70 uppercase tracking-widest border border-purple-700 rounded px-2 py-0.5">Optional</span>
                   </div>
-                  <p class="text-[11px] text-gray-300 font-bold italic mb-4 leading-relaxed">Moves completed visits older than 30 days from the Visits tab into an Archive tab, keeping your live sheet fast and clean. Only closed visits (DEPARTED / SAFE / COMPLETED) are moved — active records are never touched.</p>
+                  <p class="text-[11px] text-gray-300 font-bold italic mb-4 leading-relaxed">Once a month, moves completed visits older than 30 days from the Visits tab into an Archive tab (and old form records into FormsArchive), keeping your live sheet fast and clean. Only closed visits (DEPARTED / SAFE / COMPLETED) are moved — active records are never touched.</p>
                   <ol class="list-decimal ml-5 space-y-2 text-[12px] text-white font-black uppercase tracking-tighter leading-tight">
                       <li>Add a fourth trigger.</li>
                       <li>Choose <strong>archiveOldData</strong>.</li>
                       <li>Source: <strong>Time-driven</strong>.</li>
-                      <li>Type: <strong>Week timer</strong> | choose a low-traffic day (e.g. <strong>Sunday</strong>).</li>
+                      <li>Type: <strong>Month timer</strong> | choose a low-traffic day and time (e.g. <strong>1st of the month, 2am–3am</strong>).</li>
                       <li>Click <strong>Save</strong>.</li>
                   </ol>
               </div>
@@ -607,6 +611,7 @@
                     <code class="text-yellow-400">icon.png</code>.
                     Add <code class="text-amber-400">guide_template.html</code> to the Factory folder to include the worker guide in the pack.
                 </p>
+                <p id="workerBuildNote" class="text-xs text-emerald-400 font-black"></p>
             </div>
 
             <!-- ── DIVIDER ── -->
@@ -695,7 +700,7 @@
                         <div class="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center font-black text-xl shrink-0 shadow-lg border-2 border-blue-400">3</div>
                         <div>
                             <p class="text-blue-300 font-black uppercase tracking-[0.2em] text-[10px] mb-1">Updating Config in Future</p>
-                            <p class="text-white font-bold text-sm leading-relaxed">To change settings (colours, intervals, keys), regenerate <code class="text-green-400">config.json</code> here and replace the file on your host. Bump the <strong>version</strong> field — the app detects the change and refreshes automatically. No app rebuild needed.</p>
+                            <p class="text-white font-bold text-sm leading-relaxed">To change settings (colours, intervals, keys), regenerate <code class="text-green-400">config.json</code> here and replace the file on your host. Bump the <strong>version</strong> field — the app detects the change and refreshes automatically. No app rebuild needed. <strong class="text-yellow-300">When you update the worker app itself</strong> (a new <code class="text-green-400">index.html</code>), replace <code class="text-green-400">index.html</code>, <code class="text-green-400">sw.js</code> and <code class="text-green-400">config.json</code> <strong>together</strong> from one fresh Worker App Pack. config.json now carries the app's build ID (<code class="text-green-400">workerBuild</code>); a phone shows a red "App out of date" bar when the app it is running and the config.json it reads name different builds.</p>
                         </div>
                     </div>
 
@@ -764,7 +769,15 @@
 // This replaces the old build-stamp approach; cache invalidation is now driven by
 // incrementing "version" in config.json rather than by regenerating files.
 
-let CACHE_NAME = 'otg-safety-v1'; // updated dynamically at install time (see below)
+// F102-2 (index__14_): cache names include this app's install folder, so two apps on one web host never touch each
+// other's caches. (The old activate step deleted EVERY cache on the host except its own.) The folder part is a readable
+// slug plus an 8-character hash of the full folder path; the slug and the hash never contain '--', so one app's prefix can
+// never be the start of another app's cache names (even for folders such as /org/ and /org-two/ or /org/two/).
+const SCOPE_PATH = new URL(self.registration.scope).pathname;
+const SCOPE_SLUG = SCOPE_PATH.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '') || 'root';
+function _scopeHash(str) { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16).padStart(8, '0'); }
+const CACHE_PREFIX = 'otg-safety--' + SCOPE_SLUG + '-' + _scopeHash(SCOPE_PATH) + '--';
+let CACHE_NAME = CACHE_PREFIX + 'v1'; // updated dynamically at install time (see below)
 
 const CRITICAL_ASSETS = [
     './',
@@ -786,7 +799,7 @@ self.addEventListener('install', event => {
                     const cfg = await cfgResp.json();
                     if (cfg.version) {
                         const slug = String(cfg.version).replace(/[^a-z0-9]/gi, '-');
-                        CACHE_NAME = \`otg-safety-\${slug}\`;
+                        CACHE_NAME = CACHE_PREFIX + slug;
                     }
                 }
             } catch (e) {
@@ -817,16 +830,16 @@ self.addEventListener('install', event => {
 // ─── 2. ACTIVATE ─────────────────────────────────────────────────────────────
 self.addEventListener('activate', event => {
     event.waitUntil(
-        caches.keys().then(keys =>
-            Promise.all(
-                keys
-                    .filter(k => k !== CACHE_NAME)
-                    .map(k => {
-                        console.log('[SW] Removing old cache:', k);
-                        return caches.delete(k);
-                    })
-            )
-        ).then(() => self.clients.claim())
+        (async () => {
+            // F102-2: remove only THIS app's older caches (names that start with this folder's prefix).
+            const keep = await currentCacheName();
+            const own  = await ownCacheKeys();
+            await Promise.all(own.filter(k => k !== keep).map(k => {
+                console.log('[SW] Removing old cache:', k);
+                return caches.delete(k);
+            }));
+            await self.clients.claim();
+        })()
     );
 });
 
@@ -844,16 +857,34 @@ self.addEventListener('fetch', event => {
     );
 });
 
+// F102-2 helpers: this app's caches only, newest first (the version part of the name sorts by build date).
+async function ownCacheKeys() {
+    const keys = await caches.keys();
+    return keys.filter(k => k.startsWith(CACHE_PREFIX)).sort().reverse();
+}
+// CACHE_NAME is set at install; a service worker that was stopped and restarted has lost it, so fall back to the newest own cache.
+async function currentCacheName() {
+    const own = await ownCacheKeys();
+    return own.includes(CACHE_NAME) ? CACHE_NAME : (own[0] || CACHE_NAME);
+}
+async function matchOwn(request) {
+    for (const k of await ownCacheKeys()) {
+        const hit = await (await caches.open(k)).match(request);
+        if (hit) return hit;
+    }
+    return undefined;
+}
+
 async function networkFirstConfig(request) {
     try {
         const networkResp = await fetch(request);
         if (networkResp.ok || networkResp.status === 0) {
-            const cache = await caches.open(CACHE_NAME);
+            const cache = await caches.open(await currentCacheName());
             cache.put(request, networkResp.clone());
         }
         return networkResp;
     } catch (_) {
-        const cached = await caches.match(request);
+        const cached = await matchOwn(request);
         return cached || new Response('{"error":"config unavailable offline"}', {
             status: 503,
             headers: { 'Content-Type': 'application/json' }
@@ -862,18 +893,18 @@ async function networkFirstConfig(request) {
 }
 
 async function cacheFirst(request) {
-    const cached = await caches.match(request);
+    const cached = await matchOwn(request);
     if (cached) return cached;
 
     try {
         const networkResp = await fetch(request);
         if (networkResp && (networkResp.status === 200 || networkResp.status === 0)) {
-            const cache = await caches.open(CACHE_NAME);
+            const cache = await caches.open(await currentCacheName());
             cache.put(request, networkResp.clone());
         }
         return networkResp;
     } catch (_) {
-        return caches.match('./') || new Response('Offline', {
+        return (await matchOwn('./')) || new Response('Offline', {
             status: 503,
             headers: { 'Content-Type': 'text/plain' }
         });
@@ -889,7 +920,9 @@ self.addEventListener('message', event => {
 
     const BLUEPRINTS = {
         Visits: `Timestamp\tDate\tWorker Name\tWorker Phone Number\tEmergency Contact Name\tEmergency Contact Number\tEmergency Contact Email\tEscalation Contact Name\tEscalation Contact Number\tEscalation Contact Email\tAlarm Status\tNotes\tLocation Name\tLocation Address\tLast Known GPS\tGPS Timestamp\tBattery Level\tPhoto 1\tDistance (km)\tVisit Report Data\tAnticipated Departure Time\tSignature\tPhoto 2\tPhoto 3\tPhoto 4`,
-        Staff: `Name\tRole\tStatus\tToken\tDeviceID\tLastVehCheck\tWOFExpiry`,
+        // Columns match the live Staff sheet: D = Group Membership, E = DeviceId (written at registration), H / I = contact ntfy topics (written by the backend);
+        // J "Worker Alert Topic" is created by the backend on request. (index__13_ had a "Token" column D, which shifted every column after it.)
+        Staff: `Name\tRole\tStatus\tGroup Membership\tDeviceId\tLastVehCheck\tWOFExpiry\tEmgNtfy\tEscNtfy`,
         Sites: `Assigned To\tTemplate Name\tCompany Name\tSite Name\tAddress\tContact Name\tContact Phone\tContact Email\tSite Notes\tEmergency Procedures\tRisk Level\tPre-Visit Form`,
                 // Type (col A): FORM or REPORT — admin readability only. Originally intended to distinguish
         // standalone forms (FORM) from visit-conclusion reports (REPORT), but both types now appear
@@ -944,6 +977,21 @@ self.addEventListener('message', event => {
 };
 
     function updateCharCount(el) { document.getElementById('charCount').innerText = `${el.value.length}/${el.maxLength}`; }
+
+    // S103 helpers ------------------------------------------------------------------------------------------
+    const FACTORY_BUILD = 'index__14_';
+    // R09: a blank, zero or non-numeric Alarm Grace Period used to write `ESCALATION_MINUTES: ,` into the backend (a syntax error). Default 15, as config.json.
+    function _escalationMinutes() {
+        const n = parseInt(String(document.getElementById('escalationMins').value).trim(), 10);
+        return (isFinite(n) && n > 0) ? n : 15;
+    }
+    // R50: only characters a CARTO key can contain survive (the value is written inside a JavaScript string in the Monitor).
+    function _cartoKeyClean() { return String(document.getElementById('cartoKey').value || '').replace(/[^A-Za-z0-9._~-]/g, ''); }
+    // R08: the worker build ID is read from the worker template this Factory is about to pack (const WORKER_BUILD = '...').
+    function _workerBuildId() {
+        const m = TEMPLATES.worker && TEMPLATES.worker.match(/const\s+WORKER_BUILD\s*=\s*'([^']+)'/);
+        return m ? m[1] : '';
+    }
 
     function handleLogo(input) {
         if (input.files[0]) {
@@ -1168,7 +1216,7 @@ function applyPreset(p, a, el) {
     function copyData(k) { navigator.clipboard.writeText(BLUEPRINTS[k]); alert(k + " Blueprint Copied!"); }
     function openMagicLink() { window.open(MASTER_SHEET_URL, '_blank'); }
     function toggleCheck(el) { el.classList.toggle('checked'); el.querySelector('input').checked = el.classList.contains('checked'); }
-    function loadPersistedData() { ['orgName', 'secretKey', 'workerKey', 'webAppUrl', 'geminiKey', 'orsKey', 'w3wKey', 'textbeltKey', 'twilioSid', 'twilioToken', 'twilioFrom', 'burstKey', 'burstSecret', 'burstFrom', 'smsProvider', 'folderId', 'healthEmail', 'healthcheckUrl', 'ntfyServer', 'ntfyProxyUrl', 'ntfyProxySecret', 'escalationMins', 'countrySelect', 'appName', 'checkinMins'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v) { const el = document.getElementById(id); if(el) el.value = v; } }); ['chkRedaction', 'chkVehicle', 'chkCheckin', 'chkTravelReport', 'chkMileage'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v !== null) document.getElementById(id).checked = (v === 'true'); }); updateSmsProviderUI();
+    function loadPersistedData() { ['orgName', 'secretKey', 'workerKey', 'webAppUrl', 'geminiKey', 'orsKey', 'w3wKey', 'textbeltKey', 'twilioSid', 'twilioToken', 'twilioFrom', 'burstKey', 'burstSecret', 'burstFrom', 'smsProvider', 'folderId', 'healthEmail', 'healthcheckUrl', 'ntfyServer', 'ntfyProxyUrl', 'ntfyProxySecret', 'escalationMins', 'countrySelect', 'appName', 'cartoKey'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v) { const el = document.getElementById(id); if(el) el.value = v; } }); ['chkRedaction', 'chkVehicle', 'chkTravelReport', 'chkMileage'].forEach(id => { const v = localStorage.getItem('otg_' + id); if(v !== null) document.getElementById(id).checked = (v === 'true'); }); updateSmsProviderUI();
         // Establish proxy secret sync state: if proxy secret is empty or matches the master key, mark as auto-synced.
         const _psEl = document.getElementById('ntfyProxySecret');
         const _skEl = document.getElementById('secretKey');
@@ -1196,7 +1244,6 @@ function applyPreset(p, a, el) {
 }
     function setupDragDrop() { const dz = document.getElementById('dropZone'); dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('border-blue-500'); }); dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('border-blue-500'); if (e.dataTransfer.files.length) handleLogo({files:e.dataTransfer.files}); }); }
     function gotoStep(n) { document.querySelectorAll('.step-section').forEach(e=>e.classList.remove('active')); document.getElementById('step'+n).classList.add('active'); for(let i=1; i<=5; i++) { document.getElementById('tab'+i).classList.toggle('active', i===n); document.getElementById('tab'+i).setAttribute('aria-selected', i===n ? 'true' : 'false'); } if(n===3) generateScript(); }
-    function toggleCheckin() { document.getElementById('checkinOptions').classList.toggle('hidden', !document.getElementById('chkCheckin').checked); }
     function toggleVehicle() { document.getElementById('vehOptions').classList.toggle('hidden', !document.getElementById('chkVehicle').checked); }
     function copyScript() { generateScript(); navigator.clipboard.writeText(document.getElementById('codeDisplay').textContent); alert("Copied!"); }
 
@@ -1216,7 +1263,7 @@ function applyPreset(p, a, el) {
             .replace(/%%BURST_FROM%%/g,         document.getElementById('burstFrom').value    || '')
             .replace(/%%PHOTOS_FOLDER_ID%%/g, document.getElementById('folderId').value)
             .replace(/%%ORGANISATION_NAME%%/g, document.getElementById('orgName').value).replace(/%%ORG_NAME%%/g, document.getElementById('orgName').value).replace(/%%TIMEZONE%%/g, document.getElementById('timezoneVal').value)
-            .replace(/%%ESCALATION_MINUTES%%/g, document.getElementById('escalationMins').value).replace(/%%ENABLE_REDACTION%%/g, document.getElementById('chkRedaction').checked)
+            .replace(/%%ESCALATION_MINUTES%%/g, String(_escalationMinutes())).replace(/%%ENABLE_REDACTION%%/g, document.getElementById('chkRedaction').checked)
             .replace(/%%VEHICLE_TERM%%/g, selectedConfig.term).replace(/%%COUNTRY_PREFIX%%/g, document.getElementById('countrySelect').value)
             .replace(/%%LOCALE%%/g, selectedConfig.locale)
             .replace(/%%HEALTH_EMAIL%%/g, document.getElementById('healthEmail').value)
@@ -1360,10 +1407,8 @@ function testConnection() {
         const workerKey   = document.getElementById('workerKey').value.trim();
         const url         = document.getElementById('webAppUrl').value.trim();
         const ntfyServer  = document.getElementById('ntfyServer').value.trim() || 'https://ntfy.sh';
-        const escalation  = document.getElementById('escalationMins').value.trim() || '15';
-        const checkinMins = document.getElementById('checkinMins').value.trim() || '30';
+        const escalation  = String(_escalationMinutes());
         const vehEnabled  = document.getElementById('chkVehicle').checked;
-        const checkinEnabled = document.getElementById('chkCheckin').checked;
         const mileageEnabled = document.getElementById('chkMileage') ? document.getElementById('chkMileage').checked : false;
         const requireTravelReport = document.getElementById('chkTravelReport') ? document.getElementById('chkTravelReport').checked : true;
 
@@ -1388,6 +1433,7 @@ function testConnection() {
         return {
             "_comment": "OTG Lone Worker Safety System — Organisation Configuration",
             "version": version,
+            "workerBuild": _workerBuildId() || undefined,   // R08: lets a phone warn when its app and config.json are from different builds (omitted if unknown)
             "backendUrl": url,
             "orgName": org,
             "appName": appShort,
@@ -1396,12 +1442,12 @@ function testConnection() {
             "w3wApiKey": document.getElementById('w3wKey').value.trim() || '',
             "features": {
                 "mileageEnabled":     mileageEnabled,
-                "checkinEnabled":     checkinEnabled,
+                "checkinEnabled":     false,   // welfare checks are switched in the Sheet's Settings tab; written as false so older phones (which default to ON when it is missing) stay off
                 "vehicleEnabled":     vehEnabled,
                 "requireTravelReport": requireTravelReport
             },
             "timing": {
-                "checkinInterval":   parseInt(checkinMins, 10)   || 30,
+                "checkinInterval":   60,   // fallback only; the Settings tab (WELFARE_DEFAULT_MINS) decides
                 "escalationMinutes": parseInt(escalation, 10)    || 15,
                 "vehicleInterval":   parseInt(document.getElementById('vehFreq')?.value || '90', 10)
             },
@@ -1557,6 +1603,7 @@ function testConnection() {
             .replace(/%%BUILD_VERSION%%/g,    'v82 · ' + buildTimestampLocal)
             .replace(/%%MAP_LAT%%/g,          String(selectedConfig.mapLat || -40.9))
             .replace(/%%MAP_LNG%%/g,          String(selectedConfig.mapLng || 174.9))
+            .replace(/%%CARTO_KEY%%/g,        _cartoKeyClean())
             .replace(/%%W3W_API_KEY%%/g,      document.getElementById('w3wKey').value || '');
 
         const blob = new Blob([monHtml], { type: 'text/html' });
@@ -1599,6 +1646,15 @@ function testConnection() {
         // Pack note: show guide-included variant when guide is available
         if (packNote)        packNote.classList.toggle('hidden', !guideAvail);
         if (packNoteNoGuide) packNoteNoGuide.classList.toggle('hidden', guideAvail);
+        // R08: show which worker build this pack carries
+        const wbNote = document.getElementById('workerBuildNote');
+        if (wbNote) {
+            const wb = _workerBuildId();
+            wbNote.textContent = wb ? ('Worker app build in this pack: ' + wb + ' (also written to config.json as workerBuild).')
+                                    : 'Worker app build could not be read from worker_template.html - config.json will not carry a build ID.';
+            wbNote.classList.toggle('text-emerald-400', !!wb);
+            wbNote.classList.toggle('text-amber-400', !wb);
+        }
     }
 
     function _buildSmsProviderSetupHtml(forOpsManual) {
@@ -1731,6 +1787,8 @@ function testConnection() {
 ================================
 Organisation: ${org}
 Built:        ${builtDate}
+Worker build: ${_workerBuildId() || 'unknown'}
+Factory:      ${FACTORY_BUILD}
 
 CONTENTS
 --------
@@ -1926,7 +1984,8 @@ if ($topic === '' || $topic === 'proxy_ntfy.php') {
 $body = file_get_contents('php://input');
 
 $headers = ['Content-Type: text/plain; charset=utf-8'];
-foreach (['Title', 'Priority', 'Tags'] as $h) {
+// Click and Actions carry the tap-to-call and map buttons on alerts (index__14_, D32); callers that do not send them are unaffected
+foreach (['Title', 'Priority', 'Tags', 'Click', 'Actions'] as $h) {
     $key = 'HTTP_' . strtoupper(str_replace('-', '_', $h));
     if (!empty($_SERVER[$key])) {
         $headers[] = "$h: {$_SERVER[$key]}";
