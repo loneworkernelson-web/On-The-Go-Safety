@@ -162,10 +162,26 @@
                 <textarea id="resNoteInput" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white h-24"
                           placeholder="Describe resolution (required)…"></textarea>
             </div>
+            <!-- __14_: the supervisor says whether the worker has left (backend __53_) -->
+            <fieldset>
+                <legend class="block text-sm uppercase font-bold text-gray-300 mb-2">3. Has the worker left?</legend>
+                <label class="flex items-start gap-2 text-sm text-white mb-2 cursor-pointer">
+                    <input type="radio" name="resOutcome" value="LEFT" id="resLeftRadio" class="mt-1">
+                    <span>Worker has left / visit is over - <b>close the visit</b></span>
+                </label>
+                <label class="flex items-start gap-2 text-sm text-white cursor-pointer">
+                    <input type="radio" name="resOutcome" value="ONSITE" id="resOnsiteRadio" class="mt-1">
+                    <span>Still on site - <b>keep monitoring</b>, due out in
+                        <select id="resExtendMins" aria-label="Minutes until due out" class="bg-gray-900 border border-gray-600 rounded px-1 text-white">
+                            <option value="10">10 min</option><option value="30">30 min</option><option value="60">60 min</option>
+                        </select></span>
+                </label>
+                <p id="resDueNote" class="text-xs text-gray-400 mt-2"></p>
+            </fieldset>
         </div>
         <div class="flex gap-3 mt-6">
             <button onclick="closeResolve()" class="flex-1 bg-gray-700 text-white font-bold py-3 rounded">Cancel</button>
-            <button onclick="submitResolution()" class="flex-1 bg-green-600 text-white font-bold py-3 rounded shadow-lg">✅ MARK SAFE</button>
+            <button onclick="submitResolution()" id="resSubmitBtn" class="flex-1 bg-green-600 text-white font-bold py-3 rounded shadow-lg disabled:opacity-50">✅ MARK SAFE</button>
         </div>
     </div>
 </div>
@@ -338,9 +354,9 @@
         <div id="workerGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" role="list" aria-label="Active workers"></div>
         <div id="mapView" class="hidden h-full w-full rounded-xl overflow-hidden shadow-inner border border-gray-700 bg-gray-900" aria-label="Worker location map"></div>
     </div>
-    <aside class="log-area" aria-label="Activity log">
+    <aside class="log-area" aria-label="Current status per visit">
         <div class="p-2 bg-gray-800 border-b border-gray-700 font-bold text-sm text-gray-400 uppercase tracking-wider sticky top-0" aria-hidden="true">
-            Activity Log
+            Current Status per Visit
         </div>
         <div id="eventLogList" class="flex-1 overflow-y-auto px-2 py-2 space-y-1" role="log" aria-label="Event log" aria-live="polite"></div>
         <!-- Broadcast history (session only) -->
@@ -369,6 +385,7 @@ const VEHICLE_TERM = "%%VEHICLE_TERM%%";
 const MAP_LAT      = parseFloat("%%MAP_LAT%%") || -40.9;  // Factory-injected map centre latitude
 const MAP_LNG      = parseFloat("%%MAP_LNG%%") || 174.9; // Factory-injected map centre longitude
 const W3W_API_KEY  = "%%W3W_API_KEY%%";                  // Factory-injected — empty string disables w3w
+const CARTO_KEY    = "%%CARTO_KEY%%";                    // Factory-injected (__13_) — empty or unreplaced = OpenStreetMap tiles
 
 // ============================================================================
 // 2. SESSION STATE
@@ -400,8 +417,44 @@ let alarmAudio       = null;     // HTML Audio siren — primary (CDN)
 let useSynthFallback = false;    // True when CDN audio unavailable; uses Web Audio API synth instead
 let synthSirenCtx    = null;     // Web Audio context for synthesized siren
 let synthSirenActive = false;    // Whether synth siren loop is currently running
-let acknowledgedAlerts = new Set();
+// __14_: name -> the alarm status (upper case) that was acknowledged. A different status = a new escalation step = shown again.
+let acknowledgedAlerts = new Map();
 let _pendingAlertNames = [];   // Source-of-truth list for acknowledgeAlert() — avoids DOM round-trip parsing
+let _pendingAlertStatus = {};  // __14_: name -> the status the full-screen alarm was showing
+let backendBuildNo = 0;        // __14_: from the dashboard feed; "still on site" needs backend __53_ or later
+
+// ============================================================================
+// 4b. TIME, CLOCK SKEW AND CLOSED STATUSES  (__13_)
+// ============================================================================
+// New Zealand style times: "5:34 pm" (never 24-hour, never "p.m."). Dates are dd/mm.
+function fmtClock(d, withSeconds) {
+    const t = (d instanceof Date) ? d : new Date(d);
+    if (isNaN(t.getTime())) return '';
+    const o = { hour: 'numeric', minute: '2-digit', hour12: true };
+    if (withSeconds) o.second = '2-digit';
+    return t.toLocaleTimeString('en-NZ', o).replace(/\s*([ap])\.?\s?m\.?\s*$/i, (m, x) => ' ' + x.toLowerCase() + 'm');
+}
+// Time of day, with dd/mm in front when it is not today.
+function fmtStamp(d) {
+    const t = (d instanceof Date) ? d : new Date(d);
+    if (isNaN(t.getTime())) return '';
+    const now = new Date(nowMs());
+    const sameDay = t.getFullYear() === now.getFullYear() && t.getMonth() === now.getMonth() && t.getDate() === now.getDate();
+    return sameDay ? fmtClock(t) : t.toLocaleDateString('en-NZ', { day: '2-digit', month: '2-digit' }) + ' ' + fmtClock(t);
+}
+// The backend sends serverNow; ages are worked out on the server's clock, so a supervisor PC with a wrong clock cannot make a
+// phone look silent (or fresh). 0 when the backend is older and sends nothing.
+let serverSkewMs = 0;
+function nowMs() { return Date.now() + serverSkewMs; }
+// A row showing one of these is a finished visit (the backend treats the same words as closed). USER_SAFE* is what an HQ
+// resolve leaves on the row (a PIN clear puts ARRIVED/TRAVELLING back). Matched by word, like the backend.
+const CLOSED_STATUS_WORDS = ['DEPARTED', 'COMPLETED', 'NOTICE_ACK', 'DATA_ENTRY_ONLY', 'USER_SAFE'];
+function isClosedStatus(s) {
+    const u = String(s || '').toUpperCase();
+    return CLOSED_STATUS_WORDS.some(w => u.includes(w));
+}
+// Last time anything was heard from the worker's phone: the newer of the row time and Last Heard (col AF).
+function workerLastSeen(w) { return Math.max(w.timestamp || 0, w.lastHeard || 0); }
 
 // ============================================================================
 // 5. WATCHDOG & BROADCAST STATE
@@ -728,6 +781,10 @@ function fetchData() {
 
         if (data.status === "success" || data.workers) {
             lastHeartbeat = Date.now();
+            if (data.serverNow) {
+                const sn = new Date(data.serverNow).getTime();
+                if (!isNaN(sn)) serverSkewMs = sn - Date.now();
+            }
             failureCount  = 0;
             if (statusLabel) {
                 statusLabel.textContent = "● LIVE";
@@ -737,6 +794,7 @@ function fetchData() {
                 workerData = typeof processWorkers === 'function'
                     ? processWorkers(data.workers) : data.workers;
                 allRows = data.all || data.workers;
+                backendBuildNo = (m => m ? parseInt(m[1], 10) : 0)(/backend__(\d+)_/.exec(String(data.build || '')));   // __14_
                 handleData(data);
             }
         }
@@ -826,7 +884,7 @@ function processWorkers(rows) {
         // or alarm PIN) bleeding into the current visit's map trail.
         // TRAVELLING resets only when the previous journey was properly closed,
         // preserving the trail during an active travel leg.
-        const isClosed = JOURNEY_CLOSED_STATUSES.includes(statusRaw);
+        const isClosed = isClosedStatus(statusRaw);
         const isStart  = JOURNEY_START_STATUSES.includes(statusRaw);
 
         if (!journeyHistory[name]) {
@@ -876,6 +934,9 @@ function processWorkers(rows) {
                 "Escalation Contact Number": r['Escalation Contact Number'] || '',
                 "Escalation Contact Email":  r['Escalation Contact Email'] || '',
                 "timestamp":                timestamp,
+                // __13_: last time the phone was heard (backend __52_+; 0 when the backend does not send it)
+                lastHeard:                  (t => isNaN(t) ? 0 : t)(new Date(r['Last Heard'] || 0).getTime()),
+                visitId:                    r['Visit ID'] || '',
                 // Shorthand aliases (for system logic)
                 name,
                 status:   r['Alarm Status'] || r['Status'] || "Unknown",
@@ -907,24 +968,28 @@ function handleData(response) {
     if (serverEl) serverEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-green-500 inline-block mr-1"></span>Online';
 
     const lastUpdateEl = document.getElementById('lastUpdate');
-    if (lastUpdateEl) lastUpdateEl.textContent = new Date().toLocaleTimeString();
+    if (lastUpdateEl) lastUpdateEl.textContent = fmtClock(new Date(nowMs()), true);
 
     // Use shorthand .status/.name aliases for alert filtering
     // Clear acknowledgement for any worker whose status has returned to a non-alarm state.
     // Without this, a worker who triggers a second alarm in the same browser session
     // would never show the overlay because their name remains in acknowledgedAlerts.
+    // __14_: an acknowledgement covers ONE escalation step. Each step writes a different status (OVERDUE - 15MIN ALERT ->
+    // 30MIN -> 45MIN -> EMERGENCY - 60MIN BREACH; Critical Timing BREACH -> REPEAT -> FINAL NOTICE), so a new status = shown again.
     workerData.forEach(w => {
         const s = (w.status || '').toUpperCase();
         const isStillAlarming = ALERT_STATUSES.some(a => s.includes(a));
-        if (!isStillAlarming) acknowledgedAlerts.delete(w.name);
+        if (!isStillAlarming || (acknowledgedAlerts.has(w.name) && acknowledgedAlerts.get(w.name) !== s)) acknowledgedAlerts.delete(w.name);
     });
     const unackedDuress = workerData.filter(w =>
         w.status.toUpperCase().includes("DURESS") && !acknowledgedAlerts.has(w.name));
-    const unackedAlert  = workerData.filter(w =>
-        (w.status.toUpperCase().includes("EMERGENCY")     ||
-         w.status.toUpperCase().includes("PANIC")          ||
-         w.status.toUpperCase().includes("SOS")            ||
-         w.status.toUpperCase().includes("OVERDUE ALARM")) && !acknowledgedAlerts.has(w.name));
+    // __14_: every status the siren counts (ALERT_STATUSES) also brings the full-screen alarm. Before, standard tiers 1-3
+    // ("OVERDUE - 15MIN ALERT" ...) and WELFARE_MISSED sounded the siren but never showed it.
+    const unackedAlert  = workerData.filter(w => {
+        const s = w.status.toUpperCase();
+        return ALERT_STATUSES.some(a => s.includes(a)) && !s.includes("DURESS") && !acknowledgedAlerts.has(w.name);
+    });
+    const _alertLine = list => list.map(w => w.name + ' - ' + w.status).join(", ");
 
     const alertBox = document.getElementById('fullScreenAlert');
     const contactsEl = document.getElementById('alertContacts');
@@ -958,7 +1023,8 @@ function handleData(response) {
         document.getElementById('alertTitle').textContent = "DURESS ALARM (SILENT)";
         document.getElementById('alertIcon').textContent  = "🥷";
         _pendingAlertNames = unackedDuress.map(w => w.name);
-        document.getElementById('alertNames').textContent = _pendingAlertNames.join(", ");
+        _pendingAlertStatus = {}; unackedDuress.forEach(w => { _pendingAlertStatus[w.name] = w.status.toUpperCase(); });
+        document.getElementById('alertNames').textContent = _alertLine(unackedDuress);
         renderAlertContacts(unackedDuress);
         startAlertLoop();
     } else if (unackedAlert.length > 0) {
@@ -967,7 +1033,8 @@ function handleData(response) {
         document.getElementById('alertTitle').textContent = "EMERGENCY ALERT";
         document.getElementById('alertIcon').textContent  = "🚨";
         _pendingAlertNames = unackedAlert.map(w => w.name);
-        document.getElementById('alertNames').textContent = _pendingAlertNames.join(", ");
+        _pendingAlertStatus = {}; unackedAlert.forEach(w => { _pendingAlertStatus[w.name] = w.status.toUpperCase(); });
+        document.getElementById('alertNames').textContent = _alertLine(unackedAlert);
         renderAlertContacts(unackedAlert);
         startAlertLoop();
     } else {
@@ -991,8 +1058,10 @@ function startAlertLoop() {
 function stopAlertLoop() { clearInterval(alertLoopInterval); alertLoopInterval = null; }
 
 function acknowledgeAlert() {
-    _pendingAlertNames.forEach(n => acknowledgedAlerts.add(n));
+    // __14_: remember the step that was on screen; if the status has moved on since, it shows again at the next poll.
+    _pendingAlertNames.forEach(n => acknowledgedAlerts.set(n, _pendingAlertStatus[n] || ''));
     _pendingAlertNames = [];
+    _pendingAlertStatus = {};
     document.getElementById('fullScreenAlert').classList.add('hidden');
     stopAlertLoop();
 }
@@ -1004,7 +1073,7 @@ function acknowledgeAlert() {
 /**
  * Alarm status strings used throughout for consistency.
  */
-const ALERT_STATUSES = ['SOS', 'DURESS', 'PANIC', 'OVERDUE ALARM', 'OVERDUE -', 'EMERGENCY'];
+const ALERT_STATUSES = ['SOS', 'DURESS', 'PANIC', 'OVERDUE ALARM', 'OVERDUE -', 'EMERGENCY', 'WELFARE_MISSED'];   // __14_: + WELFARE_MISSED
 
 /**
  * Formats elapsed milliseconds as a human-readable "Xm ago" / "Xh Xm ago" string.
@@ -1021,18 +1090,18 @@ function formatElapsed(ms) {
 function renderGrid() {
     const grid   = document.getElementById('workerGrid');
     const search = document.getElementById('searchBox')?.value.toLowerCase() || "";
-    const now    = Date.now();
+    const now    = nowMs();
     if (!grid) return;
 
     // ── Count across ALL workers before filtering ─────────────────────────────
     let activeC = 0, alertC = 0, staleC = 0;
     workerData.forEach(w => {
         const s       = (w.Status || "").toUpperCase();
-        // USER_SAFE means the alarm was resolved but the visit is still ongoing — treat as active.
-        // Only DEPARTED / COMPLETED indicate the worker has truly left the site.
-        const isSafe  = ['DEPARTED', 'COMPLETED'].includes(s);
+        // __13_: a finished visit is DEPARTED, COMPLETED, NOTICE_ACK, DATA_ENTRY_ONLY or USER_SAFE* (an HQ resolve closes the
+        // row on the backend; a PIN clear puts ARRIVED/TRAVELLING back). Age is from the last time the phone was heard.
+        const isSafe  = isClosedStatus(s);
         const isAlert = ALERT_STATUSES.some(a => s.includes(a));
-        const isStale = !isSafe && (now - (w.timestamp || 0)) > STALE_THRESHOLD_MS;
+        const isStale = !isSafe && (now - workerLastSeen(w)) > STALE_THRESHOLD_MS;
         if (!isSafe) activeC++;
         if (isAlert) alertC++;
         if (isStale) staleC++;
@@ -1041,7 +1110,7 @@ function renderGrid() {
     // ── Filter ────────────────────────────────────────────────────────────────
     let filtered = workerData.filter(w => {
         const s      = (w.Status || "").toUpperCase();
-        const isSafe = ['DEPARTED', 'COMPLETED'].includes(s);
+        const isSafe = isClosedStatus(s);
         const isAlert = ALERT_STATUSES.some(a => s.includes(a));
         const name   = (w['Worker Name'] || "").toLowerCase();
         if (search && !name.includes(search)) return false;
@@ -1053,13 +1122,13 @@ function renderGrid() {
     filtered.sort((a, b) => {
         const rank = w => {
             const s      = (w.Status || "").toUpperCase();
-            const isSafe = ['DEPARTED','COMPLETED'].includes(s);
+            const isSafe = isClosedStatus(s);
             if (ALERT_STATUSES.some(x => s.includes(x))) return 1;
-            const isStale = !isSafe && (now - (w.timestamp || 0)) > STALE_THRESHOLD_MS;
+            const isStale = !isSafe && (now - workerLastSeen(w)) > STALE_THRESHOLD_MS;
             if (isStale) return 2;
             const dueTime = new Date(w['Anticipated Departure Time']);
-            const isOverdue = dueTime.getTime() > 0 && dueTime < now &&
-                              !['DEPARTED','DURESS','SOS','PANIC'].some(x => s.includes(x));
+            const isOverdue = dueTime.getTime() > 0 && dueTime < now && !isSafe &&
+                              !['DURESS','SOS','PANIC'].some(x => s.includes(x));
             if (isOverdue) return 3;
             if (!isSafe)   return 4;
             return 9;
@@ -1075,22 +1144,26 @@ function renderGrid() {
         const statusUp = status.toUpperCase();
 
         const dueTime   = new Date(w['Anticipated Departure Time']);
-        const isSafe    = ['DEPARTED','COMPLETED'].includes(statusUp);
-        const isOverdue = dueTime.getTime() > 0 && dueTime < now &&
-                          !['DEPARTED','DURESS','SOS','PANIC'].some(s => statusUp.includes(s));
+        const isSafe    = isClosedStatus(statusUp);
+        // __13_: a finished visit is never overdue (before, a COMPLETED worker past their due time showed red OVERDUE)
+        const isOverdue = dueTime.getTime() > 0 && dueTime < now && !isSafe &&
+                          !['DURESS','SOS','PANIC'].some(s => statusUp.includes(s));
         const isAlert   = ALERT_STATUSES.some(s => statusUp.includes(s));
         const dueLabel  = (!isSafe && dueTime.getTime() > 0)
-            ? dueTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            ? fmtClock(dueTime)
             : null;
 
         // Last Pulse Watchdog — age of most recent data from this worker
-        const pulseAge   = now - (w.timestamp || now);
+        // __13_: the age is from the last time the phone was heard (Last Heard, col AF), or the row time when the backend sends none.
+        const lastSeen   = workerLastSeen(w);
+        const pulseAge   = lastSeen ? now - lastSeen : 0;
         // Only flag as stale when the worker is in a state where GPS pulses are expected.
-        // Named-site visits do not send GPS, so missing pulses are normal there.
+        // Named-site visits do not send GPS, so missing pulses are normal there - unless the backend reports Last Heard, which
+        // every open visit's phone keeps updating, so a silent phone is stale whatever the status (as the header count already said).
         const GPS_RELEVANT_STATUSES = ['TRAVELLING','OVERDUE','SOS','PANIC','DURESS','EMERGENCY','OVERDUE ALARM'];
-        const isGpsExpected = GPS_RELEVANT_STATUSES.some(s => statusUp.includes(s));
+        const isGpsExpected = GPS_RELEVANT_STATUSES.some(s => statusUp.includes(s)) || !!w.lastHeard;
         const isStale    = !isSafe && isGpsExpected && pulseAge > STALE_THRESHOLD_MS;
-        const pulseLabel = isSafe ? null : formatElapsed(pulseAge);
+        const pulseLabel = isSafe ? null : (fmtClock(lastSeen) ? fmtClock(lastSeen) + ' (' + formatElapsed(pulseAge) + ')' : formatElapsed(pulseAge));
         const pulseClass = isStale
             ? 'text-amber-400 font-bold animate-pulse'
             : 'text-slate-300';
@@ -1155,7 +1228,7 @@ function renderGrid() {
                     </div>` : ''}
                     ${pulseLabel ? `
                     <div class="flex justify-between text-sm tracking-tighter">
-                        <span class="text-sm text-slate-300 uppercase">Last Pulse</span>
+                        <span class="text-sm text-slate-300 uppercase">Last Heard</span>
                         <span class="${pulseClass}">${isStale ? '📡 ' : ''}${pulseLabel}</span>
                     </div>` : ''}
                 </div>
@@ -1275,6 +1348,7 @@ function getStatusDot(status, isOverdue, isStale) {
     if (!status) return 'bg-slate-500';
     const s = status.toUpperCase();
     if (ALERT_STATUSES.some(a => s.includes(a))) return 'bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.8)] animate-pulse';
+    if (isClosedStatus(s)) return 'bg-slate-600';   // __13_: finished visit (incl. USER_SAFE*)
     if (isStale)   return 'bg-amber-500 animate-pulse';
     if (isOverdue) return 'bg-red-500 animate-pulse';
     switch (s) {
@@ -1309,8 +1383,25 @@ function initMap() {
     mapInstance  = L.map('mapView').setView([MAP_LAT, MAP_LNG], 10);
     // rastertiles/voyager: readable light basemap with strong contrast for coloured alert markers.
     // dark_all was causing the map to appear very dark and making markers hard to distinguish.
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    // __13_: CARTO now wants a free key. With one (Factory field) use CARTO Voyager; with none, or if CARTO refuses the key or
+    // the quota runs out, fall back to OpenStreetMap's own tiles (fine for a few supervisors; OSM's tile policy forbids heavy use).
+    const cartoKey = (CARTO_KEY && !CARTO_KEY.includes('%%')) ? CARTO_KEY.trim() : '';
+    const addOsm = () => L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                { attribution: '© OpenStreetMap contributors', maxZoom: 19 }).addTo(mapInstance);
+    if (cartoKey.length >= 8) {
+        let tileErrors = 0, switched = false;
+        const carto = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=' + encodeURIComponent(cartoKey),
                 { attribution: '© OpenStreetMap contributors © CARTO', maxZoom: 19 }).addTo(mapInstance);
+        carto.on('tileerror', () => {
+            if (switched || ++tileErrors < 4) return;
+            switched = true;
+            try { mapInstance.removeLayer(carto); } catch (e) {}
+            addOsm();
+            showToast('Map: CARTO tiles unavailable - using OpenStreetMap');
+        });
+    } else {
+        addOsm();
+    }
     markersLayer = L.layerGroup().addTo(mapInstance);
 }
 
@@ -1322,8 +1413,8 @@ function getMarkerColor(w) {
     const s = (w.status || w.Status || "").toUpperCase();
     if (ALERT_STATUSES.some(a => s.includes(a))) return 'purple';
     const dueTime  = new Date(w['Anticipated Departure Time'] || w.dueTime);
-    const isOverdue = dueTime.getTime() > 0 && dueTime < Date.now() &&
-                      !['DEPARTED','DURESS','SOS','PANIC'].some(a => s.includes(a));
+    const isOverdue = dueTime.getTime() > 0 && dueTime < nowMs() && !isClosedStatus(s) &&
+                      !['DURESS','SOS','PANIC'].some(a => s.includes(a));
     if (isOverdue) return 'red';
     if (s === 'ARRIVED' || s === 'ON SITE') return 'green';
     if (s === 'TRAVELLING') return 'blue';
@@ -1336,7 +1427,7 @@ function renderMap() {
     workerData.forEach(w => {
         const statusUp = (w.status || w.Status || "").toUpperCase();
         // Departed and completed workers have left the site — remove from map immediately.
-        if (JOURNEY_CLOSED_STATUSES.includes(statusUp)) return;
+        if (isClosedStatus(statusUp)) return;
 
         const gps = w.gps || w['Last Known GPS'];
         const hasValidGps = gps && gps !== '0,0' && gps !== '0.0,0.0' && gps.includes(',')
@@ -1519,7 +1610,7 @@ async function geocodeAddress(address) {
     if (!address) { geocodeCache.set(address, 'failed'); return; }
     geocodeCache.set(address, 'pending');
     try {
-        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&countrycode=nz`;
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&countrycodes=nz`;
         const res = await fetch(url, { headers: { 'Accept': 'application/json', 'User-Agent': 'OTG-AppSuite-Monitor/1.0' } });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
@@ -1598,7 +1689,7 @@ function renderLog() {
         .sort((a, b) => new Date(b.Timestamp) - new Date(a.Timestamp))
         .slice(0, 100)
         .map(r => {
-            const t   = new Date(r['Timestamp']).toLocaleTimeString();
+            const t   = fmtStamp(r['Timestamp']);
             const n   = escapeHtml(r['Worker Name']  || '');
             const s   = escapeHtml(r['Alarm Status'] || '');
             const cls = getStatusClass(r['Alarm Status']);
@@ -1624,6 +1715,25 @@ function openResolve(name) {
     displayEl.textContent = name;
     inputEl.value  = '';       // Operator must type name — NOT pre-filled
     if (noteEl) noteEl.value = '';
+    // __14_: no outcome chosen until the supervisor picks one; "still on site" needs a visit due time.
+    const leftEl = document.getElementById('resLeftRadio'), onEl = document.getElementById('resOnsiteRadio');
+    const minsEl = document.getElementById('resExtendMins'), dueNote = document.getElementById('resDueNote');
+    const btn = document.getElementById('resSubmitBtn');
+    if (btn) btn.disabled = false;
+    if (leftEl) leftEl.checked = false;
+    if (onEl) onEl.checked = false;
+    if (minsEl) minsEl.value = '10';
+    const w = workerData.find(x => x['Worker Name'] === displayEl.textContent) || {};
+    const due = new Date(w['Anticipated Departure Time']);
+    const hasDue = !!w['Anticipated Departure Time'] && !isNaN(due.getTime());
+    const backendOk = backendBuildNo >= 53;   // an older backend ignores the choice and closes the visit
+    if (onEl) onEl.disabled = !hasDue || !backendOk;
+    if (minsEl) minsEl.disabled = !hasDue || !backendOk;
+    if (dueNote) dueNote.textContent = !backendOk
+        ? 'The backend is older than __53_, so "still on site" is not available - resolving closes the visit.'
+        : hasDue
+        ? 'Current due out: ' + fmtClock(due) + '. If that is later than the time you pick, it is kept. If the worker neither extends nor departs, the alarm starts again.'
+        : 'No visit due time for this alarm - it can only be closed.';
     modal.classList.remove('hidden');
     setTimeout(() => inputEl.focus(), 50);
 }
@@ -1639,15 +1749,26 @@ function submitResolution() {
 
     if (targetName !== typedName) { showToast("❌ Name does not match exactly — please try again."); return; }
     if (note.length < 5)          { showToast("❌ Please enter a resolution note (min 5 characters)."); return; }
+    // __14_: the supervisor must say whether the worker has left.
+    const picked  = document.querySelector('input[name="resOutcome"]:checked');
+    const outcome = picked ? picked.value : '';
+    if (outcome !== 'LEFT' && outcome !== 'ONSITE') { showToast("❌ Choose: worker has left, or still on site."); return; }
+    if (outcome === 'ONSITE' && (document.getElementById('resOnsiteRadio') || {}).disabled) { showToast("❌ Still on site is not available for this alarm."); return; }
+    const mins = parseInt((document.getElementById('resExtendMins') || {}).value, 10) || 10;
+    const btn = document.getElementById('resSubmitBtn');
+    if (btn) { if (btn.disabled) return; btn.disabled = true; }   // one post per click (a double click sent two)
 
     const worker = workerData.find(w => w['Worker Name'] === targetName) || {};
+    const ackStatus = String(worker.status || '').toUpperCase();
 
     const formData = new FormData();
     formData.append('action',       'resolve');
     formData.append('key',          API_KEY);
     formData.append('Worker Name',  targetName);
     formData.append('Alarm Status', 'USER_SAFE - HQ RESOLVED');
-    formData.append('Notes',        `[HQ RESOLVED]: ${note}`);
+    formData.append('Notes',        outcome === 'LEFT' ? `[HQ RESOLVED - worker has left]: ${note}` : `[HQ RESOLVED]: ${note}`);
+    formData.append('Resolve Outcome', outcome);                                  // __14_ (backend __53_)
+    if (outcome === 'ONSITE') formData.append('Extend Minutes', String(mins));
     formData.append('Battery Level', 'N/A');
     formData.append('Location Name', 'HQ Manual Resolution');
     formData.append('Emergency Contact Name',   worker['Emergency Contact Name']   || '');
@@ -1662,12 +1783,14 @@ function submitResolution() {
 
     fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: formData })
         .then(() => {
-            showToast("✅ Resolution sent — update may take ~10s.");
+            showToast(outcome === 'LEFT'
+                ? "✅ Resolved - visit closed. Update may take ~10s."
+                : "✅ Resolved - still monitored, due out in " + mins + " min or later. Update may take ~10s.", 5000);
             closeResolve();
-            acknowledgedAlerts.add(targetName);
+            acknowledgedAlerts.set(targetName, ackStatus);
             fetchData();
         })
-        .catch(e => showToast("❌ Connection error: " + e));
+        .catch(e => { if (btn) btn.disabled = false; showToast("❌ Connection error: " + e); });
 }
 
 // ============================================================================
@@ -1744,7 +1867,7 @@ function submitBroadcast() {
     fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: formData })
         .then(() => {
             const entry = {
-                time:     new Date().toLocaleTimeString(),
+                time:     fmtClock(new Date(nowMs())),
                 priority: broadcastPriority,
                 msg:      msg.length > 60 ? msg.slice(0, 60) + '…' : msg
             };
@@ -1790,14 +1913,16 @@ function exportSystemLog() {
     // Per RFC 4180: fields containing quotes must have each " doubled,
     // then the whole field wrapped in quotes.
     const csvEscape = v => `"${String(v || '').replace(/"/g, '""')}"`;
-    const csv  = "Timestamp,Worker,Status,Location\n" +
+    // __13_: the Visits tab holds one row per visit, so this is each visit's LATEST status, not an event history.
+    const nz = v => { const t = new Date(v); return isNaN(t.getTime()) ? '' : t.toLocaleDateString('en-NZ') + ' ' + fmtClock(t); };
+    const csv  = "Last update (UTC),Last update (local),Worker,Current status,Location,Last heard (local)\n" +
         allRows.map(r =>
-            [r.Timestamp, r['Worker Name'], r['Alarm Status'], r['Location Name']]
+            [r.Timestamp, nz(r.Timestamp), r['Worker Name'], r['Alarm Status'], r['Location Name'], nz(r['Last Heard'])]
                 .map(csvEscape).join(',')
         ).join("\n");
     const link = document.createElement("a");
     link.href     = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-    link.download = `OTG_Log_${new Date().toISOString().slice(0,10)}.csv`;
+    link.download = `OTG_VisitStatus_${new Date().toISOString().slice(0,10)}.csv`;
     link.click();
 }
 
