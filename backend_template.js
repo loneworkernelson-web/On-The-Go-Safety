@@ -192,6 +192,35 @@
  *   - Settings tab: two new keys added with their defaults (existing values never changed); Health email shows them.
  *   - Contact escalation (tiers, Critical ladder, col AA claims, All Clear audience) is unchanged.
  *
+ * __53_ (session 103, 27 Oct 2026, Opus) - HQ resolve: the supervisor says whether the worker has left (needs Monitor __14_ to
+ * offer the choice; an older Monitor sends no choice and gets the old behaviour). No worker change needed:
+ *   - "Resolve Outcome" = LEFT: as before - the alarm row is closed with the status the Monitor sent (USER_SAFE - HQ RESOLVED).
+ *   - "Resolve Outcome" = ONSITE (+ "Extend Minutes", 5-240, default 10): like a PIN clear - col K back to ARRIVED (TRAVELLING
+ *     for a trip), the row stays OPEN, col U = the later of the current due time and now + the minutes (only ever later, as B3),
+ *     a running missed-welfare escalation ends and the next welfare time is set (as a PIN clear). A new due time = a fresh
+ *     ladder, so the contacts are alerted again if the worker neither extends nor departs. The All Clear says the visit is
+ *     still being monitored. Only on the worker's LATEST row, and only when that row has a readable due time; otherwise the
+ *     row is closed as LEFT and the Audit says why (handleResolvePost:onsite-closed).
+ *   - No choice sent (Monitor __13_ or older): unchanged - the row is closed.
+ *   - F103-1: when no alarm row is found (e.g. the worker's PIN clear landed first), the old fallback appended a new row. That
+ *     row became the worker's latest, so an OPEN visit stopped being checked (no more overdue alerts). Now, when the latest row
+ *     is an open visit (readable due time, not closed), nothing is appended and no All Clear is sent
+ *     (handleResolvePost:open-visit-kept). Otherwise the record row is appended as before.
+ *   - A row showing SOS or WELFARE_MISSED (the welfare fallback) can now be resolved; before, only EMERGENCY / PANIC / DURESS /
+ *     OVERDUE rows were found.
+ *
+ * __52_ (session 103, 27 Oct 2026) - Monitor feed only (getDashboardData); the alarm path, the ladders, every write and every
+ * Visits column are untouched, and no worker change is needed:
+ *   - New "Last Heard" (Visits col AF, UTC ISO text, '' when missing or unreadable) so the Monitor can show when the phone was
+ *     last heard whatever the status. New "Visit ID" (col AB). New serverNow (ISO) so the Monitor can age things by the
+ *     server's clock instead of the supervisor's PC clock.
+ *   - "Site GPS" now matches like _siteCoords_ (the Visits row holds "Company - Site" when the site has a company, so both forms
+ *     are matched; the first Sites row that matches decides; a missing, FAILED, 0,0 or out-of-range position gives no pin).
+ *     Before, only the bare Site Name matched, so a company site got no pin.
+ *   - The payload is trimmed to what the Monitor draws or phones: Date, GPS Timestamp, Photo 1-4, Distance, Visit Report Data,
+ *     Signature and the Staff WOFExpiry (nothing on the Monitor reads them) are no longer sent. Faster polling, and photo links
+ *     and signatures no longer travel to every supervisor screen every 10 seconds.
+ *
  * __51_ (session 102, 27 Oct 2026) - R55 Travel Report distance method, R63 site-safety upload fix (F101-2), R66(a) Settings note
  * (no worker change needed to deploy; the alarm path, the ladders and every Visits column are untouched):
  *   - R55: the Travel Report gets a "Distance method" column after "Total km" (plain words for the worker app's _distMethod:
@@ -968,6 +997,12 @@ function handleResolvePost(p) {
     const lastRow = sheet.getLastRow();
     let rowUpdated = false;
     let _hqAudience = 'none';   // __45_ (F89-2)
+    // __53_: what the supervisor said. LEFT / ONSITE from Monitor __14_+; '' from an older Monitor = the old behaviour (close).
+    const _outcome = String(p['Resolve Outcome'] || '').trim().toUpperCase();
+    let _mins = parseInt(p['Extend Minutes'], 10);
+    if (!(_mins >= 5 && _mins <= 240)) _mins = 10;
+    let _stillMonitored = false;
+    let _latest = null;          // __53_: the worker's latest row in sheet order (PRE_VISIT / DATA_ENTRY_ONLY records skipped)
 
     if (lastRow > 1) {
         const startRow = Math.max(2, lastRow - 50); 
@@ -981,13 +1016,41 @@ function handleResolvePost(p) {
             const rowData = data[i];
             if (rowData[2] === workerName) {
                 const status = String(rowData[10]);
-                // Targets active safety alerts
-                if (status.includes('EMERGENCY') || status.includes('PANIC') || status.includes('DURESS') || status.includes('OVERDUE')) {
+                const _su = status.toUpperCase();
+                const _isRecord = _su.includes('PRE_VISIT') || _su.includes('DATA_ENTRY_ONLY');
+                const _isLatest = !_latest && !_isRecord;
+                if (_isLatest) _latest = { row: startRow + i, data: rowData };
+                // Targets active safety alerts (__53_: SOS and WELFARE_MISSED added)
+                if (status.includes('EMERGENCY') || status.includes('PANIC') || status.includes('DURESS') || status.includes('OVERDUE') ||
+                    status.includes('SOS') || status.includes('WELFARE_MISSED')) {
                     const targetRow = startRow + i;
                     _hqAudience = _alertAudience_(rowData);   // __45_ (F89-2): before the row is overwritten
-                    sheet.getRange(targetRow, 11).setValue(p['Alarm Status']); 
-                    _audit_('handleResolvePost', workerName, targetRow, status, p['Alarm Status'], p['Alarm Status'], p.idempotencyKey, 'alarm resolved');
-                    sheet.getRange(targetRow, 12).setValue((String(rowData[11] || '') + "\n" + (p['Notes'] || '')).trim()); 
+                    const _due = new Date(rowData[20]);
+                    const _hasDue = !!rowData[20] && !isNaN(_due.getTime());
+                    if (_outcome === 'ONSITE' && _isLatest && _hasDue) {
+                        // __53_: the worker is still on site - restore the visit, keep it open, push the due time out.
+                        const _now = new Date();
+                        const _restored = String(rowData[11] || '').includes('Travel to') ? 'TRAVELLING' : 'ARRIVED';
+                        const _newDueMs = Math.max(_due.getTime(), _now.getTime() + _mins * 60000);
+                        sheet.getRange(targetRow, 11).setValue(_restored);
+                        if (_newDueMs > _due.getTime()) sheet.getRange(targetRow, 21).setValue(new Date(_newDueMs).toISOString());
+                        const _tag = '[HQ RESOLVED ' + _fmtLocal_(_now, 'h:mm:ss a') + ' - still on site, due out ' + _fmtLocal_(new Date(_newDueMs), 'h:mm a') + ']';
+                        sheet.getRange(targetRow, 12).setValue((String(rowData[11] || '') + "\n" + _tag + ' ' + (p['Notes'] || '')).trim());
+                        _welfareAfterPinClear_(sheet, targetRow, rowData, _now, workerName);
+                        _audit_('handleResolvePost:onsite', workerName, targetRow, status, _restored, p['Alarm Status'], p.idempotencyKey,
+                                'still on site - row stays open, due ' + (_newDueMs > _due.getTime() ? 'moved to ' : 'kept at ') + new Date(_newDueMs).toISOString() +
+                                ' (asked +' + _mins + ' min); a fresh ladder runs from it');
+                        _stillMonitored = true;
+                    } else {
+                        sheet.getRange(targetRow, 11).setValue(p['Alarm Status']); 
+                        _audit_('handleResolvePost', workerName, targetRow, status, p['Alarm Status'], p['Alarm Status'], p.idempotencyKey, 'alarm resolved');
+                        if (_outcome === 'ONSITE') {
+                            _audit_('handleResolvePost:onsite-closed', workerName, targetRow, status, p['Alarm Status'], p['Alarm Status'], p.idempotencyKey,
+                                    'supervisor said still on site, but ' + (!_isLatest ? 'this is not the worker\'s latest row' : 'the row has no readable due time') +
+                                    ' - closed as before; nothing is watching this worker');
+                        }
+                        sheet.getRange(targetRow, 12).setValue((String(rowData[11] || '') + "\n" + (p['Notes'] || '')).trim()); 
+                    }
                     rowUpdated = true;
                     break;
                 }
@@ -1001,6 +1064,20 @@ function handleResolvePost(p) {
     
     // Fallback: If no active visit is found, log the resolution as a new entry
     if (!rowUpdated) {
+        // __53_ (F103-1): never append over an OPEN visit. The new row would become the worker's latest, and the checker
+        // (and the Monitor) only look at the latest row - the open visit would no longer be escalated.
+        if (_latest) {
+            const _ls = String(_latest.data[10] || '').toUpperCase();
+            const _lDue = new Date(_latest.data[20]);
+            const _lOpen = !['DEPARTED', 'COMPLETED', 'DATA_ENTRY_ONLY', 'USER_SAFE', 'PRE_VISIT'].some(w => _ls.includes(w)) &&
+                           !!_latest.data[20] && !isNaN(_lDue.getTime());
+            if (_lOpen) {
+                _audit_('handleResolvePost:open-visit-kept', workerName, _latest.row, _latest.data[10], '', p['Alarm Status'], p.idempotencyKey,
+                        'no alarm row to resolve and the latest row is an open visit - nothing appended (it would have hidden the visit ' +
+                        'from the overdue checks), no All Clear');
+                return;
+            }
+        }
         const ts = new Date();
         const dateStr = _localCell_(ts);   // __47_ (R47): col B "22 Oct 2026, 3:16 pm" (text)
         const row = [
@@ -1026,7 +1103,7 @@ function handleResolvePost(p) {
                 'no contact was alerted for this visit - resolved, All Clear not sent');
         return;
     }
-    handleSafetyResolution(p, true, _hqAudience);
+    handleSafetyResolution(p, true, _hqAudience, _stillMonitored);   // __53_: ONSITE - "still being monitored" wording
 }
 function handleWorkerPost(p) {
     // ── IDEMPOTENCY GUARD ────────────────────────────────────────────────────
@@ -3772,54 +3849,68 @@ skipCount + ' skipped (not configured)' +
 function getDashboardData() {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName('Visits');
-    const staffSheet = ss.getSheetByName('Staff');
     if(!sheet) return {workers: []};
     const lastRow = sheet.getLastRow();
-    if (lastRow < 2) return {workers: []}; 
-    const startRow = Math.max(2, lastRow - 500); 
-    const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, 25).getValues();
-    const headers = ["Timestamp", "Date", "Worker Name", "Worker Phone Number", "Emergency Contact Name", "Emergency Contact Number", "Emergency Contact Email", "Escalation Contact Name", "Escalation Contact Number", "Escalation Contact Email", "Alarm Status", "Notes", "Location Name", "Location Address", "Last Known GPS", "GPS Timestamp", "Battery Level", "Photo 1", "Distance (km)", "Visit Report Data", "Anticipated Departure Time", "Signature", "Photo 2", "Photo 3", "Photo 4"];
+    if (lastRow < 2) return {workers: []};
+    const startRow = Math.max(2, lastRow - 500);
+    // __52_: A..Y as before, plus Z..AF when the sheet has them (Visit ID = AB, Last Heard = AF). Never wider than AF.
+    const width = Math.max(25, Math.min(sheet.getLastColumn(), LAST_HEARD_COL));
+    const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, width).getValues();
+    // __52_: only the columns the Monitor draws or phones (same key names as before). 0-based column index -> key.
+    const COLS = [[0, 'Timestamp'], [2, 'Worker Name'], [3, 'Worker Phone Number'], [4, 'Emergency Contact Name'],
+                  [5, 'Emergency Contact Number'], [6, 'Emergency Contact Email'], [7, 'Escalation Contact Name'],
+                  [8, 'Escalation Contact Number'], [9, 'Escalation Contact Email'], [10, 'Alarm Status'], [11, 'Notes'],
+                  [12, 'Location Name'], [13, 'Location Address'], [14, 'Last Known GPS'], [16, 'Battery Level'],
+                  [20, 'Anticipated Departure Time']];
     // Phone number columns (indices 3, 5, 8) must be coerced to strings.
     // Google Sheets getValues() returns numeric cells as JS numbers, silently
     // dropping any leading zero (e.g. 021234567 → 21234567). Stringifying here
     // ensures the JSON payload preserves the raw digit sequence so the monitor
     // can recover the correct local format.
     const PHONE_INDICES = new Set([3, 5, 8]);
-    const workers = data.map(r => {
-        let obj = {};
-        headers.forEach((h, i) => {
-            obj[h] = PHONE_INDICES.has(i) ? String(r[i] || '') : r[i];
-        });
-        return obj;
-    });
-    if(staffSheet) {
-        const sData = staffSheet.getDataRange().getValues();
-        workers.forEach(w => { for(let i=1; i<sData.length; i++) { if(sData[i][0] === w['Worker Name']) { w['WOFExpiry'] = sData[i][6]; } } });
-    }
 
-    // ── Attach resolved site GPS from Sites sheet column M ─────────────────
-    // Provides the monitor map with stored coordinates for named-site visits
-    // where the worker GPS is 0,0 (workers at fixed sites don't send live GPS).
+    // ── Stored site positions (Sites col M), matched like _siteCoords_: bare Site Name (col D) and "Company - Site" ──
+    // The first Sites row that has a name as one of its keys decides it, exactly as _siteCoords_ does.
+    const sitePos = Object.create(null);   // no prototype, so a site called "constructor" or "toString" is just a name
     try {
         const siteSheet = ss.getSheetByName('Sites');
         if (siteSheet && siteSheet.getLastRow() > 1) {
-            const sData      = siteSheet.getRange(2, 1, siteSheet.getLastRow() - 1, 13).getValues();
-            const siteGpsMap = {};
+            const sData = siteSheet.getRange(2, 1, siteSheet.getLastRow() - 1, 13).getValues();
             sData.forEach(r => {
-                const name = (r[3] || '').toString().trim();   // column D — Site Name
-                const gps  = (r[12] || '').toString().trim();  // column M — Site GPS
-                if (name && gps && gps !== 'FAILED') siteGpsMap[name] = gps;
-            });
-            workers.forEach(w => {
-                const siteName = (w['Location Name'] || '').toString().trim();
-                if (siteName && siteGpsMap[siteName]) w['Site GPS'] = siteGpsMap[siteName];
+                const site = String(r[3] || '').trim(), co = String(r[2] || '').trim();
+                if (!site) return;
+                const keys = co ? [site, co + ' - ' + site] : [site];
+                let pos;   // computed once per row: 'lat,lng' or ''
+                keys.forEach(k => {
+                    if (Object.prototype.hasOwnProperty.call(sitePos, k)) return;
+                    if (pos === undefined) {
+                        pos = '';
+                        const m = /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/.exec(String(r[12] || ''));
+                        if (m) {
+                            const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
+                            if (!(Math.abs(lat) <= 0.001 || Math.abs(lng) <= 0.001 || Math.abs(lat) > 90 || Math.abs(lng) > 180)) pos = lat + ',' + lng;
+                        }
+                    }
+                    sitePos[k] = pos;
+                });
             });
         }
     } catch(e) {
-        Logger.log('[getDashboardData] Could not attach site GPS: ' + e.toString());
+        Logger.log('[getDashboardData] Could not read site positions: ' + e.toString());
     }
 
-    return {workers: workers, escalation_limit: CONFIG.ESCALATION_MINUTES};
+    const workers = data.map(r => {
+        const obj = {};
+        COLS.forEach(c => { obj[c[1]] = PHONE_INDICES.has(c[0]) ? String(r[c[0]] || '') : r[c[0]]; });
+        const heard = (width >= LAST_HEARD_COL) ? _lastHeardMs_(r[LAST_HEARD_COL - 1]) : null;
+        obj['Last Heard'] = heard === null ? '' : new Date(heard).toISOString();
+        obj['Visit ID'] = (width >= VISIT_ID_COL) ? String(r[VISIT_ID_COL - 1] || '') : '';
+        const siteName = String(obj['Location Name'] || '').trim();
+        if (siteName && sitePos[siteName]) obj['Site GPS'] = sitePos[siteName];
+        return obj;
+    });
+
+    return {workers: workers, escalation_limit: CONFIG.ESCALATION_MINUTES, serverNow: new Date().toISOString(), build: TEMPLATE_BUILD};
 }
 
 function getGlobalForms() {
@@ -4671,8 +4762,8 @@ function _escalationPayload_(sheet, entry, newStatus, isDual) {
  * NEW: handleSafetyResolution
  * Logic: Notifies both contacts that the emergency has ended.
  */
-function handleSafetyResolution(p, forceNotify, forceScope) {
-    let _stillMonitored = false; // __43_ (D2): the clear leaves an open visit row - the visit is still monitored
+function handleSafetyResolution(p, forceNotify, forceScope, forceStillMonitored) {
+    let _stillMonitored = !!(forceNotify && forceStillMonitored);   // __53_: HQ resolve, worker still on site // __43_ (D2): the clear leaves an open visit row - the visit is still monitored
     let _audience = forceNotify ? (forceScope || 'both') : 'none';   // __45_ (F89-2): who gets the All Clear
     // GUARD: Scan the sheet BEFORE handleWorkerPost runs, because handleWorkerPost
     // will overwrite the open alarm row's status to USER_SAFE_CONFIRMED — after which
@@ -5359,7 +5450,7 @@ function _formsGps_(sheet, rowNum, p) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__51_';
+const TEMPLATE_BUILD = 'backend__53_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
