@@ -677,6 +677,7 @@
     <ul>
         <li>If your organisation has uploaded emergency procedures or hazard documentation, a red <strong>🛡️ VIEW SITE SAFETY INFORMATION</strong> button appears. Tap it to open the safety page in your browser — no Google account required. The page includes any photos or documents attached to that site.</li>
         <li>If no procedures have been uploaded yet, the button is replaced with a greyed-out prompt: <em>No Site Safety Information found — Click to submit documentation.</em> Tap it to open the site procedures form, fill in the details, and submit. Your organisation's safety monitor will receive it immediately.</li>
+        <li>A new upload <strong>replaces</strong> the site's safety information. Your organisation keeps the old links, so nothing is lost. If the app cannot match your upload to a site, or a photo fails, the upload is refused (your form is still saved) and your administrator is told - tell them if the red button does not appear after a sync.</li>
     </ul>
     <div class="tip">
         <strong>💡 Check before you visit:</strong> Get into the habit of opening the site info panel and reviewing safety information before starting any visit to an unfamiliar site. It takes seconds and may tell you about hazards, access codes, or emergency assembly points.
@@ -864,6 +865,8 @@
     <h3>Battery Saver</h3>
     <p>After 10 seconds without interaction, the app automatically switches to <strong>Battery Saver mode</strong>. The screen goes black and the system navigation bars are hidden — this is normal behaviour. GPS tracking and all safety monitoring continue to run in the background.</p>
 
+    <p>While the screen is dimmed, pinching to zoom is blocked, so an accidental touch cannot enlarge the page. Normal zoom returns when you wake the screen.</p>
+
     <p>The battery saver screen shows:</p>
     <ul>
         <li><strong>Time remaining</strong> in the visit (large display, top centre)</li>
@@ -998,6 +1001,9 @@
         <strong>⚠️ Do not use your phone's native lock button during a trip.</strong> Because this app is a Progressive Web App (PWA) running in your browser, activating your phone's own lock screen is likely to suspend GPS and background updates. This is a known limitation of PWAs on mobile devices. Instead, leave the app running on its own locked screen — this is what it is designed for. If your phone dims or goes dark on its own, that is fine; just do not press the side button to lock it manually.
     </div>
 
+    <h3>Your starting position</h3>
+    <p>When you set up a trip, the app starts warming up your phone's GPS so the starting position is ready the moment you begin. If no position is found within about <strong>5 seconds</strong>, the trip still starts - it is never held up - and the closing form will ask you to enter the distance yourself.</p>
+
     <h3>Personal travel — no report required</h3>
     <p>If you're travelling for personal reasons and no report is needed, tick the <strong>"No report required"</strong> checkbox in the expanded footer before you begin. The trip will still be safety-monitored, but you will not be asked to submit a report when you finish. If your organisation mandates reports for all travel, this checkbox will not be available.</p>
 
@@ -1010,7 +1016,7 @@
     <ul>
         <li><strong>Start Point</strong> — the address where your trip began, resolved from your GPS location at trip start. The field may briefly show <em>"Locating…"</em> while the address is being looked up. If GPS or network was unavailable, raw coordinates are shown instead.</li>
         <li><strong>Destination</strong> — the name and address of your selected site, or "General travel" if you chose no specific destination.</li>
-        <li><strong>Estimated distance</strong> — a distance figure calculated from your GPS track during the journey.</li>
+        <li><strong>Estimated distance</strong> - worked out from your GPS track during the journey. If the track is good it follows the road route along your trail; if the phone was locked and left few trail points, it uses the road route from start to finish; if even that is not possible it uses a straight line. The method is recorded with the distance because distance may be used for travel claims. <strong>You can always change the figure</strong> before you submit; your organisation's report shows when a worker edited it.</li>
     </ul>
 
     <div class="warning">
@@ -1078,6 +1084,9 @@
         <strong>💡 First load requires internet.</strong> The app must be opened at least once with a connection so it can cache the configuration. After that, it loads and runs fully offline.
     </div>
 
+    <h3>"This is a browser copy"</h3>
+    <p>If a visit is running and the app is opened in a normal <strong>browser tab</strong> instead of from your home screen icon, an amber bar appears at the bottom: <em>"This is a browser copy - close it and open the Safety App from your home screen."</em> Two copies running together share the same data and timers, so close the browser tab and use the installed app. This most often happens after tapping a link or a reminder. Your organisation may leave the reminder tap-link switched off for this reason.</p>
+
     <h3>Changing Phones</h3>
     <p>The app ties your registration to a specific device. If you get a new phone, change browsers, or need to reinstall, there are a few things to be aware of:</p>
     <ul>
@@ -1108,7 +1117,7 @@
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2>11. Safety Check-ins</h2>
 
-    <p>If your organisation has enabled periodic welfare check-ins, the app will chime and display a full-screen prompt at regular intervals while a visit is active.</p>
+    <p>Welfare check-ins are switched on or off by your organisation (they are <strong>off</strong> unless your administrator turns them on). When they are on, the app chimes and shows a full-screen prompt at regular intervals while a <strong>site visit</strong> is active. There are no welfare checks during <strong>trips</strong>, because a prompt while driving is a distraction.</p>
 
     <div class="mock-wrap">
         <div class="mock-phone" style="width:260px;background:linear-gradient(135deg,#1e3a5f 0%,#0f172a 100%);border-color:#0f172a;">
@@ -1129,9 +1138,22 @@
     <p><strong>When the prompt appears:</strong></p>
     <ul>
         <li>Unlock your phone and <strong>tap the green "✅ I'm OK" button once</strong> to confirm you're safe.</li>
-        <li>If you don't respond within 2 minutes, a safety alarm fires automatically and alerts your contacts.</li>
-        <li>The check-in interval may be fixed by your organisation, or you may be able to choose it yourself before starting a visit (10, 15, 30, 60, or 120 minute options). Check with your manager if you're unsure what to expect.</li>
+        <li>You have a short time to answer (2 minutes unless your organisation has changed it). If you don't respond, your <strong>main contact</strong> is alerted at once with a "welfare check not answered" message, and your second contact is alerted if there is still no contact from you. If you answer late, or clear it with your PIN, your contacts get an <strong>All Clear</strong> and the checks start again.</li>
+        <li>The check-in interval is set when you start a visit. Your organisation sets the default, and you may be able to choose 10, 15, 30, 60 or 120 minutes yourself before you slide to start.</li>
     </ul>
+
+    <h3>Check in now</h3>
+    <p>While welfare checks are on, the visit screen has a <strong>✅ Check in now</strong> button. Tap it any time to tell the system you are OK - it counts exactly like answering a prompt, and the <em>next</em> check is counted from that moment (a toast shows the new time, for example "Checked in - next check at 3:45 pm").</p>
+
+    <h3>Other things worth knowing</h3>
+    <ul>
+        <li><strong>Locked phone:</strong> the app cannot show a prompt while your phone is locked. If you have set up phone alerts (Section 13), your phone gets a "Welfare check - open the app and tap I'm OK" message. Open the app within the answer time and the prompt is waiting for you, with the time left on the countdown.</li>
+        <li><strong>Amber warning:</strong> if welfare checks are on and you have <em>not</em> set up phone alerts, the start screen and visit screen show an amber line: <em>"Welfare checks are on. Keep the app open or set up phone alerts, or your contacts will be alerted if you miss a check."</em> It means exactly that - a locked phone with no phone alerts will miss the check.</li>
+        <li><strong>Last check skipped:</strong> a check that would fall at or after the time your visit is due to end is skipped. The end-of-visit alerts cover that moment.</li>
+        <li><strong>Extending a visit</strong> after a check was skipped (or has already come due) restarts the checks from the extension, so you are not alerted for a check that no longer applies.</li>
+        <li><strong>No prompt during an alarm.</strong> If an alarm is already active, welfare prompts wait.</li>
+    </ul>
+
 
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2>12. Vehicle Safety Checks</h2>
@@ -1282,19 +1304,61 @@
     </div>
 
     <h3>What your contacts will receive</h3>
-    <p>When any alarm fires — SOS, DURESS, overdue, or welfare check failure — your contacts will receive a push notification on their phone showing:</p>
+    <p>When any alarm fires - SOS, DURESS, overdue, or a welfare check not answered - your contacts will receive a push notification on their phone. The title says what has happened and who it is about, for example:</p>
     <ul>
-        <li>The alarm type (e.g. <strong>🚨 PANIC / SOS</strong> or <strong>⚠ OVERDUE</strong>)</li>
-        <li>Your name and phone number</li>
-        <li>The site you were at and its address</li>
-        <li>A GPS link (if location was available)</li>
-        <li>A <strong>what3words address</strong> (e.g. <code>///filled.count.soap</code>) in the emergency email — if your organisation has this feature configured</li>
+        <li><strong>OVERDUE 15 MIN - Your Name</strong> - a visit that has run past its time. The number of minutes counts from the time you were due out.</li>
+        <li><strong>EMERGENCY - N MIN OVERDUE</strong> - the final automatic alert, sent to both contacts.</li>
+        <li><strong>CRITICAL TIMING - ...</strong>, then <strong>SECOND ALERT</strong> and <strong>FINAL NOTICE</strong> - the faster alerts for a Critical Timing visit.</li>
+        <li><strong>WELFARE CHECK NOT ANSWERED (3:15 pm) - Your Name</strong> - a welfare check that was not answered in time.</li>
+        <li><strong>🚨 PANIC / SOS</strong> and <strong>DURESS</strong> alarms.</li>
     </ul>
-    <p>When you mark yourself safe (the alarm is resolved), your contacts also receive an <strong>✅ All Clear</strong> push notification so they know the situation has been resolved.</p>
+    <p>Each alert also shows:</p>
+    <ul>
+        <li>Your name and phone number, with a tap-to-call button (see the DURESS note below)</li>
+        <li>The site you were at (or where you were heading on a trip), its address, and the time you were due</li>
+        <li>A GPS link and a <strong>Map</strong> or <strong>Site map</strong> button, if a position or site location is known</li>
+        <li>A <strong>what3words address</strong> (e.g. <code>///filled.count.soap</code>) in the emergency email - if your organisation has this feature configured</li>
+    </ul>
+    <p>Overdue alerts are sent as <strong>urgent</strong>, the highest ntfy priority. That is why contacts must let ntfy override Do Not Disturb (Step 2 above) and why the test should be done with their phone locked. Times are written like "3:15 pm".</p>
+    <p>If your contact's setup does not show the call and map buttons, your organisation's administrator may need to update the ntfy proxy - the alert itself still arrives.</p>
+    <p>When you mark yourself safe (the alarm is resolved), your contacts also receive an <strong>✅ All Clear</strong> push notification so they know the situation has been resolved. Only the contacts who were actually alerted receive it.</p>
 
     <div class="highlight">
         <strong>ntfy is free and open source.</strong> Your organisation may run its own private ntfy server for additional privacy — if so, your administrator will have configured this and nothing changes from your perspective. If no custom server is configured, the free public service at ntfy.sh is used.
     </div>
+
+    <h3>Phone Alerts (Reminders to Your Own Phone)</h3>
+    <p>This is optional, and it is worth doing. If the app goes quiet (for example your phone is locked while a visit is running), the system can send a short reminder to <em>your own</em> phone before your contacts are alerted. It uses the same free ntfy app that your contacts use (see Steps 1 to 3 above).</p>
+    <ol class="step-list">
+        <li>Install the free <strong>ntfy</strong> app (iOS App Store or Google Play).</li>
+        <li>In this app, go to <strong>⚙️ Settings → Phone alerts</strong> and tap <strong>Set up phone alerts</strong>. The app shows a private topic name that starts with <code>otg-</code>.</li>
+        <li><strong>Android:</strong> tap the link shown - ntfy opens with the topic already added. <strong>iPhone:</strong> tap <strong>Copy</strong>, open ntfy, tap <strong>+</strong> and paste the topic name.</li>
+        <li>Let ntfy make a sound for urgent messages <strong>even when Do Not Disturb is on</strong>. On Android, also turn battery optimisation <strong>off</strong> for ntfy (Settings → Apps → ntfy → Battery → Unrestricted).</li>
+        <li><strong>Lock your phone</strong>, then tap <strong>Send test</strong>. A message should appear on the lock screen within a few seconds. You can send one test a minute, and the app shows exactly the reply it receives.</li>
+    </ol>
+    <h4>When you will get a reminder</h4>
+    <ul>
+        <li><strong>"Visit ends in 5 min" or "Trip ends in 5 min"</strong> - only if you use Critical Timing, and only if the phone has gone quiet.</li>
+        <li><strong>"Check in now - your contact will be alerted in 3 min"</strong> - on a standard visit or trip that has run past its time, and only if the phone has gone quiet.</li>
+        <li><strong>"Welfare check - open the app and tap I'm OK"</strong> - only if your organisation uses welfare checks (Section 11) and your phone is locked.</li>
+        <li>Never while an alarm is active.</li>
+    </ul>
+    <div class="tip">
+        <strong>💡 Tapping a reminder.</strong> On some phones a tapped reminder opens a <em>browser copy</em> of the app instead of the installed one. If that happens, close the browser tab and open the Safety App from your home screen. Your organisation only turns this tap on if it has tested it on your phones.
+    </div>
+    <div class="tip">
+        <strong>💡 A healthy app gets no reminders.</strong> If you keep the app open and use it normally you will rarely see one. Reminders are a courtesy and never replace the alerts sent to your contacts.
+    </div>
+
+    <h3>What the App Reports, and When</h3>
+    <p>The app is a safety net, not a tracker. It sends your organisation only what it needs:</p>
+    <ul>
+        <li><strong>Standard visit:</strong> nothing between starting and ending the visit - until the due time passes. From then, an overdue visit reports your position at once and every 5 minutes.</li>
+        <li><strong>Trips:</strong> your position every 2 minutes.</li>
+        <li><strong>Critical Timing visit:</strong> in the last 15 minutes before the due time, the app sends a small "still here" signal every 2 minutes. It contains <em>no position</em>. It only lets the system tell the difference between a phone that is fine and one that has gone quiet.</li>
+        <li>If your phone is locked it stops reporting. That silence is what triggers a reminder, then your contacts' alerts.</li>
+        <li>The server remembers only <em>when</em> it last heard from your phone on a visit, not a log of every contact.</li>
+    </ul>
 
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2>13b. SMS Text Alerts</h2>
@@ -1428,6 +1492,10 @@
         <strong>💡 Remember:</strong> Your Duress PIN is your secret safety net. Never tell anyone what it is — not even someone claiming to be from your organisation.
     </div>
 
+    <div class="tip">
+        <strong>💡 Agree a code phrase in advance.</strong> A DURESS alert has <strong>no tap-to-call button</strong> for your contacts (the number is shown, but a call could be overheard), and the alert reminds them to listen for your code phrase. Before you need it, agree a short phrase with your contacts - for example one that sounds ordinary but means "I am not free to talk". The app has no setting for this; it is simply something you and your contacts agree.
+    </div>
+
     <h3>Ways to trigger an alarm</h3>
     <p>There are three independent ways to raise an alarm, any of which can be used covertly. <strong>Shake works anywhere in the app</strong> — including the home screen, before a visit has started. The SOS button and volume button method are only available during an active visit. The SOS button is always visible in the top-right corner of the locked screen.</p>
 
@@ -1513,7 +1581,7 @@
     <h3>What your contacts receive</h3>
     <p>When any alarm fires, your contacts receive:</p>
     <ul>
-        <li>An instant push notification via ntfy (if configured) — straight to their lock screen</li>
+        <li>An instant push notification via ntfy (if configured) - straight to their lock screen, with a tap-to-call button for your number and a map button (a <strong>DURESS</strong> alert has no tap-to-call button)</li>
         <li>An SMS message with your name, location, and a GPS link — if SMS is enabled for your organisation</li>
         <li>An email showing the alarm type, your name and phone number, your site and its address, and a GPS link</li>
         <li>A <strong>what3words address</strong> (e.g. <code>///filled.count.soap</code>) in the emergency email, if that feature is configured</li>
