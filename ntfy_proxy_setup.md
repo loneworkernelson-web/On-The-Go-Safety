@@ -1,47 +1,67 @@
-# OTG AppSuite — ntfy Proxy: cPanel Deployment Guide
+# OTG AppSuite - ntfy Proxy: cPanel Deployment Guide
 
-**Who this is for:** The OTG administrator (Russell) deploying the proxy to their own shared hosting.  
-**Why:** ntfy.sh's fail2ban is blocking Google's trigger-path IP pool, so overdue-escalation ntfy pushes are failing. This proxy routes them through your hosting account's clean IP instead.
+**Who this is for:** The OTG administrator deploying the proxy to their own shared hosting.  
+**Why:** ntfy.sh's fail2ban can block Google's trigger-path IP pool, so overdue-escalation ntfy pushes fail. This proxy routes them through your hosting account's clean IP instead.
+
+---
+
+## Already have a proxy? Read this first
+
+The proxy must forward **five** headers: `Title`, `Priority`, `Tags`, **`Click`** and **`Actions`**. Click and Actions carry the tap-to-call and map buttons on contacts' alerts and, when `WORKER_APP_URL` is set in the Settings tab, the tap action on worker phone reminders.
+
+An older proxy forwards only the first three. **Without the change below the buttons are silently dropped.** The alert itself still arrives, so nothing looks broken.
+
+Choose one:
+
+1. **Edit one line** in the live `proxy_ntfy.php` on your hosting. Find
+   ```php
+   foreach (['Title', 'Priority', 'Tags'] as $h) {
+   ```
+   and change it to
+   ```php
+   foreach (['Title', 'Priority', 'Tags', 'Click', 'Actions'] as $h) {
+   ```
+   Save. No backend redeploy is needed.
+2. **Or upload a new file:** in the Factory (Step 1, ntfy section) use **Download Configured proxy_ntfy.php**, which has your secret and server already embedded, and replace the file on your hosting.
+
+Then send a normal test alert (a test contact message from the worker app) and check that the call and map buttons appear on the contact's phone.
 
 ---
 
 ## What you'll need
 
 - Access to a cPanel hosting account with a public HTTPS URL
-- The OTG Factory App (to download a pre-configured `proxy_ntfy.php` and regenerate the backend)
+- The file `proxy_ntfy.php` (the Factory can generate a ready-configured copy - see Step 1)
+- Access to the OTG Factory App to regenerate the backend
 
 ---
 
-## Step 1 — Download a pre-configured proxy_ntfy.php from the Factory
+## Step 1 - Set your proxy secret
 
-1. Open the OTG Factory App (Step 1).
-2. Confirm your **Master Key** is populated (it should already be saved from your original deployment).
-3. Scroll to the **ntfy Push Notification Server** section.
-4. The **ntfy Proxy Secret** field will auto-populate with your Master Key — this is correct and requires no change unless you want a separate secret.
-5. Click **⬇ Download Configured proxy_ntfy.php**.
+**Easiest:** in the Factory (Step 1, ntfy section) click **Download Configured proxy_ntfy.php**. The secret and ntfy server are already in the file, so you can skip to Step 2.
 
-The downloaded file has your proxy secret and ntfy server already embedded. No manual editing is required.
+**By hand:** open `proxy_ntfy.php` in a text editor and change this line:
 
-> **If you need a different secret:** Clear the Proxy Secret field and type your preferred value before downloading. Make sure the same value is in the Proxy Secret field when you regenerate the backend in Step 4.
+```php
+define('PROXY_SECRET', 'REPLACE_WITH_YOUR_SECRET');
+```
+
+Replace `REPLACE_WITH_YOUR_SECRET` with a long random string - at least 32 characters. Treat it like a password. Write it down: you will paste it into the Factory in Step 4.
 
 ---
 
-## Step 2 — Upload the file to cPanel
+## Step 2 - Upload the file to cPanel
 
 1. Log in to your cPanel account.
 2. Open **File Manager**.
 3. Navigate to `public_html` (or any subdirectory you prefer, e.g. `public_html/otg`).
-4. Click **Upload** and select the `proxy_ntfy.php` you downloaded.
+4. Click **Upload** and select `proxy_ntfy.php`.
 
-The file's public URL will be something like:
-- `https://yoursite.com/proxy_ntfy.php`
-- or `https://yoursite.com/otg/proxy_ntfy.php` if you put it in a subdirectory
-
-Note this URL — you'll need it in Step 3.
+The file's public URL will be something like `https://yoursite.com/proxy_ntfy.php` (or `https://yoursite.com/otg/proxy_ntfy.php` in a subdirectory). Note this URL for Step 4.
 
 ---
 
-## Step 3 — Verify the file is accessible
+## Step 3 - Verify the file is accessible
 
 Visit the proxy URL in your browser. You should see:
 
@@ -49,38 +69,45 @@ Visit the proxy URL in your browser. You should see:
 403 Forbidden
 ```
 
-This is correct. The secret header is absent, so the proxy is correctly rejecting unauthenticated requests. If you see a PHP error or a 404, check the file was uploaded to the right location.
+This is correct. The secret header is absent, so the proxy correctly rejects the request. If you see a PHP error or a 404, check the file was uploaded to the right place.
 
 ---
 
-## Step 4 — Configure the Factory App and regenerate the backend
+## Step 4 - Configure the Factory App
 
-1. In the Factory App (Step 1), scroll to the ntfy section.
-2. Enter the proxy URL from Step 2 in the **ntfy Proxy URL** field.
-3. Confirm the **ntfy Proxy Secret** field still shows the value used when downloading the PHP file.
-4. Proceed to the backend generation step and download the new `backend_template.js`.
-5. Open your GAS project in Google Apps Script.
-6. Replace the contents of `Code.gs` with the new script.
-7. Deploy: **Deploy → Manage Deployments → New Deployment** (or update the existing deployment).
+1. Open the OTG Factory App.
+2. In **Step 1**, scroll down to the ntfy section.
+3. Fill in the two optional fields:
+   - **ntfy Proxy URL** - the URL from Step 2
+   - **ntfy Proxy Secret** - the string from Step 1
+4. Leave the **ntfy Push Notification Server** field as it is (blank = ntfy.sh).
 
 ---
 
-## Step 5 — Verify the proxy is working
+## Step 5 - Regenerate and redeploy the backend
 
-1. In the GAS editor, run `runDiagnostics()` manually.
-2. Open **View → Logs**.
-3. Look for:
+1. Click through to the backend generation step and download the new `backend_template.js`.
+2. Open your Apps Script project and replace the backend code with the new script.
+3. Click **Deploy > Manage deployments**, edit the existing deployment and choose **New version** (or create a new deployment).
+4. If the Web App URL changed, update it in the Factory.
+
+---
+
+## Step 6 - Verify the proxy is working
+
+1. In the Apps Script editor, run `checkOverdueVisits()` manually (or the System Diagnostics from the OTG Admin menu).
+2. Open **Executions** (or the log) and look for:
    ```
    ntfy push sent to topic: YourTopic (via proxy)
    ```
 
-If you see `ntfy push rejected for topic "X": HTTP 403`, the secret in the backend doesn't match the PHP file. Re-download the PHP from the Factory, re-upload it, and redeploy the backend.
+If you see `ntfy push rejected for topic "X": HTTP 403`, check that the secret in `proxy_ntfy.php` and the Factory field match exactly (no extra spaces).
 
 ---
 
-## Step 6 — Live test
+## Step 7 - Live test
 
-Let a visit go overdue and confirm a push notification arrives on the relevant device. Check the GAS log confirms delivery via proxy.
+Let a visit go overdue (or use a test visit) and confirm a push notification arrives on the contact's phone, with the **Call** and **Map** buttons. Check the log confirms delivery via the proxy.
 
 ---
 
@@ -88,17 +115,19 @@ Let a visit go overdue and confirm a push notification arrives on the relevant d
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| `403 Forbidden` from proxy in GAS log | Secret mismatch between PHP file and backend | Re-download PHP from Factory, re-upload, redeploy backend |
-| `502 Bad Gateway` in GAS log | cURL can't reach ntfy.sh from hosting | Check hosting allows outbound cURL; some hosts restrict it |
-| `ntfy push failed ... Address unavailable` | Backend still using old (pre-proxy) script | Confirm backend was redeployed after regeneration |
-| PHP error on proxy URL | PHP version issue | Hosting PHP must be 7.4+; check cPanel PHP settings |
-| `403 Forbidden` in browser | Correct — expected without the secret header | No action needed |
+| `403 Forbidden` from proxy in the log | Secret mismatch | Check the secret in `proxy_ntfy.php` matches the Factory field exactly |
+| `502 Bad Gateway` in the log | cURL cannot reach ntfy.sh from the hosting | Check the hosting allows outbound cURL; some hosts restrict it |
+| `ntfy push failed ... Address unavailable` | Backend still using the old script | Confirm the backend was redeployed after regeneration |
+| Alerts arrive but **without call or map buttons** | Proxy still forwards only Title, Priority and Tags | Make the one-line change at the top of this guide, or upload the new file |
+| Worker reminders do nothing when tapped | `WORKER_APP_URL` is blank, or the proxy drops Click | Blank is the safe default (the worker opens the app). If you set it, use the full address including `index.html`, and update the proxy |
+| Browser shows a PHP error on the proxy URL | PHP version | Hosting PHP must be 7.4 or later |
+| `403 Forbidden` in a browser | Expected without the secret header | No action needed |
 
 ---
 
 ## Notes
 
-- The proxy script does not log or store any notification content.
-- The proxy secret is embedded in the backend GAS script and is not visible to workers or contacts.
-- Panic, Duress, and Critical Timing alarms are unaffected — they fire via the doPost path, which is not blocked. The proxy fixes standard overdue escalation tiers only.
-- If you later move the proxy file to a different URL, update the Proxy URL field in the Factory, regenerate, and redeploy the backend.
+- The proxy does not log or store any notification content.
+- The `PROXY_SECRET` is embedded in the backend script (not visible to workers).
+- If you move the proxy file to a different URL, update the Factory field and redeploy the backend.
+- Panic, Duress and Critical Timing alarms are not affected by the blocking problem - they fire from the doPost path, which is not blocked. The proxy fixes the standard overdue tiers (and the worker's phone reminders, which are also sent by the time-based trigger).
