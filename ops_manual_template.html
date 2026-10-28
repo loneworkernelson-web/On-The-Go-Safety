@@ -353,7 +353,7 @@
                 <li><strong>Security Keys</strong> — click 🔄 to auto-generate both keys, or enter your own. The Secret Key must be 32–64 characters (the counter turns green when valid).</li>
                 <li><strong>Regional Logic</strong> — sets the timezone, voice locale, and vehicle roadworthy term (%%VEHICLE_TERM%% for NZ, Rego for AU, etc.)</li>
                 <li><strong>App Branding</strong> — upload your logo; the Factory will extract your brand colours and preview the app live</li>
-                <li><strong>Safety &amp; Fleet Options</strong> — configure alarm grace period, mileage tracking, travel reports, welfare check-ins, vehicle tracking, AI redaction, API keys, and notification services</li>
+                <li><strong>Safety &amp; Fleet Options</strong> — configure alarm grace period, mileage tracking, travel reports, vehicle tracking, AI redaction, API keys, the optional <strong>CARTO map key</strong> (see Part 3, The Map), and notification services. <strong>Welfare check-ins are no longer switched here</strong> - they are controlled by the <code>WELFARE_CHECKS</code> key in the Settings tab (Part 4)</li>
             </ul>
             <div class="warning-box" style="margin-top:12px;">
                 <strong>Save your keys now</strong> — before moving to Step 2. See Part 1 of this manual.
@@ -368,7 +368,7 @@
             <h4>Database Setup (Factory Step 2)</h4>
             <p>You need a Google Sheet to store visit records, staff, sites, and report templates.</p>
             <p><strong>Option A — Recommended:</strong> Click <strong>"✨ Create Database Copy"</strong>. This opens a pre-configured Google Sheet template in your browser. Make a copy to your own Google Drive.</p>
-            <p><strong>Option B — Manual:</strong> Create a new sheet at <a href="https://sheets.new" style="color:var(--accent);">sheets.new</a>, create 4 tabs named exactly: <code>Visits</code>, <code>Staff</code>, <code>Templates</code>, <code>Sites</code>, then click each <strong>"Copy Blueprint"</strong> button and paste into the first row of each tab.</p>
+            <p><strong>Option B — Manual:</strong> Create a new sheet at <a href="https://sheets.new" style="color:var(--accent);">sheets.new</a>, create 4 tabs named exactly: <code>Visits</code>, <code>Staff</code>, <code>Templates</code>, <code>Sites</code>, then click each <strong>"Copy Blueprint"</strong> button and paste into the first row of each tab. Use the blueprints from Factory <code>index__14_</code> or later: the Staff blueprint in earlier versions had a "Token" column at D that shifted every column after it. If you built your Staff tab from an older blueprint, check that its headers match the Staff table in Part 4 (Name, Role, Status, Group Membership, DeviceId, LastVehCheck, WOFExpiry, EmgNtfy, EscNtfy).</p>
             <div class="info-box" style="margin-top:12px;">
                 <strong>Identity Matching (important):</strong> The name in the <code>Staff</code> tab must match exactly what workers type into the setup wizard — case-sensitive.
             </div>
@@ -449,8 +449,8 @@
                 <div class="trigger-card">
                     <h5>D. Data Archiver <span class="trigger-badge badge-optional">Optional</span></h5>
                     <div class="fn">archiveOldData</div>
-                    <div class="schedule">⏱ Week timer · e.g. Sunday</div>
-                    <p style="font-size:11px;color:#94a3b8;margin-top:8px;margin-bottom:0;">Moves completed visits older than 30 days to an Archive tab. Only closed visits are moved — active records are never touched.</p>
+                    <div class="schedule">⏱ Month timer · 1st of the month, 2am-3am</div>
+                    <p style="font-size:11px;color:#94a3b8;margin-top:8px;margin-bottom:0;">Once a month, moves completed visits older than 30 days to an Archive tab (and old form records into FormsArchive). Only closed visits are moved — active records are never touched.</p>
                 </div>
                 <div class="trigger-card" style="grid-column:span 2;">
                     <h5>E. Weekly Safety Summary <span class="trigger-badge badge-optional">Optional</span></h5>
@@ -489,7 +489,7 @@
                 </tbody>
             </table>
             <div class="info-box" style="margin-top:12px;">
-                <strong>The Worker App Pack is fully self-contained.</strong> You do not need to fetch any files from the OTG repository to deploy — the Factory generates everything.
+                <strong>The Worker App Pack is fully self-contained.</strong> You do not need to fetch any files from the OTG repository to deploy — the Factory generates everything.<br><br><strong>Worker build check:</strong> under the download buttons the Factory shows "Worker app build in this pack" and writes the same build into <code>config.json</code> (<code>workerBuild</code>). A phone whose app build differs from it shows an amber "App out of date" banner. So whenever the worker app changes, replace <code>index.html</code>, <code>sw.js</code> and <code>config.json</code> <strong>together</strong>.
             </div>
         </div>
     </div>
@@ -621,6 +621,57 @@
         </tbody>
     </table>
  
+    <h3>Reading the Cards and the Status Panel</h3>
+    <ul>
+        <li><strong>Times</strong> are shown the New Zealand way (for example 5:34 pm), and "minutes ago" is counted on the server's clock, so a supervisor's computer with the wrong time cannot make a visit look older or newer than it is.</li>
+        <li><strong>Last Heard</strong> on each card is the last time the server heard anything from the worker's phone on that visit (it comes from Visits column AF). A phone that has been silent for a while is marked as stale on its card whatever its status, and counted in the header.</li>
+        <li><strong>Finished visits</strong> (departed, completed, marked safe and similar) are never shown as red OVERDUE, even if the due time has passed.</li>
+        <li><strong>Current Status per Visit</strong> (the panel that used to be called Activity Log) lists the latest status of each visit, one line per visit. It is not an event history, because the Visits tab keeps one row per visit. For the full history of what the system did, use the Audit tab (see Part 4).</li>
+        <li><strong>Export</strong> downloads the same list as a CSV file named <code>OTG_VisitStatus_&lt;date&gt;.csv</code> with the columns Last update (UTC), Last update (local), Worker, Current status, Location and Last heard (local).</li>
+    </ul>
+
+    <h3>The Map</h3>
+    <p>The map uses <strong>OpenStreetMap</strong> tiles by default. That needs no account and no key, and the map shows the required "© OpenStreetMap contributors" credit. OpenStreetMap's tile policy is written for light use (a few supervisors with the Monitor open), not for heavy or automated use.</p>
+    <p>CARTO now wants a key for its free map tiles. If you want the CARTO "Voyager" look, you can add a <strong>free CARTO key</strong> for your organisation:</p>
+    <ol>
+        <li>In Factory Step 1, find the <strong>CARTO map key</strong> field (next to the what3words field) and click <strong>Get Key</strong> (<a href="https://carto.com/basemaps/apikey/" style="color:var(--accent);">carto.com/basemaps/apikey</a>). The key is free for non-commercial use including non-profits (up to 5 million map tiles a month).</li>
+        <li>Leave any "website restriction" on the key blank, and do not share the key.</li>
+        <li>Paste the key into the Factory field and download the Monitor again. A blank field means OpenStreetMap.</li>
+    </ol>
+    <div class="info-box">
+        <strong>Automatic fallback:</strong> if CARTO refuses the key or the free allowance runs out (after four tile errors), the Monitor switches itself to OpenStreetMap and shows "Map: CARTO tiles unavailable - using OpenStreetMap". Treat the downloaded Monitor file like a password, because the key is inside it. Workers' phones do not use map tiles, so this only affects the Monitor.
+    </div>
+    <p>A visit at a named site appears on the map at the site's recorded position (Sites column M, filled by the weekly geocoder), including visits recorded as "Company - Site".</p>
+
+    <h3>Alarms, Acknowledging and Escalation Steps</h3>
+    <ul>
+        <li>Every status that makes the siren sound now also brings up the <strong>full-screen alarm</strong>: SOS, PANIC, OVERDUE ALARM, EMERGENCY, the standard overdue alerts (tiers 1 to 3) and a <strong>missed welfare check</strong>. Before this change the overdue steps and missed welfare checks sounded the siren without the full-screen alarm.</li>
+        <li>Acknowledging an alarm covers <strong>one step</strong>. When the escalation moves up to the next step, the full-screen alarm appears again and shows "Worker name - STATUS", so a supervisor who acknowledged the 15-minute alert still has to acknowledge the 30-minute one.</li>
+        <li>DURESS keeps its own quiet handling (see the Duress protocol above).</li>
+    </ul>
+
+    <h3>Resolving an Alarm from the Monitor</h3>
+    <p>Use <strong>Resolve</strong> on an alarm card when a supervisor has confirmed the worker's situation by other means. The Resolve box asks for three things:</p>
+    <ol>
+        <li>The worker's name, typed exactly (a safeguard against resolving the wrong person).</li>
+        <li>A resolution note (at least five characters). It is saved in the visit's Notes.</li>
+        <li><strong>Has the worker left?</strong> You must choose one:
+            <ul>
+                <li><strong>Worker has left / visit is over - close the visit.</strong> The visit is closed.</li>
+                <li><strong>Still on site - keep monitoring, due out in 10, 30 or 60 minutes.</strong> The visit goes back to active (ARRIVED, or TRAVELLING for a trip) and stays open. The due time becomes the later of the existing due time and now plus the minutes you chose, and a fresh escalation runs from that new due time. If the worker neither extends nor departs, the alarm runs again.</li>
+            </ul>
+        </li>
+    </ol>
+    <div class="info-box">
+        <strong>Good to know:</strong>
+        <ul style="margin-top:0.5em;">
+            <li>"Still on site" is greyed out when the alarm row has no readable due time, or when the backend is older than build <code>__53_</code>. Resolving then closes the visit.</li>
+            <li>The All Clear goes to whoever was alerted (nobody is told if no contact was ever alerted). When you chose "still on site", it says the worker is still being monitored. Its wording still says the worker "has confirmed they are safe", even when headquarters resolved the alarm.</li>
+            <li>The worker's phone is not told about the resolve. It may stay on its alarm screen until the worker enters their PIN.</li>
+            <li>Deploy backend <code>__53_</code> before the new Monitor (<code>__14_</code>). The Monitor turns "still on site" off by itself if the backend reports an older build.</li>
+        </ul>
+    </div>
+
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2 id="admin">Part 4: Daily Administration</h2>
  
@@ -638,6 +689,7 @@
             <tr><td><code>G — WOFExpiry</code></td><td>Vehicle %%VEHICLE_TERM%% expiry date — auto-updated from form data where available.</td></tr>
             <tr><td><code>H — EmgNtfy</code></td><td>Emergency contact ntfy topic — written automatically when the worker saves their contact details in the app. Used by the server-side escalation engine to send push notifications for overdue alerts. Do not edit manually.</td></tr>
             <tr><td><code>I — EscNtfy</code></td><td>Escalation contact ntfy topic — same as above for the escalation contact.</td></tr>
+            <tr><td><code>J - Worker Alert Topic</code></td><td>The private ntfy topic the backend made for a worker who set up phone alerts. Do not type in it. Clear the cell to reset a topic that has leaked; the worker then sets phone alerts up again.</td></tr>
         </tbody>
     </table>
  
@@ -686,6 +738,53 @@
     <h3>Access Reports</h3>
     <p>In your Google Sheet, use the <strong>"🛡️ OTG Admin"</strong> menu for administrative actions including running the health report manually, triggering data archiving, or sending the weekly summary on-demand.</p>
  
+    <h3>The Settings Tab</h3>
+    <p>Day-to-day behaviour that used to need a Factory rebuild is now controlled from a <strong>Settings</strong> tab in the Google Sheet. The backend creates the tab itself within a minute of the first run of the Safety Watchdog trigger and adds any missing key with its default. It never changes a value you have set. Phones pick up changes at their next sync; the backend reads the tab on its next run. If a key is deleted, it comes back with its default within the hour. If a value cannot be understood, the backend uses the default and names the key in the daily Health email.</p>
+    <p>On/Off keys accept On, Off, yes, no, 1, 0 or a ticked checkbox.</p>
+    <table>
+        <thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead>
+        <tbody>
+            <tr><td><code>WELFARE_CHECKS</code></td><td>Off</td><td>Periodic "Are you OK?" checks during site visits, escalated by the server if missed. See Welfare Checks in Part 6. This replaces the old welfare tick-box in the Factory.</td></tr>
+            <tr><td><code>WELFARE_DEFAULT_MINS</code></td><td>60</td><td>Minutes between welfare checks when the site has no risk level (5 to 240).</td></tr>
+            <tr><td><code>WELFARE_GRACE_MINS</code></td><td>2</td><td>Minutes the worker has to answer a welfare check (1 to 10). When it runs out, the server alerts contacts.</td></tr>
+            <tr><td><code>WORKER_WARNINGS</code></td><td>On</td><td>Reminders to the worker's own phone, sent only when the phone has gone quiet, and only to workers who set up phone alerts. See Phone Alerts for Workers in Part 6.</td></tr>
+            <tr><td><code>WORKER_WARNING_DAILY_CAP</code></td><td>100</td><td>Most worker reminders sent in one day (0 to 5000). Test messages count. Alarms to contacts are never limited. Protects the ntfy message allowance.</td></tr>
+            <tr><td><code>WORKER_WARN_QUIET_W1_MINS</code></td><td>3</td><td>Critical Timing visits and trips: the "ends in 5 min" reminder goes only if nothing has been heard from the phone for more than this many minutes (0 to 30; 0 = always send).</td></tr>
+            <tr><td><code>WORKER_WARN_QUIET_W2_MINS</code></td><td>6</td><td>Standard visits and trips: the "check in now" reminder goes only if nothing has been heard for more than this many minutes (0 to 30; 0 = always send).</td></tr>
+            <tr><td><code>WORKER_APP_URL</code></td><td>(blank)</td><td>Optional. <strong>Leave blank unless you have tested it on your workers' phones.</strong> If used, it must be the full start address of the worker app including <code>index.html</code> (for example <code>https://example.org/safety/index.html</code>). Without the file name or trailing slash the link opens a blank set-up page. Tapping a reminder then tries to open the app, but some phones (for example Xiaomi HyperOS) open a browser copy instead, and the app shows a "browser copy" warning if a visit is running there.</td></tr>
+            <tr><td><code>AUDIT_KEEP_DAYS</code></td><td>7</td><td>Days of Audit rows kept (1 to 90).</td></tr>
+            <tr><td><code>AUDIT_MAX_ROWS</code></td><td>10000</td><td>Most Audit rows kept (1,000 to 50,000). Rows beyond either limit, whichever is reached first, are removed each morning.</td></tr>
+        </tbody>
+    </table>
+    <div class="info-box">
+        <strong>Existing installations:</strong> the Note column of a Settings row created by an earlier backend keeps its old wording, because the backend never rewrites a row. Retype a note by hand if it is out of date. A brand-new installation uses the defaults until the first Safety Watchdog run (about a minute).
+    </div>
+
+    <h3>Sheet Columns the System Uses</h3>
+    <p>Most of these are written by the backend. They are listed so nobody tidies them away by mistake.</p>
+    <table>
+        <thead><tr><th>Where</th><th>Column</th><th>What it is</th></tr></thead>
+        <tbody>
+            <tr><td>Visits</td><td><code>A</code> Timestamp</td><td>The machine timestamp of the latest update (UTC, ISO text). <strong>Sort and filter on column A</strong>, not column B.</td></tr>
+            <tr><td>Visits</td><td><code>B</code> Date</td><td>The local date and time the visit started, as text (for example "22 Oct 2026, 3:16 pm"). Set once at the start of the visit. It is text on purpose, so it cannot be changed by the spreadsheet's time zone.</td></tr>
+            <tr><td>Visits</td><td><code>Z</code> Worker Warnings</td><td>Which phone reminders have been sent or held back for the current due time. Backend use - do not edit.</td></tr>
+            <tr><td>Visits</td><td><code>AA</code>, <code>AB</code></td><td>The escalation memory (which alerts have gone) and the Visit ID. Backend use - do not edit.</td></tr>
+            <tr><td>Visits</td><td><code>AC</code> Last Update (local)</td><td>Display-only local time of the latest update.</td></tr>
+            <tr><td>Visits</td><td><code>AD</code> Welfare Due, <code>AE</code> Welfare Memory</td><td>The next welfare check time and the record of a missed one. Backend use - do not edit.</td></tr>
+            <tr><td>Visits</td><td><code>AF</code> Last Heard (UTC)</td><td>The server time of the phone's latest post on that visit. The Monitor shows it as Last Heard. Backend use - do not edit.</td></tr>
+            <tr><td>Staff</td><td><code>J</code> Worker Alert Topic</td><td>The private ntfy topic made for a worker who set up phone alerts. <strong>Clear the cell to reset a topic</strong> that has leaked; the worker then sets phone alerts up again.</td></tr>
+            <tr><td>Forms</td><td>last column "Received (local)"</td><td>Display-only local time a form arrived.</td></tr>
+            <tr><td>Audit (hidden)</td><td>"Time (local)"</td><td>Display-only local time of each Audit row. Unhide the tab with right-click on a tab name, or View &gt; Hidden sheets.</td></tr>
+            <tr><td>Procedures History</td><td>(visible tab)</td><td>The record of site-safety information that was replaced. See Site Safety Information in Part 6.</td></tr>
+        </tbody>
+    </table>
+    <div class="warning-box">
+        <strong>The Audit tab is a debugging trail, not a record.</strong> It keeps the last 7 days or 10,000 rows, whichever limit is reached first (the Settings keys above), and is trimmed each morning just before the Health email, as its own step, so a failed email still trims. The newest row always stays. <strong>Do not sort the Audit tab</strong> - the oldest rows must stay at the top. The permanent records are the <strong>Visits</strong> and <strong>Forms</strong> tabs. If your organisation needs a longer trail, copy the Audit rows out regularly or raise the two keys. The Health email's "Audit trail" row says how many rows were removed. If it removes rows younger than the days limit, the row limit is too low for your volume.
+    </div>
+
+    <h3>Phone Numbers</h3>
+    <p>Phone numbers must stay as text with their leading zero (for example <code>0226003534</code>) or in international form (<code>+64226003534</code>). If a spreadsheet turns a number into a plain number, the leading zero is lost and the number no longer dials correctly. The system writes numbers into the Visits tab as text, and when it builds an alert it restores the leading zero on an 8 to 10 digit number that has lost it. The Staff tab holds no phone numbers.</p>
+
     <!-- ═══════════════════════════════════════════════════════ -->
     <h2 id="updates">Part 5: Updates &amp; Configuration Changes</h2>
  
@@ -715,6 +814,9 @@
             <h4>Download &amp; Deploy Updated Files</h4>
             <p>Go to Factory Step 4 and download the <strong>Worker App Pack</strong> ZIP. For a config-only update, you only need to replace <code>config.json</code> on your Netlify site — drag just that file onto your existing site's dashboard (not the Netlify Drop page). The version stamp in the file changes automatically, triggering devices to refresh their cached config at next connection.</p>
             <p>If your branding has also changed, replace <code>manifest.json</code> and <code>icon.png</code> from the new pack at the same time.</p>
+            <div class="warning-box">
+                <strong>When the worker app itself has changed</strong> (the Factory shows the build under the Step 4 buttons), replace <code>index.html</code>, <code>sw.js</code> and <code>config.json</code> <strong>together</strong>. <code>config.json</code> carries the worker build, so replacing it alone makes phones show a false "App out of date" banner.
+            </div>
         </div>
     </div>
     <div class="step-card">
@@ -772,7 +874,7 @@ const prompt = `Read these notes: "${safeNotes}".
     <ul>
         <li><strong>Admin setup:</strong> Enter your ntfy server URL in Factory Step 1 (leave blank to use the free hosted <code>ntfy.sh</code> service). For improved privacy and reliability, ask your IT Advisor to set up a self-hosted ntfy server — it runs on an inexpensive VPS and requires no changes to the OTG AppSuite itself. Simply paste your server URL here once it is ready.</li>
         <li><strong>Worker setup:</strong> Workers enter their contacts' ntfy topic names in the app setup wizard (or later via Settings). The app automatically stores these topics in columns H and I of the Staff sheet — the escalation engine reads them from there when sending overdue alerts, so no manual data entry is required from the administrator.</li>
-        <li><strong>Contact setup:</strong> Contacts install the ntfy app and follow the setup steps in the Worker Guide (Section 12). The most important steps for reliability are enabling Instant Delivery (Android) and granting Time-Sensitive notification permissions (iOS). See the Worker Guide for full instructions.</li>
+        <li><strong>Contact setup:</strong> Contacts install the ntfy app and follow the setup steps in the Worker Guide (Section 13). The most important steps for reliability are enabling Instant Delivery (Android) and granting Time-Sensitive notification permissions (iOS). See the Worker Guide for full instructions. Contacts should also allow ntfy to override Do Not Disturb for urgent messages (every overdue alert is sent as urgent) and test it with the phone locked.</li>
         <li><strong>Verify with diagnostics:</strong> Use <strong>OTG Admin → Run System Diagnostics</strong> to confirm ntfy is reachable. Subscribe to the diagnostics topic (shown in the diagnostic email) to confirm end-to-end push delivery from your server to the ntfy app.</li>
     </ul>
     <div class="info-box">
@@ -785,7 +887,7 @@ const prompt = `Read these notes: "${safeNotes}".
             <li><strong>Self-hosted ntfy:</strong> Run your own ntfy server on a VPS. Your server's IP is clean and not subject to shared-pool rate limiting. See IT Advisor Overview Section 6.4.</li>
             <li><strong>ntfy.sh paid plan:</strong> Authenticated requests to ntfy.sh bypass IP rate limiting. No proxy or self-hosting required.</li>
         </ul>
-        Panic and Duress alarms, and Critical Timing overdue alarms, are not affected — they fire ntfy from the immediate-response path rather than the time-based trigger.
+        Panic and Duress alarms, and Critical Timing overdue alarms, are not affected — they fire ntfy from the immediate-response path rather than the time-based trigger.<br><br><strong>Already have a proxy?</strong> The proxy must forward five headers: Title, Priority, Tags, <strong>Click and Actions</strong>. Click and Actions carry the tap-to-call and map buttons on contacts' alerts (and, when <code>WORKER_APP_URL</code> is set, the tap action on worker reminders). An older proxy silently drops them: the alert still arrives, but without the buttons. Edit the one line in your live <code>proxy_ntfy.php</code> that reads <code>foreach (['Title', 'Priority', 'Tags'] as $h)</code> so it becomes <code>foreach (['Title', 'Priority', 'Tags', 'Click', 'Actions'] as $h)</code>, or upload the new file from the Factory (Step 1, ntfy section). See <code>ntfy_proxy_setup.md</code>.
     </div>
  
     <h3>SMS Text Alerts</h3>
@@ -824,6 +926,117 @@ const prompt = `Read these notes: "${safeNotes}".
     <p>When enabled in Factory Step 1, the AI report processor automatically removes worker names and other identifying information from visit notes before sending them to the Gemini AI API. This is a data minimisation practice and is <strong>strongly recommended</strong> when using any external AI service to process staff records.</p>
     <p>You can toggle this on or off per deployment via the <strong>AI Privacy Redaction</strong> checkbox in Factory Step 1 → Safety &amp; Fleet Options.</p>
  
+    <h3>Welfare Checks</h3>
+    <p>Welfare checks are periodic "Are you OK?" prompts during a <strong>site visit</strong>. They are <strong>off by default</strong> and are switched on in the Settings tab with <code>WELFARE_CHECKS</code> (see Part 4). They are never used on trips, because a prompt while driving is a distraction hazard. Worker phones follow the Settings tab; the value in <code>config.json</code> is only a fallback for a phone that has never been able to read the Settings tab, and the Factory writes it as off.</p>
+    <h4>What happens</h4>
+    <ol>
+        <li>At the welfare time the worker's phone shows a full-screen "Are you OK?" prompt. If the phone is locked, the server also sends a push to the worker's own phone: "Welfare check - open the app and tap I'm OK" (this needs phone alerts, see below).</li>
+        <li>The worker has <code>WELFARE_GRACE_MINS</code> (default 2 minutes) to tap <strong>I'm OK</strong>. Opening the app after a check fell due shows the prompt at once with the time left.</li>
+        <li>If the time runs out, the visit is treated as overdue from that moment. A standard visit alerts the main contact at once ("WELFARE CHECK NOT ANSWERED"), then again every 15 minutes, with the escalation contact joining at the fourth alert. A Critical Timing visit alerts both contacts at once, then again 5 and 10 minutes later.</li>
+        <li>If the worker answers late, or clears the alarm with their PIN, contacts who were alerted receive an All Clear saying the visit is still being monitored, and the next check is set.</li>
+    </ol>
+    <h4>Good to know</h4>
+    <ul>
+        <li><strong>Keep the app open or set up phone alerts.</strong> A locked phone freezes the app's timers. Without phone alerts, a worker who locks their phone gets no prompt, and their contacts are alerted at every check. The worker app shows an amber warning on the start and visit screens when welfare checks are on and phone alerts are not set up.</li>
+        <li>The worker app has a <strong>Check in now</strong> button. An early check-in also brings the next check earlier.</li>
+        <li>A check that falls at or after the visit's due time is skipped. Extending a visit restarts a check that was already due, so an extend never causes a false alert.</li>
+        <li>Switching <code>WELFARE_CHECKS</code> to Off does not stop an escalation that has already started.</li>
+        <li>Visits columns AD and AE hold the welfare state (do not edit). The daily Health email has a "Welfare checks" row.</li>
+        <li>Deploy the backend (build <code>__51_</code> or later) before the worker app (<code>__24_</code>).</li>
+    </ul>
+
+    <h3>Phone Alerts for Workers</h3>
+    <p>A worker can subscribe their own phone to a private ntfy topic so the system can nudge them <em>before</em> their contacts are alerted. In the worker app go to <strong>Settings &gt; Phone alerts &gt; Set up phone alerts</strong>. The app shows a private topic starting <code>otg-</code>, the ntfy server, and:</p>
+    <ol>
+        <li><strong>Android:</strong> tap the link to open ntfy with the topic added. <strong>iPhone:</strong> tap Copy, then in the ntfy app tap + and paste.</li>
+        <li>Let ntfy override Do Not Disturb for urgent messages, and turn battery optimisation off for ntfy (Android).</li>
+        <li>Lock the phone, then press <strong>Send test</strong>. The message must arrive on the lock screen. Send test is limited to one a minute and the reply is shown exactly as received.</li>
+    </ol>
+    <p>The topic is stored in Staff column J. Clear the cell to reset it.</p>
+    <h4>When a reminder is sent</h4>
+    <p>Reminders are sent only when the phone has gone quiet, so a healthy app never gets one, workers do not feel watched, and there is no notification fatigue.</p>
+    <ul>
+        <li><strong>"Visit ends in 5 min" / "Trip ends in 5 min"</strong> - Critical Timing visits and trips only, and only if nothing has been heard from the phone for more than <code>WORKER_WARN_QUIET_W1_MINS</code> (default 3).</li>
+        <li><strong>"Check in now - your contact will be alerted in 3 min"</strong> - standard visits and trips only, and only if nothing has been heard for more than <code>WORKER_WARN_QUIET_W2_MINS</code> (default 6).</li>
+        <li>Never while an alarm is active. Reminders show only the site or destination and the due time.</li>
+        <li>Limited to <code>WORKER_WARNING_DAILY_CAP</code> a day (default 100). Alarms to contacts are never limited.</li>
+        <li>Switch them all off with <code>WORKER_WARNINGS</code>.</li>
+    </ul>
+    <p>Reminders are a courtesy. They never replace the alerts to contacts.</p>
+
+    <h3>What the Phone Reports, and When</h3>
+    <ul>
+        <li><strong>Standard site visit:</strong> nothing is reported before the due time except the start and end. From the due time, an overdue visit reports at once and then every 5 minutes (on every screen mode).</li>
+        <li><strong>Trips:</strong> the position is reported every 2 minutes.</li>
+        <li><strong>Critical Timing site visits:</strong> a "still here" signal with <em>no position</em> is sent every 2 minutes for the last 15 minutes before the due time only. This lets the system notice a silent phone in time.</li>
+        <li>A locked phone stops reporting. That silence is what triggers the reminder push.</li>
+        <li>The server keeps only the <em>time it last heard</em> from the phone on each visit (Visits column AF), not a log of every contact.</li>
+    </ul>
+
+    <h3>What Contacts Receive</h3>
+    <p>Alarms reach nominated contacts by ntfy push, email and (if configured) SMS. The ntfy alert carries a <strong>Call worker</strong> button and tapping the alert dials the worker; a <strong>Map</strong> or <strong>Site map</strong> button opens the location. This needs the ntfy proxy to forward the Click and Actions headers if you use the proxy (see the warning in ntfy Push Notifications above).</p>
+    <ul>
+        <li>All overdue alerts arrive as <strong>urgent</strong>, the highest ntfy priority. Each contact should allow the ntfy app to override Do Not Disturb for urgent messages and test it with the phone locked.</li>
+        <li>Alerts say how long overdue the worker is, counted from the due time, and show times as am/pm. The All Clear does not.</li>
+        <li>After a PIN clear the overdue count restarts from the new due time.</li>
+    </ul>
+    <h4>Alert titles</h4>
+    <table>
+        <thead><tr><th>Situation</th><th>Title (name shown after the dash)</th></tr></thead>
+        <tbody>
+            <tr><td>Standard overdue, tiers 1 to 3</td><td><code>OVERDUE 15 MIN - Rusty</code> (the minutes count from the due time)</td></tr>
+            <tr><td>Standard, tier 4</td><td><code>EMERGENCY - 60 MIN OVERDUE - Rusty</code> (default timings; to both contacts; the alert says it is the final automatic alert)</td></tr>
+            <tr><td>Critical Timing</td><td><code>CRITICAL TIMING - OVERDUE NOW (due 1:10 pm)</code>, then <code>SECOND ALERT - CRITICAL TIMING - 5 MIN OVERDUE</code>, then <code>FINAL NOTICE - CRITICAL TIMING - 10 MIN OVERDUE</code></td></tr>
+            <tr><td>Missed welfare check</td><td><code>WELFARE CHECK NOT ANSWERED (3:15 pm) - Rusty</code>; the email says the worker "did not answer a welfare check at 3:15 pm"</td></tr>
+            <tr><td>PANIC, SOS, DURESS</td><td>Sent at once by the worker's phone</td></tr>
+        </tbody>
+    </table>
+    <p>Tiers 2 and 3 say when the main contact was first alerted. The escalation contact hears nothing until tier 4, and an All Clear goes only to the contacts who were alerted.</p>
+    <h4>Examples (ntfy)</h4>
+    <div class="code-box">Site visit, no live position (tier 1)
+OVERDUE 15 MIN - Rusty
+Was due 1:10 pm - now 15 min overdue. Call Rusty now.
+Worker: Rusty - +64 21 123 4567
+Site: Head Office
+Address: 12 Church St
+Site location (the site's recorded position, not a live one): [map link]
+Buttons: Call worker, Site map     Tap: dials the worker
+
+Trip (tier 1)
+Expected to arrive 1:10 pm - now 15 min overdue. Call Rusty now.
+Heading to: Nelson Office (1 Trafalgar St)
+Last known position at 1:05 pm (21 min ago): [map link]
+Buttons: Call worker, Map
+
+General trip, no position
+Heading to: not given (general travel)
+Last known position: not reported since the trip started</div>
+    <p>For a named site where the phone has sent no position (the "dark window"), the alert falls back to the site's recorded position and says so. It never shows a site position for a trip. A report email without a GPS fix shows "Last known GPS (from the visit record)". SMS alerts carry no emoji.</p>
+    <h4>DURESS alerts</h4>
+    <p>A DURESS alert has <strong>no tap-to-call</strong> (tapping the notification does not open the dialler); the <strong>Call worker</strong> button stays. The alert starts with: "If you call: the call may be overheard. Keep it calm and ordinary, and listen for any code phrase you have agreed with [first name]." The app has no code-phrase setting, so <strong>each worker and their contacts should agree a code phrase in advance</strong>.</p>
+
+    <h3>Travel Distance and the Travel Report</h3>
+    <p>Distance may be used for travel claims, so the Travel Report shows <em>how</em> each distance was worked out. The app tries these in order:</p>
+    <ol>
+        <li>A road route along the worker's GPS trail (breadcrumbs).</li>
+        <li>Straight lines along the trail.</li>
+        <li>A road route from the start to the end of the trip.</li>
+        <li>A straight line from the start to the end.</li>
+    </ol>
+    <p>A locked phone leaves few breadcrumbs, so a long trip with the phone locked usually uses the start-to-end road route. A road route needs an OpenRouteService key; without one the straight-line methods are used. The figure may be raised to a minimum worked out from the vehicle's speed. The worker can always change the distance on the closing form.</p>
+    <p>Run <strong>OTG Admin &gt; 3. Run Travel Report</strong> for a month. After <strong>Total km</strong> a <strong>Distance method</strong> column says, in plain words, which method was used ("road route along the GPS trail", "straight line start to end", "not measured - entered by the worker", and so on). When the worker changed the app's figure by 0.05 km or more, it adds "edited by the worker (app calculated 12.4 km)".</p>
+    <p>At the start of a trip the app warms up the GPS. If no position is found within about 5 seconds the trip still starts, and the closing form asks the worker to enter the distance. Pinch-zoom is blocked while the screen is dimmed and restored when the worker wakes it.</p>
+
+    <h3>Site Safety Information (Procedures History)</h3>
+    <p>A worker can upload site-safety photos from a site's info panel. The upload <strong>replaces</strong> the site's "Emergency Procedures" (Sites column J) on every Sites row of that site. Before anything is replaced, the old links are written to a visible tab called <strong>Procedures History</strong> (Time UTC, Time local, Site, Company, Sites Row, Worker, Previous Links, New Links, Matched By). Photos in Drive are never deleted, so old links keep working.</p>
+    <p>The upload is <strong>refused</strong>, and nothing in Sites changes, if the site cannot be matched, the same site name exists under two companies and cannot be told apart, there is no photo, a photo fails to save, the history tab cannot be written, or column J is in use under another header. The form itself is always saved, and the worker still sees "sent". Refusals are written to the Audit as <code>procedures:no-match</code>, <code>procedures:ambiguous</code>, <code>procedures:no-photos</code>, <code>procedures:photo-FAILED</code>, <code>procedures:archive-FAILED</code>, <code>procedures:no-site</code>, <code>procedures:no-sites-tab</code>, <code>procedures:no-column</code> or <code>procedures:error</code>; a good upload is <code>procedures:updated</code>. The site is found from the site name sent by the worker's panel, then from the form's Site Name and Company fields, then from the Location Name. Two companies with a site of the same name (for example "Head Office") are kept apart on the phone and in the backend.</p>
+
+    <h3>Two Organisations on One Web Host</h3>
+    <p>Two organisations can be hosted from one web host if each has its own folder. Worker app builds from <code>__24_</code> keep each organisation's data on the phone under a name made from the whole backend address, move existing data across once on the first start, and limit <strong>Reset app data</strong> to that organisation's app. A browser tab that holds a running visit shows an amber "This is a browser copy - close it and open the Safety App from your home screen" bar.</p>
+    <div class="warning-box">
+        <strong>Update both organisations' packs.</strong> From Factory <code>index__14_</code> the service worker names its caches by install folder and, when it updates, deletes only its own older caches. An organisation still using an older service worker can, when it updates, delete the other organisation's caches, so update both. Caches left by the old naming remain on a phone until the worker taps <strong>Force App Update</strong> (which still clears every cached file on the host, for both organisations; the phone then needs a signal at its next start). Only app files live in these caches, never records.
+    </div>
+
     <h3>System Diagnostics</h3>
     <p>The <strong>Run System Diagnostics</strong> function is a comprehensive health check that tests every integration and configuration item in your deployment. Run it after initial setup to confirm everything is working, after any configuration change, or whenever you suspect a problem with alerts not reaching contacts.</p>
  
@@ -979,19 +1192,34 @@ const prompt = `Read these notes: "${safeNotes}".
                 <td>Ensure your backend is v85.0 or later. The bug caused the sheet scan to run after the visit row had already been updated, making it appear no alarm had been sent. Deploy a new version from Apps Script.</td>
             </tr>
             <tr>
-                <td><strong>"All Clear" not sent when supervisor uses "Mark Safe" in the Monitor</strong></td>
-                <td>Monitor <code>submitResolution()</code> does not currently include contact email fields in its payload, so the backend has no addresses to send All Clear emails to when a monitor operator manually resolves an alarm</td>
-                <td>Known pending fix. As a workaround, contact the worker's emergency contacts directly to confirm the all-clear after using the Mark Safe function. A code fix to pass contact fields through <code>submitResolution()</code> is on the development backlog.</td>
+                <td><strong>No "All Clear" after a supervisor resolves an alarm in the Monitor</strong></td>
+                <td>No contact had been alerted for that visit (the All Clear goes only to whoever was alerted), or the resolve did not reach the backend</td>
+                <td>Check the Audit tab: <code>allclear:sent</code> shows who was told; <code>handleResolvePost:no-alarm</code> means nobody had been alerted, so nothing was sent. If neither appears, resolve again and watch for the Monitor's "Resolved" message. This was a gap in older Monitor versions; use Monitor <code>__14_</code> with backend <code>__53_</code> or later.</td>
+            </tr>
+            <tr>
+                <td><strong>Amber "App out of date" banner</strong> on workers' phones</td>
+                <td><code>config.json</code> was replaced without <code>index.html</code> and <code>sw.js</code> (or the reverse), so the build in <code>config.json</code> differs from the app on the phone</td>
+                <td>Upload <code>index.html</code>, <code>sw.js</code> and <code>config.json</code> together from the same Worker App Pack. If it persists on one phone, use Settings &gt; Force App Update on that phone.</td>
+            </tr>
+            <tr>
+                <td><strong>Monitor map is grey, or shows an "API key required" watermark</strong></td>
+                <td>An older Monitor asking CARTO for tiles without a key</td>
+                <td>Download the Monitor again from Factory <code>index__14_</code> or later. It uses OpenStreetMap by default; add a free CARTO key in Factory Step 1 if you want the CARTO look. See Part 3, The Map.</td>
+            </tr>
+            <tr>
+                <td><strong>Tapping a worker reminder opens a browser page</strong> (a blank set-up page, or "Install Safety App") instead of the app</td>
+                <td><code>WORKER_APP_URL</code> is set but is missing <code>index.html</code>, or the phone cannot route the link to the installed app</td>
+                <td>Clear <code>WORKER_APP_URL</code> in the Settings tab. The reminder text already tells the worker to open the app. Do not complete set-up in the browser page.</td>
+            </tr>
+            <tr>
+                <td><strong>Contacts got "WELFARE CHECK NOT ANSWERED"</strong> although the worker is fine</td>
+                <td>Welfare checks are on, the worker's phone was locked, and phone alerts are not set up, so the worker never saw the prompt</td>
+                <td>The worker sets up phone alerts (Settings &gt; Phone alerts), or keeps the app open. Set <code>WELFARE_CHECKS</code> to Off if you do not want welfare checks. See Welfare Checks in Part 6.</td>
             </tr>
             <tr>
                 <td><strong>Worker can't install PWA</strong> on iPhone</td>
                 <td>Not using Safari — Chrome on iOS doesn't support "Add to Home Screen" for PWAs</td>
                 <td>Worker must use <strong>Safari</strong> on iPhone. Share → Add to Home Screen.</td>
-            </tr>
-            <tr>
-                <td><strong>Volume button panic not triggering</strong> — pressing volume buttons has no effect</td>
-                <td>MediaSession not registered, or audio was never armed on this visit. Android Chrome only routes hardware volume key events to the page when an active MediaSession is present.</td>
-                <td>Confirm the worker has armed audio at least once during the visit (the app registers a MediaSession in <code>initAudio()</code> after Tone.js starts). If the app was freshly installed and audio has never been used, the MediaSession may not yet be active. The MediaSession is also registered at <code>initVolumeDetection()</code> on app start. Note: volume button panic is Android-only — it will not work on iPhone.</td>
             </tr>
             <tr>
                 <td><strong>Worker Guide / Ops Manual download button is greyed out</strong></td>
