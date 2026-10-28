@@ -638,7 +638,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
  <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety On-The-Go!</span>
- <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__24_</span>
+ <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__25_</span>
  </h1>
  </div>
  <div class="flex items-center">
@@ -846,6 +846,9 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
   </div>
   </div>
  </div>
+
+ <!-- __25_ (R74): a one-line reminder, shown every time before a visit or trip is started -->
+ <p id="muteReminder" class="mb-2 text-center text-xs font-bold text-gray-300" role="note">🔔 Check your phone is not on silent, so you hear its warnings.</p>
 
  <!-- Forms Button + Slide to Begin Visit Pill — always visible -->
  <div class="flex gap-3 h-16 items-stretch">
@@ -1105,7 +1108,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
  <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
- <div id="appBuild" class="text-xs font-mono text-gray-400">worker__24_</div>
+ <div id="appBuild" class="text-xs font-mono text-gray-400">worker__25_</div>
  </div>
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">Backend Version</div>
@@ -1448,7 +1451,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  __24_: shown when a welfare check falls due (the Settings tab switches them on; interval per visit; never on trips).
  The worker has WELFARE_GRACE_MINS (default 2) to tap confirm before
  the safety alarm fires. z-[550] sits above all normal modals but below the
- shake/volume confirmation overlays (z-[500] is theirs — note shake is 500
+ shake confirmation overlay (z-[500] is theirs — note shake is 500
  but this is 550 so it appears on top; shake is a 5-second self-dismissing
  state that doesn't conflict). -->
 <div id="welfareCheckModal" class="hidden fixed inset-0 z-[550] flex flex-col items-center justify-center text-center px-8"
@@ -1466,17 +1469,6 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <p class="text-gray-500 text-xs mt-6 max-w-xs leading-relaxed">
  If you're unable to respond, ask someone nearby to tap the button for you.
  </p>
-</div>
-
-<!-- Volume Panic Confirmation Modal -->
-<div id="volumeConfirmModal" class="hidden fixed inset-0 z-[500] bg-orange-900/90 flex items-center justify-center" role="alertdialog" aria-modal="true" aria-labelledby="volumeConfirmTitle">
- <div class="text-center text-white">
- <div class="text-8xl mb-4">🔊</div>
- <h1 id="volumeConfirmTitle" class="text-4xl font-black mb-4">VOLUME PANIC</h1>
- <p class="text-yellow-400 text-lg font-bold mb-6">Press volume buttons again to confirm</p>
- <div class="text-6xl font-mono" id="volumeCountdown">3</div>
- <p class="text-xs mt-4 text-gray-400">Emergency alert activation</p>
- </div>
 </div>
 
 <div id="formsLibraryModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70" role="dialog" aria-modal="true" aria-labelledby="formsLibraryTitle">
@@ -1640,8 +1632,15 @@ const RISK_WELFARE_MAP = {
 //      their id
 //  R63 the "Update Site Procedures" upload names its site (siteName / companyName). R55 the travel report data also
 //      records the distance the app calculated (_distCalcKm). The diagnostics report shows the welfare settings in force
+// __25_ changes (session 105, Sonnet 5.5 high, from __24_). No backend change:
+//  R72 the volume-button panic trigger is REMOVED (the VOLUME PANIC screen, its three state variables, the key listener,
+//      the confirmation and the startup call, and the MediaSession it needed). A phone handles a volume press itself and
+//      never gives it to a web page (device-proven 28 Oct 2026, Xiaomi / HyperOS 3). Unchanged on purpose: the SOS
+//      triple-tap and the shake triggers, and every alarm path
+//  R74 a one-line reminder on the start screen, every time: "Check your phone is not on silent, so you hear its warnings."
+//      Static text only - no script, so it cannot affect starting a visit or a trip
 // =============================================================================
-const WORKER_BUILD = 'worker__24_';
+const WORKER_BUILD = 'worker__25_';
 
 const CONFIG = {
  url: '',
@@ -2151,10 +2150,6 @@ let lastShakeTime = 0;
 let shakeConfirmationMode = false;
 let shakeConfirmationTimeout = null;
 
-let volumeBuffer = [];
-let volumeConfirmationMode = false;
-let volumeConfirmationTimeout = null;
-
 // True while a PANIC or DURESS alarm is active (used as guard when no activeVisit exists)
 let isPanicActive = false;
 // True when alarm has been escalated to DURESS (worker entered duress PIN after PANIC)
@@ -2184,10 +2179,6 @@ async function initAudio() {
  await Tone.start();
  synth = new Tone.Synth().toDestination();
  audioReady = true;
-
- // Refresh MediaSession now that the AudioContext is confirmed running.
- // This re-asserts audio focus so Android routes volume keys to the page.
- _registerMediaSession();
 
  // Restore console
  console.log = originalLog;
@@ -4616,7 +4607,7 @@ async function triggerPanic(duress = false, alarmCode = null) {
  // The alarm overlay (grain texture + amber tint) is the only visible indicator.
  showAlarmOverlay('panic');
 
- // Backend logging — all three triggers (SOS, Shake, Volume) send PANIC.
+ // Backend logging — both triggers (SOS triple-tap, Shake) send PANIC.
  // W4 (build __14_, F80-3): every call site names its trigger in alarmCode; a bare call is logged as unknown.
  _diag('triggerPanic: ' + (alarmCode || 'no source given'), true);
  await logSafety("PANIC", alarmCode || "Manual alarm activated. [source: unknown - triggerPanic() called with no source]");
@@ -7970,7 +7961,6 @@ function _initApp() {
  }
 
  initShakeDetection();
- initVolumeDetection();
  initSlideToWake();
  initAllActionPills();
  
@@ -9959,7 +9949,7 @@ function confirmShakePanic() {
  
  showToast('🚨 Alert sent', 2000);
  
- // All covert triggers send PANIC — same as SOS and volume.
+ // All covert triggers send PANIC — same as SOS.
  // Duress escalation happens later via PIN entry.
  triggerPanic(false, 'Manual alarm activated. [source: shake]'); // W4 (build __14_)
 }
@@ -9972,149 +9962,10 @@ function cancelShakeConfirmation() {
  if (modal) modal.classList.add('hidden');
 }
 
-// ====== FEATURE 2: VOLUME BUTTON PANIC (Android) ======
-
-function initVolumeDetection() {
- document.addEventListener('keydown', handleVolumePress, false);
-
- // Register a MediaSession so Android Chrome routes hardware volume key
- // events to the page rather than silently handling them as system volume.
- // Without this, keydown is never dispatched for VolumeUp/VolumeDown on Android.
- _registerMediaSession();
-}
-
-/**
- * _registerMediaSession — claims audio focus via the MediaSession API.
- * Called at init and refreshed after Tone.js starts (initAudio) so that
- * Android Chrome keeps routing volume key events to the page.
- * Safe to call multiple times; each call simply re-asserts the session.
- */
-function _registerMediaSession() {
- if (!('mediaSession' in navigator)) return;
- try {
-   navigator.mediaSession.metadata = new MediaMetadata({
-     title: 'OTG Safety — Visit Active',
-     artist: CONFIG.orgName || '%%ORG_NAME%%',
-     album: 'Lone Worker Safety System'
-   });
-   navigator.mediaSession.playbackState = 'playing';
-   // Register no-op handlers — required for some browsers to treat
-   // the session as active and hold audio focus.
-   ['play', 'pause', 'stop'].forEach(action => {
-     try { navigator.mediaSession.setActionHandler(action, () => {}); } catch (_) {}
-   });
- } catch (e) {
-   console.warn('[MediaSession] Registration failed:', e.message);
- }
-}
-
-function handleVolumePress(event) {
- // Active on any screen — worker may need to trigger alarm before a visit starts
- if (!state) return;
- if (volumeConfirmationMode) return;
- 
- // Volume up or down.
- // Chrome 66+ uses 'AudioVolumeUp'/'AudioVolumeDown' (W3C spec).
- // Older browsers used 'VolumeUp'/'VolumeDown' — kept as fallback.
- if (event.key === 'AudioVolumeUp'  || event.key === 'AudioVolumeDown' ||
-     event.key === 'VolumeUp'       || event.key === 'VolumeDown') {
-
- event.preventDefault(); // Try to suppress volume change
- 
- const now = Date.now();
- volumeBuffer.push(now);
- 
- // Keep only recent presses (within 3 seconds)
- volumeBuffer = volumeBuffer.filter(t => now - t < 3000);
- 
- // Check for 5 presses
- if (volumeBuffer.length >= 5) {
- volumeBuffer = [];
- enterVolumeConfirmation();
- }
- }
-}
-
-function enterVolumeConfirmation() {
- volumeConfirmationMode = true;
- volumeBuffer = [];
- 
- const modal = document.getElementById('volumeConfirmModal');
- if (!modal) return;
- 
- // Wake from battery saver if needed
- deactivateBatterySaver();
- 
- // Show confirmation modal
- modal.classList.remove('hidden');
- 
- // Haptic feedback
- if (navigator.vibrate) {
- navigator.vibrate([300, 100, 300]);
- }
- 
- // Countdown
- let countdown = 5;
- const countdownEl = document.getElementById('volumeCountdown');
- const countdownInterval = setInterval(() => {
- countdown--;
- if (countdownEl) countdownEl.textContent = countdown;
- if (countdown <= 0) {
- clearInterval(countdownInterval);
- }
- }, 1000);
- 
- // Watch for confirmation
- const confirmListener = (event) => {
- if (event.key === 'AudioVolumeUp'  || event.key === 'AudioVolumeDown' ||
-     event.key === 'VolumeUp'       || event.key === 'VolumeDown') {
-
- event.preventDefault();
- volumeBuffer.push(Date.now());
- 
- // Need 3 more presses to confirm
- if (volumeBuffer.length >= 3) {
- document.removeEventListener('keydown', confirmListener);
- clearTimeout(volumeConfirmationTimeout);
- clearInterval(countdownInterval);
- confirmVolumePanic();
- }
- }
- };
- 
- document.addEventListener('keydown', confirmListener, false);
- 
- // Timeout after 3 seconds
- volumeConfirmationTimeout = setTimeout(() => {
- document.removeEventListener('keydown', confirmListener);
- clearInterval(countdownInterval);
- cancelVolumeConfirmation();
- }, 3000);
-}
-
-function confirmVolumePanic() {
- volumeConfirmationMode = false;
- const modal = document.getElementById('volumeConfirmModal');
- if (modal) modal.classList.add('hidden');
- 
- // Success feedback
- if (navigator.vibrate) {
- navigator.vibrate([200, 100, 200]);
- }
- 
- showToast('🚨 Alert sent', 2000);
- 
- // Standard PANIC — same as SOS and shake. Covert on device; monitor handles alerting.
- triggerPanic(false, 'Manual alarm activated. [source: volume buttons]'); // W4 (build __14_)
-}
-
-function cancelVolumeConfirmation() {
- volumeConfirmationMode = false;
- volumeBuffer = [];
- 
- const modal = document.getElementById('volumeConfirmModal');
- if (modal) modal.classList.add('hidden');
-}
+// ====== FEATURE 2: removed in __25_ (R72) ======
+// Hardware volume-button panic was taken out. On Android the phone handles a volume press itself and never passes it
+// to a web page (device-proven 28 Oct 2026: a test page saw no key events in any mode), and a locked phone freezes
+// page code anyway. The covert triggers are the SOS triple-tap and the shake. Do not add this back without a new proof.
 
 // ====== FEATURE 3: SLIDE-TO-WAKE (Hold-to-Slide) ======
 
