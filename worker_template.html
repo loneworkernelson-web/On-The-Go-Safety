@@ -431,6 +431,8 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="space-y-1">
  <p id="saverTimerHUD" class="text-5xl font-mono font-bold text-gray-300"
  aria-live="off" aria-label="Time remaining">--:--</p>
+ <!-- __26_ (R73): the quiet cue - why the phone buzzed and what to do (amber text only, the screen stays dark) -->
+ <p id="saverCueHUD" class="hidden text-sm font-bold text-amber-400 tracking-wide max-w-xs mx-auto" role="status"></p>
  </div>
  
  <div class="flex items-center justify-center gap-2 text-gray-300">
@@ -638,7 +640,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
  <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety On-The-Go!</span>
- <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__25_</span>
+ <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__26_</span>
  </h1>
  </div>
  <div class="flex items-center">
@@ -850,6 +852,15 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <!-- __25_ (R74): a one-line reminder, shown every time before a visit or trip is started -->
  <p id="muteReminder" class="mb-2 text-center text-xs font-bold text-gray-300" role="note">🔔 Check your phone is not on silent, so you hear its warnings.</p>
 
+ <!-- __26_ (R76): phone alerts are required - shown by _paGateApply() when they are not set up -->
+ <div id="phoneAlertsGate" class="hidden mb-2 bg-amber-900/40 border border-amber-600/60 rounded-xl p-3 text-left" role="note">
+ <p class="text-xs font-bold text-amber-200 mb-2">Phone alerts are required. Set them up once in Settings, so a quiet or locked phone still gets a reminder before your contact is alerted.</p>
+ <div class="flex gap-2">
+ <button type="button" onclick="navigate('settings')" class="flex-1 py-2 bg-amber-700 active:bg-amber-600 text-white text-xs font-black rounded-lg">Set up now</button>
+ <button id="btnPaStartAnyway" type="button" class="flex-1 py-2 bg-gray-800 text-gray-300 text-[10px] font-black rounded-lg border border-gray-600 select-none" style="touch-action:none">Hold to start without phone alerts</button>
+ </div>
+ </div>
+
  <!-- Forms Button + Slide to Begin Visit Pill — always visible -->
  <div class="flex gap-3 h-16 items-stretch">
  <button id="btnForms" onclick="openFormsLibrary()"
@@ -1039,7 +1050,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <!-- __23_ (R04): the worker's own phone alerts (ntfy reminders when the phone has gone quiet) -->
  <div class="mb-6" id="phoneAlertsSection">
  <h2 class="text-xl font-bold text-amber-400 mb-1">Phone alerts</h2>
- <p class="text-xs text-gray-300 font-bold mb-3">Optional. If your phone goes quiet near the end of a visit or trip, the app can send a reminder to this phone through the free ntfy app, so you can check in before your contact is alerted. A working app normally sends none: reminders only come when the phone has gone quiet. They never replace the alerts to your contacts.</p>
+ <p class="text-xs text-gray-300 font-bold mb-3">Required (if your organisation uses them). If your phone goes quiet near the end of a visit or trip, the app can send a reminder to this phone through the free ntfy app, so you can check in before your contact is alerted. A working app normally sends none: reminders only come when the phone has gone quiet. They never replace the alerts to your contacts.</p>
  <div id="phoneAlertsOff" class="hidden bg-gray-900 p-4 rounded-xl text-xs text-gray-400 font-bold">Phone alerts are switched off for your organisation.</div>
  <div id="phoneAlertsSetup" class="hidden">
  <button id="btnPhoneAlertsSetup" onclick="setupPhoneAlerts()" class="w-full py-3 bg-amber-700 hover:bg-amber-600 text-white font-bold rounded-xl shadow mb-2">Set up phone alerts</button>
@@ -1051,15 +1062,18 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <ol class="text-xs text-gray-300 font-bold list-decimal pl-5 space-y-1 mb-3">
  <li>Install the free <b>ntfy</b> app (Google Play, F-Droid or the App Store).</li>
  <li><b>Android:</b> tap "Open in ntfy" below and confirm. <b>iPhone:</b> tap "Copy topic name", open ntfy, tap + and paste the name.</li>
- <li>In your phone's notification settings, let ntfy make a sound for urgent messages even when Do Not Disturb is on.</li>
+ <li><b>Android:</b> in ntfy open Settings, then Channel settings, and make sure the <b>Urgent</b> and <b>High</b> priorities make a sound, vibrate and may override Do Not Disturb. <b>iPhone:</b> allow ntfy notifications with sound in your phone's Settings.</li>
  <li>Android: turn battery optimisation off for ntfy.</li>
- <li><b>Lock your phone</b>, then tap "Send test" and check that it sounds.</li>
+ <li><b>Lock your phone</b>, then tap "Send test" and check that it sounds and vibrates. Then confirm below.</li>
  </ol>
  <div class="flex gap-2 mb-2">
  <a id="phoneAlertAndroidLink" href="#" class="flex-1 text-center bg-blue-700 hover:bg-blue-600 text-white py-3 rounded-xl text-xs font-black tracking-wide shadow">Open in ntfy (Android)</a>
  <button onclick="copyPhoneAlertTopic()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-xl text-xs font-black tracking-wide shadow">Copy topic name</button>
  </div>
  <button id="btnPhoneAlertTest" onclick="sendPhoneAlertTest()" class="w-full py-3 bg-green-700 hover:bg-green-600 text-white font-bold rounded-xl shadow">Send test</button>
+ <!-- __26_ (R76): the worker confirms the test arrived (the app cannot see that) -->
+ <button id="btnPhoneAlertConfirm" type="button" onclick="confirmPhoneAlerts()" class="hidden w-full mt-2 py-3 bg-amber-700 hover:bg-amber-600 text-white font-bold rounded-xl shadow">✅ The test arrived on my locked phone and vibrated</button>
+ <p id="phoneAlertsConfirmed" class="hidden text-xs font-bold text-green-400 mt-2">✅ Phone alerts confirmed on this phone. Send another test any time.</p>
  </div>
  <p id="phoneAlertsStatus" class="hidden text-xs font-bold mt-2"></p>
  </div>
@@ -1108,7 +1122,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
  <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
- <div id="appBuild" class="text-xs font-mono text-gray-400">worker__25_</div>
+ <div id="appBuild" class="text-xs font-mono text-gray-400">worker__26_</div>
  </div>
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">Backend Version</div>
@@ -1639,8 +1653,25 @@ const RISK_WELFARE_MAP = {
 //      triple-tap and the shake triggers, and every alarm path
 //  R74 a one-line reminder on the start screen, every time: "Check your phone is not on silent, so you hear its warnings."
 //      Static text only - no script, so it cannot affect starting a visit or a trip
+// __26_ changes (session 106, Opus 5.5, from __25_). Needs backend __54_ for the early welfare push (an older backend ignores
+// the heartbeat's purpose and just records it):
+//  R73 welfare pre-warning: before each welfare check (lead = interval / 3, at most 5 min) the phone gives a quiet strong
+//      vibration (no speech), and a second one 2 min before if the lead is 4 min or more and nobody checked in. The worker
+//      answers with "Check in now" (same as "I'm OK"), so the loud prompt never falls due. Not for a check that will be
+//      skipped (at or after the due time), not during an alarm, never on trips (no welfare checks on trips).
+//  R73 welfare heartbeat: from (check - lead - 5 min) to the check, a location-free "I'm alive" (ALARM_GPS_PULSE, 0,0) every
+//      2 min, so backend __54_ can tell an awake phone (no push) from a locked one (early push). Not while the Critical
+//      Timing heartbeat runs (it already keeps the phone heard).
+//  R73 quiet cue: on the dim Battery Saver screen an amber line under the timer (and the number turns amber) says why the
+//      phone buzzed and what to do - welfare check soon, welfare check waiting (F106-1: the prompt is behind the dim
+//      screen, which needs a slide to wake - kept, so a pocket cannot answer it), visit / trip ending (Critical Timing),
+//      alarm soon (standard), low battery. "Check in now" gets an amber outline while a welfare pre-warning is on.
+//  R76 phone alerts are REQUIRED when the organisation has them on: the start pill is blocked ("Set up phone alerts first")
+//      until a topic exists AND the worker has confirmed the test arrived on the locked phone and vibrated (kept per
+//      topic: a new or cleared topic asks again). Escape: press and hold "Start without phone alerts" for 2 s - the visit
+//      Notes then say "Phone alerts not set up." The Phone alerts card says Required and how to set the ntfy channels.
 // =============================================================================
-const WORKER_BUILD = 'worker__25_';
+const WORKER_BUILD = 'worker__26_';
 
 const CONFIG = {
  url: '',
@@ -3308,6 +3339,12 @@ function captureGPS(btn) {
 // A miss posts WELFARE_MISSED (backend __51_+; an older backend gets OVERDUE ALARM, which __50_ treats the same).
 // ============================================================================
 const WELFARE_POLL_MS = 10000;
+const WELFARE_PRE_MAX_MS = 5 * 60000;        // __26_ (R73): pre-warning lead = interval / 3, at most 5 min (backend __54_ the same)
+const WELFARE_PRE_SECOND_MS = 2 * 60000;     // __26_ (R73): the second buzz, 2 min before the check (only when the lead is 4 min+)
+const WELFARE_PRE_BUZZ = [600, 200, 600, 200, 600];   // __26_ (R73): strong, and unlike the end-of-visit (4 long) and prompt (3) buzzes
+const WELFARE_PRE_FRESH_MS = 60000;          // __26_ (R73): buzz only if the moment is under a minute old (not on a late resume)
+const WELFARE_HB_EXTRA_MS = 5 * 60000;       // __26_ (R73): the heartbeat starts this long before the pre-warning
+const WELFARE_HB_EVERY_MS = 120000;          // __26_ (R73): one "I'm alive" every 2 min inside the window
 let _welfarePromptFor = 0;   // deadline of the prompt now on screen (0 = none) - vibrate / speak once per prompt
 
 /** The welfare settings in force: server (Settings tab) first, then the last good server copy, then config.json, then off. */
@@ -3388,7 +3425,7 @@ function _welfareTick() {
       return;
     }
     const next = _welfareNextAt(v);
-    if (now < next) return;
+    if (now < next) { _welfarePre(v, next, now); return; }   // __26_ (R73)
     if (next >= (Number(v.anticipatedDepartureTime) || 0)) return;   // at or after the due time: the server skips it too
     v.welfareDeadline = next + _welfareGraceMs();   // the server's miss time: the check time + the answer time (not "now")
     v.welfareDueAt = next;
@@ -3398,7 +3435,90 @@ function _welfareTick() {
     _showWelfareModal(v.welfareDeadline);
   } catch (e) {
     try { _diag('[R03] welfare tick error: ' + (e && e.message || e), true); } catch (_) {}
+  } finally {
+    try { _quietCueUi(); } catch (_) {}   // __26_ (R73): the quiet cue follows every welfare decision
   }
+}
+
+/** __26_ (R73): the pre-warning lead for this visit: interval / 3, at most WELFARE_PRE_MAX_MS. */
+function _welfarePreLeadMs(v) {
+  return Math.min(WELFARE_PRE_MAX_MS, _welfareMinsFor(v) * 60000 / 3);
+}
+
+/**
+ * __26_ (R73): before the check time. Heartbeat from (check - lead - 5 min); a quiet buzz at (check - lead) and, when the
+ * lead is 4 min or more, again 2 min before - each once per check (remembered against the check time), and only if that
+ * moment is under a minute old (a phone opened later shows the cue without buzzing). Nothing for a skipped check.
+ */
+function _welfarePre(v, next, now) {
+  if (next >= (Number(v.anticipatedDepartureTime) || 0)) return;   // the check will be skipped (at or after the due time)
+  const lead = _welfarePreLeadMs(v);
+  if (now >= next - lead - WELFARE_HB_EXTRA_MS) _welfareHeartbeat(v, now);
+  if (now < next - lead) return;
+  let changed = false, buzz = false;
+  if (v.welfarePreFor !== next) { v.welfarePreFor = next; changed = true; buzz = (now - (next - lead)) < WELFARE_PRE_FRESH_MS; }
+  if (lead >= 2 * WELFARE_PRE_SECOND_MS && now >= next - WELFARE_PRE_SECOND_MS && v.welfarePre2For !== next) {
+    v.welfarePre2For = next; changed = true; buzz = buzz || (now - (next - WELFARE_PRE_SECOND_MS)) < WELFARE_PRE_FRESH_MS;
+  }
+  if (changed) saveState();
+  if (buzz) {
+    if (navigator.vibrate) navigator.vibrate(WELFARE_PRE_BUZZ);
+    try { _diag('[R73] welfare pre-warning buzz, check at ' + _fmtClock12(new Date(next)), true); } catch (_) {}
+  }
+}
+
+/** __26_ (R73): one location-free "I'm alive" every 2 min in the window (backend __54_ holds its early push while heard). */
+function _welfareHeartbeat(v, now) {
+  if (typeof ctHeartbeatInterval !== 'undefined' && ctHeartbeatInterval) return;   // the Critical Timing heartbeat already runs
+  if (now - (Number(v.welfareHbAt) || 0) < WELFARE_HB_EVERY_MS) return;
+  v.welfareHbAt = now;
+  saveState();
+  processUploadQueue(buildPayload({
+    'Alarm Status': 'ALARM_GPS_PULSE',
+    'Notes': 'Heartbeat - welfare check.',
+    'Last Known GPS': '0,0'   // explicit: buildPayload would otherwise fall back to the start position
+  }));
+}
+
+/**
+ * __26_ (R73): the quiet cue in force, worked out from the visit's state (never stored), or null. Used on the dim screen
+ * (amber line, amber number) and for the "Check in now" outline. Order: welfare prompt waiting, welfare pre-warning,
+ * Critical Timing visit ending, standard alarm soon, low battery. Nothing during an alarm.
+ */
+function _quietCue() {
+  const v = state && state.activeVisit;
+  if (!v || _welfareInAlarm(v) || v.criticalSent) return null;
+  const now = Date.now();
+  const mins = ms => Math.max(1, Math.ceil(ms / 60000));
+  if (_welfareForVisit(v)) {
+    if (v.welfareDeadline && now < v.welfareDeadline) return { kind: 'welfare-now', text: 'Welfare check - slide Wake, then tap I\'m OK' };
+    const next = _welfareNextAt(v);
+    if (!v.welfareDeadline && now < next && next < (Number(v.anticipatedDepartureTime) || 0) && now >= next - _welfarePreLeadMs(v)) {
+      return { kind: 'welfare-pre', text: 'Welfare check in ' + mins(next - now) + ' min - wake and tap Check in now' };
+    }
+  }
+  const toDue = (Number(v.anticipatedDepartureTime) || 0) - now;
+  const end = v.isTravel ? 'wake to extend or end the trip' : 'wake to extend or depart';
+  if (v.highRisk) {
+    if (v.warn5minSent && toDue > 0) return { kind: 'ending', text: (v.isTravel ? 'Trip' : 'Visit') + ' ends in ' + mins(toDue) + ' min - ' + end };
+  } else if (v.warn5minSent && toDue <= 0) {
+    const toAlarm = toDue + ((typeof CONFIG !== 'undefined' && CONFIG.escalationMinutes) || 15) * 60000;
+    if (toAlarm > 0) return { kind: 'alarm-soon', text: 'Alarm in ' + mins(toAlarm) + ' min - ' + end };
+  }
+  if (v.lowBatterySent && (parseInt(typeof currentBatteryLevel !== 'undefined' ? currentBatteryLevel : '', 10) || 100) <= 15) {
+    return { kind: 'battery', text: 'Low battery - plug in' };
+  }
+  return null;
+}
+
+/** __26_ (R73): show the cue - "Check in now" outline on the visit screen; the dim screen repaints its HUD. Never throws. */
+function _quietCueUi() {
+  try {
+    const cue = _quietCue();
+    const btn = document.getElementById('btnWelfareCheckIn');
+    if (btn) { const on = !!(cue && cue.kind === 'welfare-pre'); btn.classList.toggle('ring-4', on); btn.classList.toggle('ring-amber-400', on); }
+    if (typeof isBatterySaverActive !== 'undefined' && isBatterySaverActive && typeof updateBatterySaverHUD === 'function') updateBatterySaverHUD();
+  } catch (e) { try { _diag('[R73] cue error: ' + (e && e.message || e), true); } catch (_) {} }
 }
 
 /** Show the "Are you OK?" prompt counting down to the deadline (re-entrant: vibrates and speaks once per deadline). */
@@ -6053,6 +6173,68 @@ function updateArrivedButtonState() {
   pill.classList.add('pill-disabled');
   pill.setAttribute('aria-disabled', 'true');
  }
+
+ // __26_ (R76): phone alerts are required (escape: hold "Start without phone alerts"). Never allowed to break the pill.
+ try { _paGateApply(pill, label); } catch (e) { try { _diag('[R76] gate error: ' + (e && e.message || e), true); } catch (_) {} }
+}
+
+// __26_ (R76): phone alerts as a required step ------------------------------------------------------------------------
+let _paStartAnyway = false;   // the worker held "Start without phone alerts" (one start only)
+let _paHoldTimer = null;
+let _paTestOk = false;        // a "Send test" was accepted by the server in this session
+const PA_HOLD_MS = 2000;
+
+/** True when this organisation uses phone alerts and this phone has not set them up AND confirmed the test (per topic). */
+function _paRequiredMissing() {
+  if (!_phoneAlertsOn()) return false;
+  const t = _phoneAlertTopic();
+  return !(t && state && state.phoneAlertsOkFor === t);
+}
+
+/** Show the start-screen card and block the start pill while phone alerts are missing (unless the hold escape was used). */
+function _paGateApply(pill, label) {
+  const missing = !!(state && !state.activeVisit && _paRequiredMissing());
+  const gate = document.getElementById('phoneAlertsGate');
+  if (gate) gate.classList.toggle('hidden', !missing);
+  const hold = document.getElementById('btnPaStartAnyway');
+  if (hold && !_paHoldTimer) hold.textContent = _paStartAnyway ? 'Noted - starting without phone alerts' : 'Hold to start without phone alerts';
+  if (missing && !_paStartAnyway && pill && !pill.classList.contains('pill-disabled')) {
+    pill.classList.add('pill-disabled');
+    pill.setAttribute('aria-disabled', 'true');
+    pill.style.borderColor = '';
+    if (label) label.textContent = 'Set up phone alerts first';
+  }
+}
+
+/** Wire the press-and-hold escape once (2 s; letting go earlier cancels). */
+function _paInitHold() {
+  const b = document.getElementById('btnPaStartAnyway');
+  if (!b || b.dataset.wired) return;
+  b.dataset.wired = '1';
+  const stop = () => { if (_paHoldTimer) { clearTimeout(_paHoldTimer); _paHoldTimer = null; if (!_paStartAnyway) b.textContent = 'Hold to start without phone alerts'; } };
+  b.addEventListener('pointerdown', () => { if (_paStartAnyway) return; stop(); b.textContent = 'Keep holding...'; _paHoldTimer = setTimeout(_paHoldDone, PA_HOLD_MS); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => b.addEventListener(t, stop));
+  b.addEventListener('contextmenu', e => e.preventDefault());
+}
+
+function _paHoldDone() {
+  _paHoldTimer = null;
+  _paStartAnyway = true;
+  try { _diag('[R76] start without phone alerts chosen', true); } catch (_) {}
+  if (navigator.vibrate) navigator.vibrate(50);
+  showToast('Noted - this start will be recorded as without phone alerts');
+  updateArrivedButtonState();
+}
+
+/** The worker confirms the test arrived on the locked phone and vibrated (kept against this topic). */
+function confirmPhoneAlerts() {
+  const t = _phoneAlertTopic();
+  if (!t || !_paTestOk) return;
+  state.phoneAlertsOkFor = t;
+  try { saveState(); } catch (_) {}
+  showToast('✅ Phone alerts confirmed');
+  _renderPhoneAlerts();
+  updateArrivedButtonState();
 }
 
 /**
@@ -6073,6 +6255,13 @@ async function startVisit(isSkipCheck = false) {
  if (btn) btn.dataset.starting = '1';
 
  isMidVisitUpdate = false;
+
+ // __26_ (R76): phone alerts required - the pill is disabled, this also stops any other caller.
+ if (_paRequiredMissing() && !_paStartAnyway) {
+ if (btn) delete btn.dataset.starting;
+ updateArrivedButtonState();
+ return showToast('⚠️ Set up phone alerts first (Settings), or hold "Start without phone alerts"');
+ }
 
  // Determine travel mode early so the WOF check knows whether to apply.
  const isTravelEarly = !!state.isTravelActive;
@@ -6245,7 +6434,7 @@ async function startVisit(isSkipCheck = false) {
  'Alarm Status': alarmStatus,
  'Location Name': loc.name,
  'Location Address': loc.address || "",
- 'Notes': `${logNote} Duration: ${durationMins}m${isHighRisk ? ' [CRITICAL_TIMING]' : ''}${isTravelMode ? ` [START_GPS:${verifiedStartGPS}]` : ''}`,
+ 'Notes': `${logNote} Duration: ${durationMins}m${isHighRisk ? ' [CRITICAL_TIMING]' : ''}${isTravelMode ? ` [START_GPS:${verifiedStartGPS}]` : ''}${_paStartAnyway ? ' Phone alerts not set up.' : ''}`,
  'Anticipated Departure Time': new Date(anticipatedDeparture).toISOString()
  };
  // Only include GPS in the arrival row for travel — for site visits the address IS the location.
@@ -6255,6 +6444,7 @@ async function startVisit(isSkipCheck = false) {
  // __24_ (R03): the server arms its own welfare clock from this (backend __50_+; an older backend ignores it).
  if (state.activeVisit.welfareOn) arrivalPayload['Welfare Interval'] = String(_welfareMinsFor(state.activeVisit));
  processUploadQueue(buildPayload(arrivalPayload));
+ _paStartAnyway = false;   // __26_ (R76): the escape covers one start only
 
   announce(((isTravelMode && loc.id !== 'travel') ? `Travelling to ${loc.name}.` : isTravelMode ? 'Travel started.' : `${loc.name} started.`) + (isHighRisk ? ` Critical timing mode activated.` : ``));
  
@@ -7963,6 +8153,7 @@ function _initApp() {
  initShakeDetection();
  initSlideToWake();
  initAllActionPills();
+ try { _paInitHold(); } catch (e) { console.warn('[R76] hold wiring: ' + (e && e.message)); }   // __26_ (R76)
  
  // 5. User Interaction Bindings
  const btnPanic = document.getElementById('btnPanic');
@@ -8213,6 +8404,9 @@ function _renderPhoneAlerts() {
  $('phoneAlertsOff').classList.toggle('hidden', on);
  $('phoneAlertsSetup').classList.toggle('hidden', !(on && canUse && !topic));
  $('phoneAlertsReady').classList.toggle('hidden', !(on && topic));
+ const okNow = !!(on && topic && state && state.phoneAlertsOkFor === topic);   // __26_ (R76)
+ if ($('btnPhoneAlertConfirm')) $('btnPhoneAlertConfirm').classList.toggle('hidden', !(on && topic && _paTestOk && !okNow));
+ if ($('phoneAlertsConfirmed')) $('phoneAlertsConfirmed').classList.toggle('hidden', !okNow);
  if (on && topic) {
   const server = _phoneAlertServer();
   $('phoneAlertTopic').textContent = topic;
@@ -8263,6 +8457,7 @@ async function sendPhoneAlertTest() {
  const r = await _phoneAlertPost('workerTopicTest');
  const ok = !!(r && r.status === 'success');
  _phoneAlertMsg((r && r.message) ? String(r.message) : (ok ? 'Test sent.' : 'Could not reach the server - check your connection and try again.'), !ok);
+ if (ok) { _paTestOk = true; try { _renderPhoneAlerts(); } catch (_) {} }   // __26_ (R76): now the worker can confirm it arrived
  setTimeout(() => { if (btn) btn.disabled = false; }, 5000);
 }
 
@@ -10993,6 +11188,16 @@ function updateBatterySaverHUD() {
  battTextHUD.innerText = battLevel + '%';
  if (battBarHUD) battBarHUD.style.width = battLevel + '%';
  }
+
+ // __26_ (R73): the quiet cue - an amber line, and the minutes number turns amber. Never allowed to break the HUD.
+ try {
+   const cue = (typeof _quietCue === 'function') ? _quietCue() : null;
+   const cueEl = document.getElementById('saverCueHUD');
+   if (cueEl) { cueEl.textContent = cue ? cue.text : ''; cueEl.classList.toggle('hidden', !cue); }
+   const num = timeHUD && timeHUD.querySelector ? timeHUD.querySelector('span') : null;
+   if (cue && num && num.classList.contains('text-gray-300')) { num.classList.remove('text-gray-300'); num.classList.add('text-amber-400'); }
+   if (battTextHUD) battTextHUD.classList.toggle('text-amber-400', !!(cue && cue.kind === 'battery'));
+ } catch (e) { try { _diag('[R73] HUD cue error: ' + (e && e.message || e), true); } catch (_) {} }
 }
 
 // checkWakeSlider removed — slide-to-wake is now handled entirely by
