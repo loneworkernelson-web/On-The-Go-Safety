@@ -294,19 +294,13 @@ Workers can view a log of their recent visits from the app's history screen. `po
 
 When `CONFIG.w3wApiKey` is set, `fetchW3wForPanic()` fires on panic activation and on overdue alarm expiry. It fetches the what3words address for `lastGPS` (falling back to `startGPS`) and displays it in emerald green in the `#w3wDisplay` element on the locked alarm screen. This gives emergency contacts a precise three-word location they can relay to response teams. The display is cleared and hidden when `iamSafe()` resets the UI.
 
-### 3.12 Volume Button Panic (Android Only)
+### 3.12 Discreet Alarm Triggers
 
-Workers can trigger a panic alarm using the hardware volume buttons — useful when operating the touchscreen discreetly is not possible.
+Two triggers raise a panic alarm without a visible button press: the SOS triple-tap (active visit only) and the shake (anywhere in the app). Both send the same PANIC alarm, tagged with a source label (`[source: ...]`) in the notes.
 
-**Flow:**
-1. Five presses of either volume button within 3 seconds → full-screen confirmation modal (`shakeConfirmModal`) appears.
-2. Three more presses within 5 seconds → PANIC alarm fires (same path as the SOS button).
+**Volume-button panic was removed in worker `__25_` (29 October 2026, R72).** A hardware volume press on Android is handled by the phone itself and is not passed to a web page, with or without a MediaSession. This was proven on a Xiaomi phone (HyperOS 3): the phone's volume bar moved, and a test page that listed every key event received none, in all three test modes. A locked phone also freezes page code, so the trigger could never have worked with the screen off. The code carries a removal note; do not add the trigger back without new device proof.
 
-**Key names:** The feature requires Chrome 66+ / W3C key names `'AudioVolumeUp'` / `'AudioVolumeDown'`. The legacy names `'VolumeUp'` / `'VolumeDown'` are kept as a fallback. `keyCode` fallbacks (174/175) have been removed — they were Windows/IE values that Android Chrome never used.
-
-**MediaSession requirement:** Android Chrome only routes hardware volume key events to the page when an active `MediaSession` is registered. `_registerMediaSession()` is called from `initVolumeDetection()` at app start, and re-asserted inside `initAudio()` after `Tone.start()` succeeds (the most reliable moment to claim audio focus on Android). Without a MediaSession, volume button presses are consumed by the OS volume control and never reach the page.
-
-This feature is Android-only and has no effect on iOS.
+**Start-screen reminder (R74).** The start screen shows a fixed line, "Check your phone is not on silent, so you hear its warnings." A web page cannot read the phone's ringer or volume setting, so a reminder is all that can be done honestly.
 
 ---
 
