@@ -225,7 +225,6 @@ The Worker App registers a service worker on first load. The service worker cach
 | **Screen Wake Lock** | Used to prevent the screen from turning off during active visits. Requires the Screen Wake Lock API (Chrome 84+, Safari 16.4+). Graceful fallback if unavailable. |
 | **Device Motion API** | Required for shake-to-alert functionality. Granted automatically on Android; requires explicit user permission on iOS 13+. If denied, shake alerting is silently disabled. |
 | **Web Speech API** | Used for voice countdown warnings. Present in Chrome and Safari. Not available in Firefox. Graceful fallback to visual-only if absent. |
-| **MediaSession API** | Required for volume-button panic detection on Android. The app registers a MediaSession at initialisation so that Android Chrome routes hardware volume key events to the page rather than the OS. Without this, volume button detection is silently disabled. |
 | **Geolocation API** | Required for GPS capture and travel monitoring. Requires user permission. If denied, GPS records as 0,0 but the safety system otherwise functions normally. |
 | **IndexedDB** | Required for the upload outbox and visit history. Clearing all browser data will purge queued uploads. The service worker handles app caching independently. |
 | **localStorage** | Required for sync cache (site list, templates, notices) and app settings. Workers clearing all browser data will lose session state and may need to re-register their device. |
@@ -359,7 +358,7 @@ Worker phone numbers, emergency contact details, and GPS coordinates are stored 
  
 ## **8.1 Platform Stability**
  
-The Worker App is built on standard web platform APIs (Service Workers, Geolocation, Web Speech, Screen Wake Lock, Device Motion, MediaSession) that are part of the W3C and WHATWG specifications. The main risk factor is that Apple and Google periodically tighten restrictions on background app behaviour — apps running in the background may be suspended to preserve battery life. The app mitigates this through the Screen Wake Lock API and Battery Saver mode.
+The Worker App is built on standard web platform APIs (Service Workers, Geolocation, Web Speech, Screen Wake Lock, Device Motion) that are part of the W3C and WHATWG specifications. The main risk factor is that Apple and Google periodically tighten restrictions on background app behaviour — apps running in the background may be suspended to preserve battery life. The app mitigates this through the Screen Wake Lock API and Battery Saver mode.
  
 ## **8.2 Known Technical Limitations**
  
@@ -370,7 +369,6 @@ The Worker App is built on standard web platform APIs (Service Workers, Geolocat
 | **Monitor requires active supervision** | The Monitor’s audio alarm and full-screen overlay only activate if someone has the browser tab open. There is no background or push notification on the supervisor side if the tab is closed. |
 | **Device ID stability** | The browser-derived device ID may change on full browser data clear, OS reinstall, or browser switch. This requires an admin to clear and re-register the device. |
 | **Background suspension (iOS)** | iOS may suspend the browser tab if the worker switches to another app. The Screen Wake Lock and Battery Saver mode reduce this risk but do not eliminate it. |
-| **Volume button panic (Android only)** | Volume button emergency triggering requires the MediaSession API and is only functional on Android Chrome. iOS does not route hardware volume key events to web apps. |
 | **GPS accuracy** | GPS accuracy is device-dependent and degrades indoors. Continuous GPS tracking during overdue or travel periods depends on the device’s location accuracy. |
 | **Spreadsheet row limits** | Google Sheets has a limit of 10 million cells per spreadsheet. At the current column count per visit row, this allows approximately 250,000–330,000 visit records before archiving is needed. The automatic archiving function moves records older than 30 days to an Archive sheet. |
 | **No role-based Monitor access** | The Monitor App uses a single Master Key. All Monitor users see all active workers. There is no per-team or per-supervisor filtering in the current implementation. |
