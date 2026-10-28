@@ -192,6 +192,21 @@
  *   - Settings tab: two new keys added with their defaults (existing values never changed); Health email shows them.
  *   - Contact escalation (tiers, Critical ladder, col AA claims, All Clear audience) is unchanged.
  *
+ * __54_ (session 106, 29 Oct 2026, Opus) - R73: an EARLY welfare push (W3e) for a locked phone. Needs worker __26_ for the
+ * welfare heartbeat; with an older worker it still works, but an awake phone is not "heard" so it gets the push as well:
+ *   - Before each server welfare check (Visits col AD), from the check time minus the lead time (one-third of the interval,
+ *     at most 5 min) to 30 s before it, the checker may push "Welfare check in N min - open the app and tap Check in now"
+ *     (priority high) to the worker's own topic (Staff col J). The phone does the same with a quiet vibration.
+ *   - Sent ONLY when the phone has gone quiet: nothing heard (col AF) for more than WORKER_WARN_QUIET_W1_MINS (default 3),
+ *     like R60's W1. Worker __26_ sends a location-free heartbeat (ALARM_GPS_PULSE, 0,0 - already accepted on any open
+ *     row: col AF stamped, col K never written) every 2 min from about 10 min before each check, so an awake phone is
+ *     heard and gets no push; a locked phone falls silent and gets it. Heard = held back and NOT claimed (looked at again
+ *     each minute; one "Eh" marker and Audit row per check time).
+ *   - Decided once per check time in col AE: E (claimed before the send) or Ex (not sent: hard rule or daily cap). Same hard
+ *     rule (never during an alarm, checked again at send time), same daily cap, same WORKER_WARNINGS switch, as W1-W3.
+ *   - "Check in now" moves col AD, so the early push and the W3 push for the old check are dropped (at send time too).
+ *   - Unchanged: W3 at the check time (urgent), the miss, the ladders, col AA, contact alerts, Settings keys (none added).
+ *
  * __53_ (session 103, 27 Oct 2026, Opus) - HQ resolve: the supervisor says whether the worker has left (needs Monitor __14_ to
  * offer the choice; an older Monitor sends no choice and gets the old behaviour). No worker change needed:
  *   - "Resolve Outcome" = LEFT: as before - the alarm row is closed with the status the Monitor sent (USER_SAFE - HQ RESOLVED).
@@ -368,6 +383,8 @@ const LAST_HEARD_COL      = 32;    // Visits col AF "Last Heard (UTC)" (ISO), wr
 const LAST_HEARD_HEADER   = 'Last Heard (UTC)';
 // __50_ (session 101, R03): server-side welfare checks. Helpers at the end of the file.
 const WELFARE_DUE_COL     = 30;    // Visits col AD "Welfare Due": "<next welfare time ISO>|<interval minutes>"
+const WELFARE_EARLY_MAX_MINS = 5;      // __54_ (R73): early welfare push lead time = interval / 3, at most this many minutes
+const WELFARE_EARLY_END_MS   = 30000;  // __54_ (R73): the early push window closes 30 s before the check time
 const WELFARE_DUE_HEADER  = 'Welfare Due';
 const WELFARE_MEM_COL     = 31;    // Visits col AE "Welfare Memory": "<welfare time ISO>|<P,Px,M>|<effective due ISO>|<written ISO>"
 const WELFARE_MEM_HEADER  = 'Welfare Memory';
@@ -5450,7 +5467,7 @@ function _formsGps_(sheet, rowNum, p) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__53_';
+const TEMPLATE_BUILD = 'backend__54_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
@@ -6199,6 +6216,13 @@ function _warnStillOk_(sh, w) {
 
 /** __48_ (R04): reminder wording. Site or destination name and the due time only - no GPS, no contact names. */
 function _warnMessage_(w) {
+    if (w.w === 3 && w.early) {   // __54_ (R73): early welfare push. Site name and the check time only.
+        const placeE = String(w.loc || '').replace(/\s+/g, ' ').trim().substring(0, 80);
+        const minsE = Math.max(1, Math.ceil((new Date(w.welfareIso).getTime() - Date.now()) / 60000));
+        return { title: 'Welfare check in ' + minsE + ' min - open the app and tap Check in now',
+                 body: (placeE ? placeE + ' - ' : '') + 'welfare check at ' + (_clockText_(new Date(w.welfareIso)) || 'the check time') +
+                       '. Checking in now answers it early.', tags: 'bell' };
+    }
     if (w.w === 3) {   // __50_ (R03): welfare check push. Site name and times only.
         const place3 = String(w.loc || '').replace(/\s+/g, ' ').trim().substring(0, 80);
         return { title: 'Welfare check - open the app and tap I\'m OK',
@@ -6230,20 +6254,21 @@ function _runWarnSends_(warns) {
     try { sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Visits'); } catch (_) {}
     warns.forEach(function (w) {
         const t0 = Date.now();
+        const lab = 'W' + w.w + (w.early ? 'e' : '');   // __54_: W3e = the early welfare push
         try {
             const why = _warnStillOk_(sh, w);
-            if (why) { _audit_('warn:skip-at-send', w.worker, w.rowNum, '', '', '', '', 'W' + w.w + ' not sent: ' + why); return; }
+            if (why) { _audit_('warn:skip-at-send', w.worker, w.rowNum, '', '', '', '', lab + ' not sent: ' + why); return; }
             const m = _warnMessage_(w);
-            const r = _sendNtfy(w.topic, m.title, m.body, w.w === 1 ? 'high' : 'urgent', m.tags, w.click ? { click: w.click } : null);
+            const r = _sendNtfy(w.topic, m.title, m.body, (w.w === 1 || w.early) ? 'high' : 'urgent', m.tags, w.click ? { click: w.click } : null);
             if (r && r.ok) {
-                _audit_('warn:sent', w.worker, w.rowNum, '', '', '', '', 'W' + w.w + ' sent in ' + (Date.now() - t0) + 'ms (' + r.via + ')' +
+                _audit_('warn:sent', w.worker, w.rowNum, '', '', '', '', lab + ' sent in ' + (Date.now() - t0) + 'ms (' + r.via + ')' +
                         (w.heardNote ? ' - ' + w.heardNote : ''));
             } else {
-                _audit_('warn:send-FAILED', w.worker, w.rowNum, '', '', '', '', 'W' + w.w + ' not accepted' + (r && r.code ? ' (HTTP ' + r.code + ')' : '') +
+                _audit_('warn:send-FAILED', w.worker, w.rowNum, '', '', '', '', lab + ' not accepted' + (r && r.code ? ' (HTTP ' + r.code + ')' : '') +
                         ' - not retried (a reminder only; contacts are still alerted on time)');
             }
         } catch (e) {
-            _audit_('warn:send-FAILED', w.worker, w.rowNum, '', '', '', '', 'W' + w.w + ' threw: ' + String(e).substring(0, 200) + ' - not retried');
+            _audit_('warn:send-FAILED', w.worker, w.rowNum, '', '', '', '', lab + ' threw: ' + String(e).substring(0, 200) + ' - not retried');
         }
     });
 }
@@ -6305,6 +6330,7 @@ function _quietText_(n) { return n > 0 ? 'more than ' + n + ' min of silence' : 
 //   Col AD "Welfare Due"    = "<next welfare time ISO>|<interval minutes>"  (blank = no server welfare checks on this row)
 //   Col AE "Welfare Memory" = "<welfare time ISO>|<tokens>|<effective due ISO>|<written ISO>"
 //                             tokens: P = welfare push claimed, Px = push decided not to send, M = missed - escalating.
+//                             __54_: E = early push claimed, Ex = early push decided not to send, Eh = held back (phone heard).
 // A miss makes the visit overdue from that moment: the existing ladders run from an EFFECTIVE DUE time (standard: the miss
 // minus the grace period, so tier 1 goes at the miss; Critical Timing: the miss itself). It is stored in col AE so a Settings
 // change can never move it (a moved key would restart the ladder). The escalation stays on until a WELFARE_OK, a PIN clear
@@ -6438,7 +6464,13 @@ function _welfareCheck_(sheet, rowNum, entry, worker, dueU, status, isCritical, 
     if (String(status).toUpperCase().indexOf('TRAVEL') > -1 || String(entry[11] || '').indexOf('Travel to') > -1) return null;
     if (_alarmRank_(String(status)) >= 3) return null;
     const now = Date.now();
-    if (now < d.wMs) return null;
+    if (now < d.wMs) {
+        if (warns) {   // __54_ (R73): the early push before the check time (locked phone). Never touches the escalation.
+            try { _welfareEarlyPush_(sheet, rowNum, entry, worker, d, d.mins || set.welfareDefaultMins, status, warns, ctx); }
+            catch (e) { _audit_('welfare:early-error', worker, rowNum, status, '', '', '', String(e).substring(0, 200) + ' - the escalation is unaffected'); }
+        }
+        return null;
+    }
     const missMs = d.wMs + set.welfareGraceMins * 60000;
     if (now < missMs) {
         if (warns) {
@@ -6477,6 +6509,49 @@ function _welfarePush_(sheet, rowNum, entry, worker, d, missMs, status, warns, c
     warns.push({ worker: worker, rowNum: rowNum, w: 3, topic: topic, dueIso: d.wIso, welfareIso: d.wIso,
                  alertIso: new Date(missMs).toISOString(), loc: String(entry[12] == null ? '' : entry[12]), isTrip: false,
                  click: ctx.settings.workerAppUrl, heardNote: 'welfare check at ' + d.wIso });
+}
+
+/**
+ * __54_ (R73): the EARLY welfare push (W3e) to the worker's own phone - checker, lock held. Window: from the check time
+ * minus the lead (interval / 3, at most WELFARE_EARLY_MAX_MINS) to WELFARE_EARLY_END_MS before it. Sent only when the
+ * phone has gone quiet (col AF older than WORKER_WARN_QUIET_W1_MINS; 0 = always). Heard = held back, NOT claimed (the
+ * next run looks again; one Eh marker keeps the Audit row to one per check time). Otherwise decided once in col AE:
+ * E (claimed before the send) or Ex (hard rule / daily cap). Nothing is written for a worker with no topic or when
+ * WORKER_WARNINGS is Off.
+ */
+function _welfareEarlyPush_(sheet, rowNum, entry, worker, d, mins, status, warns, ctx) {
+    const leadMs = Math.min(WELFARE_EARLY_MAX_MINS, Number(mins) / 3) * 60000;
+    if (!(leadMs > 0)) return;
+    const now = Date.now();
+    if (now < d.wMs - leadMs || now >= d.wMs - WELFARE_EARLY_END_MS) return;
+    const m = _welfareMemInfo_(entry[WELFARE_MEM_COL - 1]);
+    const toks = (m.has && m.wIso === d.wIso) ? m.tokens : [];
+    if (toks.indexOf('E') > -1 || toks.indexOf('Ex') > -1) return;   // decided already
+    _warnCtx_(ctx);
+    if (!ctx.settings.workerWarnings) return;
+    const topic = ctx.topics[String(worker == null ? '' : worker).toLowerCase().trim()];
+    if (!topic) return;
+    let skip = _rowAlarmReason_(entry), heardNote = '';
+    if (skip) skip += ' - hard rule: no push to the worker during an alarm';
+    else {
+        const quiet = ctx.settings.workerWarnQuietW1Mins;
+        const heard = _warnHeard_(entry[LAST_HEARD_COL - 1], quiet);
+        if (heard.alive) {
+            if (toks.indexOf('Eh') < 0 && _welfareMemWrite_(sheet, rowNum, d.wIso, toks.concat(['Eh']), '', worker)) {
+                _audit_('warn:skip', worker, rowNum, status, '', '', '', 'W3e (early welfare) held back: phone heard ' + heard.mins.toFixed(1) +
+                        ' min ago (sent only after more than ' + quiet + ' min of silence) - looked at again each minute until the check at ' + d.wIso);
+            }
+            return;   // not decided: no claim
+        }
+        heardNote = heard.note;
+        if (!_warnBudgetTake_(ctx.settings.workerWarningDailyCap)) skip = 'daily cap reached (' + ctx.settings.workerWarningDailyCap + ')';
+    }
+    const val = _welfareMemWrite_(sheet, rowNum, d.wIso, toks.concat([skip ? 'Ex' : 'E']), '', worker);
+    if (skip) { _audit_('warn:skip', worker, rowNum, status, '', '', '', 'W3e (early welfare) not sent: ' + skip); return; }
+    if (!val) return;   // not recorded = not sent (an unrecorded push would repeat every minute)
+    warns.push({ worker: worker, rowNum: rowNum, w: 3, early: true, topic: topic, dueIso: d.wIso, welfareIso: d.wIso,
+                 alertIso: d.wIso, loc: String(entry[12] == null ? '' : entry[12]), isTrip: false,
+                 click: ctx.settings.workerAppUrl, heardNote: heardNote });
 }
 
 /** __50_: the welfare fields for the alert wording. job unchanged when wf is null. */
