@@ -472,7 +472,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="text-center">
  <div class="inline-flex items-center gap-2 bg-red-900/10 border border-red-900/30 rounded-full px-5 py-2">
  <span class="text-red-600 text-lg">🆘</span>
- <span class="text-red-700 text-sm font-black tracking-widest">Shake vigorously for SOS</span>
+ <span id="shakeHintText" class="text-red-700 text-sm font-black tracking-widest">Shake vigorously for SOS</span>
  </div>
  </div>
  </div>
@@ -640,7 +640,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
  <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety On-The-Go!</span>
- <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__26_</span>
+ <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__27_</span>
  </h1>
  </div>
  <div class="flex items-center">
@@ -852,6 +852,9 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <!-- __25_ (R74): a one-line reminder, shown every time before a visit or trip is started -->
  <p id="muteReminder" class="mb-2 text-center text-xs font-bold text-gray-300" role="note">🔔 Check your phone is not on silent, so you hear its warnings.</p>
 
+ <!-- __27_ (R77): shown until the worker has practised once (the setup practice step can be skipped) -->
+ <button id="practiceReminder" type="button" onclick="openPractice('main')" class="hidden w-full mb-2 text-center text-xs font-bold text-red-300 underline underline-offset-2">🆘 Not practised your alarms yet? Tap to try them safely.</button>
+
  <!-- __26_ (R76): phone alerts are required - shown by _paGateApply() when they are not set up -->
  <div id="phoneAlertsGate" class="hidden mb-2 bg-amber-900/40 border border-amber-600/60 rounded-xl p-3 text-left" role="note">
  <p class="text-xs font-bold text-amber-200 mb-2">Phone alerts are required. Set them up once in Settings, so a quiet or locked phone still gets a reminder before your contact is alerted.</p>
@@ -974,6 +977,65 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  </div>
 </div>
 
+<!-- __27_ (R77): practise the SOS button, the PINs and the shake alert. Nothing on this page can raise an alarm. -->
+<div id="practicePage" class="page bg-gray-800">
+ <div class="header-bar">
+ <h1 class="text-2xl font-bold" style="color: var(--text-on-primary)">Practise your alarms</h1>
+ <button onclick="_practiceClose()" aria-label="Close practice" class="text-3xl text-gray-400 hover:text-white px-2">×</button>
+ </div>
+ <div class="content-area pb-24">
+ <div id="practicePausedBanner" class="hidden sticky top-0 z-20 mb-4 bg-amber-700 text-white text-xs font-black rounded-xl p-3 text-center" role="status">Shake alert is paused while you test. It comes back on by itself.</div>
+ <p class="text-xs text-gray-300 font-bold mb-4">Nothing on this page sends an alarm or tells anyone. Take your time.</p>
+
+ <div class="mb-6 bg-gray-900 p-4 rounded-xl">
+ <h2 class="text-lg font-bold text-red-400 mb-1">1. The SOS button</h2>
+ <p class="text-xs text-gray-300 font-bold mb-3">During a visit the red SOS button is on your screen. Tap it three times quickly - each tap within 2 seconds of the last.</p>
+ <div class="flex justify-center mb-3">
+ <button id="practiceSosBtn" type="button" onclick="practiceSosTap()" class="relative w-24 h-24 bg-red-600 rounded-full font-black text-white text-2xl border-4 border-red-800 shadow-2xl active:scale-95 transition flex items-center justify-center" aria-label="Practice SOS button - sends nothing">SOS<span class="absolute -bottom-2 bg-gray-900 text-amber-300 text-[9px] font-black tracking-widest px-2 py-0.5 rounded">PRACTICE</span></button>
+ </div>
+ <p id="practiceSosResult" class="text-sm font-bold text-gray-200 text-center" role="status">Tap 3 times.</p>
+ <div id="practiceSosNext" class="hidden mt-3 text-xs text-gray-300 font-bold space-y-1">
+ <p class="text-white">What happens next in a real alarm:</p>
+ <p>- Your screen turns slightly amber with a grainy look. No siren and no flashing, so nobody nearby can tell.</p>
+ <p>- Your contacts and monitor are alerted straight away, with your location.</p>
+ <p>- To stand it down, hold "I'm safe" and enter your safety PIN.</p>
+ <p>- If someone makes you stand it down, enter your duress PIN instead. Your screen looks the same, but your monitor is told you are under threat.</p>
+ </div>
+ </div>
+
+ <div class="mb-6 bg-gray-900 p-4 rounded-xl">
+ <h2 class="text-lg font-bold text-red-400 mb-1">2. Your PINs</h2>
+ <p class="text-xs text-gray-300 font-bold mb-3">Type a PIN to check which one it is. It is checked on this phone only - nothing is saved or sent.</p>
+ <div class="flex gap-2">
+ <input id="practicePinInput" type="password" inputmode="numeric" maxlength="8" autocomplete="off" class="form-input flex-1" aria-label="Practice PIN">
+ <button type="button" onclick="practicePinCheck()" class="px-4 bg-gray-700 text-white font-bold rounded-xl">Check</button>
+ </div>
+ <p id="practicePinResult" class="text-sm font-bold text-gray-200 mt-2" role="status"></p>
+ </div>
+
+ <div class="mb-6 bg-gray-900 p-4 rounded-xl">
+ <h2 class="text-lg font-bold text-red-400 mb-1">3. The shake alert</h2>
+ <p class="text-xs text-gray-300 font-bold mb-3">Choose a level, then test it. Standard suits most people. The easier levels need a gentler shake, but are easier to set off by accident.</p>
+ <div id="practiceLevels" class="grid grid-cols-2 gap-2 mb-3">
+ <button type="button" data-level="standard" onclick="practicePickLevel('standard')" class="py-2 rounded-lg text-xs font-black border border-gray-600 bg-gray-800 text-gray-200">Standard</button>
+ <button type="button" data-level="easier" onclick="practicePickLevel('easier')" class="py-2 rounded-lg text-xs font-black border border-gray-600 bg-gray-800 text-gray-200">Easier</button>
+ <button type="button" data-level="easy" onclick="practicePickLevel('easy')" class="py-2 rounded-lg text-xs font-black border border-gray-600 bg-gray-800 text-gray-200">Easy</button>
+ <button type="button" data-level="easiest" onclick="practicePickLevel('easiest')" class="py-2 rounded-lg text-xs font-black border border-gray-600 bg-gray-800 text-gray-200">Easiest</button>
+ </div>
+ <p class="text-xs text-gray-400 font-bold mb-3">Saved on this phone: <span id="practiceLevelSaved" class="text-white">Standard</span></p>
+ <button id="practiceShakeBtn" type="button" onclick="practiceShakeStart('shake')" class="w-full py-3 bg-red-700 hover:bg-red-600 text-white font-bold rounded-xl shadow mb-2">Start shake test</button>
+ <div class="text-center mb-2"><span class="text-xs text-gray-400 font-bold">Strongest shake: </span><span id="practiceMeter" class="text-lg font-mono font-black text-white">-</span><span id="practiceNeeds" class="text-xs text-gray-400 font-bold"></span></div>
+ <p id="practiceShakeResult" class="text-sm font-bold text-gray-200 mb-3" role="status"></p>
+ <button id="practiceWalkBtn" type="button" onclick="practiceShakeStart('walk')" class="w-full py-3 bg-gray-700 hover:bg-gray-600 text-white font-bold rounded-xl mb-2">Walk test (10 seconds)</button>
+ <p id="practiceWarn" class="hidden text-xs font-bold text-amber-300 mb-2" role="note"></p>
+ <button id="practiceUseBtn" type="button" onclick="practiceUseLevel()" class="w-full py-3 bg-green-700 hover:bg-green-600 text-white font-bold rounded-xl shadow">Use Standard</button>
+ </div>
+
+ <button id="practiceDoneBtn" type="button" onclick="_practiceClose()" class="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow">Done</button>
+ <p id="practiceSkipNote" class="hidden text-xs text-gray-400 font-bold mt-2 text-center">You can skip this now and practise later from Settings.</p>
+ </div>
+</div>
+
 <div id="reportPage" class="page">
  <div class="header-bar">
  <h1 id="reportTitle" class="text-xl font-bold">Visit Report</h1>
@@ -1062,9 +1124,9 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <ol class="text-xs text-gray-300 font-bold list-decimal pl-5 space-y-1 mb-3">
  <li>Install the free <b>ntfy</b> app (Google Play, F-Droid or the App Store).</li>
  <li><b>Android:</b> tap "Open in ntfy" below and confirm. <b>iPhone:</b> tap "Copy topic name", open ntfy, tap + and paste the name.</li>
- <li><b>Android:</b> in ntfy open Settings, then Channel settings, and make sure the <b>Urgent</b> and <b>High</b> priorities make a sound, vibrate and may override Do Not Disturb. <b>iPhone:</b> allow ntfy notifications with sound in your phone's Settings.</li>
+ <li><b>Android:</b> in ntfy open Settings, then Channel settings. Set <b>Max priority</b> to make a sound, vibrate and override Do Not Disturb, and make sure <b>High priority</b> at least vibrates. <b>iPhone:</b> allow ntfy notifications with sound in your phone's Settings.</li>
  <li>Android: turn battery optimisation off for ntfy.</li>
- <li><b>Lock your phone</b>, then tap "Send test" and check that it sounds and vibrates. Then confirm below.</li>
+ <li><b>Tap "Send test", then lock your phone straight away</b> (power button). Within a few seconds it should sound and vibrate on the lock screen. Then unlock and confirm below.</li>
  </ol>
  <div class="flex gap-2 mb-2">
  <a id="phoneAlertAndroidLink" href="#" class="flex-1 text-center bg-blue-700 hover:bg-blue-600 text-white py-3 rounded-xl text-xs font-black tracking-wide shadow">Open in ntfy (Android)</a>
@@ -1076,6 +1138,13 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <p id="phoneAlertsConfirmed" class="hidden text-xs font-bold text-green-400 mt-2">✅ Phone alerts confirmed on this phone. Send another test any time.</p>
  </div>
  <p id="phoneAlertsStatus" class="hidden text-xs font-bold mt-2"></p>
+ </div>
+
+ <!-- __27_ (R77): practise the alarms and choose the shake level -->
+ <div class="mb-6" id="practiceSection">
+ <h2 class="text-xl font-bold text-red-400 mb-1">Practise your alarms</h2>
+ <p class="text-xs text-gray-300 font-bold mb-3">Try the SOS button, your PINs and the shake alert safely - nothing is sent. Shake level on this phone: <span id="shakeLevelNow" class="text-red-300">Standard</span></p>
+ <button type="button" onclick="openPractice('settings')" class="w-full py-3 bg-red-800 hover:bg-red-700 text-white font-bold rounded-xl shadow">Open practice</button>
  </div>
 
  <!-- Personal Sites Transfer -->
@@ -1122,7 +1191,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
  <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
- <div id="appBuild" class="text-xs font-mono text-gray-400">worker__26_</div>
+ <div id="appBuild" class="text-xs font-mono text-gray-400">worker__27_</div>
  </div>
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">Backend Version</div>
@@ -1455,7 +1524,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="text-8xl mb-4">🤫</div>
  <h1 id="shakeConfirmTitle" class="text-4xl font-black mb-2 tracking-tight">SHAKE DETECTED</h1>
  <p class="text-yellow-300 text-xl font-black mb-2">Shake again to send covert alert</p>
- <p class="text-red-200 text-sm font-bold mb-8">Stop shaking, then shake once more to confirm</p>
+ <p id="shakeConfirmHint" class="text-red-200 text-sm font-bold mb-8">Stop shaking, then shake once more to confirm</p>
  <div class="text-8xl font-mono font-black animate-pulse" id="shakeCountdown">5</div>
  <p class="text-red-300 text-xs mt-4 font-bold tracking-widest">Covert duress alert — silent activation</p>
  </div>
@@ -1670,8 +1739,23 @@ const RISK_WELFARE_MAP = {
 //      until a topic exists AND the worker has confirmed the test arrived on the locked phone and vibrated (kept per
 //      topic: a new or cleared topic asks again). Escape: press and hold "Start without phone alerts" for 2 s - the visit
 //      Notes then say "Phone alerts not set up." The Phone alerts card says Required and how to set the ntfy channels.
+// __27_ changes (session 106, Opus 5.5 high, from __26_). No backend change:
+//  R77 shake sensitivity, per phone (state.settings.shakeLevel): Standard 35 (the default, as before), Easier 30, Easy 25,
+//      Easiest 20 (the floor - nothing lower can be chosen or stored; an unknown value means Standard). SHAKE_LEVELS feeds
+//      both stages through _shakeLevel(), and _shakeStage1Feed() does the counting for the real shake and for practice.
+//  R77 / F106-8 the confirm step now waits for the stop its screen asks for: readings below the line for 0.6 s, then 3
+//      above it within the same 5 s. One long shake (or a rough road) no longer goes straight through to an alarm.
+//  R77 practice screen (Settings "Practise your alarms", the last setup step - skippable - and a start-screen reminder until
+//      practised once): a practice SOS (3 taps, each within 2 s), a PIN check (on the phone only, nothing saved or sent),
+//      a shake test with a live meter and a walk test. It never calls the alarm code or the network (test Z1). The real
+//      shake is paused only while a test runs plus 5 s after - a time stamp that ends by itself after 2 min at most, and
+//      is cleared on leaving the page, the app going to the background, page hide, a visit or alarm, or any error.
+//  R77 / F106-9 iPhone: the practice "Start shake test" tap asks for motion access (DeviceMotionEvent.requestPermission).
+//      A phone that gives no motion readings is told so plainly. The diagnostics report shows the level and last practice.
+//  R77 the dim screen says "Shake firmly for SOS" at the easier levels ("vigorously" at Standard).
+//  The Phone alerts card names the real ntfy channels: "Max priority" and "High priority".
 // =============================================================================
-const WORKER_BUILD = 'worker__26_';
+const WORKER_BUILD = 'worker__27_';
 
 const CONFIG = {
  url: '',
@@ -2180,6 +2264,32 @@ let shakeBuffer = [];
 let lastShakeTime = 0;
 let shakeConfirmationMode = false;
 let shakeConfirmationTimeout = null;
+// __27_ (R77): shake levels, per phone. One table feeds both stages (detect and confirm). Standard is today's level and
+// the default. 20 is the floor: nothing lower can be chosen or stored (an unknown stored value means Standard).
+const SHAKE_LEVELS = {
+  standard: { label: 'Standard', threshold: 35, samples: 8, spread: 200, warn: '' },
+  easier: { label: 'Easier', threshold: 30, samples: 8, spread: 200, warn: '' },
+  easy: { label: 'Easy', threshold: 25, samples: 8, spread: 250, warn: 'mild' },
+  easiest: { label: 'Easiest', threshold: 20, samples: 10, spread: 250, warn: 'strong' }
+};
+const SHAKE_LEVEL_KEYS = ['standard', 'easier', 'easy', 'easiest'];   // hardest first
+const SHAKE_WINDOW_MS = 2000;           // stage 1 counts readings above the line in the last 2 s (as before)
+const SHAKE_CONFIRM_STOP_MS = 600;      // F106-8: the confirm step first needs this long below the line (the stop)
+const SHAKE_CONFIRM_SAMPLES = 3;        // then this many readings above it
+const SHAKE_PRACTICE_MAX_MS = 2 * 60000;   // the pause on the real shake ends by itself after this, whatever happens
+const SHAKE_PRACTICE_AFTER_MS = 5000;   // and stays this long after a test ends, so a worker still shaking sets nothing off
+const PRACTICE_SHAKE_RUN_MS = 8000;
+const PRACTICE_WALK_RUN_MS = 10000;
+let _shakePracticeUntil = 0;   // time stamp, not a switch: the real shake is paused only before this time (and see _shakePracticePaused)
+let _practiceFrom = 'settings';
+let _practicePick = 'standard';
+let _practiceWarnAck = '';
+let _practiceSosTaps = [];
+let _practiceSosTimer = null;
+let _practiceRun = null;
+let _practiceMotionFn = null;
+let _practiceRunTimer = null;
+let _practiceBannerTimer = null;
 
 // True while a PANIC or DURESS alarm is active (used as guard when no activeVisit exists)
 let isPanicActive = false;
@@ -2295,6 +2405,8 @@ function navigate(page) {
  pendingVisitStartFn = null;
  isMidVisitUpdate = false;
  }
+ // __27_ (R77): leaving the practice page ends any test and the shake pause; refresh the shake texts
+ try { if (typeof _r77OnNavigate === 'function') _r77OnNavigate(page); } catch (e) { _shakePracticeUntil = 0; }
  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
  const targetPage = document.getElementById(page + 'Page');
  if (targetPage) {
@@ -5437,6 +5549,9 @@ async function saveWizard() {
  navigate('main');
  showVerificationCard();
 
+ // __27_ (R77): practice is the last setup step - skippable, and offered until the worker has practised once
+ try { if (!(state.settings && state.settings.practisedAt)) openPractice('setup'); } catch (e) { try { _diag('R77 setup practice: ' + (e && e.message)); } catch (_) {} }
+
  // 4. Sync metadata now that we're registered
  setTimeout(() => { forceSync(false); }, 500);
 }
@@ -8151,6 +8266,7 @@ function _initApp() {
  }
 
  initShakeDetection();
+ try { _practiceInit(); } catch (e) { console.warn('[R77] practice init: ' + (e && e.message)); }   // __27_ (R77)
  initSlideToWake();
  initAllActionPills();
  try { _paInitHold(); } catch (e) { console.warn('[R76] hold wiring: ' + (e && e.message)); }   // __26_ (R76)
@@ -8253,6 +8369,7 @@ async function _buildDiagReport() {
  add('Screen / page', safe(() => document.visibilityState, '-'));
  add('Installed app', safe(() => (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) ? 'yes' : 'no (browser tab)', '-'));
  add('Welfare checks', safe(() => { const w = _welfareSettings(); return (w.on ? 'On' : 'Off') + ' (' + w.source + '), default ' + _welfareDefaultMins() + ' min, answer time ' + w.grace + ' min'; }, '-'));   // __24_
+ add('Shake level', safe(() => SHAKE_LEVELS[_shakeLevelKey()].label + ' - last practice: ' + ((state.settings && state.settings.lastPractice) || 'never'), '-'));   // __27_ (R77)
  add('Backend build (sync)', safe(() => (state.meta && state.meta.backendBuild) || 'not sent (older than __51_)', '-'));   // __24_
  add('Storage name', safe(() => _storageNs + (_NS_MIGRATION ? ' - ' + _NS_MIGRATION.reason + (_NS_MIGRATION.copied ? ' (' + _NS_MIGRATION.copied + ' items from ' + _NS_MIGRATION.from + ')' : '') : ''), '-'));   // __24_ (F101-8)
  add('Device', safe(() => navigator.userAgent, '-'));
@@ -10029,11 +10146,345 @@ function initShakeDetection() {
  window.addEventListener('devicemotion', handleShakeMotion, false);
 }
 
+// ====== __27_ (R77): SHAKE LEVELS, THE CONFIRM STOP AND PRACTICE ======
+
+/** The phone's shake level key. Anything not in SHAKE_LEVELS (missing, old, edited) means Standard - the floor holds. */
+function _shakeLevelKey() {
+  const k = state && state.settings && state.settings.shakeLevel;
+  return (typeof k === 'string' && Object.prototype.hasOwnProperty.call(SHAKE_LEVELS, k)) ? k : 'standard';
+}
+function _shakeLevel() { return SHAKE_LEVELS[_shakeLevelKey()]; }
+
+/** Spread (variance) of the readings in a stage 1 window - the same sum as before __27_. */
+function _shakeSpread(buf) {
+  const n = buf.length; if (!n) return 0;
+  const avg = buf.reduce((sum, s) => sum + s.magnitude, 0) / n;
+  return buf.reduce((sum, s) => sum + Math.pow(s.magnitude - avg, 2), 0) / n;
+}
+
+/**
+ * Stage 1 counting, shared by the real shake and the practice screen. st.buf holds the recent readings above the line.
+ * Returns 'detected' (enough readings in SHAKE_WINDOW_MS and an even enough shake), 'uneven' (enough, too uneven) or ''.
+ */
+function _shakeStage1Feed(st, magnitude, now, lv) {
+  if (!(magnitude > lv.threshold)) return '';
+  st.buf.push({ magnitude, time: now });
+  st.buf = st.buf.filter(s => now - s.time < SHAKE_WINDOW_MS);
+  if (st.buf.length < lv.samples) return '';
+  const spread = _shakeSpread(st.buf);
+  st.buf = [];
+  return spread < lv.spread ? 'detected' : 'uneven';
+}
+
+/** F106-8: the confirm step. First a stop (below the line for SHAKE_CONFIRM_STOP_MS), then SHAKE_CONFIRM_SAMPLES above it. */
+function _shakeConfirmFeed(cs, magnitude, now, lv) {
+  if (!cs.stopped) {
+    if (magnitude > lv.threshold) { cs.quietSince = null; return false; }
+    if (cs.quietSince === null) cs.quietSince = now;
+    if (now - cs.quietSince >= SHAKE_CONFIRM_STOP_MS) cs.stopped = true;
+    return false;
+  }
+  if (magnitude > lv.threshold) cs.hits++;
+  return cs.hits >= SHAKE_CONFIRM_SAMPLES;
+}
+
+/**
+ * True only while a practice test pauses the real shake: before the time stamp, with the practice page showing, and no
+ * visit or alarm. Anything else clears the stamp, so the pause cannot outlive the test - even if every reset failed.
+ */
+function _shakePracticePaused() {
+  if (!_shakePracticeUntil) return false;
+  const page = document.getElementById('practicePage');
+  const showing = !!(page && page.classList.contains('active'));
+  if (Date.now() < _shakePracticeUntil && showing && !isPanicActive && !(state && state.activeVisit)) return true;
+  _shakePracticeUntil = 0;
+  return false;
+}
+
+/** F106-9: an iPhone gives a web page no motion readings until asked, and the asking must come from a tap. */
+function _shakeAskMotionPermission() {
+  try {
+    if (typeof DeviceMotionEvent !== 'undefined' && DeviceMotionEvent && typeof DeviceMotionEvent.requestPermission === 'function') {
+      return DeviceMotionEvent.requestPermission()
+        .then(r => { try { _diag('R77: motion access ' + r); } catch (_) {} return r; })
+        .catch(e => { try { _diag('R77: motion access error ' + (e && e.message)); } catch (_) {} return 'error'; });
+    }
+  } catch (e) { try { _diag('R77: motion access error ' + (e && e.message)); } catch (_) {} }
+  return Promise.resolve('not-needed');
+}
+
+// ===== R77 PRACTICE START - code in this block must never raise an alarm or send anything (test_worker_s106b Z1) =====
+function _practiceAllowed() { return !(state && state.activeVisit) && !isPanicActive; }
+
+function openPractice(from) {
+  if (!_practiceAllowed()) { showToast('Practice is not available during a visit or an alarm'); return; }
+  _practiceFrom = (from === 'setup' || from === 'main') ? from : 'settings';
+  _practicePick = _shakeLevelKey();
+  _practiceWarnAck = '';
+  _practiceSosTaps = [];
+  navigate('practice');
+  _practiceRender();
+}
+
+function _practiceClose() {
+  _practiceStop('closed');
+  navigate(_practiceFrom === 'settings' ? 'settings' : 'main');
+}
+
+/** Ends any test and the pause on the real shake. Safe to call at any time, as often as needed. */
+function _practiceStop(reason) {
+  const was = !!_practiceRun || _shakePracticeUntil > 0;
+  _shakePracticeUntil = 0;
+  _practiceRun = null;
+  try {
+    if (_practiceMotionFn) { window.removeEventListener('devicemotion', _practiceMotionFn, false); _practiceMotionFn = null; }
+    clearTimeout(_practiceRunTimer); _practiceRunTimer = null;
+    clearTimeout(_practiceSosTimer); _practiceSosTimer = null; _practiceSosTaps = [];
+    clearTimeout(_practiceBannerTimer); _practiceBannerTimer = null;
+    _practiceBanner(false);
+    if (was) _diag('R77 practice ended (' + (reason || '?') + ') - shake alert live');
+  } catch (_) { _shakePracticeUntil = 0; }
+}
+
+function _practiceBanner(on) {
+  const b = document.getElementById('practicePausedBanner');
+  if (b) b.classList.toggle('hidden', !on);
+}
+
+function _practiceText(id, text) { const el = document.getElementById(id); if (el) el.textContent = text; }
+
+function _practiceRender() {
+  _practiceText('practiceLevelSaved', SHAKE_LEVELS[_shakeLevelKey()].label);
+  document.querySelectorAll('#practiceLevels [data-level]').forEach(b => {
+    const on = b.getAttribute('data-level') === _practicePick;
+    b.classList.toggle('bg-red-800', on); b.classList.toggle('border-red-400', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  const practised = !!(state && state.settings && state.settings.practisedAt);
+  const skip = _practiceFrom === 'setup' && !practised;
+  _practiceText('practiceDoneBtn', skip ? 'Skip for now' : 'Done');
+  const note = document.getElementById('practiceSkipNote'); if (note) note.classList.toggle('hidden', !skip);
+  const lv = SHAKE_LEVELS[_practicePick];
+  _practiceText('practiceUseBtn', 'Use ' + lv.label + (_practiceWarnAck === _practicePick ? ' anyway' : ''));
+  _practiceText('practiceNeeds', ' - ' + lv.label + ' needs over ' + lv.threshold);
+  const warn = document.getElementById('practiceWarn'); if (warn && _practiceWarnAck !== _practicePick) warn.classList.add('hidden');
+}
+
+function practicePickLevel(k) {
+  if (!Object.prototype.hasOwnProperty.call(SHAKE_LEVELS, k)) return;
+  _practicePick = k;
+  _practiceWarnAck = '';
+  if (!_practiceRun) { _practiceText('practiceShakeResult', ''); _practiceText('practiceMeter', '-'); }   // an old result was for another level
+  _practiceRender();
+}
+
+/** Practice SOS: the same rule as the real button (3 taps, each within 2 s of the last), with its own counter. */
+function practiceSosTap() {
+  const now = Date.now();
+  _practiceSosTaps.push(now);
+  if (navigator.vibrate) navigator.vibrate(30);
+  clearTimeout(_practiceSosTimer);
+  if (_practiceSosTaps.length >= 3) {
+    const t = _practiceSosTaps; _practiceSosTaps = [];
+    const gaps = t.slice(1).map((x, i) => ((x - t[i]) / 1000).toFixed(1) + ' s').join(', ');
+    _practiceText('practiceSosResult', '✅ That would have sent an alarm (gaps ' + gaps + '). This was practice - nothing was sent.');
+    const nx = document.getElementById('practiceSosNext'); if (nx) nx.classList.remove('hidden');
+    _practiceMarkDone();
+    return;
+  }
+  _practiceText('practiceSosResult', 'Tap ' + _practiceSosTaps.length + ' of 3...');
+  _practiceSosTimer = setTimeout(() => { _practiceSosTaps = []; _practiceText('practiceSosResult', 'Too slow - start again: 3 taps, each within 2 seconds.'); }, 2000);
+}
+
+/** Practice PINs: checked against this phone's PINs only. Nothing is saved, logged or sent, and the box is cleared. */
+function practicePinCheck() {
+  const el = document.getElementById('practicePinInput');
+  const v = el ? String(el.value || '') : '';
+  if (el) el.value = '';
+  const std = state && state.pins && state.pins.std;
+  const dur = state && state.pins && state.pins.duress;
+  let msg;
+  if (!v) msg = 'Type a PIN first.';
+  else if (std && v === std) msg = '✅ That is your safety PIN. In a real alarm it stands the alarm down.';
+  else if (dur && v === dur) msg = '✅ That is your duress PIN. Your screen would look the same as for the safety PIN, but your monitor would be told you are under threat.';
+  else msg = 'That is not one of your PINs. In a real alarm nothing would change, and you could try again.';
+  _practiceText('practicePinResult', msg);
+}
+
+/** Start a shake test or a walk test. The real shake is paused (time stamp) until the test ends, plus 5 s. */
+function practiceShakeStart(mode) {
+  if (!_practiceAllowed()) { _practiceStop('visit or alarm'); return; }
+  if (_practiceRun) return;   // one test at a time
+  const ask = _shakeAskMotionPermission();   // iPhone: must be asked straight from this tap
+  const run = { mode: mode === 'walk' ? 'walk' : 'shake', level: _practicePick, start: Date.now(), samples: 0, peak: 0,
+    st: {}, hits: {}, uneven: {}, phase: 'shake', cs: null, confirmAt: 0, saidStop: false, done: false };
+  SHAKE_LEVEL_KEYS.forEach(k => { run.st[k] = { buf: [] }; run.hits[k] = false; run.uneven[k] = false; });
+  _practiceRun = run;
+  _shakePracticeUntil = Date.now() + SHAKE_PRACTICE_MAX_MS;
+  _practiceBanner(true);
+  _practiceText('practiceMeter', '-');
+  _practiceText('practiceShakeResult', run.mode === 'walk'
+    ? 'Walk briskly now for 10 seconds, with the phone in your pocket or hand...'
+    : 'Shake now - fast and firm, for about a second...');
+  Promise.resolve(ask).then(r => {
+    if (_practiceRun !== run) return;
+    if (r === 'denied') { _practiceFinish(run, 'denied'); return; }
+    _practiceMotionFn = _practiceOnMotion;
+    window.addEventListener('devicemotion', _practiceMotionFn, false);
+    run.start = Date.now();
+    _practiceRunTimer = setTimeout(() => _practiceFinish(run, 'time'),
+      run.mode === 'walk' ? PRACTICE_WALK_RUN_MS + 500 : PRACTICE_SHAKE_RUN_MS + 5500);
+  }).catch(() => { _practiceStop('error'); });
+}
+
+function _practiceOnMotion(event) {
+  const run = _practiceRun;
+  try {
+    if (!run || run.done) return;
+    if (!_practiceAllowed()) { _practiceStop('visit or alarm'); return; }
+    const a = event && event.accelerationIncludingGravity;
+    if (!a) return;
+    const m = Math.sqrt((a.x || 0) * (a.x || 0) + (a.y || 0) * (a.y || 0) + (a.z || 0) * (a.z || 0));
+    if (!isFinite(m)) return;
+    const now = Date.now();
+    run.samples++;
+    if (m > run.peak) { run.peak = m; _practiceText('practiceMeter', run.peak.toFixed(0)); }
+    SHAKE_LEVEL_KEYS.forEach(k => {
+      const r = _shakeStage1Feed(run.st[k], m, now, SHAKE_LEVELS[k]);
+      if (r === 'detected') run.hits[k] = true; else if (r === 'uneven') run.uneven[k] = true;
+    });
+    if (run.phase === 'confirm') {
+      if (_shakeConfirmFeed(run.cs, m, now, SHAKE_LEVELS[run.level])) { _practiceFinish(run, 'confirmed'); return; }
+      if (run.cs.stopped && !run.saidStop) { run.saidStop = true; _practiceText('practiceShakeResult', 'Good - now shake once more.'); }
+      if (now - run.confirmAt > 5000) _practiceFinish(run, 'no-confirm');
+      return;
+    }
+    if (run.mode === 'shake' && run.hits[run.level]) {
+      run.phase = 'confirm'; run.confirmAt = now; run.cs = { quietSince: null, stopped: false, hits: 0 };
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      _practiceText('practiceShakeResult', 'Shake detected. Now stop shaking, then shake once more.');
+      return;
+    }
+    if (now - run.start > (run.mode === 'walk' ? PRACTICE_WALK_RUN_MS : PRACTICE_SHAKE_RUN_MS)) _practiceFinish(run, 'time');
+  } catch (e) {
+    try { _diag('R77 practice error: ' + (e && e.message)); } catch (_) {}
+    _practiceStop('error');
+  }
+}
+
+function _practiceFinish(run, how) {
+  if (!run || run.done || _practiceRun !== run) return;
+  run.done = true;
+  _practiceRun = null;
+  if (_practiceMotionFn) { window.removeEventListener('devicemotion', _practiceMotionFn, false); _practiceMotionFn = null; }
+  clearTimeout(_practiceRunTimer); _practiceRunTimer = null;
+  // keep the real shake paused a few seconds more, so a worker still shaking does not set off the real alert
+  _shakePracticeUntil = Date.now() + SHAKE_PRACTICE_AFTER_MS;
+  clearTimeout(_practiceBannerTimer);
+  _practiceBannerTimer = setTimeout(() => { if (!_practiceRun) { _shakePracticeUntil = 0; _practiceBanner(false); } }, SHAKE_PRACTICE_AFTER_MS + 100);
+  const worked = SHAKE_LEVEL_KEYS.filter(k => run.hits[k]);
+  const names = worked.map(k => SHAKE_LEVELS[k].label).join(', ');
+  const lv = SHAKE_LEVELS[run.level];
+  let msg, result;
+  if (how === 'denied') { result = 'denied'; msg = 'Motion access was not allowed, so the shake alert cannot work on this phone. Allow Motion & Orientation access for this app, then try again. The SOS button still works.'; }
+  else if (run.samples === 0) { result = 'no-readings'; msg = 'This phone gave the app no motion readings, so the shake alert cannot work on it. Use the SOS button instead, and tell your organisation.'; }
+  else if (run.mode === 'walk') {
+    result = worked.length ? 'walk-would-set-off' : 'walk-clear';
+    msg = !worked.length ? '✅ Good - walking did not set it off at any level.'
+      : (run.hits[run.level] ? '⚠️ Walking would have started the shake alert at the level you chose (' + lv.label + '). ' : '')
+        + 'Walking would have started it at: ' + names + '. Choose a harder level than that.';
+  }
+  else if (how === 'confirmed') { result = 'pass'; msg = '✅ That worked at ' + lv.label + '. In a real alert that would have sent it.'; _practiceMarkDone(); }
+  else if (how === 'no-confirm') { result = 'no-confirm'; msg = 'The first shake worked, but no second shake came. In a real alert: stop shaking, then shake once more within 5 seconds.'; }
+  else if (run.uneven[run.level]) { result = 'uneven'; msg = 'Strong enough, but too uneven for ' + lv.label + '. Try a steadier, even shake.'; }
+  else { result = 'too-gentle'; msg = 'Not quite strong enough for ' + lv.label + ' (it needs over ' + lv.threshold + '). Try a little firmer, or choose an easier level.'; }
+  if (run.mode === 'shake' && worked.length && result !== 'pass') {
+    const best = worked[0];   // keys run hardest first: the hardest level that worked has the fewest accidental alerts
+    if (best !== run.level) msg += ' Your shake worked at ' + SHAKE_LEVELS[best].label + ' - the hardest level that works for you is the safest choice.';
+  } else if (result === 'pass' && worked[0] && worked[0] !== run.level && SHAKE_LEVEL_KEYS.indexOf(worked[0]) < SHAKE_LEVEL_KEYS.indexOf(run.level)) {
+    msg += ' Your shake also worked at ' + SHAKE_LEVELS[worked[0]].label + ', which is harder to set off by accident.';
+  }
+  _practiceText('practiceShakeResult', msg);
+  const line = 'mode=' + run.mode + ' level=' + run.level + ' peak=' + run.peak.toFixed(1) + ' readings=' + run.samples
+    + ' worked=' + (worked.join(',') || 'none') + ' result=' + result;
+  try { _diag('R77 practice: ' + line); } catch (_) {}
+  if (state) {
+    if (!state.settings) state.settings = {};
+    state.settings.lastPractice = new Date().toISOString() + ' ' + line;
+    try { saveState(); } catch (_) {}
+  }
+}
+
+function _practiceMarkDone() {
+  if (!state) return;
+  if (!state.settings) state.settings = {};
+  if (!state.settings.practisedAt) { state.settings.practisedAt = Date.now(); try { saveState(); } catch (_) {} }
+  _practiceRender();
+  _practiceReminderUi();
+}
+
+/** Save the chosen level. Easy and Easiest show their warning first; a second tap saves. */
+function practiceUseLevel() {
+  const k = _practicePick;
+  if (!Object.prototype.hasOwnProperty.call(SHAKE_LEVELS, k)) return;
+  const lv = SHAKE_LEVELS[k];
+  if (lv.warn && _practiceWarnAck !== k) {
+    _practiceWarnAck = k;
+    const warn = document.getElementById('practiceWarn');
+    if (warn) {
+      warn.textContent = lv.warn === 'strong'
+        ? '⚠️ This is the easiest level. Running, a bumpy drive or a swinging bag could start the shake alert. Choose it only if the harder levels do not work for you, and do the walk test. Tap again to use it anyway.'
+        : '⚠️ This level is easier to set off by accident - for example while running, or driving on rough roads. If you drive a lot for work, Easier is safer. Tap again to use it anyway.';
+      warn.classList.remove('hidden');
+    }
+    _practiceRender();
+    return;
+  }
+  if (!state) return;
+  if (!state.settings) state.settings = {};
+  const was = SHAKE_LEVELS[_shakeLevelKey()].label;
+  state.settings.shakeLevel = k;
+  saveState();
+  try { _diag('R77: shake level changed: ' + was + ' to ' + lv.label); } catch (_) {}
+  showToast('✅ Shake level: ' + lv.label);
+  _practiceWarnAck = '';
+  const warn = document.getElementById('practiceWarn'); if (warn) warn.classList.add('hidden');
+  _shakeHintUi();
+  _practiceRender();
+}
+
+/** D4: the dim screen hint. "Vigorously" at Standard, "firmly" at the easier levels. */
+function _shakeHintUi() {
+  _practiceText('shakeHintText', _shakeLevelKey() === 'standard' ? 'Shake vigorously for SOS' : 'Shake firmly for SOS');
+}
+
+function _practiceReminderUi() {
+  const el = document.getElementById('practiceReminder');
+  const show = !!(state && state.worker && state.worker.name) && !(state.settings && state.settings.practisedAt);
+  if (el) el.classList.toggle('hidden', !show);
+}
+
+/** Called by navigate() before the page changes. Leaving the practice page always ends a test and the pause. */
+function _r77OnNavigate(page) {
+  if (page !== 'practice') _practiceStop('left the page');
+  if (page === 'main') _practiceReminderUi();
+  if (page === 'settings') _practiceText('shakeLevelNow', SHAKE_LEVELS[_shakeLevelKey()].label);
+  _shakeHintUi();
+}
+
+function _practiceInit() {
+  document.addEventListener('visibilitychange', () => { if (document.hidden) _practiceStop('app in background'); });
+  window.addEventListener('pagehide', () => _practiceStop('page hidden'));
+  _shakeHintUi();
+  _practiceReminderUi();
+}
+// ===== R77 PRACTICE END =====
+
 function handleShakeMotion(event) {
  // Active on any screen — worker may need to trigger alarm before a visit starts
  if (!state) return;
  if (shakeConfirmationMode) return; // Don't detect during confirmation
- 
+ if (_shakePracticePaused()) return; // __27_ (R77): only while a practice test runs - a time stamp, ends by itself
+
  const accel = event.accelerationIncludingGravity;
  if (!accel || !accel.x || !accel.y || !accel.z) return;
  
@@ -10045,28 +10496,15 @@ function handleShakeMotion(event) {
  
  const now = Date.now();
  
- // Raised threshold: 35 (was 25) reduces false positives from running/vehicles.
- // Requires 8 peaks in 2s (was 5) and tighter variance window.
- if (magnitude > 35) {
- shakeBuffer.push({ magnitude, time: now });
- lastShakeTime = now;
- 
- // Clean old entries (older than 2 seconds)
- shakeBuffer = shakeBuffer.filter(s => now - s.time < 2000);
- 
- // Require 8 vigorous peaks in 2 seconds
- if (shakeBuffer.length >= 8) {
- const avgMagnitude = shakeBuffer.reduce((sum, s) => sum + s.magnitude, 0) / shakeBuffer.length;
- const variance = shakeBuffer.reduce((sum, s) => sum + Math.pow(s.magnitude - avgMagnitude, 2), 0) / shakeBuffer.length;
- 
- // Variance < 200 allows energetic but consistent shaking
- if (variance < 200) {
- enterShakeConfirmation();
- }
- 
- shakeBuffer = [];
- }
- }
+ // __27_ (R77): the line, the count and the spread come from the phone's shake level (Standard = 35, 8 readings in 2 s,
+ // spread under 200 - exactly as before). _shakeStage1Feed() does the counting for this and for the practice screen.
+ // (35 was raised from 25 to cut false alarms from running and vehicles; the easier levels carry a warning.)
+ const lv = _shakeLevel();
+ if (magnitude > lv.threshold) lastShakeTime = now;
+ const st = { buf: shakeBuffer };
+ const r = _shakeStage1Feed(st, magnitude, now, lv);
+ shakeBuffer = st.buf;
+ if (r === 'detected') enterShakeConfirmation();
 }
 
 function enterShakeConfirmation() {
@@ -10099,27 +10537,32 @@ function enterShakeConfirmation() {
  }, 1000);
  
  // Watch for confirmation shake
+ // __27_ (R77, F106-8): the confirm step now does what its screen says. The readings must first stay below the line for
+ // SHAKE_CONFIRM_STOP_MS (the stop), then SHAKE_CONFIRM_SAMPLES readings above it send the alert. One long shake (or a
+ // rough road) no longer goes straight through. The line is the phone's shake level, as in stage 1.
+ const lv = _shakeLevel();
+ const cs = { quietSince: null, stopped: false, hits: 0 };
+ const hint = document.getElementById('shakeConfirmHint');
+ if (hint) hint.textContent = 'Stop shaking, then shake once more to confirm';
  const confirmListener = (event) => {
  const accel = event.accelerationIncludingGravity;
  if (!accel) return;
- 
+
  const magnitude = Math.sqrt(
- accel.x * accel.x + 
- accel.y * accel.y + 
+ accel.x * accel.x +
+ accel.y * accel.y +
  accel.z * accel.z
  );
- 
- if (magnitude > 35) {
- shakeBuffer.push(magnitude);
- 
- // Need 3 shakes to confirm
- if (shakeBuffer.length >= 3) {
+ if (!isFinite(magnitude)) return;
+ const wasStopped = cs.stopped;
+ if (_shakeConfirmFeed(cs, magnitude, Date.now(), lv)) {
  window.removeEventListener('devicemotion', confirmListener);
  clearTimeout(shakeConfirmationTimeout);
  clearInterval(countdownInterval);
  confirmShakePanic();
+ return;
  }
- }
+ if (cs.stopped && !wasStopped && hint) hint.textContent = 'Now shake once more to send';
  };
  
  window.addEventListener('devicemotion', confirmListener, false);
