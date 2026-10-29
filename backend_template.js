@@ -192,6 +192,25 @@
  *   - Settings tab: two new keys added with their defaults (existing values never changed); Health email shows them.
  *   - Contact escalation (tiers, Critical ladder, col AA claims, All Clear audience) is unchanged.
  *
+ * __55_ (session 107, 29 Oct 2026, Opus) - R75: URGENT BROADCAST BY NTFY (design claude/S107_R75_design.md, D1-D4 agreed):
+ *   - F107-1 (security): action 'broadcast' now needs the MASTER key. Before, the worker key (in every worker app's
+ *     config.json) was accepted too. The worker app never sends 'broadcast'.
+ *   - URGENT and EMERGENCY broadcasts are also pushed to each targeted worker's own topic (Staff col J): EMERGENCY = ntfy
+ *     urgent ("Max priority"), URGENT = ntfy high. NORMAL stays in the app only, as before.
+ *   - New 'target' field: ALL (default, and what an older Monitor sends) or one group from Staff col D; anything else is
+ *     refused. Written to Notices col H (was always ALL). The push uses _targetMatch_, the same rule the sync uses
+ *     (getSyncData's own copy now calls it), so the push and the in-app notice reach the same people.
+ *   - D1 hard rule: no push to a worker whose latest visit is open with DURESS, PANIC or SOS (worker-raised; maybe covert).
+ *     Overdue and missed-welfare alarms DO get it. Audit broadcast:held.
+ *   - Not counted against WORKER_WARNING_DAILY_CAP and never blocked by it. F107-7: the same priority, target and text
+ *     within 2 min is refused (a double click would push twice to every phone).
+ *   - Sends run after the script lock is released, one retry each; Notices col J "Pushed" (new) gets the result, e.g.
+ *     "pushed 7 of 9 | held back (in an alarm): Ann (DURESS) | no phone alerts: Bob". Audit broadcast:* rows.
+ *   - Monitor feed (doGet, master key, no action): adds 'groups' (Staff col D) and 'notices' (last 10, with pushed and
+ *     acknowledged). getDashboardData itself is unchanged; an older Monitor ignores the new fields.
+ *   - F107-6: the visit Notes line after a notice ack names the notice ID and priority (it showed the date before).
+ *   - Unchanged: worker reminders (W1, W2, W3, W3e), the ladders, contact alerts, the sync's notice list, Settings keys.
+ *
  * __54_ (session 106, 29 Oct 2026, Opus) - R73: an EARLY welfare push (W3e) for a locked phone. Needs worker __26_ for the
  * welfare heartbeat; with an older worker it still works, but an awake phone is not "heard" so it gets the push as well:
  *   - Before each server welfare check (Visits col AD), from the check time minus the lead time (one-third of the interval,
@@ -445,7 +464,7 @@ function doGet(e) {
               : sendResponse(e, { status: 'error', message: 'ORS waypoint routing failed' });
       }
       if(p.test) return (p.key === CONFIG.MASTER_KEY) ? sendResponse(e, {status:"success"}) : sendResponse(e, {status:"error"});
-      if(p.key === CONFIG.MASTER_KEY && !p.action) return sendResponse(e, getDashboardData());
+      if(p.key === CONFIG.MASTER_KEY && !p.action) return sendResponse(e, _dashboardExtras_(getDashboardData()));   // __55_ (R75): + groups, notices
       if(p.action === 'sync') return (p.key === CONFIG.MASTER_KEY || p.key === CONFIG.WORKER_KEY) ? sendResponse(e, getSyncData(p.worker, p.deviceId)) : sendResponse(e, {status:"error"});
       if(p.action === 'getGlobalForms') return sendResponse(e, getGlobalForms());
       if(p.action === 'viewProcedures' && p.siteName) {
@@ -4475,15 +4494,8 @@ function cleanupPrivateSentNotes() {
  * Logic: Pulls worker groups and applies a single Targeting Engine to filter all data.
  */
 function getSyncData(workerName, deviceId) {
-    // 1. THE TARGETING ENGINE (Defined once at the top)
-    const isAuthorised = (targetStr, name, groups) => {
-        const allowed = (targetStr || "").toString().toLowerCase().split(',').map(s => s.trim());
-        if (allowed.includes("all")) return true;
-        if (allowed.includes(name)) return true;
-        
-        const myGroups = groups.split(',').map(s => s.trim()).filter(g => g !== "");
-        return myGroups.some(g => allowed.includes(g));
-    };
+    // 1. THE TARGETING ENGINE - __55_ (R75): one shared copy, so the broadcast push picks exactly the same workers
+    const isAuthorised = _targetMatch_;
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const stSheet = ss.getSheetByName('Staff');
@@ -4598,37 +4610,7 @@ function getSyncData(workerName, deviceId) {
     meta.backendBuild = TEMPLATE_BUILD;     // __51_: worker __24_ posts WELFARE_MISSED only to a backend that knows it
     return {sites, forms, cachedTemplates, meta, version: CONFIG.VERSION};
 }
-/**
- * FIX: Handle broadcast messages from Monitor App.
- * Writes a new row to the Notices sheet so every worker receives it on next sync.
- */
-function handleBroadcast(p) {
-    try {
-        const ss = SpreadsheetApp.getActiveSpreadsheet();
-        let sheet = ss.getSheetByName('Notices');
-        if (!sheet) {
-            sheet = ss.insertSheet('Notices');
-            sheet.appendRow(['Date', 'ID', 'Priority', 'Title', 'Content', 'Sender', 'Status', 'Target', 'Acknowledged By']);
-        }
-        const id  = 'BC-' + Date.now().toString(36).toUpperCase();
-        const row = [
-            new Date(),
-            id,
-            p.priority  || 'Standard',
-            'Broadcast from HQ',
-            p.message   || '',
-            p.source    || 'Monitor',
-            'Active',
-            'ALL',
-            ''
-        ];
-        sheet.appendRow(row);
-        return { status: 'success', id: id };
-    } catch(err) {
-        console.error('handleBroadcast error: ' + err);
-        return { status: 'error', message: err.toString() };
-    }
-}
+// __55_ (R75): handleBroadcast() now lives in section __55_ at the end of the file (master key, target, phone pushes).
 
 // __51_ (R63, F101-2): updateSiteEmergencyProcedures() now lives at the end of the file (section 51).
 
@@ -4649,8 +4631,7 @@ function handleNoticeAck(p) {
     let noticeLabel  = noticeId; // fallback identifier for the audit note
     for (let i = 1; i < noticeData.length; i++) {
         if (noticeData[i][1] === noticeId) {
-            // Col A (index 0) holds the notice title if present
-            if (noticeData[i][0]) noticeLabel = String(noticeData[i][0]);
+            noticeLabel = String(noticeId) + (noticeData[i][2] ? ' (' + String(noticeData[i][2]) + ')' : '');   // __55_ (F107-6): col A is the date
             let currentAcks = noticeData[i][8]
                 ? noticeData[i][8].toString().split(',').map(s => s.trim())
                 : [];
@@ -5467,7 +5448,7 @@ function _formsGps_(sheet, rowNum, p) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__54_';
+const TEMPLATE_BUILD = 'backend__55_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
@@ -6879,4 +6860,252 @@ function _distEditedNote_(calcRaw, dist) {
     if (isNaN(c) || typeof dist !== 'number' || isNaN(dist)) return '';
     if (Math.abs(c - dist) < 0.05) return '';
     return ' - edited by the worker (app calculated ' + c.toFixed(2).replace(/\.?0+$/, '') + ' km)';
+}
+
+// ==========================================
+// __55_ (session 107): R75 - URGENT BROADCAST BY NTFY
+// ==========================================
+// Design: claude/S107_R75_design.md (decisions D1-D4 agreed by Russell, 29 Oct 2026).
+//   - A broadcast needs the MASTER key (F107-1). Before __55_ the worker key was accepted too.
+//   - URGENT and EMERGENCY broadcasts are also pushed to each targeted worker's own topic (Staff col J). NORMAL stays in-app.
+//   - Target: ALL or one group from Staff col D. Workers are picked with _targetMatch_, the rule the sync uses, so the push
+//     and the in-app notice reach exactly the same people. Inactive staff are left out.
+//   - D1: no push to a worker whose latest visit is open with DURESS, PANIC or SOS in col K (they raised it, perhaps
+//     covertly). Overdue and missed-welfare alarms DO get it. The held-back worker still gets the notice in the app.
+//   - Not counted against WORKER_WARNING_DAILY_CAP and never blocked by it (R75 decision 4). The same text, priority and
+//     target within BROADCAST_DUP_MS is refused (F107-7 - a double click would push twice to every phone).
+//   - Sends run after the script lock is released; one retry each. The result goes to Notices col J "Pushed".
+const BROADCAST_PUSHED_COL = 10;        // Notices col J "Pushed" - what happened to the phone alerts (__55_)
+const BROADCAST_DUP_MS     = 120000;    // the same broadcast is refused for 2 minutes
+const BROADCAST_MAX_CHARS  = 500;       // the Monitor box allows 500
+const BROADCAST_HOLD_RE    = /DURESS|PANIC|SOS/;   // D1: worker-raised alarms - no push while one is open
+const NOTICES_HEADERS      = ['Date', 'ID', 'Priority', 'Title', 'Content', 'Sender', 'Status', 'Target', 'Acknowledged By', 'Pushed'];
+
+/**
+ * __55_ (R75): the targeting rule shared by the sync (getSyncData) and the broadcast push. Unchanged from the sync's
+ * own copy: targetStr is a comma list of "all", worker names and group names; name is the worker name in lower case;
+ * groups is the worker's Staff col D in lower case.
+ */
+function _targetMatch_(targetStr, name, groups) {
+    const allowed = (targetStr || "").toString().toLowerCase().split(',').map(s => s.trim());
+    if (allowed.includes("all")) return true;
+    if (allowed.includes(name)) return true;
+    const myGroups = String(groups || '').split(',').map(s => s.trim()).filter(g => g !== "");
+    return myGroups.some(g => allowed.includes(g));
+}
+
+/** __55_ (R75): the group names in Staff col D, first spelling kept, sorted. Never throws. */
+function _staffGroups_(stData) {
+    const seen = Object.create(null), out = [];
+    (stData || []).forEach(function (r, i) {
+        if (i === 0) return;
+        String(r[3] == null ? '' : r[3]).split(',').forEach(function (g) {
+            const t = g.trim(), key = t.toLowerCase();
+            if (!t || key === 'all' || seen[key]) return;
+            seen[key] = true; out.push(t);
+        });
+    });
+    return out.sort(function (a, b) { return a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0; });
+}
+
+/** __55_ (R75): latest Visits col K per worker (lower-case name), from the last 500 rows. Read once per broadcast. */
+function _latestStatusByWorker_() {
+    const out = Object.create(null);
+    const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Visits');
+    if (!sh) return out;
+    const last = sh.getLastRow();
+    if (last < 2) return out;
+    const start = Math.max(2, last - 500);
+    const data = sh.getRange(start, 1, last - start + 1, 11).getValues();
+    const bestT = Object.create(null);
+    data.forEach(function (r) {
+        const n = String(r[2] == null ? '' : r[2]).toLowerCase().trim();
+        if (!n) return;
+        let t = new Date(r[0]).getTime();
+        if (isNaN(t)) t = -Infinity;
+        if (!(n in bestT) || t >= bestT[n]) { bestT[n] = t; out[n] = String(r[10] == null ? '' : r[10]).toUpperCase(); }
+    });
+    return out;
+}
+
+/** __55_ (R75): why a worker gets no push (D1), or ''. Only an OPEN latest visit with a worker-raised alarm holds it back. */
+function _broadcastHoldReason_(st) {
+    const s = String(st || '').toUpperCase();
+    if (!s) return '';
+    if (s.includes('DEPARTED') || s.includes('COMPLETED') || s.includes('DATA_ENTRY_ONLY') || s.includes('USER_SAFE')) return '';
+    const m = BROADCAST_HOLD_RE.exec(s);
+    return m ? m[0] : '';
+}
+
+/** __55_: a short, stable hash for the duplicate guard (not security). */
+function _bcHash_(s) {
+    let h = 5381;
+    const t = String(s);
+    for (let i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+}
+
+/**
+ * Broadcast from the Monitor (action 'broadcast'). __55_ (R75): master key only; target ALL or one Staff group; URGENT and
+ * EMERGENCY are pushed to the targeted workers' phones after the lock is released. Runs inside the doPost lock.
+ */
+function handleBroadcast(p) {
+    try {
+        if (String(p.key) !== String(CONFIG.MASTER_KEY)) {   // F107-1: the worker key is in every worker's config.json
+            _audit_('broadcast:refused', '', '', '', '', '', '', 'not the master key - broadcasts come from the Monitor only');
+            return { status: 'error', message: 'Broadcasts need the master key.' };
+        }
+        const content = String(p.message == null ? '' : p.message).trim().substring(0, BROADCAST_MAX_CHARS);
+        if (content.length < 5) return { status: 'error', message: 'Message too short (at least 5 characters).' };
+        const pr0 = String(p.priority || '').trim().toUpperCase();
+        const priority = (pr0 === 'URGENT' || pr0 === 'EMERGENCY') ? pr0 : 'NORMAL';
+        const push = priority !== 'NORMAL';
+
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        const st = ss.getSheetByName('Staff');
+        const stData = st ? st.getDataRange().getValues() : [];
+
+        // Target: ALL, or one group that exists in Staff col D (any case). Anything else is refused - a typo must not
+        // silently reach nobody.
+        const tRaw = String(p.target == null ? '' : p.target).trim();
+        let target = 'ALL';
+        if (tRaw && tRaw.toLowerCase() !== 'all') {
+            const g = _staffGroups_(stData).filter(function (x) { return x.toLowerCase() === tRaw.toLowerCase(); })[0];
+            if (!g) {
+                _audit_('broadcast:refused', '', '', '', '', '', '', 'unknown group "' + tRaw.substring(0, 60) + '"');
+                return { status: 'error', message: 'Unknown group: ' + tRaw.substring(0, 60) };
+            }
+            target = g;
+        }
+
+        // F107-7: the same broadcast twice within 2 minutes (a double click) is refused.
+        const cache = CacheService.getScriptCache();
+        const dupKey = 'BCDUP_' + _bcHash_(priority + '|' + target.toLowerCase() + '|' + content);
+        let dup = false;
+        try { dup = cache.get(dupKey) === '1'; } catch (_) {}
+        if (dup) {
+            _audit_('broadcast:duplicate', '', '', '', '', '', '', priority + ' to ' + target + ' - the same message was sent less than 2 minutes ago; not sent again');
+            return { status: 'error', message: 'The same broadcast was sent less than 2 minutes ago.' };
+        }
+
+        let sheet = ss.getSheetByName('Notices');
+        if (!sheet) {
+            sheet = ss.insertSheet('Notices');
+            sheet.appendRow(NOTICES_HEADERS);
+        } else {
+            try {
+                const h = sheet.getRange(1, BROADCAST_PUSHED_COL);
+                if (!String(h.getValue() || '').trim()) h.setValue(NOTICES_HEADERS[BROADCAST_PUSHED_COL - 1]);
+            } catch (_) {}
+        }
+        const id = 'BC-' + Date.now().toString(36).toUpperCase();
+        sheet.appendRow([new Date(), id, priority, 'Broadcast from HQ', content, p.source || 'Monitor', 'Active', target, '',
+                         push ? 'sending...' : 'in the app only (Normal)']);
+        try { cache.put(dupKey, '1', Math.round(BROADCAST_DUP_MS / 1000)); } catch (_) {}
+
+        if (!push) {
+            _audit_('broadcast:saved', '', '', '', '', '', '', id + ' NORMAL to ' + target + ' - in the app only');
+            return { status: 'success', id: id };
+        }
+
+        // Who: active staff the target reaches. A topic = a push; no topic = in the app only; D1 = held back.
+        const latest = _latestStatusByWorker_();
+        const send = [], noTopic = [], held = [];
+        stData.forEach(function (r, i) {
+            if (i === 0) return;
+            const name = String(r[0] == null ? '' : r[0]).trim();
+            if (!name) return;
+            if (String(r[2] || '').trim().toLowerCase() === 'inactive') return;
+            if (!_targetMatch_(target, name.toLowerCase(), String(r[3] == null ? '' : r[3]).toLowerCase())) return;
+            const hold = _broadcastHoldReason_(latest[name.toLowerCase()]);
+            if (hold) { held.push(name + ' (' + hold + ')'); return; }
+            const topic = String(r[WORKER_TOPIC_COL - 1] == null ? '' : r[WORKER_TOPIC_COL - 1]).trim();
+            if (topic && _topicOk_(topic)) send.push({ name: name, topic: topic }); else noTopic.push(name);
+        });
+        const total = send.length + noTopic.length + held.length;
+        if (held.length) {
+            _audit_('broadcast:held', '', '', '', '', '', '', id + ' not pushed to ' + held.join(', ') +
+                    ' - an alarm the worker raised is open (hard rule); the notice is still in their app');
+        }
+
+        const isEm = priority === 'EMERGENCY';
+        const title = (isEm ? 'EMERGENCY' : 'URGENT') + ' from HQ';
+        const org = (CONFIG.ORG_NAME && !String(CONFIG.ORG_NAME).includes('%%')) ? String(CONFIG.ORG_NAME).trim() : '';
+        const body = (org ? org + ' HQ:\n' : '') + content + '\n\nOpen the safety app and slide Acknowledge.';
+        const click = _settings_().workerAppUrl;
+        _sendOrQueue_('broadcast ' + id, function () { _broadcastSend_(id, priority, target, title, body, isEm, click, send, noTopic, held, total); });
+        _audit_('broadcast:queued', '', '', '', '', '', '', id + ' ' + priority + ' to ' + target + ': ' + send.length + ' to push, ' +
+                noTopic.length + ' without phone alerts, ' + held.length + ' held back');
+        return { status: 'success', id: id, pushTo: send.length };
+    } catch (err) {
+        console.error('handleBroadcast error: ' + err);
+        _audit_('broadcast:error', '', '', '', '', '', '', String(err).substring(0, 200));
+        return { status: 'error', message: err.toString() };
+    }
+}
+
+/**
+ * __55_ (R75): push one broadcast - lock released. One retry per worker after 2 s. Then Notices col J gets the result
+ * under a short lock. Never throws (a throw would make doPost reply error for a broadcast that is already saved).
+ */
+function _broadcastSend_(id, priority, target, title, body, isEm, click, send, noTopic, held, total) {
+    const failed = [];
+    let ok = 0;
+    const t0 = Date.now();
+    send.forEach(function (w) {
+        let r = null;
+        try { r = _sendNtfy(w.topic, title, body, isEm ? 'urgent' : 'high', isEm ? 'rotating_light' : 'warning', click ? { click: click } : null); } catch (_) {}
+        if (!(r && r.ok)) {
+            try { Utilities.sleep(2000); } catch (_) {}
+            try { r = _sendNtfy(w.topic, title, body, isEm ? 'urgent' : 'high', isEm ? 'rotating_light' : 'warning', click ? { click: click } : null); } catch (_) { r = null; }
+        }
+        if (r && r.ok) ok++; else failed.push(w.name);
+    });
+    const parts = ['pushed ' + ok + ' of ' + total];
+    if (held.length) parts.push('held back (in an alarm): ' + held.join(', '));
+    if (noTopic.length) parts.push('no phone alerts: ' + noTopic.join(', '));
+    if (failed.length) parts.push('failed: ' + failed.join(', '));
+    const result = parts.join(' | ');
+    _audit_(failed.length ? 'broadcast:sent-FAILED' : 'broadcast:sent', '', '', '', '', '', '', id + ' ' + priority + ' to ' + target + ' - ' +
+            result + ' (' + (Date.now() - t0) + 'ms)');
+    _withShortLock_('broadcast-result', function () {
+        const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Notices');
+        if (!sh) return;
+        const ids = sh.getRange(1, 2, sh.getLastRow(), 1).getValues();
+        for (let i = ids.length - 1; i >= 1; i--) {
+            if (String(ids[i][0]) === id) { sh.getRange(i + 1, BROADCAST_PUSHED_COL).setValue(result); return; }
+        }
+    });
+}
+
+/**
+ * __55_ (R75): extra fields for the Monitor feed - groups (Staff col D) for the "Send to" list, and the last 10 notices
+ * with what was pushed and who acknowledged. getDashboardData itself is unchanged. Never throws.
+ */
+function _dashboardExtras_(out) {
+    try {
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        try {
+            const st = ss.getSheetByName('Staff');
+            out.groups = st ? _staffGroups_(st.getDataRange().getValues()) : [];
+        } catch (e) { out.groups = []; }
+        const notices = [];
+        try {
+            const sh = ss.getSheetByName('Notices');
+            if (sh && sh.getLastRow() > 1) {
+                const last = sh.getLastRow(), start = Math.max(2, last - 9);
+                const data = sh.getRange(start, 1, last - start + 1, BROADCAST_PUSHED_COL).getValues();
+                for (let i = data.length - 1; i >= 0; i--) {
+                    const r = data[i];
+                    if (!r[1]) continue;
+                    const d = new Date(r[0]);
+                    notices.push({ date: isNaN(d.getTime()) ? '' : d.toISOString(), id: String(r[1]), priority: String(r[2] || ''),
+                                   target: String(r[7] || 'ALL'), text: String(r[4] || '').substring(0, 60), status: String(r[6] || ''),
+                                   acks: String(r[8] || ''), pushed: String(r[9] || '') });
+                }
+            }
+        } catch (e) {}
+        out.notices = notices;
+    } catch (e) {}
+    return out;
 }
