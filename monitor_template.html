@@ -213,7 +213,7 @@
 <div id="broadcastModal" class="hidden fixed inset-0 z-40 bg-black/90 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="broadcastModalTitle">
     <div class="bg-gray-800 border-2 border-yellow-500 rounded-xl shadow-2xl max-w-lg w-full p-6">
         <h2 id="broadcastModalTitle" class="text-2xl font-bold text-white mb-1">📢 Broadcast to Workers</h2>
-        <p class="text-gray-400 text-xs mb-4">Choose who gets it and how urgent it is. Workers acknowledge it in the app.</p>
+        <p class="text-gray-400 text-xs mb-4">Choose who gets it - everyone, a group or one worker - and how urgent it is. Workers acknowledge it in the app.</p>
 
         <!-- __15_: who gets it -->
         <div class="mb-4">
@@ -477,6 +477,7 @@ let broadcastHistory     = [];                 // Session-local log of sent broa
 let broadcastTarget      = 'ALL';              // 'ALL' or one group name from the feed
 let serverGroups         = [];                 // distinct Staff groups from the feed (backend __55_+; empty otherwise)
 let serverNotices        = null;               // last 10 notices from the feed (backend __55_+); null = the backend does not send them
+let serverStaff          = [];                 // __16_: [{name, alerts}] active workers from the feed (backend __56_+; empty otherwise)
 let broadcastSending     = false;              // true from the click until the post returns
 
 // ============================================================================
@@ -814,6 +815,7 @@ function fetchData() {
                 // __15_ (R75): groups for the Send to list, and the server's Sent Broadcasts (backend __55_+ only)
                 serverGroups  = Array.isArray(data.groups) ? data.groups.map(g => String(g)).filter(g => g && g.toUpperCase() !== 'ALL') : [];
                 serverNotices = Array.isArray(data.notices) ? data.notices : null;
+                serverStaff   = Array.isArray(data.staff) ? data.staff.filter(x => x && x.name).map(x => ({ name: String(x.name), alerts: !!x.alerts })) : [];   // __16_
                 handleData(data);
                 refreshBroadcastUi();
             }
@@ -947,6 +949,9 @@ function processWorkers(rows) {
                 "Battery Level":            r['Battery Level'],
                 "Anticipated Departure Time": r['Anticipated Departure Time'],
                 "Site GPS":                 r['Site GPS'] || '',
+                // __16_ (backend __56_): who on site can find the worker (Sites tab Contact and Phone)
+                "Site Contact Name":        r['Site Contact Name'] || '',
+                "Site Contact Phone":       r['Site Contact Phone'] || '',
                 "Emergency Contact Name":   r['Emergency Contact Name'] || '',
                 "Emergency Contact Number": r['Emergency Contact Number'] || '',
                 "Emergency Contact Email":  r['Emergency Contact Email'] || '',
@@ -1020,6 +1025,11 @@ function handleData(response) {
         workers.forEach(w => {
             const loc = w['Location Name'] || w.location || '';
             if (loc) lines.push(`<div class="text-gray-300 mb-1">📍 <span class="font-bold text-white">${escapeHtml(loc)}</span></div>`);
+            // __16_: the site contact is probably the best placed to find the worker at once
+            if (w['Site Contact Name'] || w['Site Contact Phone']) {
+                const snum = formatPhoneForCall(w['Site Contact Phone'] || '');
+                lines.push(`<div class="text-green-300 font-bold">🏢 Site contact: ${escapeHtml(w['Site Contact Name'] || 'at the site')}${snum ? ` - <a href="tel:${escapeHtml(snum)}" class="text-blue-300 underline">${escapeHtml(snum)}</a>` : ''}</div>`);
+            }
             if (w['Emergency Contact Name'] || w['Emergency Contact Number']) {
                 const num = formatPhoneForCall(w['Emergency Contact Number'] || '');
                 lines.push(`<div class="text-red-300 font-bold">🆘 ${escapeHtml(w['Emergency Contact Name'] || 'Emergency Contact')}${num ? ` — <a href="tel:${escapeHtml(num)}" class="text-blue-300 underline">${escapeHtml(num)}</a>` : ''}</div>`);
@@ -1272,6 +1282,8 @@ function renderGrid() {
                 ${isAlert ? `
                     <div class="mt-3 p-2 rounded-lg bg-red-900/30 border border-red-500/40 text-xs space-y-1">
                         <div class="text-red-400 font-bold uppercase tracking-wide mb-1">🆘 Emergency Contacts</div>
+                        ${w['Site Contact Name'] ? `<div class="flex justify-between"><span class="text-slate-400">Site contact</span><span class="text-white font-bold">${escapeHtml(w['Site Contact Name'])}</span></div>` : ''}
+                        ${w['Site Contact Phone'] ? `<div class="flex justify-between"><span class="text-slate-400">${w['Site Contact Name'] ? 'Site phone' : 'Site contact'}</span><a href="tel:${escapeHtml(formatPhoneForCall(w['Site Contact Phone']))}" class="text-blue-400 font-bold">${escapeHtml(formatPhoneForCall(w['Site Contact Phone']))}</a></div>` : ''}
                         ${w['Emergency Contact Name'] ? `<div class="flex justify-between"><span class="text-slate-400">Contact 1</span><span class="text-white font-bold">${escapeHtml(w['Emergency Contact Name'])}</span></div>` : ''}
                         ${w['Emergency Contact Number'] ? `<div class="flex justify-between"><span class="text-slate-400">Phone</span><a href="tel:${escapeHtml(formatPhoneForCall(w['Emergency Contact Number']))}" class="text-blue-400 font-bold">${escapeHtml(formatPhoneForCall(w['Emergency Contact Number']))}</a></div>` : ''}
                         ${w['Escalation Contact Name'] ? `<div class="flex justify-between"><span class="text-slate-400">Contact 2</span><span class="text-white font-bold">${escapeHtml(w['Escalation Contact Name'])}</span></div>` : ''}
@@ -1837,6 +1849,7 @@ function setFilter(f) {
 // Suggested backend fields: title, message, priority, source, timestamp.
 // __15_ (R75): backend __55_ adds `target` (ALL or a Staff group), phone pushes for URGENT / EMERGENCY, and `groups` / `notices`
 // in the feed. The post is no-cors, so this page cannot read the reply: the Sent Broadcasts list (from the feed) is the proof.
+// __16_: backend __56_ also sends `staff` [{name, alerts}] so HQ can pick one worker by name (alerts = has phone alerts set up).
 
 // Phone alerts and groups need backend __55_ or later (the feed build is read in fetchData).
 function _broadcastBackendOk() { return backendBuildNo >= 55; }
@@ -1859,31 +1872,47 @@ function closeBroadcast() {
     document.getElementById('broadcastModal').classList.add('hidden');
 }
 
-// The Send to list: All workers, then each group. Rebuilt only when the list changes, so a poll never closes an open dropdown.
+// Phone alerts and groups need backend __55_; picking a worker by name needs __56_ (it sends the people list).
+function _broadcastPeopleOk() { return backendBuildNo >= 56; }
+function _personFor(t) { const v = String(t || '').toLowerCase(); return serverStaff.find(p => p.name.toLowerCase() === v) || null; }
+function _validTarget(t) {
+    const v = String(t || '');
+    return v.toUpperCase() === 'ALL' || (_broadcastBackendOk() && serverGroups.includes(v)) || (_broadcastPeopleOk() && !!_personFor(v));
+}
+
+// The Send to list: All workers, then the groups, then each worker by name. Rebuilt only when the lists change, so a poll never
+// closes an open dropdown.
 function populateBroadcastTargets() {
     const sel = document.getElementById('broadcastTarget');
     if (!sel) return;
     const groups = _broadcastBackendOk() ? serverGroups : [];
-    const opts = ['ALL'].concat(groups);
-    const sig = opts.join('\u0001');
+    const people = _broadcastPeopleOk() ? serverStaff : [];
+    const sig = JSON.stringify([groups, people]);
     if (sel.dataset.sig !== sig) {
-        sel.innerHTML = opts.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(_targetLabel(g))}</option>`).join('');
+        sel.innerHTML = '<option value="ALL">All workers</option>' +
+            (groups.length ? '<optgroup label="Groups">' + groups.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('') + '</optgroup>' : '') +
+            (people.length ? '<optgroup label="Workers">' + people.map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}${p.alerts ? '' : ' (no phone alerts)'}</option>`).join('') + '</optgroup>' : '');
         sel.dataset.sig = sig;
     }
-    if (!opts.includes(broadcastTarget)) broadcastTarget = 'ALL';
+    if (!_validTarget(broadcastTarget)) broadcastTarget = 'ALL';
     sel.value = broadcastTarget;
+    const person = _personFor(broadcastTarget);
     const note = document.getElementById('broadcastTargetNote');
     if (note) note.textContent = !_broadcastBackendOk()
-        ? 'Groups need backend __55_ or later - this goes to every worker.'
-        : groups.length === 0
-        ? 'No groups are set in the Staff sheet, so everyone is the only choice.'
-        : broadcastTarget === 'ALL' ? 'Every active worker.' : 'Only workers in the group "' + broadcastTarget + '".';
+        ? 'Groups and workers need backend __56_ or later - this goes to every worker.'
+        : broadcastTarget.toUpperCase() === 'ALL'
+        ? (groups.length === 0 && people.length === 0 ? 'No groups are set in the Staff sheet, so everyone is the only choice.'
+           : groups.length === 0 ? 'Every active worker. No groups are set in the Staff sheet - you can pick one worker.'
+           : 'Every active worker.' + (_broadcastPeopleOk() ? '' : ' Picking one worker needs backend __56_ or later.'))
+        : person ? 'Only ' + person.name + '.'
+        : 'Only workers in the group "' + broadcastTarget + '".';
 }
 
 function setBroadcastTarget(t) {
     const v = String(t || 'ALL');
-    broadcastTarget = (v.toUpperCase() === 'ALL' || serverGroups.includes(v)) ? v : 'ALL';
+    broadcastTarget = _validTarget(v) ? v : 'ALL';
     populateBroadcastTargets();
+    updateBroadcastNote();
     refreshSendButton();
 }
 
@@ -1908,9 +1937,13 @@ function updateBroadcastNote() {
     const el = document.getElementById('broadcastPriorityNote');
     if (!el) return;
     const loud = broadcastPriority === 'URGENT' || broadcastPriority === 'EMERGENCY';
+    const person = _personFor(broadcastTarget);
     if (!_broadcastBackendOk()) {
         el.textContent = 'This backend is older than __55_ - the message goes in the app only (no phone alert). Workers see it next time their app opens.';
         el.className = 'text-xs mt-2 text-gray-400';
+    } else if (loud && person && !person.alerts) {
+        el.textContent = person.name + ' has no phone alerts set up - this reaches them in the app only, next time their app opens. Phone them.';
+        el.className = 'text-xs mt-2 text-red-400';
     } else if (loud) {
         el.textContent = 'Also alerts phones now (workers with phone alerts set up). Anyone in a duress, panic or SOS alarm is held back - phone them.';
         el.className = 'text-xs mt-2 ' + (broadcastPriority === 'EMERGENCY' ? 'text-red-400' : 'text-amber-400');
@@ -1939,9 +1972,10 @@ function submitBroadcast() {
     const msg = document.getElementById('broadcastMessage').value.trim();
     if (!msg || msg.length < 5) { showToast("❌ Please enter a message (min 5 characters)."); return; }
     const target = broadcastTarget;
-    if (target.toUpperCase() !== 'ALL' && !serverGroups.includes(target)) { showToast("❌ That group is no longer in the list - pick again."); populateBroadcastTargets(); return; }
+    if (!_validTarget(target)) { showToast("❌ That group or worker is no longer in the list - pick again."); populateBroadcastTargets(); return; }
     const priority = broadcastPriority;
-    const loud = priority === 'URGENT' || priority === 'EMERGENCY';
+    const person = _personFor(target);
+    const loud = (priority === 'URGENT' || priority === 'EMERGENCY') && !(person && !person.alerts);   // a worker with no phone alerts gets the app only
     broadcastSending = true; refreshSendButton();
 
     const formData = new FormData();
@@ -1949,7 +1983,7 @@ function submitBroadcast() {
     formData.append('key',       API_KEY);
     formData.append('message',   msg);
     formData.append('priority',  priority);
-    formData.append('target',    target);                       // __15_ (backend __55_; an older backend ignores it = everyone)
+    formData.append('target',    target);                       // __15_/__16_: ALL, a group, or one worker (backend __56_; an older backend ignores it = everyone)
     formData.append('source',    'HQ Monitor');
     formData.append('timestamp', new Date().toISOString());
 
