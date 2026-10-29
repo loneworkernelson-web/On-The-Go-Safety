@@ -640,7 +640,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
  <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety On-The-Go!</span>
- <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__27_</span>
+ <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__28_</span>
  </h1>
  </div>
  <div class="flex items-center">
@@ -1191,7 +1191,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
  <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
- <div id="appBuild" class="text-xs font-mono text-gray-400">worker__27_</div>
+ <div id="appBuild" class="text-xs font-mono text-gray-400">worker__28_</div>
  </div>
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">Backend Version</div>
@@ -1754,8 +1754,24 @@ const RISK_WELFARE_MAP = {
 //      A phone that gives no motion readings is told so plainly. The diagnostics report shows the level and last practice.
 //  R77 the dim screen says "Shake firmly for SOS" at the easier levels ("vigorously" at Standard).
 //  The Phone alerts card names the real ntfy channels: "Max priority" and "High priority".
+// __28_ changes (session 107, Sonnet 5.5 high, from __27_). R75 urgent broadcast, worker side. Works with any backend;
+//   the colours, order and sound need nothing new from it. Backend __55_+ is what sends the phone alert.
+//  F107-2 the app syncs when it comes back to the foreground (or gets focus) if the last sync is over 2 minutes old, so a
+//      broadcast is in the app when the worker taps the phone alert or opens the app. Never during an alarm. It runs 2.5 s
+//      after the existing return-to-app work (alarm catch-up, outbox flush), and a failed one is silent.
+//  F107-3 the pop-up colours: EMERGENCY = red with the siren icon, URGENT = orange with the warning icon, in any case.
+//      Before, it looked for "Critical" and "Urgent", so every HQ broadcast showed in the blue Normal style.
+//  F107-4 the oldest unacknowledged Urgent or Emergency notice shows first, then the next one after each Acknowledge
+//      (Urgent or Emergency notices older than 14 days stay in the archive only). Normal: the newest only, as before.
+//      Acknowledge now acknowledges the notice that is on screen, not always the newest.
+//  F107-5 no pop-up during an alarm (it waits for the next check, every 15 s), and none over the vehicle-grounded block or
+//      the welfare prompt. On the dim Battery Saver screen the notice never opens or wakes the screen: the amber cue line
+//      reads "Message from HQ - slide Wake to read", and the notice opens a moment after the worker wakes the screen.
+//  R75 a short sound and a buzz when a notice arrives (once per notice, never during an alarm): Normal one soft beep,
+//      Urgent two beeps, Emergency three longer beeps; the buzz follows the same count. The sound needs the app on screen and
+//      one earlier tap on the phone (browser rule); the buzz is not available on iPhone.
 // =============================================================================
-const WORKER_BUILD = 'worker__27_';
+const WORKER_BUILD = 'worker__28_';
 
 const CONFIG = {
  url: '',
@@ -2980,6 +2996,8 @@ function deactivateBatterySaver() {
  resetInactivityTimer();
 
  console.log('Battery Saver: deactivated.');
+ // __28_ (F107-5): a notice that waited behind the dim screen opens now
+ try { setTimeout(checkActiveNotice, 300); } catch (_) {}
 }
 
 /**
@@ -3609,6 +3627,7 @@ function _quietCue() {
       return { kind: 'welfare-pre', text: 'Welfare check in ' + mins(next - now) + ' min - wake and tap Check in now' };
     }
   }
+  if (typeof _pendingNotice === 'function' && _pendingNotice()) return { kind: 'hq-message', text: 'Message from HQ - slide Wake to read' };   // __28_ (F107-5)
   const toDue = (Number(v.anticipatedDepartureTime) || 0) - now;
   const end = v.isTravel ? 'wake to extend or end the trip' : 'wake to extend or depart';
   if (v.highRisk) {
@@ -9555,7 +9574,7 @@ function updateOnlineStatus() {
 }
 
 // Enhanced forceSync with online check
-function forceSync(showUI) {
+function forceSync(showUI, quiet) {
  // 1. GATEKEEPER: Prevent sync in template mode or if identity is missing
  if (!CONFIG.key || CONFIG.key.length < 3) {
  if (showUI) showToast('⚠️ Template mode - awaiting deployment');
@@ -9650,7 +9669,7 @@ function forceSync(showUI) {
  if (banner) banner.classList.add('hidden');
  if (showUI) {
  showToast('❌ Sync failed — check connection');
- } else if (state && state.activeVisit) {
+ } else if (!quiet && state && state.activeVisit) {
  // Background sync failed during a live visit — the outbox will retry,
  // but the worker should know their data may not have reached the server.
  showToast('⚠️ Background sync failed — data queued', 5000);
@@ -11173,83 +11192,251 @@ function showCurrentSiteInfo() {
 // __22_ (R11): withPinVerification() removed. It had no callers; it compared the entered PIN with no duress
 // handling (the alarm PIN prompt, _alarmPinPrompt(), is the one path for PIN entry).
 
+// ====== __28_ (R75): HQ NOTICES - which one shows, when it may, the sound, and the sync on return to the app ======
+const NOTICE_FG_SYNC_MIN_MS = 120000;            // F107-2: sync on return to the app at most every 2 minutes
+const NOTICE_POPUP_MAX_AGE_MS = 14 * 86400000;   // F107-4: an Urgent or Emergency notice older than this stays in the archive only
+const NOTICE_RETRY_MS = 15000;                   // F107-5: a notice held back (alarm, welfare prompt) is tried again this often
+const NOTICE_SOUNDS = {                          // beeps are [Hz, start s, length s] and the buzz follows the same count
+  NORMAL:    { vibrate: [80],                     beeps: [[880, 0, 0.18]] },
+  URGENT:    { vibrate: [200, 100, 200],          beeps: [[988, 0, 0.30], [988, 0.42, 0.30]] },
+  EMERGENCY: { vibrate: [300, 100, 300, 100, 300], beeps: [[1175, 0, 0.36], [1175, 0.5, 0.36], [1175, 1.0, 0.36]] }
+};
+let _noticeShownId = null;   // id of the notice now in the pop-up
+let _noticeAudio = null;     // the one AudioContext, made on the first tap
+let _fgSyncAt = 0;           // when a sync on return was last tried
+
+/** NORMAL, URGENT or EMERGENCY, whatever the case ("Critical" is the old name for Emergency). */
+function _noticeLevel(p) {
+  const s = String(p == null ? '' : p).trim().toUpperCase();
+  return (s === 'EMERGENCY' || s === 'CRITICAL') ? 'EMERGENCY' : (s === 'URGENT') ? 'URGENT' : 'NORMAL';
+}
+
+function _noticeStore(key) {
+  try { const a = JSON.parse(localStorage.getItem(_sk(key)) || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; }
+}
+
+function _noticeTooOld(n, now) {
+  const t = Date.parse(n && n.date);
+  return isFinite(t) && (now - t) > NOTICE_POPUP_MAX_AGE_MS;
+}
+
 /**
- * RE-ENGINEERED: Priority-Aware Notice Engine
- * Logic: Delays notices if a mission-critical Vehicle Grounding block is active.
+ * The notice that should be on screen next, or null. The oldest unacknowledged Urgent or Emergency one first (noticeHistory
+ * is newest first, so that is the last); otherwise the newest notice, if not acknowledged (as before). Never throws.
+ */
+function _pendingNotice() {
+  try {
+    const meta = state && state.meta;
+    if (!meta) return null;
+    const acked = _noticeStore('otg_acknowledged_notices');
+    const hist = Array.isArray(meta.noticeHistory) ? meta.noticeHistory.filter(n => n && n.id) : [];
+    const now = Date.now();
+    const loud = hist.filter(n => !acked.includes(n.id) && _noticeLevel(n.priority) !== 'NORMAL' && !_noticeTooOld(n, now));
+    if (loud.length) return loud[loud.length - 1];
+    const a = meta.activeNotice;
+    return (a && a.id && !acked.includes(a.id)) ? a : null;
+  } catch (_) { return null; }
+}
+
+function _noticeFind(id) {
+  const meta = state && state.meta;
+  if (!meta || id == null) return null;
+  const hist = Array.isArray(meta.noticeHistory) ? meta.noticeHistory : [];
+  return hist.find(n => n && n.id === id) || ((meta.activeNotice && meta.activeNotice.id === id) ? meta.activeNotice : null);
+}
+
+/** True while an alarm owns the phone (any alarm the worker or the timer raised). Unsure means yes: stay quiet. */
+function _noticeInAlarm() {
+  try {
+    const v = state && state.activeVisit;
+    return !!(_welfareInAlarm(v) || getVisitPhase() === VISIT_PHASES.ALARMING);
+  } catch (_) { return true; }
+}
+
+/** Why a notice may not open now: 'alarm', 'grounded' (vehicle block), 'welfare' (the "Are you OK?" prompt), or ''. */
+function _noticeBlockedReason() {
+  if (_noticeInAlarm()) return 'alarm';
+  const g = document.getElementById('wofBlockModal');
+  if (g && !g.classList.contains('hidden')) return 'grounded';
+  const w = document.getElementById('welfareCheckModal');
+  if (w && !w.classList.contains('hidden')) return 'welfare';
+  return '';
+}
+
+function _noticeAudioCtx() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    if (!_noticeAudio) _noticeAudio = new AC();
+    return _noticeAudio;
+  } catch (_) { return null; }
+}
+
+/** The browser only lets sound start after a tap: the first tap anywhere makes (and wakes) the audio, quietly. */
+function _noticeAudioUnlock() {
+  try { const c = _noticeAudioCtx(); if (c && c.state === 'suspended' && c.resume) c.resume(); } catch (_) {}
+}
+
+/** The buzz and the beeps for a level. Never throws; returns whether a sound was scheduled. */
+function _noticePlay(level) {
+  const spec = NOTICE_SOUNDS[level] || NOTICE_SOUNDS.NORMAL;
+  try { if (navigator.vibrate) navigator.vibrate(spec.vibrate); } catch (_) {}
+  try {
+    const c = _noticeAudioCtx();
+    if (!c) return false;
+    if (c.state === 'suspended' && c.resume) c.resume();
+    const t0 = c.currentTime + 0.03;
+    spec.beeps.forEach(b => {
+      const osc = c.createOscillator(), g = c.createGain();
+      const s = t0 + b[1], e = s + b[2];
+      osc.type = 'sine'; osc.frequency.value = b[0];
+      g.gain.setValueAtTime(0.0001, s); g.gain.exponentialRampToValueAtTime(0.4, s + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, e);
+      osc.connect(g); g.connect(c.destination); osc.start(s); osc.stop(e + 0.02);
+    });
+    return true;
+  } catch (e) {
+    try { _diag('[R75] notice sound error: ' + (e && e.message || e), true); } catch (_) {}
+    return false;
+  }
+}
+
+/** Sound and buzz once per notice (remembered on the phone), so a re-check or a reload never repeats them. */
+function _noticeAlertOnce(notice, level) {
+  const seen = _noticeStore('otg_alerted_notices');
+  if (seen.includes(notice.id)) return false;
+  seen.push(notice.id);
+  try { localStorage.setItem(_sk('otg_alerted_notices'), JSON.stringify(seen.slice(-50))); } catch (_) {}
+  _noticePlay(level);
+  return true;
+}
+
+function _noticeCueRefresh() {
+  try { if (typeof _quietCueUi === 'function') _quietCueUi(); } catch (_) {}
+}
+
+/**
+ * Priority-aware notice engine (R75, __28_). Shows the next notice unless an alarm, the vehicle-grounded block or the
+ * welfare prompt has the screen; on the dim Battery Saver screen it only sets the amber cue (no wake, no pop-up).
  */
 function checkActiveNotice() {
- if (!state.meta || !state.meta.activeNotice) return;
- 
- const notice = state.meta.activeNotice;
- const ackList = JSON.parse(localStorage.getItem(_sk('otg_acknowledged_notices')) || '[]');
- if (ackList.includes(notice.id)) return;
+  try {
+    const notice = _pendingNotice();
+    if (!notice) { _noticeShownId = null; _noticeCueRefresh(); return; }
+    if (_noticeBlockedReason()) { _noticeCueRefresh(); return; }   // waits for the next check; no pop-up, no sound
+    const level = _noticeLevel(notice.priority);
+    if (isBatterySaverActive) {   // F107-5: the notice would open behind the dim screen - the cue line says so instead
+      _noticeAlertOnce(notice, level);
+      _noticeCueRefresh();
+      return;
+    }
+    const modal = document.getElementById('noticeModal');
+    if (!modal) return;
+    if (_noticeShownId === notice.id && !modal.classList.contains('hidden')) return;   // already on screen: leave it (and its scroll) alone
+    const title = document.getElementById('noticeTitle');
+    const content = document.getElementById('noticeContent');
+    const card = document.getElementById('noticeCard');
+    const icon = document.getElementById('noticeIcon');
 
- const modal = document.getElementById('noticeModal');
- // 1. SAFETY GATE: Do not hide the 'Grounded' warning with a notice
- const isGrounded = !document.getElementById('wofBlockModal').classList.contains('hidden');
- if (isGrounded) {
- console.log("Notice delayed: Vehicle grounding takes priority.");
- return;
- }
- const title = document.getElementById('noticeTitle');
- const content = document.getElementById('noticeContent');
- const card = document.getElementById('noticeCard');
- const icon = document.getElementById('noticeIcon');
+    title.innerText = notice.title;
+    content.innerText = notice.content;
 
- title.innerText = notice.title;
- content.innerText = notice.content;
+    // PRIORITY STYLING (F107-3): the Monitor sends URGENT and EMERGENCY in capitals
+    card.classList.remove('border-blue-600', 'border-orange-500', 'border-red-600');
+    if (level === 'EMERGENCY') {
+      card.classList.add('border-red-600');
+      icon.innerText = '🚨';
+    } else if (level === 'URGENT') {
+      card.classList.add('border-orange-500');
+      icon.innerText = '⚠️';
+    } else {
+      card.classList.add('border-blue-600');
+      icon.innerText = '📢';
+    }
 
- // 2. PRIORITY STYLING
- card.classList.remove('border-blue-600', 'border-orange-500', 'border-red-600');
- if (notice.priority === 'Critical') {
- card.classList.add('border-red-600');
- icon.innerText = '🚨';
- } else if (notice.priority === 'Urgent') {
- card.classList.add('border-orange-500');
- icon.innerText = '⚠️';
- } else {
- card.classList.add('border-blue-600');
- icon.innerText = '📢';
- }
-
- // GOLDEN FIX: Remove 'hidden' and force z-index to ensure it is not covered by the main layout
- modal.classList.remove('hidden');
- modal.style.display = 'flex'; 
- modal.style.zIndex = "400"; 
+    // GOLDEN FIX: Remove 'hidden' and force z-index to ensure it is not covered by the main layout
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+    modal.style.zIndex = "400";
+    _noticeShownId = notice.id;
+    _noticeAlertOnce(notice, level);
+  } catch (e) {
+    try { _diag('[R75] notice error: ' + (e && e.message || e), true); } catch (_) {}
+  }
 }
 
 /**
  * MISSION-CRITICAL: Notice Acknowledgment
- * Logic: Logs the ID to the backend and dismisses the UI.
+ * Logic: Logs the ID of the notice ON SCREEN to the backend, dismisses the UI, then shows the next one (F107-4).
  */
 async function acknowledgeNotice() {
- if (!state.meta || !state.meta.activeNotice) return;
- const notice = state.meta.activeNotice;
+  const notice = _noticeFind(_noticeShownId) || _pendingNotice();
+  if (!notice) return;
 
- // 1. UPDATE UI IMMEDIATELY
- closeModal('notice'); 
+  // 1. UPDATE UI IMMEDIATELY
+  closeModal('notice');
+  _noticeShownId = null;
 
- // 2. PERSIST LOCALLY
- const ackList = JSON.parse(localStorage.getItem(_sk('otg_acknowledged_notices')) || '[]');
- if (!ackList.includes(notice.id)) {
- ackList.push(notice.id);
- localStorage.setItem(_sk('otg_acknowledged_notices'), JSON.stringify(ackList));
- }
+  // 2. PERSIST LOCALLY
+  const ackList = _noticeStore('otg_acknowledged_notices');
+  if (!ackList.includes(notice.id)) {
+    ackList.push(notice.id);
+    localStorage.setItem(_sk('otg_acknowledged_notices'), JSON.stringify(ackList));
+  }
 
- // 3. LOG TO BACKEND
- // Alarm Status is deliberately NOT included — a broadcast acknowledgement is
- // not a visit lifecycle event and must never overwrite col K (Alarm Status) in
- // the Visits sheet. The backend logs the ack to the Notices sheet and appends
- // an audit note to the current visit row Notes only.
- const payload = buildPayload({
- "action": "acknowledgeNotice",
- "noticeId": notice.id,
- "Notes": `Confirmed: ${notice.title}`
- });
+  // 3. LOG TO BACKEND
+  // Alarm Status is deliberately NOT included - a broadcast acknowledgement is
+  // not a visit lifecycle event and must never overwrite col K (Alarm Status) in
+  // the Visits sheet. The backend logs the ack to the Notices sheet and appends
+  // an audit note to the current visit row Notes only.
+  const payload = buildPayload({
+    "action": "acknowledgeNotice",
+    "noticeId": notice.id,
+    "Notes": `Confirmed: ${notice.title}`
+  });
 
- processUploadQueue(payload);
- showToast('✅ Acknowledgment queued');
+  processUploadQueue(payload);
+  showToast('✅ Acknowledgment queued');
+  setTimeout(() => { try { checkActiveNotice(); } catch (_) {} }, 700);   // F107-4: the next unacknowledged notice, if any
 }
+
+/** F107-2: sync once when the app comes back to the screen, at most every 2 minutes, never during an alarm. Returns whether it started one. */
+function _foregroundSync() {
+  try {
+    if (document.visibilityState && document.visibilityState !== 'visible') return false;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+    if (!state || !state.worker || !state.worker.name) return false;
+    if (_noticeInAlarm()) return false;
+    const now = Date.now();
+    const lastOk = state.lastSyncTime ? (Date.parse(state.lastSyncTime) || 0) : 0;
+    if (now - Math.max(_fgSyncAt, lastOk) < NOTICE_FG_SYNC_MIN_MS) return false;
+    _fgSyncAt = now;
+    forceSync(false, true);   // quiet: a failed top-up says nothing
+    return true;
+  } catch (e) {
+    try { _diag('[R75] foreground sync error: ' + (e && e.message || e), true); } catch (_) {}
+    return false;
+  }
+}
+
+/** A notice held back by an alarm or a prompt is tried again here; one already on screen is left alone. */
+function _noticeRetry() {
+  try {
+    if (document.visibilityState && document.visibilityState !== 'visible') return;
+    const m = document.getElementById('noticeModal');
+    if (m && !m.classList.contains('hidden')) return;
+    if (_pendingNotice()) checkActiveNotice();
+  } catch (_) {}
+}
+
+function _noticeWire() {
+  ['pointerdown', 'touchstart'].forEach(ev => document.addEventListener(ev, _noticeAudioUnlock, { passive: true }));
+  // 2.5 s after the return-to-app work in the visibilitychange handler below (alarm catch-up, outbox flush)
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(_foregroundSync, 2500); });
+  window.addEventListener('focus', () => setTimeout(_foregroundSync, 2500));
+  window.addEventListener('pageshow', () => setTimeout(_foregroundSync, 2500));
+  setInterval(_noticeRetry, NOTICE_RETRY_MS);
+}
+_noticeWire();
  
 /**
  * PATCHED: Procedure Viewer
