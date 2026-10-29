@@ -212,8 +212,18 @@
 <!-- Broadcast modal -->
 <div id="broadcastModal" class="hidden fixed inset-0 z-40 bg-black/90 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="broadcastModalTitle">
     <div class="bg-gray-800 border-2 border-yellow-500 rounded-xl shadow-2xl max-w-lg w-full p-6">
-        <h2 id="broadcastModalTitle" class="text-2xl font-bold text-white mb-1">📢 Broadcast to All Workers</h2>
-        <p class="text-gray-400 text-xs mb-5">Message will appear on all active Worker App devices at next sync (≤30s).</p>
+        <h2 id="broadcastModalTitle" class="text-2xl font-bold text-white mb-1">📢 Broadcast to Workers</h2>
+        <p class="text-gray-400 text-xs mb-4">Choose who gets it and how urgent it is. Workers acknowledge it in the app.</p>
+
+        <!-- __15_: who gets it -->
+        <div class="mb-4">
+            <label for="broadcastTarget" class="block text-sm uppercase font-bold text-gray-300 mb-2">Send to</label>
+            <select id="broadcastTarget" onchange="setBroadcastTarget(this.value)"
+                    class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm focus:border-yellow-500 outline-none">
+                <option value="ALL">All workers</option>
+            </select>
+            <p id="broadcastTargetNote" class="text-xs text-gray-400 mt-1"></p>
+        </div>
 
         <!-- Priority selector -->
         <div class="mb-4">
@@ -232,6 +242,7 @@
                     🚨 Emergency
                 </button>
             </div>
+            <p id="broadcastPriorityNote" class="text-xs mt-2 text-gray-400" aria-live="polite"></p>
         </div>
 
         <!-- Message -->
@@ -239,7 +250,7 @@
             <label class="block text-sm uppercase font-bold text-gray-300 mb-1">Message</label>
             <textarea id="broadcastMessage" maxlength="500" rows="4"
                       class="w-full bg-gray-900 border border-gray-600 rounded p-3 text-white text-sm resize-none focus:border-yellow-500 outline-none transition"
-                      placeholder="e.g. Severe weather warning — all field staff return to base immediately."
+                      placeholder="e.g. Severe weather warning - all field staff return to base immediately."
                       oninput="updateBroadcastCount()"></textarea>
             <div class="flex justify-between mt-1">
                 <span class="text-sm text-gray-400">Workers will see this in their Safety Hub notices.</span>
@@ -253,9 +264,9 @@
                     class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded transition">
                 Cancel
             </button>
-            <button onclick="submitBroadcast()"
-                    class="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-3 rounded shadow-lg transition">
-                📢 Send to All Workers
+            <button onclick="submitBroadcast()" id="broadcastSendBtn"
+                    class="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-3 rounded shadow-lg transition disabled:opacity-50">
+                <span id="broadcastSendLabel">📢 Send to All Workers</span>
             </button>
         </div>
     </div>
@@ -359,14 +370,14 @@
             Current Status per Visit
         </div>
         <div id="eventLogList" class="flex-1 overflow-y-auto px-2 py-2 space-y-1" role="log" aria-label="Event log" aria-live="polite"></div>
-        <!-- Broadcast history (session only) -->
+        <!-- Sent Broadcasts: from the server (backend __55_), or this tab only with an older backend -->
         <div class="border-t border-gray-700 flex-shrink-0">
             <button onclick="toggleBroadcastHistory()"
                     class="w-full p-2 bg-gray-800 text-xs font-bold text-gray-300 uppercase tracking-wider text-left flex justify-between items-center hover:bg-gray-750 transition">
                 <span>📢 Sent Broadcasts</span>
                 <span id="broadcastHistoryToggle">▸</span>
             </button>
-            <div id="broadcastHistoryList" class="hidden px-2 py-1 space-y-1 max-h-40 overflow-y-auto bg-gray-900/50"></div>
+            <div id="broadcastHistoryList" class="hidden px-2 py-1 space-y-1 max-h-56 overflow-y-auto bg-gray-900/50"></div>
         </div>
     </aside>
 </main>
@@ -461,7 +472,12 @@ function workerLastSeen(w) { return Math.max(w.timestamp || 0, w.lastHeard || 0)
 // ============================================================================
 const STALE_THRESHOLD_MS = 10 * 60 * 1000;   // 10 minutes — "Last Pulse" watchdog threshold
 let broadcastPriority    = 'NORMAL';           // Currently selected broadcast priority
-let broadcastHistory     = [];                 // Session-local log of sent broadcasts
+let broadcastHistory     = [];                 // Session-local log of sent broadcasts (the fallback list with a backend older than __55_)
+// __15_ (R75): the target, what the backend feed sent, and the one-post-at-a-time guard (F107-7)
+let broadcastTarget      = 'ALL';              // 'ALL' or one group name from the feed
+let serverGroups         = [];                 // distinct Staff groups from the feed (backend __55_+; empty otherwise)
+let serverNotices        = null;               // last 10 notices from the feed (backend __55_+); null = the backend does not send them
+let broadcastSending     = false;              // true from the click until the post returns
 
 // ============================================================================
 // 6. TOAST
@@ -795,7 +811,11 @@ function fetchData() {
                     ? processWorkers(data.workers) : data.workers;
                 allRows = data.all || data.workers;
                 backendBuildNo = (m => m ? parseInt(m[1], 10) : 0)(/backend__(\d+)_/.exec(String(data.build || '')));   // __14_
+                // __15_ (R75): groups for the Send to list, and the server's Sent Broadcasts (backend __55_+ only)
+                serverGroups  = Array.isArray(data.groups) ? data.groups.map(g => String(g)).filter(g => g && g.toUpperCase() !== 'ALL') : [];
+                serverNotices = Array.isArray(data.notices) ? data.notices : null;
                 handleData(data);
+                refreshBroadcastUi();
             }
         }
     };
@@ -1815,19 +1835,56 @@ function setFilter(f) {
 // Requires the backend script to handle action:'broadcast' and write a new
 // row to the Notices sheet. Workers read this sheet during their sync cycle.
 // Suggested backend fields: title, message, priority, source, timestamp.
+// __15_ (R75): backend __55_ adds `target` (ALL or a Staff group), phone pushes for URGENT / EMERGENCY, and `groups` / `notices`
+// in the feed. The post is no-cors, so this page cannot read the reply: the Sent Broadcasts list (from the feed) is the proof.
+
+// Phone alerts and groups need backend __55_ or later (the feed build is read in fetchData).
+function _broadcastBackendOk() { return backendBuildNo >= 55; }
+function _targetLabel(t) { const v = String(t || 'ALL'); return v.toUpperCase() === 'ALL' ? 'All workers' : v; }
 
 function openBroadcast() {
     const modal = document.getElementById('broadcastModal');
     if (!modal) return;
     document.getElementById('broadcastMessage').value = '';
     document.getElementById('broadcastCount').textContent = '0';
+    broadcastTarget = 'ALL';
+    populateBroadcastTargets();
     setBroadcastPriority('NORMAL');
+    refreshSendButton();
     modal.classList.remove('hidden');
     setTimeout(() => document.getElementById('broadcastMessage').focus(), 50);
 }
 
 function closeBroadcast() {
     document.getElementById('broadcastModal').classList.add('hidden');
+}
+
+// The Send to list: All workers, then each group. Rebuilt only when the list changes, so a poll never closes an open dropdown.
+function populateBroadcastTargets() {
+    const sel = document.getElementById('broadcastTarget');
+    if (!sel) return;
+    const groups = _broadcastBackendOk() ? serverGroups : [];
+    const opts = ['ALL'].concat(groups);
+    const sig = opts.join('\u0001');
+    if (sel.dataset.sig !== sig) {
+        sel.innerHTML = opts.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(_targetLabel(g))}</option>`).join('');
+        sel.dataset.sig = sig;
+    }
+    if (!opts.includes(broadcastTarget)) broadcastTarget = 'ALL';
+    sel.value = broadcastTarget;
+    const note = document.getElementById('broadcastTargetNote');
+    if (note) note.textContent = !_broadcastBackendOk()
+        ? 'Groups need backend __55_ or later - this goes to every worker.'
+        : groups.length === 0
+        ? 'No groups are set in the Staff sheet, so everyone is the only choice.'
+        : broadcastTarget === 'ALL' ? 'Every active worker.' : 'Only workers in the group "' + broadcastTarget + '".';
+}
+
+function setBroadcastTarget(t) {
+    const v = String(t || 'ALL');
+    broadcastTarget = (v.toUpperCase() === 'ALL' || serverGroups.includes(v)) ? v : 'ALL';
+    populateBroadcastTargets();
+    refreshSendButton();
 }
 
 function setBroadcastPriority(p) {
@@ -1843,6 +1900,24 @@ function setBroadcastPriority(p) {
         if (!btn) return;
         btn.className = `broadcast-priority-btn flex-1 py-2 rounded text-xs font-bold border-2 ${key === p ? cfg.on : off}`;
     });
+    updateBroadcastNote();
+}
+
+// One line saying what the chosen level does.
+function updateBroadcastNote() {
+    const el = document.getElementById('broadcastPriorityNote');
+    if (!el) return;
+    const loud = broadcastPriority === 'URGENT' || broadcastPriority === 'EMERGENCY';
+    if (!_broadcastBackendOk()) {
+        el.textContent = 'This backend is older than __55_ - the message goes in the app only (no phone alert). Workers see it next time their app opens.';
+        el.className = 'text-xs mt-2 text-gray-400';
+    } else if (loud) {
+        el.textContent = 'Also alerts phones now (workers with phone alerts set up). Anyone in a duress, panic or SOS alarm is held back - phone them.';
+        el.className = 'text-xs mt-2 ' + (broadcastPriority === 'EMERGENCY' ? 'text-red-400' : 'text-amber-400');
+    } else {
+        el.textContent = 'In the app only - workers see it next time their app opens. No phone alert.';
+        el.className = 'text-xs mt-2 text-gray-400';
+    }
 }
 
 function updateBroadcastCount() {
@@ -1851,49 +1926,107 @@ function updateBroadcastCount() {
     if (el && cnt) cnt.textContent = el.value.length;
 }
 
+// The Send button: disabled from the click until the post returns (a double click used to push twice to every phone).
+function refreshSendButton() {
+    const btn = document.getElementById('broadcastSendBtn'), lab = document.getElementById('broadcastSendLabel');
+    if (btn) btn.disabled = broadcastSending;
+    if (lab) lab.textContent = broadcastSending ? '⏳ Sending...'
+        : '📢 Send to ' + (broadcastTarget.toUpperCase() === 'ALL' ? 'All Workers' : broadcastTarget);
+}
+
 function submitBroadcast() {
+    if (broadcastSending) return;
     const msg = document.getElementById('broadcastMessage').value.trim();
     if (!msg || msg.length < 5) { showToast("❌ Please enter a message (min 5 characters)."); return; }
+    const target = broadcastTarget;
+    if (target.toUpperCase() !== 'ALL' && !serverGroups.includes(target)) { showToast("❌ That group is no longer in the list - pick again."); populateBroadcastTargets(); return; }
+    const priority = broadcastPriority;
+    const loud = priority === 'URGENT' || priority === 'EMERGENCY';
+    broadcastSending = true; refreshSendButton();
 
     const formData = new FormData();
     formData.append('action',    'broadcast');
     formData.append('key',       API_KEY);
     formData.append('message',   msg);
-    formData.append('priority',  broadcastPriority);
+    formData.append('priority',  priority);
+    formData.append('target',    target);                       // __15_ (backend __55_; an older backend ignores it = everyone)
     formData.append('source',    'HQ Monitor');
     formData.append('timestamp', new Date().toISOString());
 
-    // mode:'no-cors' means we can't read the response — trust and log locally
-    fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: formData })
+    // mode:'no-cors' means the reply cannot be read - the Sent Broadcasts list (from the feed) shows what happened.
+    // The post returns when the backend has finished, which with many phones to alert can take up to a minute.
+    const ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => ctl.abort(), 120000) : null;
+    fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: formData, signal: ctl ? ctl.signal : undefined })
         .then(() => {
-            const entry = {
+            broadcastHistory.unshift({
                 time:     fmtClock(new Date(nowMs())),
-                priority: broadcastPriority,
+                priority: priority,
+                target:   target,
                 msg:      msg.length > 60 ? msg.slice(0, 60) + '…' : msg
-            };
-            broadcastHistory.unshift(entry);
+            });
             renderBroadcastHistory();
-            showToast(`📢 Broadcast sent (${broadcastPriority}) — workers notified at next sync.`, 5000);
+            showToast(_broadcastBackendOk()
+                ? `📢 ${priority} broadcast posted to ${_targetLabel(target)}${loud ? ' - phones alerted' : ' - in the app only'}. Sent Broadcasts shows the result.`
+                : `📢 ${priority} broadcast posted - in the app only (backend older than __55_).`, 6000);
             closeBroadcast();
+            fetchData();                                         // the result is on the Notices sheet by now
+            setTimeout(fetchData, 4000);
         })
-        .catch(e => showToast("❌ Broadcast failed: " + e));
+        .catch(e => showToast(e && e.name === 'AbortError'
+            ? "⚠ No reply after 2 minutes - check Sent Broadcasts before sending again."
+            : "❌ Broadcast failed: " + e))
+        .finally(() => { if (timer) clearTimeout(timer); broadcastSending = false; refreshSendButton(); });
 }
 
+// Sent Broadcasts. From the server when the feed has notices (backend __55_+): time, priority, target, how many phones were
+// alerted, who has acknowledged. Otherwise this tab's own list, as before.
 function renderBroadcastHistory() {
     const el = document.getElementById('broadcastHistoryList');
     if (!el) return;
+    const colours = { NORMAL: 'text-blue-400', URGENT: 'text-amber-400', EMERGENCY: 'text-red-400' };
+    if (Array.isArray(serverNotices)) {
+        if (serverNotices.length === 0) {
+            el.innerHTML = '<div class="text-sm text-gray-400 py-2 text-center">No broadcasts yet.</div>';
+            return;
+        }
+        el.innerHTML = serverNotices.map(n => {
+            const pr    = String(n.priority || '').toUpperCase();
+            const names = String(n.acks || '').split(',').map(x => x.trim()).filter(Boolean);
+            const m     = /of\s+(\d+)/.exec(String(n.pushed || ''));
+            const text  = String(n.text || '');
+            return `
+        <div class="text-xs py-1 border-b border-gray-800">
+            <span class="text-gray-400">${escapeHtml(fmtStamp(n.date))}</span>
+            <span class="ml-1 font-bold ${colours[pr] || 'text-gray-400'}">[${escapeHtml(pr || '?')}]</span>
+            <span class="text-gray-400 ml-1">to ${escapeHtml(_targetLabel(n.target))}</span>
+            <div class="text-gray-300">${escapeHtml(text)}${text.length >= 60 ? '…' : ''}</div>
+            <div class="text-gray-400">${escapeHtml(n.pushed || 'no result recorded')}</div>
+            <div class="text-gray-400">Acknowledged ${names.length}${m ? ' of ' + escapeHtml(m[1]) : ''}${names.length ? ': ' + escapeHtml(names.join(', ')) : ''}</div>
+        </div>`;
+        }).join('');
+        return;
+    }
     if (broadcastHistory.length === 0) {
         el.innerHTML = '<div class="text-sm text-gray-400 py-2 text-center">No broadcasts this session.</div>';
         return;
     }
-    const colours = { NORMAL: 'text-blue-400', URGENT: 'text-amber-400', EMERGENCY: 'text-red-400' };
-    el.innerHTML = broadcastHistory.map(b => `
+    el.innerHTML = '<div class="text-xs text-gray-400 py-1">This tab only - the backend is older than __55_.</div>' + broadcastHistory.map(b => `
         <div class="text-xs py-1 border-b border-gray-800">
             <span class="text-gray-400">${b.time}</span>
             <span class="ml-1 font-bold ${colours[b.priority] || 'text-gray-400'}">[${b.priority}]</span>
+            <span class="text-gray-400 ml-1">to ${escapeHtml(_targetLabel(b.target))}</span>
             <span class="text-gray-300 ml-1">${escapeHtml(b.msg)}</span>
         </div>
     `).join('');
+}
+
+// Called after every poll: keeps the Send to list, the note and an open Sent Broadcasts list in step with the feed.
+function refreshBroadcastUi() {
+    populateBroadcastTargets();
+    updateBroadcastNote();
+    const list = document.getElementById('broadcastHistoryList');
+    if (list && !list.classList.contains('hidden')) renderBroadcastHistory();
 }
 
 function toggleBroadcastHistory() {
