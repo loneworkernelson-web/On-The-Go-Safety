@@ -192,6 +192,18 @@
  *   - Settings tab: two new keys added with their defaults (existing values never changed); Health email shows them.
  *   - Contact escalation (tiers, Critical ladder, col AA claims, All Clear audience) is unchanged.
  *
+ * __56_ (session 107, 30 Oct 2026, Sonnet 5.5 high) - R75 follow-ups after Russell's device test of __55_ / Monitor __15_:
+ *   - The broadcast push now ends "Open the safety app and slide Acknowledge. Can't see it? Close the app fully, then open it
+ *     again." (the worker app only fetches notices when it starts until worker __28_ adds the foreground sync, F107-2).
+ *   - A broadcast target can now be ONE WORKER (an active Staff name, any case) as well as ALL or a group. The sync already
+ *     matched names, so the in-app notice and the push still reach the same people. Unknown names are refused. A name that is
+ *     also a group means the group (and, as the sync always did, a worker of that exact name); a name with a comma cannot be
+ *     targeted one by one.
+ *   - Monitor feed (doGet, master key): + 'staff' [{name, alerts}] for the Send to list (alerts = has a phone-alert topic;
+ *     the topic is never sent), and each Visits row gets 'Site Contact Name' / 'Site Contact Phone' from the Sites tab
+ *     (cols F, G) when the site is found, matched exactly like 'Site GPS'.
+ *   - Unchanged: the hold-back rule, duplicate guard, key rule, reminders, ladders, contact alerts, the sync.
+ *
  * __55_ (session 107, 29 Oct 2026, Opus) - R75: URGENT BROADCAST BY NTFY (design claude/S107_R75_design.md, D1-D4 agreed):
  *   - F107-1 (security): action 'broadcast' now needs the MASTER key. Before, the worker key (in every worker app's
  *     config.json) was accepted too. The worker app never sends 'broadcast'.
@@ -3908,6 +3920,7 @@ function getDashboardData() {
     // ── Stored site positions (Sites col M), matched like _siteCoords_: bare Site Name (col D) and "Company - Site" ──
     // The first Sites row that has a name as one of its keys decides it, exactly as _siteCoords_ does.
     const sitePos = Object.create(null);   // no prototype, so a site called "constructor" or "toString" is just a name
+    const siteContact = Object.create(null);   // __56_: same keys and first-row-wins rule; the Sites tab's Contact (F) and Phone (G)
     try {
         const siteSheet = ss.getSheetByName('Sites');
         if (siteSheet && siteSheet.getLastRow() > 1) {
@@ -3928,6 +3941,7 @@ function getDashboardData() {
                         }
                     }
                     sitePos[k] = pos;
+                    siteContact[k] = { name: String(r[5] == null ? '' : r[5]).trim(), phone: String(r[6] == null ? '' : r[6]).trim() };   // __56_
                 });
             });
         }
@@ -3943,6 +3957,11 @@ function getDashboardData() {
         obj['Visit ID'] = (width >= VISIT_ID_COL) ? String(r[VISIT_ID_COL - 1] || '') : '';
         const siteName = String(obj['Location Name'] || '').trim();
         if (siteName && sitePos[siteName]) obj['Site GPS'] = sitePos[siteName];
+        // __56_: who on site can find the worker - only when the site has a contact (name or phone)
+        if (siteName && siteContact[siteName] && (siteContact[siteName].name || siteContact[siteName].phone)) {
+            obj['Site Contact Name'] = siteContact[siteName].name;
+            obj['Site Contact Phone'] = siteContact[siteName].phone;
+        }
         return obj;
     });
 
@@ -5448,7 +5467,7 @@ function _formsGps_(sheet, rowNum, p) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__55_';
+const TEMPLATE_BUILD = 'backend__56_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
@@ -6965,15 +6984,17 @@ function handleBroadcast(p) {
         const st = ss.getSheetByName('Staff');
         const stData = st ? st.getDataRange().getValues() : [];
 
-        // Target: ALL, or one group that exists in Staff col D (any case). Anything else is refused - a typo must not
-        // silently reach nobody.
+        // Target: ALL, one group that exists in Staff col D, or one active worker (any case). Anything else is refused - a
+        // typo must not silently reach nobody. __56_: a group wins over a worker of the same name (_staffPeople_ leaves those out; the sync/push rule
+        // also matches a worker of that exact name, so the notice and the push stay the same people).
         const tRaw = String(p.target == null ? '' : p.target).trim();
         let target = 'ALL';
         if (tRaw && tRaw.toLowerCase() !== 'all') {
-            const g = _staffGroups_(stData).filter(function (x) { return x.toLowerCase() === tRaw.toLowerCase(); })[0];
+            const g = _staffGroups_(stData).filter(function (x) { return x.toLowerCase() === tRaw.toLowerCase(); })[0]
+                   || _staffPeople_(stData).filter(function (x) { return x.name.toLowerCase() === tRaw.toLowerCase(); }).map(function (x) { return x.name; })[0];
             if (!g) {
-                _audit_('broadcast:refused', '', '', '', '', '', '', 'unknown group "' + tRaw.substring(0, 60) + '"');
-                return { status: 'error', message: 'Unknown group: ' + tRaw.substring(0, 60) };
+                _audit_('broadcast:refused', '', '', '', '', '', '', 'unknown group or worker "' + tRaw.substring(0, 60) + '"');
+                return { status: 'error', message: 'Unknown group or worker: ' + tRaw.substring(0, 60) };
             }
             target = g;
         }
@@ -7031,7 +7052,7 @@ function handleBroadcast(p) {
         const isEm = priority === 'EMERGENCY';
         const title = (isEm ? 'EMERGENCY' : 'URGENT') + ' from HQ';
         const org = (CONFIG.ORG_NAME && !String(CONFIG.ORG_NAME).includes('%%')) ? String(CONFIG.ORG_NAME).trim() : '';
-        const body = (org ? org + ' HQ:\n' : '') + content + '\n\nOpen the safety app and slide Acknowledge.';
+        const body = (org ? org + ' HQ:\n' : '') + content + '\n\nOpen the safety app and slide Acknowledge. Can\'t see it? Close the app fully, then open it again.';
         const click = _settings_().workerAppUrl;
         _sendOrQueue_('broadcast ' + id, function () { _broadcastSend_(id, priority, target, title, body, isEm, click, send, noTopic, held, total); });
         _audit_('broadcast:queued', '', '', '', '', '', '', id + ' ' + priority + ' to ' + target + ': ' + send.length + ' to push, ' +
@@ -7087,8 +7108,10 @@ function _dashboardExtras_(out) {
         const ss = SpreadsheetApp.getActiveSpreadsheet();
         try {
             const st = ss.getSheetByName('Staff');
-            out.groups = st ? _staffGroups_(st.getDataRange().getValues()) : [];
-        } catch (e) { out.groups = []; }
+            const sd = st ? st.getDataRange().getValues() : [];
+            out.groups = _staffGroups_(sd);
+            out.staff = _staffPeople_(sd);   // __56_: for the Send to list (name + has phone alerts; never the topic)
+        } catch (e) { out.groups = []; out.staff = []; }
         const notices = [];
         try {
             const sh = ss.getSheetByName('Notices');
@@ -7106,6 +7129,35 @@ function _dashboardExtras_(out) {
             }
         } catch (e) {}
         out.notices = notices;
+    } catch (e) {}
+    return out;
+}
+
+// ==========================================
+// __56_ (session 107): individual broadcast targets, site contact in the Monitor feed
+// ==========================================
+/**
+ * __56_ (R75 follow-up): the people HQ can pick one by one in the Monitor's "Send to" list - active staff only, with
+ * whether they have phone alerts (a valid topic in Staff col J; the topic itself is never sent). Left out: a blank name,
+ * a name with a comma (the notice target is a comma list, so it could not be told apart), "all", and a name that is also
+ * a group (the group wins - picking it targets the group). Sorted by name. Never throws.
+ */
+function _staffPeople_(stData) {
+    const out = [];
+    try {
+        const groups = Object.create(null);
+        _staffGroups_(stData).forEach(function (g) { groups[g.toLowerCase()] = true; });
+        const seen = Object.create(null);
+        (stData || []).forEach(function (r, i) {
+            if (i === 0) return;
+            const name = String(r[0] == null ? '' : r[0]).trim(), key = name.toLowerCase();
+            if (!name || name.indexOf(',') >= 0 || key === 'all' || groups[key] || seen[key]) return;
+            if (String(r[2] || '').trim().toLowerCase() === 'inactive') return;
+            seen[key] = true;
+            const topic = String(r[WORKER_TOPIC_COL - 1] == null ? '' : r[WORKER_TOPIC_COL - 1]).trim();
+            out.push({ name: name, alerts: !!(topic && _topicOk_(topic)) });
+        });
+        out.sort(function (a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : a.name.toLowerCase() > b.name.toLowerCase() ? 1 : 0; });
     } catch (e) {}
     return out;
 }
