@@ -192,6 +192,15 @@
  *   - Settings tab: two new keys added with their defaults (existing values never changed); Health email shows them.
  *   - Contact escalation (tiers, Critical ladder, col AA claims, All Clear audience) is unchanged.
  *
+ * __57_ (session 108, 30 Oct 2026, Sonnet 5.5 high) - THE LIGHT NOTICE CHECK (Russell: "the cheap A and the cheaper B"):
+ *   - New GET action 'noticeCheck' (master or worker key, like the sync): answers { status, ids, build } where ids are the
+ *     ids of the Active notices this worker may see, newest first, at most 10 - exactly the ids the sync puts in
+ *     meta.noticeHistory, but ids only (a few hundred bytes, and only the Staff and Notices tabs are read).
+ *   - Worker __29_ asks it every 5 minutes while a visit is open and when the dim screen is woken, and does a full sync only
+ *     when the answer differs from the notices it already holds (a phone left open never heard about a Normal notice before).
+ *   - Read only: no Audit row, no stamp, no write. The gate is the sync's own ("Access Denied." for an unknown or Inactive worker).
+ *   - Unchanged: getSyncData, the broadcast and its push, the ladders, the alarms, the Monitor feed, Settings keys.
+ *
  * __56_ (session 107, 30 Oct 2026, Sonnet 5.5 high) - R75 follow-ups after Russell's device test of __55_ / Monitor __15_:
  *   - The broadcast push now ends "Open the safety app and slide Acknowledge. Can't see it? Close the app fully, then open it
  *     again." (the worker app only fetches notices when it starts until worker __28_ adds the foreground sync, F107-2).
@@ -478,6 +487,7 @@ function doGet(e) {
       if(p.test) return (p.key === CONFIG.MASTER_KEY) ? sendResponse(e, {status:"success"}) : sendResponse(e, {status:"error"});
       if(p.key === CONFIG.MASTER_KEY && !p.action) return sendResponse(e, _dashboardExtras_(getDashboardData()));   // __55_ (R75): + groups, notices
       if(p.action === 'sync') return (p.key === CONFIG.MASTER_KEY || p.key === CONFIG.WORKER_KEY) ? sendResponse(e, getSyncData(p.worker, p.deviceId)) : sendResponse(e, {status:"error"});
+      if(p.action === 'noticeCheck') return (p.key === CONFIG.MASTER_KEY || p.key === CONFIG.WORKER_KEY) ? sendResponse(e, handleNoticeCheck_(p.worker)) : sendResponse(e, {status:"error"});   // __57_: ids only, read only
       if(p.action === 'getGlobalForms') return sendResponse(e, getGlobalForms());
       if(p.action === 'viewProcedures' && p.siteName) {
           if (p.key !== CONFIG.MASTER_KEY && p.key !== CONFIG.WORKER_KEY) return sendResponse(e, {status:'error'});
@@ -5467,7 +5477,7 @@ function _formsGps_(sheet, rowNum, p) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__56_';
+const TEMPLATE_BUILD = 'backend__57_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
@@ -7160,4 +7170,52 @@ function _staffPeople_(stData) {
         out.sort(function (a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : a.name.toLowerCase() > b.name.toLowerCase() ? 1 : 0; });
     } catch (e) {}
     return out;
+}
+
+// ==========================================
+// __57_ (session 108): THE LIGHT NOTICE CHECK
+// ==========================================
+// Why: a phone left open on a visit (screen dim or not) never asked for notices, and a full sync is big (sites, forms,
+// form templates, notices). The phone now asks this tiny question every few minutes and on waking, and does the full sync
+// only when the answer changed. Design: Russell, 30 Oct 2026 ("cheap A and the cheaper B").
+//   - Read only. It writes nothing (no Audit row, no stamp) - the full sync does not either, so nothing is lost.
+//   - Same keys as the sync (master or worker key), same worker gate (a name in Staff, not Inactive), same filter (Status
+//     exactly 'Active', Target through _targetMatch_ - the rule the sync and the broadcast push share), same newest-first
+//     walk and the same limit of 10. So "the ids this answers" are exactly the ids of the sync's meta.noticeHistory.
+//   - It returns ids only - never a title or the text - so it is a few hundred bytes.
+const NOTICE_CHECK_MAX = 10;   // the sync's own limit on noticeHistory
+
+/**
+ * __57_: the ids of the Active notices this worker may see, newest first, at most 10 - the same list the sync would put in
+ * meta.noticeHistory. Errors are the sync's own ("Access Denied." for an unknown or Inactive worker). Never throws.
+ */
+function handleNoticeCheck_(workerName) {
+    try {
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        const stSheet = ss.getSheetByName('Staff');
+        if (!stSheet) return { status: 'error', message: 'Staff sheet missing.' };
+        const name = (workerName || '').toString().toLowerCase().trim();
+        const stData = stSheet.getDataRange().getValues();
+        let found = false, groups = '';
+        for (let i = 1; i < stData.length; i++) {
+            if ((stData[i][0] || '').toString().toLowerCase().trim() === name) {
+                if ((stData[i][2] || '').toString().trim().toLowerCase() === 'inactive') return { status: 'error', message: 'Access Denied.' };
+                found = true;
+                groups = (stData[i][3] || '').toString().toLowerCase();
+                break;
+            }
+        }
+        if (!found) return { status: 'error', message: 'Access Denied.' };
+        const ids = [];
+        const nSheet = ss.getSheetByName('Notices');
+        if (nSheet) {
+            const nData = nSheet.getDataRange().getValues();
+            for (let i = nData.length - 1; i > 0 && ids.length < NOTICE_CHECK_MAX; i--) {
+                if (nData[i][6] === 'Active' && _targetMatch_(nData[i][7], name, groups)) ids.push(nData[i][1]);
+            }
+        }
+        return { status: 'success', ids: ids, build: TEMPLATE_BUILD };
+    } catch (err) {
+        return { status: 'error', message: String(err) };
+    }
 }
