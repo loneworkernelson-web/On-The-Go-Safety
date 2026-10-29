@@ -640,7 +640,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
  <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety On-The-Go!</span>
- <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__28_</span>
+ <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__29_</span>
  </h1>
  </div>
  <div class="flex items-center">
@@ -1191,7 +1191,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
  <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
- <div id="appBuild" class="text-xs font-mono text-gray-400">worker__28_</div>
+ <div id="appBuild" class="text-xs font-mono text-gray-400">worker__29_</div>
  </div>
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">Backend Version</div>
@@ -1770,8 +1770,19 @@ const RISK_WELFARE_MAP = {
 //  R75 a short sound and a buzz when a notice arrives (once per notice, never during an alarm): Normal one soft beep,
 //      Urgent two beeps, Emergency three longer beeps; the buzz follows the same count. The sound needs the app on screen and
 //      one earlier tap on the phone (browser rule); the buzz is not available on iPhone.
+// __29_ changes (session 108, Sonnet 5.5 high, from __28_). THE LIGHT NOTICE CHECK. Needs backend __57_ (an older backend is
+//   detected once and the app then behaves exactly as __28_).
+//   Russell's device test of __28_: a Normal notice (from the Monitor or typed in the sheet) never arrived while the app sat open
+//   on a visit with the dim screen; only closing and reopening the app fetched it. Cause: the __28_ sync runs when the app comes
+//   BACK to the screen, and sliding Wake on the dim screen is not a return; the app had no timer that asks for notices.
+//   - Every 5 minutes while a visit is open (screen on or dim), and 1.5 s after the dim screen is woken, the app asks the backend
+//     for the ids of the notices this worker may see (a few hundred bytes - not the full sync of sites, forms and templates).
+//   - Only if those ids differ from the notices the app holds does it do the full sync, which then shows the notice (or the
+//     amber "slide Wake to read" cue on the dim screen, with the sound and buzz once) exactly as in __28_.
+//   - Never during an alarm, never offline, never while the app is hidden (the poll); a wake check at most once a minute; a full
+//     sync from a check at most once a minute. A failed check says nothing and is tried again at the next poll.
 // =============================================================================
-const WORKER_BUILD = 'worker__28_';
+const WORKER_BUILD = 'worker__29_';
 
 const CONFIG = {
  url: '',
@@ -2998,6 +3009,8 @@ function deactivateBatterySaver() {
  console.log('Battery Saver: deactivated.');
  // __28_ (F107-5): a notice that waited behind the dim screen opens now
  try { setTimeout(checkActiveNotice, 300); } catch (_) {}
+ // __29_: and ask the backend whether a newer notice is waiting (a tiny check; the full sync only if the answer changed)
+ try { setTimeout(() => _noticeLightCheck('wake'), 1500); } catch (_) {}
 }
 
 /**
@@ -11428,6 +11441,85 @@ function _noticeRetry() {
   } catch (_) {}
 }
 
+// ====== __29_ (R75 follow-up): THE LIGHT NOTICE CHECK ======
+const NOTICE_POLL_MS = 300000;           // ask every 5 minutes while a visit is open
+const NOTICE_POLL_MIN_MS = 240000;       // ...but not if a check started less than 4 minutes ago (a wake check just asked)
+const NOTICE_WAKE_MIN_MS = 60000;        // waking the dim screen asks at most once a minute
+const NOTICE_CHECK_SYNC_MIN_MS = 60000;  // a difference found starts the full sync at most once a minute
+const NOTICE_CHECK_TIMEOUT_MS = 15000;   // a check that gets no answer is dropped
+let _lcAt = 0;                // when a check last started
+let _lcSyncAt = 0;            // when a check last started a full sync
+let _lcBusy = false;          // one check at a time
+let _lcUnsupported = false;   // the backend does not know the check (older than __57_): behave as __28_ for the rest of this run
+
+/** The ids of the notices the app holds (the sync's noticeHistory), as text, blanks dropped, sorted. Never throws. */
+function _noticeIdsHeld() {
+  try {
+    const h = state && state.meta && Array.isArray(state.meta.noticeHistory) ? state.meta.noticeHistory : [];
+    return h.filter(n => n && n.id !== undefined && n.id !== null && String(n.id) !== '').map(n => String(n.id)).sort();
+  } catch (_) { return []; }
+}
+
+/** True when the backend's ids are not the same set as the ones the app holds. */
+function _noticeIdsDiffer(remote) {
+  const r = (Array.isArray(remote) ? remote : []).filter(x => x !== undefined && x !== null && String(x) !== '').map(x => String(x)).sort();
+  const h = _noticeIdsHeld();
+  return r.length !== h.length || r.some((x, i) => x !== h[i]);
+}
+
+/**
+ * Ask the backend which notice ids this worker may see; start the quiet full sync only if they differ from the ones held.
+ * reason: 'poll' (every 5 minutes, only while a visit is open) or 'wake' (the dim screen was woken). Returns whether a check
+ * was started. Never during an alarm, never offline, never while hidden, never before the worker is set up. Never throws.
+ */
+function _noticeLightCheck(reason) {
+  try {
+    if (_lcUnsupported || _lcBusy) return false;
+    if (document.visibilityState && document.visibilityState !== 'visible') return false;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+    if (!CONFIG || !CONFIG.key || CONFIG.key.length < 3 || !CONFIG.url) return false;
+    if (!state || !state.worker || !state.worker.name) return false;
+    if (reason === 'poll' && !state.activeVisit) return false;
+    if (_noticeInAlarm()) return false;
+    const now = Date.now();
+    if (now - _lcAt < (reason === 'wake' ? NOTICE_WAKE_MIN_MS : NOTICE_POLL_MIN_MS)) return false;
+    _lcAt = now;
+    _lcBusy = true;
+    const url = CONFIG.url + '?action=noticeCheck&worker=' + encodeURIComponent(state.worker.name) + '&key=' + encodeURIComponent(CONFIG.key) +
+                '&deviceId=' + encodeURIComponent(getDeviceID()) + '&_cb=' + now;
+    const ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => { try { ctl.abort(); } catch (_) {} }, NOTICE_CHECK_TIMEOUT_MS) : null;
+    const done = () => { _lcBusy = false; if (timer) clearTimeout(timer); };
+    fetch(url, ctl ? { signal: ctl.signal } : undefined).then(r => r.json()).then(data => {
+      done();
+      try {
+        if (!data || data.status !== 'success' || !Array.isArray(data.ids)) {
+          // an older backend answers an unknown action with a bare error (no message); "Access Denied." and the like have one
+          if (data && data.status === 'error' && !data.message) {
+            _lcUnsupported = true;
+            try { _diag('[R75] light notice check: backend older than __57_, no poll', true); } catch (_) {}
+          }
+          return;
+        }
+        if (!_noticeIdsDiffer(data.ids)) return;
+        if (_noticeInAlarm()) return;                      // an alarm started while we were asking: stay out of its way
+        const t = Date.now();
+        if (t - _lcSyncAt < NOTICE_CHECK_SYNC_MIN_MS) return;
+        _lcSyncAt = t; _fgSyncAt = t;                      // the return-to-app sync then does not follow straight after
+        try { _diag('[R75] light notice check (' + reason + '): notices changed, syncing', true); } catch (_) {}
+        forceSync(false, true);                            // quiet; checkActiveNotice runs after it and shows the notice or the cue
+      } catch (e) {
+        try { _diag('[R75] light notice check error: ' + (e && e.message || e), true); } catch (_) {}
+      }
+    }, () => { done(); });                                 // no network, a timeout or a bad reply: silent, the next poll tries again
+    return true;
+  } catch (e) {
+    _lcBusy = false;
+    try { _diag('[R75] light notice check error: ' + (e && e.message || e), true); } catch (_) {}
+    return false;
+  }
+}
+
 function _noticeWire() {
   ['pointerdown', 'touchstart'].forEach(ev => document.addEventListener(ev, _noticeAudioUnlock, { passive: true }));
   // 2.5 s after the return-to-app work in the visibilitychange handler below (alarm catch-up, outbox flush)
@@ -11435,6 +11527,7 @@ function _noticeWire() {
   window.addEventListener('focus', () => setTimeout(_foregroundSync, 2500));
   window.addEventListener('pageshow', () => setTimeout(_foregroundSync, 2500));
   setInterval(_noticeRetry, NOTICE_RETRY_MS);
+  setInterval(() => _noticeLightCheck('poll'), NOTICE_POLL_MS);   // __29_: while a visit is open (the check itself says no otherwise)
 }
 _noticeWire();
  
