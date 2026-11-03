@@ -19,7 +19,7 @@ The OTG AppSuite consists of four components. Three are runtime components used 
  
 The Worker App is a Progressive Web Application (PWA). It is a single HTML file containing all application logic and styles, plus a service worker that enables offline operation. There is no native app store involved; workers receive their app as a file and install it by opening it in a browser and adding it to their home screen.
  
-The App Factory generates a deployment ZIP for each worker containing the canonical Worker App HTML file and a worker-specific configuration file (config.json). The configuration file contains the worker’s name, their API key (prefixed wk_), the backend endpoint URL, and the organisation’s settings. The Worker App HTML itself is a shared, unmodified file — only the configuration differs between workers. On first open, the worker completes a short setup wizard that establishes their local identity and device registration.
+The App Factory generates one deployment ZIP for the organisation, containing the canonical Worker App HTML file and the organisation's configuration file (config.json). The configuration file contains the organisation's Worker Key (prefixed wk_), the backend endpoint URL, branding, and the organisation's settings. It does not contain a worker's name, and every worker receives the same files. The Worker App HTML itself is a shared, unmodified file. On first open, the worker completes a short setup wizard in which they type their name and the app registers their phone (Section 2.2).
  
 Persistent data — including the offline upload outbox, visit state, and site/template data — is stored in IndexedDB and localStorage. The outbox uses IndexedDB with idempotency keys to ensure that queued uploads are retried without duplication after a connectivity gap.
  
@@ -39,8 +39,8 @@ The backend is a Google Apps Script (GAS) web application deployed as a Web App 
 - **Forms:** One row for each submitted form (pre-visit, closing report, Note to Self), with a Visit ID linking it to its visit. Old rows move to FormsArchive.
 - **Procedures History:** Visible, append-only. Before a site's safety information is replaced, the old links are written here (Section 3.9). Nothing is deleted from Drive.
 - **Audit:** Hidden debugging trail written by the backend (Section 3.10). It is not a record of events; Visits and Forms are the permanent records.
-
-Display and bookkeeping columns on the Visits sheet: column A is the machine timestamp (UTC), the one to sort and filter on; column B is the local start date and time held as text; AC is a display-only local "Last Update"; Z holds worker-reminder memory; AA and AB hold the escalation memory and the Visit ID; AD and AE hold the welfare check time and its memory; AF holds the server time the phone was last heard from. The Forms sheet has a display-only "Received (local)" column and the Audit has "Time (local)". The Staff sheet's column J "Worker Alert Topic" is made by the backend; clearing the cell resets a topic that has leaked. Phone numbers in Visits are stored as text so a leading zero is never lost. Photos attached to a Note to Self are emailed but not stored in Drive.
+ 
+Display and bookkeeping columns on the Visits sheet: column A is the machine timestamp (UTC); column B is the local start date and time held as text; AC is a display-only local "Last Update"; Z holds worker-reminder memory; AA and AB hold the escalation memory and the Visit ID; AD and AE hold the welfare check time and its memory; AF holds the server time the phone was last heard from. **Never sort the Visits, Forms or Audit tabs:** the backend assumes the newest visit is the bottom row, and a sort moves live visits out of the rows it checks. To view a tab in another order, use Data > Create a filter view, which changes only your own view. The Forms sheet has a display-only "Received (local)" column and the Audit has "Time (local)". The Staff sheet's column J "Worker Alert Topic" is made by the backend; clearing the cell resets a topic that has leaked. Phone numbers in Visits are stored as text so a leading zero is never lost. Photos attached to a Note to Self are emailed but not stored in Drive.
 The GAS web app exposes a single HTTPS endpoint for all operations. There is no separate hosting infrastructure; it runs entirely on Google’s servers under the organisation’s Workspace account.
  
 A set of time-driven triggers runs continuously in the background: an overdue-visit watchdog (checks all active visits and fires escalation alerts), an archiver (moves old records), and a weekly health-report emailer. A Healthchecks.io dead-man’s switch integration monitors the watchdog trigger — if it stops firing for any reason, an external alert is raised.
@@ -67,32 +67,36 @@ The App Factory is a standalone HTML file used by administrators to generate wor
  
 ## **2.1 API Key Architecture**
  
-The system uses two classes of API key, both stored in configuration rather than being user-visible:
+The system uses two classes of API key, both held in configuration:
  
 | **Key Type** | **Scope and Use** |
 | --- | --- |
-| **Worker Key** | Unique per worker (format: wk_xxxxx). Grants access to the sync endpoint for that worker’s data only. Cannot access other workers’ records or the monitor endpoint. Stored in the worker’s config.json. |
-| **Master Key** | Single key for the organisation. Required for the Monitor App and administrative backend operations. Should be treated as a secret credential and not distributed to workers. |
+| **Worker Key** | One key for the whole organisation (format: wk_xxxxx), shared by every worker and written into config.json. It lets its holder sync and post for any worker whose name they know, including raising and clearing alarms. It cannot read the Monitor feed and cannot send broadcasts. It is not a secret: see the note below. |
+| **Master Key** | Single key for the organisation. Required for the Monitor App and administrative backend operations. Should be treated as a secret credential and not distributed to workers. The Monitor keeps it in the supervisor browser's local storage so that it signs in automatically; use the Monitor only on devices you trust. |
  
-| **Security model note:**** **The worker key is stored in config.json within the worker’s app bundle. Anyone with access to the bundle files can extract it. The security model relies on device binding (see 2.2) to prevent key reuse on another device, not on the key being secret from the holder. |
+| **Security model note:**** **The Worker Key is an organisation-wide shared key, not a per-worker credential. It is in config.json, which the web host serves along with the app, so anyone who can open the app address can read it. It identifies the organisation, not the person. What a holder can then do is limited by the device check (Section 2.2), which is narrow, and by the input handling in Section 2.4. Known weaknesses at the time of this version: with the Worker Key and a worker's name, a person can post as that worker, including closing a real alarm and sending that worker's contacts an All Clear message; they can also download that worker's site list, site contacts and safety links. These are recorded and are being addressed in the backend. Ask for the current status before approving a deployment, and keep the app address to the people who need it. |
 | --- |
  
-## **2.2 Device Binding**
+## **2.2 Device Registration**
  
-Each Worker App registers a device identity on first use. The device ID is a stable pseudorandom identifier derived from browser properties (not a hardware identifier, as those are not accessible from a web app). This ID is written to the Staff sheet during the setup wizard.
+Each Worker App registers a device identity on first use. The device ID is a stable pseudorandom identifier derived from browser properties (not a hardware identifier, as those are not accessible from a web app). It is written to the Staff sheet (column E) during the setup wizard. Registration is first come, first served: if the Staff row for that name has no device ID yet, the first phone to register with that name is bound to it.
  
-Every subsequent request to the backend includes the device ID. The backend validates it against the registered ID for that worker. If they do not match, all data requests are denied — the worker sees an ‘Authorised Device’ error. This prevents a copied or forwarded app bundle from being used on a different device. The binding can only be cleared by an administrator editing the Staff sheet directly.
+The device ID is then checked in only two places. A second phone that tries to register under a name that is already bound is refused, with a message asking the worker to contact their administrator. And the actions that make or return the worker's own phone-alerts topic (Staff column J) are refused for any phone other than the registered one. **The device ID is not checked on the other requests**: sync, visit posts, alarm posts, form submissions and alarm clears are accepted on the Worker Key alone. Device registration therefore does not stop a copied app from being used to post as a worker, and it should not be treated as device-level access control. The binding is cleared by an administrator emptying column E of the worker's Staff row.
  
-| **Limitation:**** **Because the device ID is derived from browser properties rather than hardware, it may change if the worker clears all browser data, reinstalls the operating system, or switches browsers. The fix is straightforward — an admin clears the registered ID in the Staff sheet. Organisations with very high security requirements may prefer a native app solution with hardware-level device binding. |
+| **Limitation:**** **Because the device ID is derived from browser properties rather than hardware, it may change if the worker clears all browser data, reinstalls the operating system, or switches browsers. The fix is straightforward — an admin clears the registered ID in the Staff sheet. Organisations that need real device-level binding should not rely on this feature; it would need a native app with hardware-backed identity, or changes to the backend. |
 | --- |
  
 ## **2.3 Transport Security**
  
 All communication between the Worker App and the backend uses HTTPS. The Apps Script endpoint is served under Google’s TLS infrastructure. Google enforces HTTPS on all Apps Script web app URLs — plain HTTP is not possible.
  
-## **2.4 Input Validation and Injection Prevention**
+## **2.4 Input Handling and Injection**
  
-Worker names submitted to the backend are sanitised before use in spreadsheet operations. The backend checks that names consist only of printable characters and strips anything that could be interpreted as a spreadsheet formula (strings beginning with =, +, -, or @). GPS coordinate fields are validated as numeric pairs before insertion. Form data is stored as plain text values — not evaluated — by the Google Sheets API.
+**Backend.** Text from posts (worker name, notes, location, GPS and form answers) is written to the spreadsheet as received. The backend does not check that a worker name is made of printable characters, does not strip or escape a leading =, +, - or @, and does not check that a GPS value is a pair of numbers before it is stored. The one place GPS values are parsed as numbers is when a distance or an address is calculated. Google Sheets can treat text that begins with = as a formula. Because anyone holding the Worker Key can post, the administrators who open the spreadsheet should treat cell contents as untrusted text.
+ 
+**Monitor.** From Monitor build __17_, every value from the sheet is escaped before it is drawn, none is placed inside script text, a GPS value is shown only if it is a pair of numbers, and the CSV export marks text that starts with = + - or @ so that Excel will not run it. Monitor builds before __17_ placed the GPS value and the worker name inside page script without escaping them; a crafted value posted with the Worker Key could run in the supervisor's browser and read the Master Key stored there. Use Monitor __17_ or later.
+ 
+**Alert emails.** Worker name, site name and address are placed in contact alert emails without escaping; a poster with the Worker Key could therefore shape the wording of an alert email. This is recorded for a later backend build.
  
 ## **2.5 PII Redaction**
  
@@ -417,7 +421,7 @@ The main areas to assess against organisational requirements are:
 - **Alert chain adequacy:** Whether the nominated-contact notification model (email, SMS, push) provides a sufficiently reliable and timely response for the hazards workers face.
 - **Data residency:** Whether transmitting report content to the Gemini API, GPS data to the SMS provider and OpenRouteService, alarm events to ntfy, and coordinates to what3words and Nominatim is acceptable under the organisation’s privacy obligations. Each feature is independently disableable.
 - **Offline alert risk:** Whether zero-coverage scenarios are a realistic risk for the organisation’s field environments, and whether a backup alerting mechanism is needed.
-- **Device management:** Whether the browser-derived device ID provides sufficient binding strength, or whether a stronger device identity mechanism is required.
+- **Access control:** Whether an organisation-wide Worker Key, with a device check only at registration (Sections 2.1 and 2.2), is acceptable, or whether a stronger per-worker or hardware-backed identity is required. The current known weaknesses are listed in Sections 2.1 and 2.4.
 - **Monitor access control:** Whether all Monitor App users requiring the same level of access is acceptable, or whether per-team filtering needs to be added.
 - **Watchdog monitoring:** Whether the Healthchecks.io integration (or an equivalent mechanism) is in place to alert administrators if the backend watchdog stops running.
 The system is well-suited for organisations that want a capable, maintainable, and cost-effective lone worker safety solution without the complexity and cost of a dedicated SaaS platform — provided their deployments occur in areas with reasonable mobile data coverage, their nominated contacts are reliably reachable, and their workers use supported iOS or Android devices.
