@@ -584,7 +584,11 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  aria-label="Primary contact ntfy push notification topic (optional)"
  oninput="state.worker.emgNtfy = this.value; saveState()" 
  class="w-full bg-white/10 border border-white/10 rounded-xl p-3 text-white text-sm outline-none focus:border-teal-500 transition-all font-mono">
- <p class="text-xs text-teal-300/70 -mt-1 leading-relaxed">Ask your contact to install the <strong>ntfy app</strong>, create a private topic, and share the topic name with you. They'll get an instant push notification when any alarm fires.</p>
+ <p class="text-xs text-teal-300/70 -mt-1 leading-relaxed">Ask your contact to install the <strong>ntfy app</strong>, create a private topic, and share the topic name with you. They'll get an instant push notification when any alarm fires. Or tap <strong>Make a topic for me</strong>, then <strong>Share it with my contact</strong>.</p>
+ <div class="flex gap-2 ">
+ <button type="button" onclick="makeContactTopic('wizContactNtfy','emgNtfy')" class="flex-1 py-2 bg-teal-700 hover:bg-teal-600 text-white text-xs font-bold rounded-xl">Make a topic for me</button>
+ <button type="button" onclick="shareContactTopic('wizContactNtfy')" class="flex-1 py-2 bg-gray-700 hover:bg-gray-600 text-white text-xs font-bold rounded-xl">Share it with my contact</button>
+ </div>
  </div>
 
  <div class="bg-blue-900/20 border border-blue-500/20 p-4 rounded-2xl space-y-3">
@@ -618,6 +622,10 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  aria-label="Escalation contact ntfy push notification topic (optional)"
  oninput="state.worker.escNtfy = this.value; saveState()" 
  class="w-full bg-white/10 border border-white/10 rounded-xl p-3 text-white text-sm outline-none focus:border-teal-500 transition-all font-mono">
+ <div class="flex gap-2 ">
+ <button type="button" onclick="makeContactTopic('wizEscNtfy','escNtfy')" class="flex-1 py-2 bg-teal-700 hover:bg-teal-600 text-white text-xs font-bold rounded-xl">Make a topic for me</button>
+ <button type="button" onclick="shareContactTopic('wizEscNtfy')" class="flex-1 py-2 bg-gray-700 hover:bg-gray-600 text-white text-xs font-bold rounded-xl">Share it with my contact</button>
+ </div>
  </div>
  </div>
  </div>
@@ -640,7 +648,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
  <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety On-The-Go!</span>
- <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__29_</span>
+ <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__30_</span>
  </h1>
  </div>
  <div class="flex items-center">
@@ -1085,12 +1093,20 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <input id="setEmgName" type="text" class="form-input-card">
  <input id="setEmgPhone" type="tel" class="form-input-card">
  <input id="setEmgEmail" type="email" class="form-input-card">
- <input id="setEmgNtfy" type="text" placeholder="ntfy topic (optional push alerts)" autocomplete="off" autocorrect="off" spellcheck="false" class="form-input mb-4 font-mono text-sm">
+ <input id="setEmgNtfy" type="text" placeholder="ntfy topic (optional push alerts)" autocomplete="off" autocorrect="off" spellcheck="false" class="form-input mb-2 font-mono text-sm">
+ <div class="flex gap-2 mb-4">
+ <button type="button" onclick="makeContactTopic('setEmgNtfy','emgNtfy')" class="flex-1 py-2 bg-teal-700 hover:bg-teal-600 text-white text-xs font-bold rounded-xl">Make a topic for me</button>
+ <button type="button" onclick="shareContactTopic('setEmgNtfy')" class="flex-1 py-2 bg-gray-700 hover:bg-gray-600 text-white text-xs font-bold rounded-xl">Share it with my contact</button>
+ </div>
  <label class="setting-label lbl-gray">Escalation Contact</label>
  <input id="setEscName" type="text" class="form-input-card">
  <input id="setEscPhone" type="tel" class="form-input-card">
  <input id="setEscEmail" type="email" class="form-input-card">
- <input id="setEscNtfy" type="text" placeholder="ntfy topic (optional push alerts)" autocomplete="off" autocorrect="off" spellcheck="false" class="form-input font-mono text-sm">
+ <input id="setEscNtfy" type="text" placeholder="ntfy topic (optional push alerts)" autocomplete="off" autocorrect="off" spellcheck="false" class="form-input mb-2 font-mono text-sm">
+ <div class="flex gap-2 ">
+ <button type="button" onclick="makeContactTopic('setEscNtfy','escNtfy')" class="flex-1 py-2 bg-teal-700 hover:bg-teal-600 text-white text-xs font-bold rounded-xl">Make a topic for me</button>
+ <button type="button" onclick="shareContactTopic('setEscNtfy')" class="flex-1 py-2 bg-gray-700 hover:bg-gray-600 text-white text-xs font-bold rounded-xl">Share it with my contact</button>
+ </div>
  </div>
  <div class="mb-6">
  <h2 class="text-xl font-bold text-purple-400 mb-4">Preferences</h2>
@@ -1191,7 +1207,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
  <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
- <div id="appBuild" class="text-xs font-mono text-gray-400">worker__29_</div>
+ <div id="appBuild" class="text-xs font-mono text-gray-400">worker__30_</div>
  </div>
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">Backend Version</div>
@@ -1781,8 +1797,16 @@ const RISK_WELFARE_MAP = {
 //     amber "slide Wake to read" cue on the dim screen, with the sound and buzz once) exactly as in __28_.
 //   - Never during an alarm, never offline, never while the app is hidden (the poll); a wake check at most once a minute; a full
 //     sync from a check at most once a minute. A failed check says nothing and is tried again at the next poll.
+// __30_ changes (session 113, Sonnet 5.5 high, from __29_). Works with backend __57_ and __58_.
+//   S112-3  When a post comes back "success" with saved:false (backend __58_: this phone is not the one registered, so the server
+//           kept nothing), the app shows the server's own notice in an amber strip at the top until the worker taps OK. The post
+//           still counts as sent, so the queue moves on exactly as before (an error reply would jam it). The words are the
+//           server's; the app adds no reason and never mentions an alarm. Never shown during DURESS. Also logged in Diagnostics.
+//   S3-4    Under each contact's ntfy topic (set-up screen and Settings) two buttons: "Make a topic for me" fills the box with
+//           otg- plus 24 random characters (made on the phone, 96 bits, never Math.random), and "Share it with my contact" sends
+//           the name and the steps through the share sheet (or copies them). A box that already has a topic is never replaced.
 // =============================================================================
-const WORKER_BUILD = 'worker__29_';
+const WORKER_BUILD = 'worker__30_';
 
 const CONFIG = {
  url: '',
@@ -6928,7 +6952,11 @@ async function _outboxSend(record) {
    let data = null;
    try { data = await resp.json(); }
    catch (_) { return { outcome: 'server', detail: `Unreadable reply (HTTP ${resp.status})` }; }
-   if (data && data.status === 'success') return { outcome: 'sent', detail: '' };
+   if (data && data.status === 'success') {
+     // __30_ (S112-3): "success" with saved:false = the server kept nothing. Still 'sent' (the queue must move on), but flagged.
+     if (data.saved === false) return { outcome: 'sent', detail: '', refused: true, notice: _outboxNoticeText(data.notice) };
+     return { outcome: 'sent', detail: '' };
+   }
    if (data && data.status === 'error' && data.message === 'Busy') return { outcome: 'retry', detail: 'Server busy' };
    if (data && data.status === 'error' && !data.message) return { outcome: 'rejected', detail: 'Rejected by server (check app key)' };
    return { outcome: 'server', detail: String(data?.message || 'Unknown server reply').slice(0, 200) };
@@ -6962,8 +6990,10 @@ async function _outboxRunLane(lane) {
        row.attempts = (row.attempts || 0) + 1;
        if (row.lastError) row.prevError = row.lastError;   // __21_ (R49): keep why the earlier tries failed
        row.lastError = null;
+       if (res.refused) { row.refused = true; row.notice = res.notice; }   // __30_ (S112-3)
      });
      if ((record.attempts || 0) > 0) _outboxDiagTry(lane, record, (record.attempts || 0) + 1, 'sent');   // __21_ (R49)
+     if (res.refused) _outboxRefusalShow(record, res.notice);   // __30_ (S112-3)
      L.retryDelay = 2000;
      next = 300; // chain straight on to the next record
      sent = true;
@@ -7112,6 +7142,7 @@ async function _refreshUnconfirmedBanner() {
      kinds = _outboxUnconfirmed(await _outboxPendingRecords(db), Date.now());
    }
    let b = document.getElementById('unconfirmedBanner');
+   if (duressNow()) _outboxRefusalHide();   // __30_ (S112-3): nothing unusual on screen during DURESS
    if (!kinds.length || duressNow()) { if (b) b.remove(); return; }   // re-checked after the await
    const text = kinds.join(' and ') + ' not yet confirmed by the server - keep the app open';
    if (!b) {
@@ -7134,6 +7165,55 @@ async function _refreshUnconfirmedBanner() {
    const span = document.getElementById('unconfirmedBannerText');
    if (span && span.textContent !== text) span.textContent = text;
  } catch (_) { /* the banner must never affect delivery */ }
+}
+
+/**
+ * __30_ (S112-3): the server answered "success" but saved nothing (backend __58_: while an alarm is up, only the phone registered
+ * in Staff col E may clear or lower it). The record counts as sent so the queue moves on, but the worker must be told, or the
+ * app would look as if the departure / All Clear had worked. The words are the server's own (its notice); the app adds no
+ * reason and never mentions an alarm. Amber strip at the top (under any other banner) until the worker taps OK.
+ * NEVER shown during DURESS (nothing unusual may appear on screen then) and removed if DURESS starts while it is up.
+ */
+const OUTBOX_NOTICE_MAX = 300;
+const OUTBOX_NOTICE_FALLBACK = 'This was not saved. Please phone HQ if you need help.';
+
+/** The server's notice as plain one-line text (control characters out, 300 characters at most). Pure (tested). */
+function _outboxNoticeText(n) {
+  const t = String(n == null ? '' : n).replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, OUTBOX_NOTICE_MAX);
+  return t || OUTBOX_NOTICE_FALLBACK;
+}
+
+function _outboxRefusalHide() {
+  try { const b = document.getElementById('refusedBanner'); if (b) b.remove(); } catch (_) {}
+}
+
+function _outboxRefusalShow(record, notice) {
+  try {
+    const duressNow = isDuressActive || !!(state && state.activeVisit && state.activeVisit.isDuress);
+    const p = (record && record.payload) || {};
+    _diag('S112-3: server saved nothing for ' + (p['Alarm Status'] || p.action || 'a post') + (duressNow ? ' (DURESS - notice not shown)' : ' - notice shown') + ': ' + String(notice).slice(0, 120));
+    if (duressNow) return;
+    let top = 0;
+    ['buildMismatchBanner', 'unconfirmedBanner'].forEach(id => { const e = document.getElementById(id); if (e) top += (e.offsetHeight || 40); });
+    let b = document.getElementById('refusedBanner');
+    if (!b) {
+      b = document.createElement('div');
+      b.id = 'refusedBanner';
+      b.setAttribute('role', 'alert');
+      const span = document.createElement('span');
+      span.id = 'refusedBannerText';
+      const btn = document.createElement('button');
+      btn.textContent = 'OK';
+      btn.style.cssText = 'background:#fff;color:#b45309;font-weight:800;border-radius:8px;padding:6px 14px;white-space:nowrap;';
+      btn.onclick = (e) => { e.stopPropagation(); _outboxRefusalHide(); };
+      b.appendChild(span); b.appendChild(btn);
+      document.body.appendChild(b);
+    }
+    b.style.cssText = 'position:fixed;left:0;right:0;z-index:9998;background:#b45309;color:#fff;font-weight:800;font-size:13px;' +
+      'padding:10px 12px;display:flex;align-items:center;gap:10px;justify-content:space-between;top:' + top + 'px;';
+    const span = document.getElementById('refusedBannerText');
+    if (span) span.textContent = notice;
+  } catch (_) { /* telling the worker must never affect delivery */ }
 }
 
 /**
@@ -7199,6 +7279,7 @@ function _legacyEnqueue(payload) {
  .then(resp => resp.json())
  .then(data => {
  if (!data || data.status !== 'success') throw new Error((data && data.message) || 'Not confirmed');
+ if (data.saved === false) _outboxRefusalShow({ payload: item }, _outboxNoticeText(data.notice));   // __30_ (S112-3)
  state.pendingUploads.shift(); saveState();
  _legacyRetryDelay = 2000; _legacyProcessing = false;
  if (state.pendingUploads.length > 0) setTimeout(_legacyEnqueue, 500);
@@ -8626,6 +8707,78 @@ async function copyPhoneAlertTopic() {
   } catch (_) { ok = false; }
  }
  showToast(ok ? 'Topic name copied' : 'Copy blocked - select the name and copy it');
+}
+
+// ============================================================================
+// CONTACT TOPICS (__30_, S3-4) - "Make a topic for me" / "Share it with my contact"
+// ============================================================================
+// A contact's ntfy topic is the only secret between an alarm and the contact's phone: anyone who knows the name can read the
+// alerts. So it is made with the phone's secure random source (never Math.random: if there is none, nothing is made) -
+// 12 random bytes = 24 hex characters = 96 bits, like the worker's own topic. A box that already has a topic is never
+// replaced (the contact has probably subscribed to it already and would silently stop getting alerts).
+const CONTACT_TOPIC_BYTES = 12;
+
+function _newContactTopic() {
+  const c = (typeof crypto !== 'undefined') ? crypto : null;
+  if (!c || typeof c.getRandomValues !== 'function') return '';
+  const a = new Uint8Array(CONTACT_TOPIC_BYTES);
+  c.getRandomValues(a);
+  let h = '';
+  for (let i = 0; i < a.length; i++) h += ('0' + a[i].toString(16)).slice(-2);
+  return 'otg-' + h;
+}
+
+/** Fill the box with a new topic (only if it is empty) and keep it, so an alarm that fires before "Save" still uses it. */
+function makeContactTopic(inputId, stateKey) {
+  const el = document.getElementById(inputId);
+  if (!el) return;
+  if (String(el.value || '').trim()) { showToast('This box already has a topic - clear it first if you want a new one'); return; }
+  const t = _newContactTopic();
+  if (!t) { showToast('This phone cannot make a safe topic - ask your administrator'); return; }
+  el.value = t;
+  if (state && state.worker) { state.worker[stateKey] = t; try { saveState(); } catch (_) {} }
+  showToast('Topic made - now tap "Share it with my contact"');
+}
+
+/** The message for the contact: the topic name, the server if it is not ntfy.sh, and the steps. Pure (tested). */
+function _contactTopicMessage(topic, server) {
+  const onServer = server && server !== PHONE_ALERT_DEFAULT_SERVER;
+  return 'I have set you up to get safety alerts from my lone-worker app, as one of my emergency contacts.\n' +
+    '1. Install the free ntfy app (Google Play, F-Droid or the App Store).\n' +
+    '2. In ntfy, subscribe to this topic: ' + topic + (onServer ? '\n   (use this ntfy server: ' + server + ')' : '') + '\n' +
+    '3. Allow ntfy notifications with sound, and turn battery saving off for ntfy.\n' +
+    'Or open this link on your phone: ' + (server || PHONE_ALERT_DEFAULT_SERVER) + '/' + topic + '\n' +
+    'Please keep the topic name private - anyone who has it can read the alerts.';
+}
+
+async function _copyPlainText(t) {
+  let ok = false;
+  try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(t); ok = true; } } catch (_) { ok = false; }
+  if (!ok) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = t; ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;';
+      document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, t.length);
+      ok = document.execCommand('copy');
+      ta.remove();
+    } catch (_) { ok = false; }
+  }
+  return ok;
+}
+
+async function shareContactTopic(inputId) {
+  const el = document.getElementById(inputId);
+  const t = el ? String(el.value || '').trim() : '';
+  if (!t) { showToast('Make a topic first, or type the one your contact gave you'); return; }
+  if (!PHONE_ALERT_TOPIC_RE.test(t)) { showToast('A topic can only use letters, numbers, - and _'); return; }
+  const text = _contactTopicMessage(t, _phoneAlertServer());
+  if (navigator.share) {
+    try { await navigator.share({ title: 'Safety alerts - ntfy topic', text: text }); return; }
+    catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  const ok = await _copyPlainText(text);
+  showToast(ok ? 'Copied - paste it into a message to your contact' : 'Copy blocked - select the topic name and copy it');
 }
 
 function populateSettingsForm() {
