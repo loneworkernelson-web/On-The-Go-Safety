@@ -192,6 +192,22 @@
  *   - Settings tab: two new keys added with their defaults (existing values never changed); Health email shows them.
  *   - Contact escalation (tiers, Critical ladder, col AA claims, All Clear audience) is unchanged.
  *
+ * __58_ (session 112, 3 Nov 2026, Opus 5.5 high) - THE ALARM GATE (S3-2) AND INPUT CHECKS (S3-1, S3-5). Design: Russell.
+ *   - S3-2: HQ Resolve (action=resolve) needs the master key (the Monitor always sends it). Refused with the worker key.
+ *   - S3-2: while the worker's latest visit row is in alarm (col K rank 2+), a post from any phone other than the one in Staff
+ *     col E may only RAISE an alarm or report its position (ALARM_GPS_PULSE); its due time is ignored. Everything else
+ *     (notifySafety, PIN clear, Departed, Extended, Completed, a new visit, I'm OK, routine posts) is refused. No phone in
+ *     col E = refused too (re-register first). A refusal replies success with saved:false (an error reply would jam the
+ *     phone's alarm queue and block its later alarms), writes an Audit row (alarm-gate:refused) and sends one email per alarm
+ *     visit row (at most every 6 hours) to HEALTH_EMAIL or the script owner. Outside an alarm nothing changes.
+ *   - S3-1: Last Known GPS must be two numbers ("lat,lng"), otherwise it is recorded as 0,0 (no fix). A worker name with
+ *     characters a name does not use (or over 60 characters) is cleaned unless it exactly matches a Staff name. Never refused.
+ *   - S3-5: text written to the sheet that starts with = + - @ (tab, return) is stored as text (_cell_), on the Visits, Forms,
+ *     Audit, Staff, Notices, procedures history and SMS Log writes and in the monthly archive rewrite. GPS pairs and plain
+ *     numbers unchanged.
+ *   - Unchanged: every post from the registered phone, every post outside an alarm, raises, the ladders, All Clear wording,
+ *     the Monitor feed, the sync, Settings keys.
+ *
  * __57_ (session 108, 30 Oct 2026, Sonnet 5.5 high) - THE LIGHT NOTICE CHECK (Russell: "the cheap A and the cheaper B"):
  *   - New GET action 'noticeCheck' (master or worker key, like the sync): answers { status, ids, build } where ids are the
  *     ids of the Active notices this worker may see, newest first, at most 10 - exactly the ids the sync puts in
@@ -505,6 +521,7 @@ function doPost(e) {
   if(!e || !e.parameter) return sendJSON({status:"error"});
   if(e.parameter.key !== CONFIG.MASTER_KEY && e.parameter.key !== CONFIG.WORKER_KEY) return sendJSON({status:"error"});
   const _ep = e.parameter;
+  _cleanInputs_(_ep);   // __58_ (S3-1): GPS and worker name checked before anything uses them (busy path too)
   _settingsReset_();   // __48_: Settings are read once per execution
   _AUDIT_CTX = _auditCtxFor_(_ep); // __43_ (F86-7): template name + worker build on every audit row of this run
   const _epStatusIn = String(_ep['Alarm Status'] || ''); // __44_: as sent - handleWorkerPost may rewrite it (PIN clear)
@@ -574,6 +591,8 @@ function doPost(e) {
 
 /** __43_: doPost routing, run while the script lock is held. Returns the reply object. */
 function _doPostRoute_(p) {
+    const _gate = _alarmGate_(p);   // __58_ (S3-2): Resolve needs the master key; during an alarm only the registered phone may lower it
+    if (_gate) return _gate;
     if (p.action === 'resolve') { handleResolvePost(p); return { status: 'success' }; }
     if (p.action === 'registerDevice') return handleRegisterDevice(p);
     if (p.action === 'acknowledgeNotice') return handleNoticeAck(p);   // NEW 3: Notice Acknowledgments
@@ -1093,21 +1112,21 @@ function handleResolvePost(p) {
                         sheet.getRange(targetRow, 11).setValue(_restored);
                         if (_newDueMs > _due.getTime()) sheet.getRange(targetRow, 21).setValue(new Date(_newDueMs).toISOString());
                         const _tag = '[HQ RESOLVED ' + _fmtLocal_(_now, 'h:mm:ss a') + ' - still on site, due out ' + _fmtLocal_(new Date(_newDueMs), 'h:mm a') + ']';
-                        sheet.getRange(targetRow, 12).setValue((String(rowData[11] || '') + "\n" + _tag + ' ' + (p['Notes'] || '')).trim());
+                        sheet.getRange(targetRow, 12).setValue(_cell_((String(rowData[11] || '') + "\n" + _tag + ' ' + (p['Notes'] || '')).trim()));
                         _welfareAfterPinClear_(sheet, targetRow, rowData, _now, workerName);
                         _audit_('handleResolvePost:onsite', workerName, targetRow, status, _restored, p['Alarm Status'], p.idempotencyKey,
                                 'still on site - row stays open, due ' + (_newDueMs > _due.getTime() ? 'moved to ' : 'kept at ') + new Date(_newDueMs).toISOString() +
                                 ' (asked +' + _mins + ' min); a fresh ladder runs from it');
                         _stillMonitored = true;
                     } else {
-                        sheet.getRange(targetRow, 11).setValue(p['Alarm Status']); 
+                        sheet.getRange(targetRow, 11).setValue(_cell_(p['Alarm Status'])); 
                         _audit_('handleResolvePost', workerName, targetRow, status, p['Alarm Status'], p['Alarm Status'], p.idempotencyKey, 'alarm resolved');
                         if (_outcome === 'ONSITE') {
                             _audit_('handleResolvePost:onsite-closed', workerName, targetRow, status, p['Alarm Status'], p['Alarm Status'], p.idempotencyKey,
                                     'supervisor said still on site, but ' + (!_isLatest ? 'this is not the worker\'s latest row' : 'the row has no readable due time') +
                                     ' - closed as before; nothing is watching this worker');
                         }
-                        sheet.getRange(targetRow, 12).setValue((String(rowData[11] || '') + "\n" + (p['Notes'] || '')).trim()); 
+                        sheet.getRange(targetRow, 12).setValue(_cell_((String(rowData[11] || '') + "\n" + (p['Notes'] || '')).trim())); 
                     }
                     rowUpdated = true;
                     break;
@@ -1145,7 +1164,7 @@ function handleResolvePost(p) {
             p['Alarm Status'], p['Notes'], p['Location Name'], p['Location Address'], 
             p['Last Known GPS'], p['Timestamp'], p['Battery Level'], "", "", "", "", "", "", "", ""
         ];
-        sheet.appendRow(row);
+        sheet.appendRow(_cellRow_(row));   // __58_ (S3-5)
         _localColSet_(sheet, sheet.getLastRow(), ts);   // __47_ (R47)
         _audit_('handleResolvePost:new',workerName, sheet.getLastRow(), '', p['Alarm Status'], p['Alarm Status'], p.idempotencyKey, 'no open alarm row - new row appended');
     }
@@ -1380,7 +1399,7 @@ function handleWorkerPost(p) {
                         // disappears from the map. All other non-pulse payloads: guard against
                         // HIGH_SEVERITY downgrades only.
                         if (!_isGpsPulse && !_isRoutineNoK && !_wfMiss && !_staleAlarm && !criticalBridgeSuppressed && !(_existingIsHigh && _incomingIsLow)) {
-                            sheet.getRange(targetRow, 11).setValue(p['Alarm Status']);
+                            sheet.getRange(targetRow, 11).setValue(_cell_(p['Alarm Status']));   // __58_ (S3-5)
                             _audit_(_pinClearNote ? 'handleWorkerPost:pin-clear' : 'handleWorkerPost', workerName, targetRow, rowData[10], p['Alarm Status'], _origIncoming, p.idempotencyKey,
                                     _mergedBreachDue ? 'Critical Timing merge: OVERDUE ALARM recorded as BREACH' : _pinClearNote);
                             // __38_: a phone-merged BREACH is ladder step 1 for this due time.
@@ -1397,18 +1416,18 @@ function handleWorkerPost(p) {
                                                              : 'A6 guard - lower-severity status not written over an alarm');
                         }
                         // __43_ (F86-8): 0 km is a real value (a stationary trip). The falsy check used to skip it.
-                        if (distanceValue !== '' && distanceValue !== null && distanceValue !== undefined && distColIdx > -1) sheet.getRange(targetRow, distColIdx + 1).setValue(distanceValue);
+                        if (distanceValue !== '' && distanceValue !== null && distanceValue !== undefined && distColIdx > -1) sheet.getRange(targetRow, distColIdx + 1).setValue(_cell_(distanceValue));
                         if (polishedNotes && polishedNotes !== rowData[11]) {
                              const oldNotes = sheet.getRange(targetRow, 12).getValue();
-                             if (!oldNotes.includes(polishedNotes)) sheet.getRange(targetRow, 12).setValue((oldNotes + "\n" + polishedNotes).trim());
+                             if (!oldNotes.includes(polishedNotes)) sheet.getRange(targetRow, 12).setValue(_cell_((oldNotes + "\n" + polishedNotes).trim()));
                         }
                         // __40_: ignore a 'no fix' position so it cannot overwrite a real one already in col O.
                         const _gpsIn = (p['Last Known GPS'] || '').toString().replace(/\s+/g, '');
                         if (_gpsIn && _gpsIn !== '0,0' && _gpsIn !== '0.0,0.0') {
-                            sheet.getRange(targetRow, 15).setValue(p['Last Known GPS']); // col O: Last Known GPS
+                            sheet.getRange(targetRow, 15).setValue(_cell_(p['Last Known GPS'])); // col O: Last Known GPS
                             sheet.getRange(targetRow, 16).setValue(ts.toISOString());    // col P: GPS Timestamp
                         }
-                        if (p['Visit Report Data']) sheet.getRange(targetRow, headers.indexOf("Visit Report Data") + 1).setValue(p['Visit Report Data']);
+                        if (p['Visit Report Data']) sheet.getRange(targetRow, headers.indexOf("Visit Report Data") + 1).setValue(_cell_(p['Visit Report Data']));
                         const deptCol = headers.indexOf("Anticipated Departure Time");
                         // __42_ B3: on an existing row the due time only moves LATER (extend, PIN clear after due).
                         // A post queued on the phone before the change still carries the old due time; letting it
@@ -1420,7 +1439,7 @@ function handleWorkerPost(p) {
                                 _audit_('handleWorkerPost:due-kept', workerName, targetRow, '', '', _origIncoming, p.idempotencyKey,
                                         'post carried an earlier due time ' + _newDue.toISOString() + ' - col U kept at ' + _oldDue.toISOString());
                             } else {
-                                sheet.getRange(targetRow, deptCol + 1).setValue(p['Anticipated Departure Time']);
+                                sheet.getRange(targetRow, deptCol + 1).setValue(_cell_(p['Anticipated Departure Time']));
                             }
                         }
                         // Write Drive file links for photos and signature
@@ -1440,7 +1459,7 @@ function handleWorkerPost(p) {
                         if (_wfMiss) {
                             _wfMissDone = _welfareMissFromPhone_(sheet, targetRow, workerName, ts, _origIncoming);
                             if (!_wfMissDone) {
-                                sheet.getRange(targetRow, 11).setValue(p['Alarm Status']);
+                                sheet.getRange(targetRow, 11).setValue(_cell_(p['Alarm Status']));
                                 _audit_('welfare:fallback', workerName, targetRow, rowData[10], p['Alarm Status'], _origIncoming, p.idempotencyKey,
                                         'welfare path could not start an escalation - col K written as before');
                             }
@@ -1509,7 +1528,7 @@ if (!rowUpdated) {
         p3, 
         p4
     ];
-    sheet.appendRow(row);
+    sheet.appendRow(_cellRow_(row));   // __58_ (S3-5)
     _visitIdSet_(sheet, sheet.getLastRow(), String(p.idempotencyKey || '') || _visitIdNew_(sheet.getLastRow()));   // __44_: col AB
     _localColSet_(sheet, sheet.getLastRow(), ts);   // __47_ (R47): col AC
     _lastHeardSet_(sheet, sheet.getLastRow(), ts);  // __49_ (R60): col AF
@@ -1778,7 +1797,7 @@ function handleRegisterDevice(p) {
         console.warn(`Registration blocked for ${workerName}: bound to a different device.`);
         return { status: "error", message: "This worker is already registered on another device. Ask your administrator to clear the existing registration." };
       }
-      sheet.getRange(i + 1, 5).setValue(deviceId);
+      sheet.getRange(i + 1, 5).setValue(_cell_(deviceId));   // __58_ (S3-5)
       return { status: "success", message: "Device successfully bound to " + workerName };
     }
   }
@@ -1797,7 +1816,7 @@ function updateStaffStatus(p) {
             const existingId = (data[i][4] || '').toString().trim();
             const incomingId = (p['deviceId'] || '').toString().trim();
             if (!existingId || existingId === incomingId) {
-                sheet.getRange(i+1, 5).setValue(incomingId);
+                sheet.getRange(i+1, 5).setValue(_cell_(incomingId));   // __58_ (S3-5)
             }
             if(p['Template Name'] && p['Template Name'].includes('Vehicle')) {
                 sheet.getRange(i+1, 6).setValue(new Date()); 
@@ -1805,7 +1824,7 @@ function updateStaffStatus(p) {
                     const rData = JSON.parse(p['Visit Report Data']);
                     const term = CONFIG.VEHICLE_TERM || "WOF";
                     const expKey = Object.keys(rData).find(k => k.includes('Expiry') || k.includes(term) || k.includes('Rego'));
-                    if(expKey && rData[expKey]) { sheet.getRange(i+1, 7).setValue(rData[expKey]); }
+                    if(expKey && rData[expKey]) { sheet.getRange(i+1, 7).setValue(_cell_(rData[expKey])); }
                 } catch(e){}
             }
             // Persist ntfy topics to Staff sheet columns H (8) and I (9) so that
@@ -1813,8 +1832,8 @@ function updateStaffStatus(p) {
             // the topics in the Visits row. Only written when present — never blanked.
             const emgNtfy = (p['Emergency Contact Ntfy'] || '').toString().trim();
             const escNtfy = (p['Escalation Contact Ntfy'] || '').toString().trim();
-            if (emgNtfy) sheet.getRange(i+1, 8).setValue(emgNtfy);
-            if (escNtfy) sheet.getRange(i+1, 9).setValue(escNtfy);
+            if (emgNtfy) sheet.getRange(i+1, 8).setValue(_cell_(emgNtfy));   // __58_ (S3-5)
+            if (escNtfy) sheet.getRange(i+1, 9).setValue(_cell_(escNtfy));
             break;
         }
     }
@@ -1898,9 +1917,9 @@ function _logSmsResult_(to, body, parsed, isNetworkError) {
             ]);
             logSheet.setFrozenRows(1);
         }
-        logSheet.appendRow([
+        logSheet.appendRow(_cellRow_([
             new Date(), to, status, quotaLeft, textId, errorMsg, preview
-        ]);
+        ]));
     } catch (sheetErr) {
         Logger.log('[SMS] Could not write to SMS Log sheet: ' + sheetErr.toString());
     }
@@ -4193,11 +4212,11 @@ function _archiveVisits_(ss, sheet, cutoff) {
         return { moved: 0, kept: keep.length - 1, fitFailed: true, note: 'nothing moved - Archive tab could not be prepared' };
     }
     if (move.length > 0) {
-        archive.getRange(archive.getLastRow() + 1, 1, move.length, width).setValues(move);
+        archive.getRange(archive.getLastRow() + 1, 1, move.length, width).setValues(move.map(_cellRow_));   // __58_ (S3-5)
         // __39_: kept rows are written over the top of Visits FIRST, then the leftover rows
         // below them are cleared. The sheet is never empty, and a failure between the two
         // calls leaves duplicates (recoverable) instead of a wiped sheet.
-        sheet.getRange(1, 1, keep.length, keep[0].length).setValues(keep);
+        sheet.getRange(1, 1, keep.length, keep[0].length).setValues(keep.map(_cellRow_));   // __58_ (S3-5)
         if (data.length > keep.length) {
             sheet.getRange(keep.length + 1, 1, data.length - keep.length, keep[0].length).clearContent();
         }
@@ -4281,9 +4300,9 @@ function _archiveForms_(ss, cutoff) {
         if (changed) fa.getRange(1, 1, 1, width).setValues([h]);
     }
     _sheetFitRows_(fa, fa.getLastRow() + move.length);
-    fa.getRange(fa.getLastRow() + 1, 1, move.length, width).setValues(move);
+    fa.getRange(fa.getLastRow() + 1, 1, move.length, width).setValues(move.map(_cellRow_));   // __58_ (S3-5)
     // Same safety order as Visits: kept rows written over the top first, then the leftover rows cleared.
-    fsh.getRange(1, 1, keep.length, width).setValues(keep);
+    fsh.getRange(1, 1, keep.length, width).setValues(keep.map(_cellRow_));   // __58_ (S3-5)
     if (data.length > keep.length) fsh.getRange(keep.length + 1, 1, data.length - keep.length, width).clearContent();
     _audit_('archiveForms', '', '', '', '', '', '', 'Forms sheet rewritten (write then trim): ' + move.length + ' form(s) archived, ' + (keep.length - 1) + ' kept');
     return { moved: move.length, kept: keep.length - 1 };
@@ -4666,7 +4685,7 @@ function handleNoticeAck(p) {
                 : [];
             if (!currentAcks.includes(worker)) {
                 currentAcks.push(worker);
-                noticesSheet.getRange(i + 1, 9).setValue(currentAcks.join(', '));
+                noticesSheet.getRange(i + 1, 9).setValue(_cell_(currentAcks.join(', ')));
             }
             break;
         }
@@ -4689,9 +4708,9 @@ function handleNoticeAck(p) {
                     const isClosed = CLOSED_PREFIXES.some(pfx => st.includes(pfx));
                     if (!isClosed) {
                         const existing = vData[r][11] ? String(vData[r][11]) : ''; // col L = Notes
-                        visitsSheet.getRange(r + 1, 12).setValue(
+                        visitsSheet.getRange(r + 1, 12).setValue(_cell_(
                             existing + ` [NOTICE_ACK: ${noticeLabel}]`
-                        );
+                        ));
                         break;
                     }
                 }
@@ -5128,12 +5147,12 @@ function _audit_(source, worker, row, kBefore, kAfter, incoming, key, note) {
         if (_AUDIT_LOCKWAIT_MS !== null) n = (n ? n + ' | ' : '') + 'lockWait=' + _AUDIT_LOCKWAIT_MS + 'ms';
         if (_AUDIT_CTX) n = (n ? n + ' | ' : '') + _AUDIT_CTX;   // __43_ (F86-7)
         n = (n ? n + ' | ' : '') + 'build=' + TEMPLATE_BUILD;   // __41_: shows which template wrote the row
-        sh.appendRow([
+        sh.appendRow(_cellRow_([   // __58_ (S3-5): an Audit row copies the status and name as sent
             _aNow.toISOString(), _txt_(_auditExecId_()), String(source || ''), String(worker || ''),
             row || '', kBefore == null ? '' : String(kBefore), kAfter == null ? '' : String(kAfter),
             String(incoming || ''), _txt_(String(key || '')), n,   // __45_ (item 9 / F83-5): ids stay text
             _localCell_(_aNow)                                     // __47_ (R47): Time (local)
-        ]);
+        ]));
     } catch (e) {
         try { console.warn('[audit] write failed: ' + e); } catch (_) {}
     }
@@ -5477,7 +5496,7 @@ function _formsGps_(sheet, rowNum, p) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__57_';
+const TEMPLATE_BUILD = 'backend__58_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
@@ -5728,10 +5747,10 @@ function _formsRecord_(ss, sheet, p, route, notes, distance, sig, p1, p2, p3, p4
     const visitId = (route.rowNum && sheet) ? _visitIdGet_(sheet, route.rowNum, true) : '';
     const fsh = _formsSheet_(ss);   // __45_: shared with the archive (header on create)
     const _fNow = new Date();
-    fsh.appendRow([_fNow.toISOString(), workerName, p['Template Name'] || '', route.status, _txt_(visitId), route.rowNum || '', route.link,
+    fsh.appendRow(_cellRow_([_fNow.toISOString(), workerName, p['Template Name'] || '', route.status, _txt_(visitId), route.rowNum || '', route.link,
                    p['Visit Report Data'] || '', notes || '', (distance === '' || distance === null || distance === undefined) ? '' : distance,
                    sig || '', p1 || '', p2 || '', p3 || '', p4 || '', _formsGps_(sheet, route.rowNum, p), _txt_(p.idempotencyKey || ''), p['Worker Build'] || '',
-                   _localCell_(_fNow)]);   // __47_ (R47): Received (local)
+                   _localCell_(_fNow)]));   // __47_ (R47): Received (local); __58_ (S3-5)
     _audit_(ledger ? 'handleWorkerPost:form-ledger' : 'handleWorkerPost:form', workerName, route.rowNum || '', '', '', p['Alarm Status'], p.idempotencyKey,
             (ledger ? 'report also recorded in Forms tab row ' : 'form recorded in Forms tab row ') + fsh.getLastRow() + ' (' + route.link +
             (visitId ? ', Visit ID ' + visitId : '') + ')' + (ledger ? ' - Visits row written as before' : ' - trip row not written'));
@@ -6842,8 +6861,8 @@ function updateSiteEmergencyProcedures(payload) {
       }
       const now = new Date();
       rowsHit.forEach(function (r) {
-        hist.appendRow([now.toISOString(), _localCell_(now), siteName, compName, r, worker,
-                        String(data[r - 1][colIdx] === undefined || data[r - 1][colIdx] === null ? '' : data[r - 1][colIdx]), newCell, cand.how]);
+        hist.appendRow(_cellRow_([now.toISOString(), _localCell_(now), siteName, compName, r, worker,
+                        String(data[r - 1][colIdx] === undefined || data[r - 1][colIdx] === null ? '' : data[r - 1][colIdx]), newCell, cand.how]));
       });
     } catch (herr) {
       return fail('procedures:archive-FAILED', 'could not write the Procedures History tab (' + String(herr).substring(0, 120) + ') - existing safety information left as it is');
@@ -7217,5 +7236,247 @@ function handleNoticeCheck_(workerName) {
         return { status: 'success', ids: ids, build: TEMPLATE_BUILD };
     } catch (err) {
         return { status: 'error', message: String(err) };
+    }
+}
+
+// ==========================================
+// __58_ (session 112): THE ALARM GATE (S3-2) AND INPUT CHECKS (S3-1, S3-5)
+// ==========================================
+// Why: the worker key is public (it sits in config.json next to the worker app), so before __58_ anyone could post as any
+// worker. Proven in session 111/112: a forged post from a stranger's phone could close a real PANIC or DURESS (Resolve,
+// notifySafety, Departed, PIN clear, Extended, Completed, a new visit) or freeze an overdue escalation (a routine post with
+// a later due time), and a hostile GPS value or worker name could run code in the Monitor.
+// Design: Russell, 3 Nov 2026 (sessions 111 and 112):
+//   - HQ Resolve needs the master key.
+//   - While a worker's latest visit row is in alarm (col K rank 2 or more), a post for that worker from any phone other
+//     than the one in Staff col E may only RAISE an alarm or report its position. Anything else is refused, and any due
+//     time it carries is ignored. A worker with no phone in col E is treated as "not this phone" (re-register first).
+//   - A refused post is answered "success" with saved:false. The phone's alarm queue sends oldest first and never gives up
+//     on an alarm-lane record, so an error reply would block every later PANIC from that phone. The alarm stays up on the
+//     server, escalation carries on and HQ rings the worker - the safe direction.
+//   - Every refusal writes an Audit row; one email per alarm visit goes to the health-email address (or the script owner).
+//   - Outside an alarm nothing changes (Russell: "only while an alarm is up").
+//   - The master key (the Monitor) is never gated.
+
+const GATE_REFUSED_NOTICE = 'This phone is not the one registered for this worker, so this was not saved. ' +
+                            'Ask your administrator to re-register this phone, or phone HQ.';
+const GATE_MAIL_TTL_S = 21600;   // one admin email per alarm visit row, at most once every 6 hours (CacheService maximum)
+const GATE_CLEAR_WORDS = ['USER_SAFE', 'EXTENDED', 'DEPARTED', 'COMPLETED'];   // the words handleWorkerPost treats as a clear
+const GATE_NEUTRAL_ACTIONS = ['registerDevice', 'acknowledgeNotice', 'broadcast', 'workerTopic', 'workerTopicTest'];
+const NAME_MAX_CHARS = 60;
+
+/** __58_ (S3-1): "lat,lng" - two numbers in range, a comma, optional spaces. The same shape Monitor __17_ accepts. */
+const _COORD_PAIR_RE_ = /^\s*(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$/;
+function _isCoordPair_(v) {
+    const m = _COORD_PAIR_RE_.exec(String(v == null ? '' : v));
+    if (!m) return false;
+    const lat = Number(m[1]), lng = Number(m[2]);
+    return Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+}
+
+/**
+ * __58_ (S3-5): a value for a sheet cell. Text starting with = + - @ (or a tab or a return) would become a live formula, so it
+ * gets a leading apostrophe (Sheets keeps it as text and getValue returns it without the apostrophe). GPS pairs and plain
+ * numbers are left as they are (neither is a formula, and both are stored that way today). Anything that is not text is unchanged.
+ */
+function _cell_(v) {
+    if (typeof v !== 'string' || v === '') return v;
+    if (!/^[=+\-@\t\r]/.test(v)) return v;
+    if (_COORD_PAIR_RE_.test(v) || /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(v.trim())) return v;
+    return "'" + v;
+}
+function _cellRow_(row) { return (row || []).map(_cell_); }
+
+/** __58_: the last 4 characters of a phone id, for Audit rows and emails (the full id is never written out). */
+function _idTail_(id) {
+    const s = String(id == null ? '' : id).trim();
+    return s ? '...' + s.slice(-4) : '(none)';
+}
+
+let _INPUT_NOTES = [];   // __58_ (S3-1): what _cleanInputs_ changed, audited once the script lock is held
+
+/**
+ * __58_ (S3-1): run at the top of doPost, before the lock (so the busy path sends clean values too). Changes e.parameter in
+ * place. Never throws.
+ *   - Last Known GPS: anything but a coordinate pair becomes '0,0' (the phone's own "no fix" value, which never overwrites a
+ *     real position). A phone with no fix sometimes posts 'null' - also '0,0', without an Audit note.
+ *   - Worker Name: letters, digits, spaces, apostrophes, hyphens and full stops, up to 60 characters, are kept as sent. Any other
+ *     name is kept only when it exactly matches a Staff name (column A, typed by the administrator); otherwise the other
+ *     characters are removed and it is cut to 60. A post is never refused for its name (a raise must always land).
+ */
+function _cleanInputs_(p) {
+    _INPUT_NOTES = [];
+    try {
+        if (!p) return;
+        if (Object.prototype.hasOwnProperty.call(p, 'Last Known GPS')) {
+            const g = String(p['Last Known GPS'] == null ? '' : p['Last Known GPS']);
+            if (!_isCoordPair_(g)) {
+                const quiet = /^\s*(null|undefined)?\s*$/i.test(g);
+                if (!quiet) _INPUT_NOTES.push('GPS "' + g.substring(0, 40).replace(/[^\x20-\x7E]/g, '?') + '" is not two numbers - recorded as 0,0 (no fix)');
+                p['Last Known GPS'] = '0,0';
+            }
+        }
+        if (Object.prototype.hasOwnProperty.call(p, 'Worker Name')) {
+            const raw = String(p['Worker Name'] == null ? '' : p['Worker Name']);
+            const SAFE = /^[\p{L}\p{M}\p{N} .'’-]*$/u;
+            if (!(SAFE.test(raw) && raw.length <= NAME_MAX_CHARS) && !_isStaffNameExact_(raw)) {
+                let clean = raw.replace(/[^\p{L}\p{M}\p{N} .'’-]/gu, '').replace(/\s+/g, ' ').trim().substring(0, NAME_MAX_CHARS).trim();
+                if (!clean) clean = 'Unknown worker';
+                p['Worker Name'] = clean;
+                _INPUT_NOTES.push('worker name changed to "' + clean + '" (characters a name does not use, or longer than ' + NAME_MAX_CHARS + ')');
+            }
+        }
+    } catch (e) {
+        _INPUT_NOTES.push('input check error: ' + String(e).substring(0, 120));
+    }
+}
+
+/** __58_: true when a Staff row's column A is exactly this text. Read only; never throws (false on any error). */
+function _isStaffNameExact_(name) {
+    try {
+        const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Staff');
+        if (!sh || sh.getLastRow() < 2) return false;
+        const col = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
+        for (let i = 0; i < col.length; i++) if (String(col[i][0]) === name) return true;
+    } catch (e) {}
+    return false;
+}
+
+/**
+ * __58_: the worker's latest visit row, found the way handleWorkerPost finds it (the last 51 rows, exact name, PRE_VISIT and
+ * DATA_ENTRY_ONLY records skipped). { row, status, due } or null.
+ */
+function _gateLatestRow_(workerName) {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Visits');
+    if (!sheet) return null;
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return null;
+    const startRow = Math.max(2, lastRow - 50);
+    const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, 21).getValues();
+    for (let i = data.length - 1; i >= 0; i--) {
+        if (data[i][2] !== workerName) continue;
+        const st = String(data[i][10]);
+        if (st.includes('PRE_VISIT') || st.includes('DATA_ENTRY_ONLY')) continue;
+        return { row: startRow + i, status: st, due: data[i][20] };
+    }
+    return null;
+}
+
+/** __58_: the phone id in Staff col E for this worker (matched as the sync matches: case and end spaces ignored). '' = none / not found. */
+function _gateBoundDevice_(workerName) {
+    const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Staff');
+    if (!sh) return { found: false, bound: '' };
+    const want = String(workerName == null ? '' : workerName).toLowerCase().trim();
+    const data = sh.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+        if (String(data[i][0] == null ? '' : data[i][0]).toLowerCase().trim() !== want) continue;
+        return { found: true, bound: String(data[i][4] == null ? '' : data[i][4]).trim() };
+    }
+    return { found: false, bound: '' };
+}
+
+/**
+ * __58_ (S3-2): the alarm gate. Called first in _doPostRoute_ (script lock held). Returns null to let the post through, or the
+ * reply to send instead. Never throws: an internal error lets the post through as before (a raise must never be blocked).
+ */
+function _alarmGate_(p) {
+    try {
+        if (_INPUT_NOTES.length) {
+            _audit_('input:cleaned', p['Worker Name'], '', '', '', p['Alarm Status'], p.idempotencyKey, _INPUT_NOTES.join(' ; '));
+            _INPUT_NOTES = [];
+        }
+        if (String(p.key) === String(CONFIG.MASTER_KEY)) return null;   // HQ (the Monitor) is never gated
+        const act = String(p.action || '');
+        const worker = p['Worker Name'];
+        const statusIn = String(p['Alarm Status'] || '');
+
+        if (act === 'resolve') {
+            const lr = _gateLatestRow_(worker);
+            const inAlarm = !!(lr && _alarmRank_(lr.status.toUpperCase()) >= 2);
+            _audit_('alarm-gate:refused', worker, lr ? lr.row : '', lr ? lr.status : '', '', statusIn, p.idempotencyKey,
+                    'HQ Resolve needs the master key - refused (posted with the worker key from phone ' + _idTail_(p.deviceId) + ')' +
+                    (inAlarm ? '' : ' - no alarm on the latest row'));
+            if (inAlarm) _gateAdminEmail_(worker, lr, 'HQ Resolve (' + (String(p['Resolve Outcome'] || '').toUpperCase() || 'no outcome') + ')',
+                                          'HQ Resolve needs the master key, and this one was sent with the worker app key. The Monitor always sends the master key.',
+                                          p.deviceId, null);
+            return { status: 'error', message: 'Resolve needs the master key.' };
+        }
+        if (GATE_NEUTRAL_ACTIONS.indexOf(act) > -1) return null;
+
+        const lr = _gateLatestRow_(worker);
+        if (!lr || _alarmRank_(lr.status.toUpperCase()) < 2) return null;   // no alarm: unchanged (narrow scope)
+
+        const dev = _gateBoundDevice_(worker);
+        const sent = String(p.deviceId == null ? '' : p.deviceId).trim();
+        if (dev.bound && sent === dev.bound) return null;                  // the registered phone
+
+        const su = statusIn.toUpperCase();
+        const clears = act === 'notifySafety' || GATE_CLEAR_WORDS.some(function (w) { return su.includes(w); });
+        const isRaise = !clears && _alarmRank_(su) >= 2;
+        const isPulse = !clears && su.includes('ALARM_GPS_PULSE');
+        const why = !dev.found ? 'this worker is not in the Staff tab'
+                  : !dev.bound ? 'no phone is registered for this worker (Staff column E is empty)'
+                  : 'this post did not come from the phone registered for this worker';
+        if (isRaise || isPulse) {
+            const hadDue = !!p['Anticipated Departure Time'];
+            delete p['Anticipated Departure Time'];   // an alarm or a position, but never a new due time
+            if (isRaise) _audit_('alarm-gate:raise-other-phone', worker, lr.row, lr.status, '', statusIn, p.idempotencyKey,
+                                 'accepted (an alarm is always accepted) - ' + why + ' (phone ' + _idTail_(sent) + ', registered ' + _idTail_(dev.bound) + ')' +
+                                 (hadDue ? '; its due time was ignored' : ''));
+            return null;
+        }
+        _audit_('alarm-gate:refused', worker, lr.row, lr.status, '', statusIn, p.idempotencyKey,
+                'refused during an alarm - ' + why + ' (phone ' + _idTail_(sent) + ', registered ' + _idTail_(dev.bound) + ', action=' + (act || 'none') +
+                '). Replied success so the phone queue moves on; the alarm stays up.');
+        _gateAdminEmail_(worker, lr, act === 'notifySafety' ? 'All Clear (PIN entry)' : (statusIn || 'a post'), why, sent, dev.bound);
+        return { status: 'success', saved: false, notice: GATE_REFUSED_NOTICE };
+    } catch (e) {
+        _audit_('alarm-gate:error', p && p['Worker Name'], '', '', '', p && p['Alarm Status'], p && p.idempotencyKey,
+                'gate error - post let through as before: ' + String(e).substring(0, 160));
+        return null;
+    }
+}
+
+/**
+ * __58_: one email per alarm visit row (at most once every 6 hours) to the health-email address, or the script owner.
+ * Queued to send after the lock is released. The send never throws: a failed send must not turn a refused post into an error
+ * reply (the phone would retry it forever and block its own later alarms).
+ */
+function _gateAdminEmail_(worker, lr, tried, why, sentId, boundId) {
+    try {
+        const ck = 'GATEMAIL_' + String(worker || '').substring(0, 80) + '_' + (lr ? lr.row : 'x');
+        try {
+            const cache = CacheService.getScriptCache();
+            if (cache.get(ck)) return;
+            cache.put(ck, '1', GATE_MAIL_TTL_S);
+        } catch (_) {}
+        const e = function (s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
+        const org = (CONFIG.ORG_NAME && !String(CONFIG.ORG_NAME).includes('%%')) ? CONFIG.ORG_NAME : 'OTG';
+        const subject = 'OTG security - a change to ' + String(worker || 'a worker').substring(0, 60) + "'s alarm was refused (" + org + ')';
+        const html =
+            '<div style="font-family:Arial,sans-serif;font-size:14px;color:#111">' +
+            '<p><b>A post tried to change an active alarm and was refused. The alarm is still active and escalation carries on.</b></p>' +
+            '<table cellpadding="4" style="border-collapse:collapse">' +
+            '<tr><td><b>Worker</b></td><td>' + e(worker) + '</td></tr>' +
+            '<tr><td><b>Alarm now</b></td><td>' + e(lr ? lr.status : '') + ' (Visits row ' + e(lr ? lr.row : '') + ')</td></tr>' +
+            '<tr><td><b>What was tried</b></td><td>' + e(tried) + '</td></tr>' +
+            '<tr><td><b>Why refused</b></td><td>' + e(why) + '</td></tr>' +
+            '<tr><td><b>Phone that sent it</b></td><td>' + e(_idTail_(sentId)) + (boundId === null ? '' : ' (registered phone ' + e(_idTail_(boundId)) + ')') + '</td></tr>' +
+            '<tr><td><b>Time</b></td><td>' + e(_fmtLocal_(new Date(), 'd MMM yyyy, h:mm:ss a')) + '</td></tr>' +
+            '</table>' +
+            '<p><b>What to do now</b></p><ol>' +
+            '<li>Phone the worker and follow your alarm procedure - treat the alarm as real.</li>' +
+            '<li>If the worker is on a new or reinstalled phone: clear their phone ID (Staff tab, column E), then they open the app and register again. ' +
+            'After that they can clear alarms with their PIN. Until then HQ can resolve the alarm from the Monitor.</li>' +
+            '<li>If the worker did not send this, someone else has the app key. Treat it as a security incident and tell your IT adviser.</li>' +
+            '</ol><p style="color:#666;font-size:12px">You get at most one of these emails per alarm visit every 6 hours. Every refusal is in the Audit tab ' +
+            '(source alarm-gate:refused). ' + e(TEMPLATE_BUILD) + '</p></div>';
+        const to = (CONFIG.HEALTH_EMAIL && String(CONFIG.HEALTH_EMAIL).includes('@')) ? CONFIG.HEALTH_EMAIL : Session.getEffectiveUser().getEmail();
+        _sendOrQueue_('alarm-gate-email', function () {
+            try { MailApp.sendEmail({ to: to, subject: subject, htmlBody: html }); }
+            catch (err) { _audit_('alarm-gate:email-FAILED', worker, lr ? lr.row : '', '', '', '', '', String(err).substring(0, 160)); }
+        });
+    } catch (err) {
+        _audit_('alarm-gate:email-error', worker, '', '', '', '', '', String(err).substring(0, 160));
     }
 }
