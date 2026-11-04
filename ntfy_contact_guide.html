@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Getting safety alerts on your phone</title>
+<style>
+  :root {
+    --bg: #ffffff; --text: #1d2733; --muted: #5a6776; --line: #d9dfe6;
+    --accent: #0b5cad; --note-bg: #fff6e0; --note-line: #e2b94a;
+    --warn-bg: #fdeceb; --warn-line: #d9534f; --ok-bg: #e9f6ee; --ok-line: #3c9a5f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14181d; --text: #e6ebf0; --muted: #9aa7b5; --line: #2c3540;
+      --accent: #6db3ff; --note-bg: #2b2412; --note-line: #a8842a;
+      --warn-bg: #2f1a19; --warn-line: #c0504d; --ok-bg: #16281d; --ok-line: #3c9a5f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 17px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 42rem; margin: 0 auto; padding: 20px 16px 56px; }
+  h1 { font-size: 1.6rem; line-height: 1.25; margin: 0.4em 0 0.3em; }
+  h2 { font-size: 1.25rem; margin: 2em 0 0.5em; padding-top: 0.6em; border-top: 1px solid var(--line); }
+  h3 { font-size: 1.05rem; margin: 1.4em 0 0.3em; }
+  p, li { margin: 0.5em 0; }
+  ol, ul { padding-left: 1.4em; }
+  li { margin: 0.45em 0; }
+  .lead { color: var(--muted); font-size: 1.05rem; }
+  .box { border-left: 4px solid var(--note-line); background: var(--note-bg); padding: 10px 14px; margin: 1em 0; border-radius: 4px; }
+  .box.warn { border-color: var(--warn-line); background: var(--warn-bg); }
+  .box.ok { border-color: var(--ok-line); background: var(--ok-bg); }
+  .box p:first-child { margin-top: 0; } .box p:last-child { margin-bottom: 0; }
+  code, .topic {
+    font: 0.95em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: rgba(127,127,127,0.15); padding: 1px 6px; border-radius: 4px;
+  }
+  nav ul { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  nav a { display: inline-block; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--accent); text-decoration: none; }
+  figure { margin: 1em 0; }
+  figure img { max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; }
+  figcaption { color: var(--muted); font-size: 0.9rem; }
+  .small { color: var(--muted); font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Getting safety alerts on your phone</h1>
+<p class="lead">A short guide for people who have been named as a contact for a lone worker. It takes about 10 minutes, and it only needs doing once.</p>
+
+<nav aria-label="Jump to">
+  <ul>
+    <li><a href="#why">Why you are here</a></li>
+    <li><a href="#android">Android</a></li>
+    <li><a href="#iphone">iPhone</a></li>
+    <li><a href="#test">Test it</a></li>
+    <li><a href="#after">If an alert arrives</a></li>
+  </ul>
+</nav>
+
+<h2 id="why">Why you are here</h2>
+<p>Someone has named you as the person to contact if they might be in trouble while working alone. If they miss a check-in, run overdue, or press their alarm, a notification is sent to your phone. You will not need to log in to anything, and there is no account to create.</p>
+<p>The alerts arrive through a free app called <strong>ntfy</strong> (said "notify"). The worker will have sent you a message with a <strong>topic name</strong>. It looks like this:</p>
+<p><span class="topic">otg-</span> followed by a long string of letters and numbers.</p>
+<div class="box warn">
+  <p><strong>Keep the topic name private.</strong> Anyone who has it can read the alerts. Please do not post it anywhere, and do not forward the message to other people.</p>
+</div>
+<p>You will need two things from the message you were sent: the <strong>topic name</strong>, and, only if the message names one, a <strong>server address</strong> for your organisation. Most people will not have a server address, and can ignore that part.</p>
+
+<h2 id="android">Android phones</h2>
+
+<h3>1. Install and subscribe</h3>
+<ol>
+  <li>Install <strong>ntfy</strong> from the Google Play Store (or from F-Droid if you use that).</li>
+  <li>Open the app and tap the <strong>+</strong> button.</li>
+  <li>Paste in the <strong>topic name</strong> from the message you were sent. Copy and paste is safest, because the name is long and one wrong character means you get nothing.</li>
+  <li>If your message gave a server address, switch on <strong>Use another server</strong> and enter it. Otherwise leave this off.</li>
+  <li>Tap <strong>Subscribe</strong>. If the phone asks whether ntfy may send you notifications, choose <strong>Allow</strong>.</li>
+</ol>
+<!-- Screenshot to add: img/android-subscribe.png (the Subscribe to topic screen, with a blurred topic name) -->
+<!-- <figure><img src="img/android-subscribe.png" alt="The ntfy Subscribe to topic screen on Android"><figcaption>The Subscribe screen. The topic name is blurred here.</figcaption></figure> -->
+
+<h3>2. Make sure an alert can wake you</h3>
+<p>This is the most important step. A phone on silent, or on Do Not Disturb overnight, will keep a normal notification quiet, and that is exactly when you might be needed.</p>
+<p>ntfy keeps a separate setting for each level of urgency. Safety alerts use the highest levels, so those are the ones to set up.</p>
+<ol>
+  <li>Press and hold the ntfy app icon on your home screen, then tap <strong>Notifications</strong> (on some phones this is the small "i" or <strong>App info</strong>, then <strong>Notifications</strong>). You can also open ntfy, go to <strong>Settings</strong>, and look for <strong>Channel settings</strong>.</li>
+  <li>You will see a list with one entry for each priority, from <strong>Min</strong> up to <strong>Max</strong>. Open <strong>High priority</strong> and <strong>Max priority</strong>, one at a time.</li>
+  <li>For each of those two: make sure notifications are on, choose a sound you will notice, and switch on <strong>Override Do Not Disturb</strong>.</li>
+</ol>
+<div class="box">
+  <p>The exact wording changes between phone makes and Android versions (Samsung, Xiaomi, Google Pixel and others all label things a little differently). If you cannot find "Override Do Not Disturb", search for "Do Not Disturb" in your phone's Settings and look for a way to allow an app or a type of notification through.</p>
+</div>
+<!-- Screenshot to add: img/android-channel.png (the channel settings for Max priority, showing the Override Do Not Disturb switch) -->
+<!-- <figure><img src="img/android-channel.png" alt="Android notification settings for ntfy Max priority with Override Do Not Disturb switched on"><figcaption>Override Do Not Disturb is switched on for the Max priority channel.</figcaption></figure> -->
+
+<h3>3. Stop the phone putting ntfy to sleep</h3>
+<p>Some phones close apps in the background to save battery, which can delay or block alerts. In your phone's Settings, find <strong>Battery</strong> and set ntfy to <strong>Unrestricted</strong> (or "No restrictions", or "Don't optimise"). Again, the wording depends on your phone.</p>
+
+<h2 id="iphone">iPhone</h2>
+<ol>
+  <li>Install <strong>ntfy</strong> from the App Store.</li>
+  <li>Open it and tap the <strong>+</strong> button.</li>
+  <li>Paste in the <strong>topic name</strong>. If your message gave a server address, switch on <strong>Use another server</strong> and enter it.</li>
+  <li>Tap <strong>Subscribe</strong>, and choose <strong>Allow</strong> when asked about notifications.</li>
+  <li>Open the iPhone <strong>Settings</strong>, go to <strong>Notifications</strong>, then <strong>ntfy</strong>. Make sure <strong>Allow Notifications</strong>, <strong>Sounds</strong> and <strong>Lock Screen</strong> are all switched on. If you see a <strong>Time Sensitive Notifications</strong> switch, turn that on too.</li>
+  <li>If you use a <strong>Focus</strong> (such as Do Not Disturb or Sleep): open <strong>Settings</strong>, then <strong>Focus</strong>, and tap your usual Focus. Tap <strong>Apps</strong>, choose <strong>Allow Notifications From</strong>, and add <strong>ntfy</strong>. If there is a <strong>Time Sensitive</strong> switch on that screen, turn it on.</li>
+</ol>
+<div class="box warn">
+  <p><strong>Please be aware:</strong> the iPhone version of ntfy is less capable than the Android one. Alerts may be quieter than you expect, and may not always get through a Focus. Do the test below with your phone locked and your usual Focus switched on, and tell the worker honestly what happened. If alerts do not reliably wake you, the worker can add a second contact who has an Android phone.</p>
+</div>
+<div class="box">
+  <p><strong>Check the side switch.</strong> If your iPhone is on Silent Mode (the switch on the side, or the Action Button set to mute), iOS silences app sounds. Do the test below with your phone muted and locked, so you know what will really happen.</p>
+</div>
+<!-- Screenshot to add: img/iphone-subscribe.png -->
+
+<h2 id="test">Test it before you rely on it</h2>
+<p>Please do this test properly. It is the only way to know the alert will reach you when you are asleep or busy.</p>
+<ol>
+  <li>Switch the phone to how it usually is at night: <strong>screen locked</strong>, and <strong>Do Not Disturb or your usual Focus switched on</strong>.</li>
+  <li>Ask the worker to send a test alert from their app's set-up screen (it has a contact test).</li>
+  <li>Check that your phone <strong>makes a sound</strong> and shows the notification on the lock screen.</li>
+  <li>Tell the worker the result, even if it worked.</li>
+</ol>
+<div class="box ok">
+  <p>If nothing happened, go back to the step above that matches your phone ("Make sure an alert can wake you" on Android, or the Focus step on iPhone), then test again.</p>
+</div>
+
+<h2 id="after">If a real alert arrives</h2>
+<p>An alert means the worker may need help, or has not been heard from when expected. It does not always mean an emergency, but please never assume it is a mistake.</p>
+<ul>
+  <li><strong>Try to contact the worker</strong> by phone first.</li>
+  <li>If you cannot reach them, follow the instructions your organisation has given you.</li>
+  <li>If you believe someone is in danger, <strong>call 111</strong>.</li>
+</ul>
+<p>The alert may include the worker's last known location. Later alerts for the same visit may say that the worker's safety is still unresolved. You will be sent an "All Clear" message when the worker has been confirmed safe.</p>
+<p>ntfy is one-way. You cannot reply to an alert in the app.</p>
+
+<h2>Other things to know</h2>
+<ul>
+  <li><strong>New phone?</strong> Install ntfy and subscribe again using the same topic name. If you have lost the message, ask the worker to send it again.</li>
+  <li><strong>Want to stop being a contact?</strong> Tell the worker first, so they can name someone else. Then open ntfy, press and hold the topic, and choose to unsubscribe.</li>
+  <li><strong>Topic name changed?</strong> If the worker sends you a new one, subscribe to it and remove the old one, otherwise you will miss alerts.</li>
+  <li><strong>Going away, or phone off?</strong> Let the worker know. An alert cannot reach a phone that is switched off or has no signal.</li>
+</ul>
+
+<p class="small">This guide was written for contacts of lone workers using the OTG safety app. Your organisation can add its own instructions for what to do when an alert arrives.</p>
+
+</main>
+</body>
+</html>
