@@ -192,6 +192,30 @@
  *   - Settings tab: two new keys added with their defaults (existing values never changed); Health email shows them.
  *   - Contact escalation (tiers, Critical ladder, col AA claims, All Clear audience) is unchanged.
  *
+ * __59_ (session 116, 5 Nov 2026, Opus 5.5 high) - ONE ROW FINDER, ONE NAME, THE GATE ON OPEN VISITS. Design: Russell (S115-D1 to D3).
+ *   - P2-8: one shared row finder (_latestRowFor_ / _rfScan_) decides "the worker's latest row" in handleWorkerPost, the gate,
+ *     _formRouteFor_, the busy path, HQ Resolve, the All Clear guard, the overdue checker, the Health email, notice
+ *     acknowledgements and the broadcast hold: whole sheet; PRE_VISIT and DATA_ENTRY_ONLY records skipped; names compared
+ *     ignoring case and outer spaces; newest col A time wins, a tie goes to the later row. Reads only cols A-C and K for the
+ *     scan, once per post (reused until a writer invalidates it). Before: last 51 rows / whole sheet / 501, three name rules.
+ *   - S115-F1: one name at the door - _cleanInputs_ trims the worker name and, when it matches a Staff name ignoring case and
+ *     outer spaces, replaces it with the Staff spelling. "Rusty " can no longer walk round the gate.
+ *   - S115-D1 (reverses S112-D5): while the worker's latest row is an OPEN visit (not closed, col U filled) or an alarm, a post
+ *     from any phone other than the one in Staff col E may only raise an alarm or report its position (due time ignored).
+ *     Departed, Extended, Completed, PIN clear, notifySafety, a new visit and routine posts are refused (saved:false, the amber
+ *     strip). With no open visit any phone may start one. S115-D2: one HQ email per refused open-visit row every 6 hours.
+ *   - P2-9: HQ Resolve acts on the latest row only (no walking back to an older alarm row).
+ *   - P2-6: a visit start whose key is already the worker's Visit ID (col AB) is a duplicate - no second row.
+ *   - S112-2 / S115-F3: an empty Staff col E is filled by a post only when the worker had no open visit or alarm when it arrived
+ *     (keeps offline first-time setup working); Staff H and I (contact push topics) are written only by the registered phone or
+ *     the master key. Registration and every fill write an Audit row.
+ *   - S3-3: sync and noticeCheck answer device_denied to a phone that is not the one in Staff col E (empty col E allowed; the
+ *     master key never refused). The worker app already shows "DEVICE NOT AUTHORISED" for this reply.
+ *   - P2-5: an open visit whose due time cannot be read alerts HQ at once (Health email address, plus a push to the new Settings
+ *     key ADMIN_ALERT_TOPIC when filled), once per row every 6 hours; still reported in the daily Health email as before.
+ *   - Unchanged: raises always accepted; refusals reply success with saved:false; a gate error lets the post through; the
+ *     master key is never gated; ladders, All Clear wording, the Monitor feed (it picks its own latest from 501 rows).
+ *
  * __58_ (session 112, 3 Nov 2026, Opus 5.5 high) - THE ALARM GATE (S3-2) AND INPUT CHECKS (S3-1, S3-5). Design: Russell.
  *   - S3-2: HQ Resolve (action=resolve) needs the master key (the Monitor always sends it). Refused with the worker key.
  *   - S3-2: while the worker's latest visit row is in alarm (col K rank 2+), a post from any phone other than the one in Staff
@@ -431,7 +455,8 @@ const SETTINGS_DEFAULTS   = [      // [key, default value, note] - added to the 
     ['WORKER_WARN_QUIET_W1_MINS', 3, 'Critical Timing visits and trips: the "ends in 5 min" reminder goes only if nothing has been heard from the phone for more than this many minutes (0 to 30; 0 = always send).'],
     ['WORKER_WARN_QUIET_W2_MINS', 6, 'Standard visits and trips: the "check in now" reminder goes only if nothing has been heard from the phone for more than this many minutes (0 to 30; 0 = always send).'],
     ['AUDIT_KEEP_DAYS', 7, 'Days of Audit rows kept (1 to 90). The Audit tab is a debugging trail - Visits and Forms are the permanent records. Trimmed daily before the Health email.'],
-    ['AUDIT_MAX_ROWS', 10000, 'Most Audit rows kept (1000 to 50000). Older rows beyond AUDIT_KEEP_DAYS or beyond this number - whichever limit is reached first - are removed daily.']
+    ['AUDIT_MAX_ROWS', 10000, 'Most Audit rows kept (1000 to 50000). Older rows beyond AUDIT_KEEP_DAYS or beyond this number - whichever limit is reached first - are removed daily.'],
+    ['ADMIN_ALERT_TOPIC', '', 'Optional. An ntfy topic for the System Administrator (letters, digits, - and _). Problems that stop the server watching a visit - for example an unreadable due time - are pushed here as well as emailed. Blank = email only (backend __59_).']
 ];
 const WARN_TEST_BUSY_MSG  = 'Test not sent - please try again in a minute.';
 // __49_ (session 99, R60): when the server last heard from the phone on this visit row. Cols AD / AE are R03's.
@@ -502,8 +527,8 @@ function doGet(e) {
       }
       if(p.test) return (p.key === CONFIG.MASTER_KEY) ? sendResponse(e, {status:"success"}) : sendResponse(e, {status:"error"});
       if(p.key === CONFIG.MASTER_KEY && !p.action) return sendResponse(e, _dashboardExtras_(getDashboardData()));   // __55_ (R75): + groups, notices
-      if(p.action === 'sync') return (p.key === CONFIG.MASTER_KEY || p.key === CONFIG.WORKER_KEY) ? sendResponse(e, getSyncData(p.worker, p.deviceId)) : sendResponse(e, {status:"error"});
-      if(p.action === 'noticeCheck') return (p.key === CONFIG.MASTER_KEY || p.key === CONFIG.WORKER_KEY) ? sendResponse(e, handleNoticeCheck_(p.worker)) : sendResponse(e, {status:"error"});   // __57_: ids only, read only
+      if(p.action === 'sync') return (p.key === CONFIG.MASTER_KEY || p.key === CONFIG.WORKER_KEY) ? sendResponse(e, getSyncData(p.worker, p.deviceId, p.key === CONFIG.MASTER_KEY)) : sendResponse(e, {status:"error"});   // __59_ (S3-3)
+      if(p.action === 'noticeCheck') return (p.key === CONFIG.MASTER_KEY || p.key === CONFIG.WORKER_KEY) ? sendResponse(e, handleNoticeCheck_(p.worker, p.deviceId, p.key === CONFIG.MASTER_KEY)) : sendResponse(e, {status:"error"});   // __59_ (S3-3)   // __57_: ids only, read only
       if(p.action === 'getGlobalForms') return sendResponse(e, getGlobalForms());
       if(p.action === 'viewProcedures' && p.siteName) {
           if (p.key !== CONFIG.MASTER_KEY && p.key !== CONFIG.WORKER_KEY) return sendResponse(e, {status:'error'});
@@ -591,6 +616,7 @@ function doPost(e) {
 
 /** __43_: doPost routing, run while the script lock is held. Returns the reply object. */
 function _doPostRoute_(p) {
+    _rfInvalidate_(); _GATE_CTX = null;   // __59_: per post
     const _gate = _alarmGate_(p);   // __58_ (S3-2): Resolve needs the master key; during an alarm only the registered phone may lower it
     if (_gate) return _gate;
     if (p.action === 'resolve') { handleResolvePost(p); return { status: 'success' }; }
@@ -720,13 +746,13 @@ function _busyPathAlert_(p) {
         let visitNotes = '';
         try {
             const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Visits');
-            const lastRow = sheet ? sheet.getLastRow() : 0;
-            if (lastRow > 1) {
-                const startRow = Math.max(2, lastRow - 50);
+            _rfInvalidate_();   // __59_: no lock is held here - always read afresh
+            const _lrB = sheet ? _latestRowFor_(sheet, p['Worker Name'], _readWidth_(sheet)) : null;   // __59_ (P2-8): shared finder
+            if (_lrB) {
                 // __42_ (B1): read through col AA so the ladder-started check sees the ladder memory.
-                const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, _readWidth_(sheet)).getValues();
+                const data = [_lrB.data];
                 for (let i = data.length - 1; i >= 0; i--) {
-                    if (data[i][2] === p['Worker Name']) {
+                    if (data[i]) {
                         const st = String(data[i][10]);
                         const closed = st.includes('DEPARTED') || st.includes('COMPLETED') ||
                                        st.includes('DATA_ENTRY_ONLY') || st.includes('USER_SAFE') ||
@@ -1082,16 +1108,19 @@ function handleResolvePost(p) {
     let _latest = null;          // __53_: the worker's latest row in sheet order (PRE_VISIT / DATA_ENTRY_ONLY records skipped)
 
     if (lastRow > 1) {
-        const startRow = Math.max(2, lastRow - 50); 
-        const numRows = lastRow - startRow + 1;
+        // __59_ (P2-8, P2-9): the shared row finder, and the LATEST row only. Before, Resolve walked back past a normal latest
+        // visit to an older alarm row, closed it and sent an All Clear for it.
+        const _lrR = _latestRowFor_(sheet, workerName, _readWidth_(sheet));
+        _rfInvalidate_();
+        const startRow = _lrR ? _lrR.row : 2;
         // A14 (session 72): read through col L - Notes. Reading only A-K made rowData[11]
         // undefined, so the line below wrote the word "undefined" over the visit Notes
         // and erased the [CRITICAL_TIMING] / [START_GPS] tags.
         // __45_ (F89-2): read through col AA so the All Clear audience can be decided from what was sent.
-        const data = sheet.getRange(startRow, 1, numRows, _readWidth_(sheet)).getValues();
+        const data = _lrR ? [_lrR.data] : [];   // __59_ (P2-9): only the latest row
         for (let i = data.length - 1; i >= 0; i--) {
             const rowData = data[i];
-            if (rowData[2] === workerName) {
+            if (rowData) {
                 const status = String(rowData[10]);
                 const _su = status.toUpperCase();
                 const _isRecord = _su.includes('PRE_VISIT') || _su.includes('DATA_ENTRY_ONLY');
@@ -1226,6 +1255,17 @@ function handleWorkerPost(p) {
     const isNoteToSelf = (templateName.trim().toLowerCase() === 'note to self');
     const _statusAsSent = String(p['Alarm Status'] || '');   // __45_ (ledger): before any restore / merge rewrites it
 
+    // __59_ (P2-6): a visit start whose idempotency key is already this worker's Visit ID (col AB) was saved before - its key
+    // fell out of the 100-key window and the phone retried it late. Ack it, no second row (the second row carried the old due
+    // time and alarmed the contacts before the extended one).
+    if (['ARRIVED', 'TRAVELLING', 'PRE_VISIT'].indexOf(_statusAsSent) > -1 && p.idempotencyKey && sheet &&
+        _visitIdTaken_(sheet, workerName, String(p.idempotencyKey))) {
+        _audit_('handleWorkerPost:duplicate-start', workerName, '', '', '', _statusAsSent, p.idempotencyKey,
+                'this visit start was already saved (its key is a Visit ID in col AB) - no second row');
+        _idemRegister_(p.idempotencyKey);
+        return;
+    }
+
     let p1="", p2="", p3="", p4="", sig="";
     // __47_: a Note to Self is private - its photos and signature are not saved to Drive (they sat there link-shared and
     // were never removed). The email to the worker still carries them inline from the payload.
@@ -1291,17 +1331,19 @@ function handleWorkerPost(p) {
         const isNewVisit = (p['Alarm Status'] === 'ARRIVED' || p['Alarm Status'] === 'TRAVELLING' || p['Alarm Status'] === 'PRE_VISIT');
 
         if (lastRow > 1 && !isNewVisit) {
-            const startRow = Math.max(2, lastRow - 50); 
-            const numRows = lastRow - startRow + 1;
+            // __59_ (P2-8): the shared row finder - the worker's latest row (whole sheet, records skipped, newest col A time).
+            // Before: the last 51 rows and an exact name, so a busy sheet or "Rusty " lost the visit.
+            const _lrW = _latestRowFor_(sheet, workerName, _readWidth_(sheet));
+            const startRow = _lrW ? _lrW.row : 2;
             // A14 (session 72): read through col U. Reading only A-K left rowData[11] (Notes)
             // undefined, so alerts never saw [CRITICAL_TIMING] or travel tags - the Critical
             // Timing bridge alert went out as an amber "OVERDUE - MISSED CHECK-IN" at
             // 'high' priority (confirmed on device 13 Oct 2026). Col U = due time (merge below).
             // __42_: read through col AA (ladder memory) for the Critical Timing merge check.
-            const data = sheet.getRange(startRow, 1, numRows, _readWidth_(sheet)).getValues(); 
+            const data = _lrW ? [_lrW.data] : [];   // __59_: only the latest row (read through col AE)
             for (let i = data.length - 1; i >= 0; i--) {
                 const rowData = data[i];
-                if (rowData[2] === workerName) {
+                if (rowData) {   // __59_: the finder matched the name (was: rowData[2] === workerName)
                     const status = String(rowData[10]);
                     // __42_ B4: PRE_VISIT / DATA_ENTRY_ONLY rows are records, not visit rows - look past them.
                     if (status.includes('PRE_VISIT') || status.includes('DATA_ENTRY_ONLY')) continue;
@@ -1541,6 +1583,7 @@ if (!rowUpdated) {
         if (hasFormData && _ledgerRow) _formsLedger_(ss, sheet, p, _statusAsSent, _ledgerRow, _ledgerNew, polishedNotes, distanceValue, sig, p1, p2, p3, p4);
     }
 
+    _rfInvalidate_();   // __59_: Visits may have changed - the next finder call reads afresh
     updateStaffStatus(p);
     if(hasFormData) {
         try {
@@ -1798,6 +1841,8 @@ function handleRegisterDevice(p) {
         return { status: "error", message: "This worker is already registered on another device. Ask your administrator to clear the existing registration." };
       }
       sheet.getRange(i + 1, 5).setValue(_cell_(deviceId));   // __58_ (S3-5)
+      if (!existingId) _audit_('staff:registered', workerName, '', '', '', 'registerDevice', p.idempotencyKey,
+                               'phone ' + _idTail_(deviceId) + ' registered (Staff col E was empty)');   // __59_
       return { status: "success", message: "Device successfully bound to " + workerName };
     }
   }
@@ -1815,8 +1860,19 @@ function updateStaffStatus(p) {
             // Prevents visit events from overwriting a legitimately bound device ID.
             const existingId = (data[i][4] || '').toString().trim();
             const incomingId = (p['deviceId'] || '').toString().trim();
-            if (!existingId || existingId === incomingId) {
+            let boundId = existingId;
+            // __59_ (S112-2): an empty col E is filled by a post only when the worker had no open visit or alarm when the post
+            // arrived (the gate's view, before this post). A phone set up offline still registers with its first visit start;
+            // a stranger's post can no longer take the slot mid-visit after an administrator clears it.
+            if (!existingId && incomingId && _GATE_CTX && _GATE_CTX.openBefore === false) {
                 sheet.getRange(i+1, 5).setValue(_cell_(incomingId));   // __58_ (S3-5)
+                boundId = incomingId;
+                _audit_('staff:device-bound', p['Worker Name'], '', '', '', p['Alarm Status'], p.idempotencyKey,
+                        'Staff col E was empty and no visit was open - phone ' + _idTail_(incomingId) + ' is now the registered phone');
+            } else if (!existingId && incomingId) {
+                _audit_('staff:device-not-bound', p['Worker Name'], '', '', '', p['Alarm Status'], p.idempotencyKey,
+                        'Staff col E is empty but ' + (_GATE_CTX ? 'a visit or alarm was open' : 'the gate did not run') +
+                        ' - phone ' + _idTail_(incomingId) + ' not registered by this post (registration, or a post with no visit open, does it)');
             }
             if(p['Template Name'] && p['Template Name'].includes('Vehicle')) {
                 sheet.getRange(i+1, 6).setValue(new Date()); 
@@ -1832,8 +1888,17 @@ function updateStaffStatus(p) {
             // the topics in the Visits row. Only written when present — never blanked.
             const emgNtfy = (p['Emergency Contact Ntfy'] || '').toString().trim();
             const escNtfy = (p['Escalation Contact Ntfy'] || '').toString().trim();
-            if (emgNtfy) sheet.getRange(i+1, 8).setValue(_cell_(emgNtfy));   // __58_ (S3-5)
-            if (escNtfy) sheet.getRange(i+1, 9).setValue(_cell_(escNtfy));
+            // __59_ (S115-F3): only the registered phone (or the master key) may change the contacts' push topics. Before, any
+            // phone's post rewrote them, and the server's own overdue alerts then went to the stranger's topic.
+            const _topicsOk = (!!boundId && incomingId === boundId) || String(p.key) === String(CONFIG.MASTER_KEY);
+            if (_topicsOk) {
+                if (emgNtfy) sheet.getRange(i+1, 8).setValue(_cell_(emgNtfy));   // __58_ (S3-5)
+                if (escNtfy) sheet.getRange(i+1, 9).setValue(_cell_(escNtfy));
+            } else if ((emgNtfy && emgNtfy !== String(data[i][7] == null ? '' : data[i][7]).trim()) ||
+                       (escNtfy && escNtfy !== String(data[i][8] == null ? '' : data[i][8]).trim())) {
+                _audit_('staff:topics-kept', p['Worker Name'], '', '', '', p['Alarm Status'], p.idempotencyKey,
+                        'post from phone ' + _idTail_(incomingId) + ' (registered ' + _idTail_(boundId) + ') carried different contact topics - Staff H/I not changed');
+            }
             break;
         }
     }
@@ -2774,6 +2839,7 @@ function checkOverdueVisits() {
             return;
         }
         const sends = [];
+        _CHECKER_ADMIN = [];   // __59_ (P2-5): HQ alerts queued under the lock, sent after it is released
         const warns = [];   // __48_ (R04): reminders to workers' own phones, sent after the contact alerts
         let completed = false, lockHeldMs = 0;
         const _h0 = Date.now();
@@ -2789,6 +2855,8 @@ function checkOverdueVisits() {
         // ---- lock released: send ----
         _runLadderSends_(sends);
         _runWarnSends_(warns);   // __48_ (R04): after the contact alerts, never before; hard rule re-checked per send
+        const _adm = _CHECKER_ADMIN || []; _CHECKER_ADMIN = null;   // __59_ (P2-5)
+        _adm.forEach(function (f) { try { f(); } catch (err) { _audit_('checker:admin-send-FAILED', '', '', '', '', '', '', String(err).substring(0, 160)); } });
         if (sends.length) {
             _audit_('checker:lock', '', '', '', '', '', '', 'lockWait=' + lockWaitMs + 'ms lockHeld=' + lockHeldMs + 'ms sends=' +
                     sends.length + ' (sent after lock release) guard=' + guard.kind);
@@ -2819,14 +2887,13 @@ function _checkOverdueLocked_(sends, warns) {
     const data = sheet.getDataRange().getValues();
     const now = new Date();
     const latest = {};
-    
-    for(let i=1; i<data.length; i++) {
-        const row = data[i];
-        const name = row[2]; 
-        if(!latest[name] || new Date(row[0]) > latest[name].time) {
-            latest[name] = { r: i+1, time: new Date(row[0]), rowData: row };
-        }
-    }
+    // __59_ (P2-8, S115-F4): the shared row finder rule - PRE_VISIT / DATA_ENTRY_ONLY records skipped (a pre-visit record
+    // used to hide an open visit from this checker), names matched ignoring case and outer spaces, newest col A time.
+    const _lrMap = _rfLatestRowsFromData_(data);
+    Object.keys(_lrMap).forEach(function (k) {
+        const r = _lrMap[k], row = data[r - 1];
+        latest[String(row[2])] = { r: r, time: new Date(row[0]), rowData: row };
+    });
     
     Object.keys(latest).forEach(worker => {
         try {
@@ -2842,6 +2909,7 @@ function _checkOverdueLocked_(sends, warns) {
                 if (isNaN(due.getTime())) {
                     console.error('[checkOverdueVisits] Unreadable due time for ' + worker + ': ' + dueTimeStr);
                     try { sp.setProperty('LAST_DUE_PARSE_ERROR', new Date().toISOString() + ' | ' + worker + ' | col U = "' + String(dueTimeStr).substring(0, 60) + '"'); } catch (_) {}
+                    _dueErrorAlert_(worker, latest[worker].r, entry, dueTimeStr);   // __59_ (P2-5): HQ told at once, not only in the daily email
                     return;
                 }
                 // A12: String() - Sheets may store Notes as a number or date, and .includes()
@@ -3096,11 +3164,13 @@ function _sendHealthEmailImpl_(trim) {
                 }
             }
 
-            // Track the latest row per worker for stall detection
-            if (!latestRowPerWorker[worker] || rowTime > latestRowPerWorker[worker].time) {
-                latestRowPerWorker[worker] = { time: rowTime, status: status, location: String(row[12]) };
-            }
         }
+        // __59_ (P2-8): the latest row per worker by the shared finder rule (records skipped) for stall detection
+        const _hm = _rfLatestRowsFromData_(data);
+        Object.keys(_hm).forEach(function (k) {
+            const row = data[_hm[k] - 1];
+            latestRowPerWorker[String(row[2])] = { time: new Date(row[0]), status: String(row[10]), location: String(row[12]) };
+        });
 
         // Flag workers whose latest row is open and older than 24h
         Object.keys(latestRowPerWorker).forEach(worker => {
@@ -4541,7 +4611,7 @@ function cleanupPrivateSentNotes() {
  * REFINED: getSyncData with Unified Targeting
  * Logic: Pulls worker groups and applies a single Targeting Engine to filter all data.
  */
-function getSyncData(workerName, deviceId) {
+function getSyncData(workerName, deviceId, isHQ) {
     // 1. THE TARGETING ENGINE - __55_ (R75): one shared copy, so the broadcast push picks exactly the same workers
     const isAuthorised = _targetMatch_;
 
@@ -4562,6 +4632,9 @@ function getSyncData(workerName, deviceId) {
             // Column C (index 2) is 'Status' — block Inactive workers at the gate.
             const staffStatus = (stData[i][2] || '').toString().trim().toLowerCase();
             if (staffStatus === 'inactive') return {status: "error", message: "Access Denied."};
+            // __59_ (S3-3): only the registered phone may sync (empty col E allowed for first-time setup). The worker app shows
+            // "DEVICE NOT AUTHORISED" for this reply.
+            if (!_syncPhoneOk_(stData[i], deviceId, isHQ)) return { status: 'device_denied', message: SYNC_DENIED_MSG };
             workerFound = true;
             // Column D (Index 3) is 'Group Membership'
             workerGroups = (stData[i][3] || "").toString().toLowerCase(); 
@@ -4699,21 +4772,15 @@ function handleNoticeAck(p) {
     try {
         const visitsSheet = ss.getSheetByName('Visits');
         if (visitsSheet && visitsSheet.getLastRow() > 1) {
-            const vData = visitsSheet.getDataRange().getValues();
-            const CLOSED_PREFIXES = ['DEPARTED', 'COMPLETED', 'DATA_ENTRY_ONLY', 'USER_SAFE', 'PRE_VISIT'];
-            // Walk rows in reverse — most recent open visit for this worker
-            for (let r = vData.length - 1; r >= 1; r--) {
-                if (vData[r][2] === worker) { // col C (index 2) = Worker Name
-                    const st       = String(vData[r][10]); // col K (index 10) = Alarm Status
-                    const isClosed = CLOSED_PREFIXES.some(pfx => st.includes(pfx));
-                    if (!isClosed) {
-                        const existing = vData[r][11] ? String(vData[r][11]) : ''; // col L = Notes
-                        visitsSheet.getRange(r + 1, 12).setValue(_cell_(
-                            existing + ` [NOTICE_ACK: ${noticeLabel}]`
-                        ));
-                        break;
-                    }
-                }
+            // __59_ (P2-8): the worker's LATEST row (shared finder), and only when it is open. Before: the most recent OPEN row,
+            // which could be an old abandoned visit.
+            const _lrN = _latestRowFor_(visitsSheet, worker);
+            _rfInvalidate_();
+            if (_lrN && !_rfClosed_(_lrN.status)) {
+                const existing = _lrN.data[11] ? String(_lrN.data[11]) : ''; // col L = Notes
+                visitsSheet.getRange(_lrN.row, 12).setValue(_cell_(
+                    existing + ` [NOTICE_ACK: ${noticeLabel}]`
+                ));
             }
         }
     } catch (e) {
@@ -4835,15 +4902,16 @@ function handleSafetyResolution(p, forceNotify, forceScope, forceStillMonitored)
             const ss = SpreadsheetApp.getActiveSpreadsheet();
             const sheet = ss.getSheetByName('Visits');
             if (sheet) {
-                const data = sheet.getDataRange().getValues();
                 // __44_ (F87-4): "alerted" is decided by _contactsAlerted_ (what was sent), not by words in col K.
                 // __42_ B2/B4: decide on the worker's LATEST row only. A PIN clear now leaves the visit
                 // row open as ARRIVED/TRAVELLING, so walking back past it could find an older visit's
                 // alarm and send a wrong All Clear. PRE_VISIT / DATA_ENTRY_ONLY records are skipped.
+                // __59_ (P2-8): the shared row finder - the same row handleWorkerPost and the gate act on.
+                const _lrS = _latestRowFor_(sheet, workerNameCheck, _readWidth_(sheet));
+                const data = _lrS ? [null, _lrS.data] : [null];
                 for (let i = data.length - 1; i > 0; i--) {
-                    if ((data[i][2] || '').toString().trim() === workerNameCheck) {
+                    if (data[i]) {
                         const rowStatus = (data[i][10] || '').toString().toUpperCase();
-                        if (rowStatus.includes('PRE_VISIT') || rowStatus.includes('DATA_ENTRY_ONLY')) continue;
                         _audience = _alertAudience_(data[i]);            // __45_ (F89-2): who was alerted
                         if (_audience !== 'none') alertWasSent = true;
                         const closed = rowStatus.includes('DEPARTED') || rowStatus.includes('COMPLETED') || rowStatus.includes('SAFE');
@@ -5496,7 +5564,7 @@ function _formsGps_(sheet, rowNum, p) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__58_';
+const TEMPLATE_BUILD = 'backend__59_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
@@ -5721,18 +5789,11 @@ function _formRouteFor_(sheet, workerName, p) {
     if (!always && !ifOpen) return null;
     let latest = null;
     try {
-        const lastRow = sheet ? sheet.getLastRow() : 0;
-        if (lastRow > 1) {
-            const startRow = Math.max(2, lastRow - 50);
-            const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, 21).getValues();
-            for (let i = data.length - 1; i >= 0; i--) {
-                if (data[i][2] !== workerName) continue;
-                const s = String(data[i][10]);
-                if (s.includes('PRE_VISIT') || s.includes('DATA_ENTRY_ONLY')) continue;
-                const closed = s.includes('DEPARTED') || s.includes('COMPLETED') || s.includes('USER_SAFE');
-                latest = { rowNum: startRow + i, open: !closed, due: data[i][20] };
-                break;
-            }
+        const _lrF = sheet ? _latestRowFor_(sheet, workerName) : null;   // __59_ (P2-8): the shared row finder
+        if (_lrF) {
+            const s = _lrF.status;
+            const closed = s.includes('DEPARTED') || s.includes('COMPLETED') || s.includes('USER_SAFE');
+            latest = { rowNum: _lrF.row, open: !closed, due: _lrF.due };
         }
     } catch (e) { console.warn('[forms] latest-row lookup failed: ' + e); }
     if (ifOpen && !(latest && latest.open)) return null;   // no visit running: the record row in Visits, as before
@@ -5888,6 +5949,12 @@ function _settings_() {
         workerWarnQuietW2Mins: num('WORKER_WARN_QUIET_W2_MINS', 6, 0, 30),   // __49_ (R60)
         auditKeepDays:         num('AUDIT_KEEP_DAYS', 7, 1, 90),                // __50_ (R62)
         auditMaxRows:          num('AUDIT_MAX_ROWS', AUDIT_MAX_ROWS, 1000, 50000),   // __50_ (R62)
+        adminAlertTopic:       (function () {   // __59_ (P2-5): '' = email only
+            if (!('ADMIN_ALERT_TOPIC' in raw) || blank(raw.ADMIN_ALERT_TOPIC)) return '';
+            const t = String(raw.ADMIN_ALERT_TOPIC).trim();
+            if (!_topicOk_(t)) { bad.push('ADMIN_ALERT_TOPIC'); return ''; }
+            return t;
+        })(),
         bad: bad
     };
     return _SETTINGS;
@@ -6961,18 +7028,12 @@ function _latestStatusByWorker_() {
     const out = Object.create(null);
     const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Visits');
     if (!sh) return out;
-    const last = sh.getLastRow();
-    if (last < 2) return out;
-    const start = Math.max(2, last - 500);
-    const data = sh.getRange(start, 1, last - start + 1, 11).getValues();
-    const bestT = Object.create(null);
-    data.forEach(function (r) {
-        const n = String(r[2] == null ? '' : r[2]).toLowerCase().trim();
-        if (!n) return;
-        let t = new Date(r[0]).getTime();
-        if (isNaN(t)) t = -Infinity;
-        if (!(n in bestT) || t >= bestT[n]) { bestT[n] = t; out[n] = String(r[10] == null ? '' : r[10]).toUpperCase(); }
-    });
+    if (sh.getLastRow() < 2) return out;
+    // __59_ (P2-8): the shared row finder rule over the whole sheet (was: last 501 rows, records not skipped).
+    _rfInvalidate_();
+    const s = _rfSnap_(sh);
+    const m = _rfScan_(s.n, function (i) { return s.ac[i][2]; }, function (i) { return s.ac[i][0]; }, function (i) { return s.k[i][0]; });
+    for (const n in m) out[n] = String(s.k[m[n]][0] == null ? '' : s.k[m[n]][0]).toUpperCase();
     return out;
 }
 
@@ -7208,7 +7269,7 @@ const NOTICE_CHECK_MAX = 10;   // the sync's own limit on noticeHistory
  * __57_: the ids of the Active notices this worker may see, newest first, at most 10 - the same list the sync would put in
  * meta.noticeHistory. Errors are the sync's own ("Access Denied." for an unknown or Inactive worker). Never throws.
  */
-function handleNoticeCheck_(workerName) {
+function handleNoticeCheck_(workerName, deviceId, isHQ) {
     try {
         const ss = SpreadsheetApp.getActiveSpreadsheet();
         const stSheet = ss.getSheetByName('Staff');
@@ -7219,6 +7280,7 @@ function handleNoticeCheck_(workerName) {
         for (let i = 1; i < stData.length; i++) {
             if ((stData[i][0] || '').toString().toLowerCase().trim() === name) {
                 if ((stData[i][2] || '').toString().trim().toLowerCase() === 'inactive') return { status: 'error', message: 'Access Denied.' };
+                if (!_syncPhoneOk_(stData[i], deviceId, isHQ)) return { status: 'device_denied', message: SYNC_DENIED_MSG };   // __59_ (S3-3)
                 found = true;
                 groups = (stData[i][3] || '').toString().toLowerCase();
                 break;
@@ -7317,9 +7379,13 @@ function _cleanInputs_(p) {
             }
         }
         if (Object.prototype.hasOwnProperty.call(p, 'Worker Name')) {
-            const raw = String(p['Worker Name'] == null ? '' : p['Worker Name']);
+            // __59_ (S115-F1): one name at the door. Outer spaces go; a name that matches a Staff name ignoring case and outer
+            // spaces becomes the Staff spelling, so every later step (gate, finder, alerts) sees the same name.
+            const raw = String(p['Worker Name'] == null ? '' : p['Worker Name']).trim();
+            const _staffName = _staffNameFor_(raw);
+            p['Worker Name'] = _staffName !== null ? _staffName : raw;
             const SAFE = /^[\p{L}\p{M}\p{N} .'’-]*$/u;
-            if (!(SAFE.test(raw) && raw.length <= NAME_MAX_CHARS) && !_isStaffNameExact_(raw)) {
+            if (_staffName === null && !(SAFE.test(raw) && raw.length <= NAME_MAX_CHARS)) {
                 let clean = raw.replace(/[^\p{L}\p{M}\p{N} .'’-]/gu, '').replace(/\s+/g, ' ').trim().substring(0, NAME_MAX_CHARS).trim();
                 if (!clean) clean = 'Unknown worker';
                 p['Worker Name'] = clean;
@@ -7343,23 +7409,37 @@ function _isStaffNameExact_(name) {
 }
 
 /**
- * __58_: the worker's latest visit row, found the way handleWorkerPost finds it (the last 51 rows, exact name, PRE_VISIT and
+ * __59_: now the shared row finder. (__58_: the worker's latest visit row, found the way handleWorkerPost found it - the last 51 rows, exact name, PRE_VISIT and
  * DATA_ENTRY_ONLY records skipped). { row, status, due } or null.
  */
 function _gateLatestRow_(workerName) {
+    // __59_ (P2-8): the shared row finder (whole sheet, names ignoring case and outer spaces, newest col A time).
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Visits');
-    if (!sheet) return null;
-    const lastRow = sheet.getLastRow();
-    if (lastRow < 2) return null;
-    const startRow = Math.max(2, lastRow - 50);
-    const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, 21).getValues();
-    for (let i = data.length - 1; i >= 0; i--) {
-        if (data[i][2] !== workerName) continue;
-        const st = String(data[i][10]);
-        if (st.includes('PRE_VISIT') || st.includes('DATA_ENTRY_ONLY')) continue;
-        return { row: startRow + i, status: st, due: data[i][20] };
-    }
-    return null;
+    const lr = _latestRowFor_(sheet, workerName);
+    return lr ? { row: lr.row, status: lr.status, due: lr.due } : null;
+}
+
+/** __59_ (S115-D2): the HQ email for a refused post on an open visit (no alarm). e = the HTML escaper. */
+function _gateVisitEmailHtml_(e, worker, lr, tried, why, sentId, boundId, dueTxt) {
+    return '<div style="font-family:Arial,sans-serif;font-size:14px;color:#111">' +
+        '<p><b>A post tried to end or change an open visit and was refused. The visit is still open. The contacts will be alerted at the due time' +
+        (dueTxt ? ' (' + e(dueTxt) + ')' : '') + ' unless the visit is ended or extended from the registered phone.</b></p>' +
+        '<table cellpadding="4" style="border-collapse:collapse">' +
+        '<tr><td><b>Worker</b></td><td>' + e(worker) + '</td></tr>' +
+        '<tr><td><b>Visit now</b></td><td>' + e(lr ? lr.status : '') + ' (Visits row ' + e(lr ? lr.row : '') + ')</td></tr>' +
+        '<tr><td><b>Due</b></td><td>' + e(dueTxt || 'not readable') + '</td></tr>' +
+        '<tr><td><b>What was tried</b></td><td>' + e(tried) + '</td></tr>' +
+        '<tr><td><b>Why refused</b></td><td>' + e(why) + '</td></tr>' +
+        '<tr><td><b>Phone that sent it</b></td><td>' + e(_idTail_(sentId)) + (boundId === null ? '' : ' (registered phone ' + e(_idTail_(boundId)) + ')') + '</td></tr>' +
+        '<tr><td><b>Time</b></td><td>' + e(_fmtLocal_(new Date(), 'd MMM yyyy, h:mm:ss a')) + '</td></tr>' +
+        '</table>' +
+        '<p><b>What to do now</b></p><ol>' +
+        '<li>Phone the worker. If they are safe and still have their registered phone, they end or extend the visit from it.</li>' +
+        '<li>If the worker is on a new or reinstalled phone: clear their phone ID (Staff tab, column E), then they run Setup again on the new phone. ' +
+        'After that they can end the visit. If that cannot happen before the due time, the contacts will be alerted - resolve it from the Monitor.</li>' +
+        '<li>If the worker did not send this, someone else has the app key. Treat it as a security incident and tell your IT adviser.</li>' +
+        '</ol><p style="color:#666;font-size:12px">You get at most one of these emails per visit every 6 hours. Every refusal is in the Audit tab ' +
+        '(source alarm-gate:refused). ' + e(TEMPLATE_BUILD) + '</p></div>';
 }
 
 /** __58_: the phone id in Staff col E for this worker (matched as the sync matches: case and end spaces ignored). '' = none / not found. */
@@ -7385,14 +7465,21 @@ function _alarmGate_(p) {
             _audit_('input:cleaned', p['Worker Name'], '', '', '', p['Alarm Status'], p.idempotencyKey, _INPUT_NOTES.join(' ; '));
             _INPUT_NOTES = [];
         }
-        if (String(p.key) === String(CONFIG.MASTER_KEY)) return null;   // HQ (the Monitor) is never gated
         const act = String(p.action || '');
         const worker = p['Worker Name'];
         const statusIn = String(p['Alarm Status'] || '');
+        if (GATE_NEUTRAL_ACTIONS.indexOf(act) > -1) return null;
+
+        // __59_ (S115-D1): what the worker's latest row is BEFORE this post (shared finder). Kept for updateStaffStatus: an empty
+        // Staff col E is filled by a post only when no visit or alarm was open.
+        const lr = _gateLatestRow_(worker);
+        const inAlarm = !!(lr && _alarmRank_(lr.status.toUpperCase()) >= 2);
+        const openVisit = !!(lr && !inAlarm && !_rfClosed_(lr.status) && String(lr.due == null ? '' : lr.due).trim() !== '');
+        _GATE_CTX = { openBefore: inAlarm || openVisit };
+
+        if (String(p.key) === String(CONFIG.MASTER_KEY)) return null;   // HQ (the Monitor) is never gated
 
         if (act === 'resolve') {
-            const lr = _gateLatestRow_(worker);
-            const inAlarm = !!(lr && _alarmRank_(lr.status.toUpperCase()) >= 2);
             _audit_('alarm-gate:refused', worker, lr ? lr.row : '', lr ? lr.status : '', '', statusIn, p.idempotencyKey,
                     'HQ Resolve needs the master key - refused (posted with the worker key from phone ' + _idTail_(p.deviceId) + ')' +
                     (inAlarm ? '' : ' - no alarm on the latest row'));
@@ -7401,10 +7488,7 @@ function _alarmGate_(p) {
                                           p.deviceId, null);
             return { status: 'error', message: 'Resolve needs the master key.' };
         }
-        if (GATE_NEUTRAL_ACTIONS.indexOf(act) > -1) return null;
-
-        const lr = _gateLatestRow_(worker);
-        if (!lr || _alarmRank_(lr.status.toUpperCase()) < 2) return null;   // no alarm: unchanged (narrow scope)
+        if (!inAlarm && !openVisit) return null;   // __59_: no open visit and no alarm - any phone may post (and start a visit)
 
         const dev = _gateBoundDevice_(worker);
         const sent = String(p.deviceId == null ? '' : p.deviceId).trim();
@@ -7426,9 +7510,9 @@ function _alarmGate_(p) {
             return null;
         }
         _audit_('alarm-gate:refused', worker, lr.row, lr.status, '', statusIn, p.idempotencyKey,
-                'refused during an alarm - ' + why + ' (phone ' + _idTail_(sent) + ', registered ' + _idTail_(dev.bound) + ', action=' + (act || 'none') +
-                '). Replied success so the phone queue moves on; the alarm stays up.');
-        _gateAdminEmail_(worker, lr, act === 'notifySafety' ? 'All Clear (PIN entry)' : (statusIn || 'a post'), why, sent, dev.bound);
+                'refused during ' + (inAlarm ? 'an alarm' : 'an open visit') + ' - ' + why + ' (phone ' + _idTail_(sent) + ', registered ' + _idTail_(dev.bound) + ', action=' + (act || 'none') +
+                '). Replied success so the phone queue moves on; ' + (inAlarm ? 'the alarm stays up.' : 'the visit stays open and is escalated at its due time.'));
+        _gateAdminEmail_(worker, lr, act === 'notifySafety' ? 'All Clear (PIN entry)' : (statusIn || 'a post'), why, sent, dev.bound, inAlarm ? '' : 'visit');
         return { status: 'success', saved: false, notice: GATE_REFUSED_NOTICE };
     } catch (e) {
         _audit_('alarm-gate:error', p && p['Worker Name'], '', '', '', p && p['Alarm Status'], p && p.idempotencyKey,
@@ -7442,9 +7526,10 @@ function _alarmGate_(p) {
  * Queued to send after the lock is released. The send never throws: a failed send must not turn a refused post into an error
  * reply (the phone would retry it forever and block its own later alarms).
  */
-function _gateAdminEmail_(worker, lr, tried, why, sentId, boundId) {
+function _gateAdminEmail_(worker, lr, tried, why, sentId, boundId, mode) {
     try {
-        const ck = 'GATEMAIL_' + String(worker || '').substring(0, 80) + '_' + (lr ? lr.row : 'x');
+        const _v = mode === 'visit';   // __59_ (S115-D2): a refused post on an open visit (no alarm) - its own wording and cache key
+        const ck = (_v ? GATE_VISIT_MAIL_PREFIX : 'GATEMAIL_') + String(worker || '').substring(0, 80) + '_' + (lr ? lr.row : 'x');
         try {
             const cache = CacheService.getScriptCache();
             if (cache.get(ck)) return;
@@ -7452,8 +7537,11 @@ function _gateAdminEmail_(worker, lr, tried, why, sentId, boundId) {
         } catch (_) {}
         const e = function (s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
         const org = (CONFIG.ORG_NAME && !String(CONFIG.ORG_NAME).includes('%%')) ? CONFIG.ORG_NAME : 'OTG';
-        const subject = 'OTG security - a change to ' + String(worker || 'a worker').substring(0, 60) + "'s alarm was refused (" + org + ')';
-        const html =
+        let _dueTxt = '';
+        if (_v && lr && lr.due) { const _d = new Date(lr.due); _dueTxt = isNaN(_d.getTime()) ? String(lr.due) : _fmtLocal_(_d, 'd MMM yyyy, h:mm a'); }
+        const subject = _v ? 'OTG security - a change to ' + String(worker || 'a worker').substring(0, 60) + "'s visit was refused (" + org + ')'
+                           : 'OTG security - a change to ' + String(worker || 'a worker').substring(0, 60) + "'s alarm was refused (" + org + ')';
+        const html = _v ? _gateVisitEmailHtml_(e, worker, lr, tried, why, sentId, boundId, _dueTxt) :
             '<div style="font-family:Arial,sans-serif;font-size:14px;color:#111">' +
             '<p><b>A post tried to change an active alarm and was refused. The alarm is still active and escalation carries on.</b></p>' +
             '<table cellpadding="4" style="border-collapse:collapse">' +
@@ -7478,5 +7566,214 @@ function _gateAdminEmail_(worker, lr, tried, why, sentId, boundId) {
         });
     } catch (err) {
         _audit_('alarm-gate:email-error', worker, '', '', '', '', '', String(err).substring(0, 160));
+    }
+}
+
+// ==========================================
+// __59_ (session 116): ONE ROW FINDER, ONE NAME AT THE DOOR, THE GATE ON OPEN VISITS (S115-D1)
+// ==========================================
+// Why: session 115 proved the __58_ alarm gate could be walked around. Nine places decided "the worker's latest row" with
+// three windows (last 51 rows / whole sheet / 501), three name rules and two "latest" rules. A stranger's PIN clear sent as
+// "Rusty " (space) or after 51 newer rows sent the contacts an All Clear during a real PANIC; a pre-visit record hid an open
+// visit from the overdue checker; any phone's post rewrote the contacts' push topics (Staff H/I).
+// Design (Russell, 5 Nov 2026, S115-D1 to D3): while a worker's latest row is an OPEN visit or an alarm, a post from any phone
+// other than the one in Staff col E may only raise an alarm or report its position. Everything else is refused (saved:false).
+// With no open visit, any phone may start one.
+
+const RF_CLOSED_WORDS = ['DEPARTED', 'COMPLETED', 'DATA_ENTRY_ONLY', 'USER_SAFE'];
+const GATE_VISIT_MAIL_PREFIX = 'GATEVMAIL_';   // one email per refused open-visit row, at most every 6 hours (S115-D2)
+const DUE_ERR_TTL_S = 21600;                   // P2-5: one unreadable-due alert per row and value, at most every 6 hours
+const SYNC_DENIED_MSG = 'This phone is not the one registered for this worker. Ask your administrator to clear the registered ' +
+                        'phone (Staff tab, column E), then run Setup again on this phone.';
+let _RF_SNAP = null;        // per execution: Visits cols A-C and K, read once and reused until a writer invalidates it
+let _GATE_CTX = null;       // per doPost: what the gate saw BEFORE this post changed anything ({ openBefore })
+let _CHECKER_ADMIN = null;  // per checker run: HQ alerts (P2-5) queued while the lock is held, sent after it is released
+
+/** __59_: a worker name as the finder compares it - outer spaces and case ignored. */
+function _rfKey_(name) { return String(name == null ? '' : name).trim().toLowerCase(); }
+
+/** __59_: PRE_VISIT and DATA_ENTRY_ONLY rows are records, never "the visit". */
+function _rfIsRecord_(status) {
+    const s = String(status == null ? '' : status).toUpperCase();
+    return s.includes('PRE_VISIT') || s.includes('DATA_ENTRY_ONLY');
+}
+
+/** __59_: a closed row (or a record). */
+function _rfClosed_(status) {
+    const s = String(status == null ? '' : status).toUpperCase();
+    return _rfIsRecord_(s) || RF_CLOSED_WORDS.some(function (w) { return s.includes(w); });
+}
+
+/** __59_: col A as milliseconds. An unreadable col A counts as the oldest possible. */
+function _rfTime_(v) {
+    if (v instanceof Date) { const d = v.getTime(); return isNaN(d) ? -Infinity : d; }
+    if (v === '' || v === null || v === undefined) return -Infinity;
+    const t = new Date(v).getTime();
+    return isNaN(t) ? -Infinity : t;
+}
+
+/**
+ * __59_ (P2-8): THE rule for "the worker's latest row", used everywhere. Over n rows (0..n-1): records skipped; names compared
+ * ignoring case and outer spaces; the newest col A time wins; a tie (or two unreadable times) goes to the later row.
+ * Returns { key: index } for every worker, or only for onlyKey when given.
+ */
+function _rfScan_(n, nameAt, timeAt, statusAt, onlyKey) {
+    const best = Object.create(null), bestT = Object.create(null);
+    for (let i = 0; i < n; i++) {
+        const key = _rfKey_(nameAt(i));
+        if (!key) continue;
+        if (onlyKey !== undefined && key !== onlyKey) continue;
+        if (_rfIsRecord_(statusAt(i))) continue;
+        const t = _rfTime_(timeAt(i));
+        if (!(key in bestT) || t >= bestT[key]) { bestT[key] = t; best[key] = i; }
+    }
+    return best;
+}
+
+/** __59_: for a getDataRange() array (header in row 0): { key: sheet row number } of each worker's latest row. */
+function _rfLatestRowsFromData_(data) {
+    const out = Object.create(null);
+    const n = Math.max(0, (data ? data.length : 0) - 1);
+    const m = _rfScan_(n, function (i) { return data[i + 1][2]; }, function (i) { return data[i + 1][0]; }, function (i) { return data[i + 1][10]; });
+    for (const k in m) out[k] = m[k] + 2;
+    return out;
+}
+
+/** __59_: Visits cols A-C and K (only what the finder needs), read once per execution until a write or a new row. */
+function _rfSnap_(sheet) {
+    const last = sheet.getLastRow();
+    if (_RF_SNAP && _RF_SNAP.last === last) return _RF_SNAP;
+    const n = Math.max(0, last - 1);
+    _RF_SNAP = {
+        last: last, n: n,
+        ac: n ? sheet.getRange(2, 1, n, 3).getValues() : [],
+        k:  n ? sheet.getRange(2, 11, n, 1).getValues() : []
+    };
+    return _RF_SNAP;
+}
+
+/** __59_: called by every doPost writer after its finder call, so the next finder call reads afresh. */
+function _rfInvalidate_() { _RF_SNAP = null; }
+
+/**
+ * __59_ (P2-8): the worker's latest row. { row, status, due, data } or null. data is the row read afresh, `width` columns
+ * (at least 21, through col U). Whole sheet, records skipped, names ignoring case and outer spaces, newest col A time.
+ */
+function _latestRowFor_(sheet, workerName, width) {
+    if (!sheet) return null;
+    const key = _rfKey_(workerName);
+    if (!key) return null;
+    if (sheet.getLastRow() < 2) return null;
+    const s = _rfSnap_(sheet);
+    const m = _rfScan_(s.n, function (i) { return s.ac[i][2]; }, function (i) { return s.ac[i][0]; }, function (i) { return s.k[i][0]; }, key);
+    if (!(key in m)) return null;
+    const row = m[key] + 2;
+    let w = Math.max(21, width || 21);
+    try { w = Math.min(w, sheet.getMaxColumns()); } catch (_) {}
+    const data = sheet.getRange(row, 1, 1, w).getValues()[0];
+    return { row: row, status: String(data[10] == null ? '' : data[10]), due: data[20], data: data };
+}
+
+/** __59_ (S115-F1): the Staff tab's own spelling of this name (case and outer spaces ignored), or null. Never throws. */
+function _staffNameFor_(name) {
+    try {
+        const want = _rfKey_(name);
+        if (!want) return null;
+        const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Staff');
+        if (!sh || sh.getLastRow() < 2) return null;
+        const col = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
+        for (let i = 0; i < col.length; i++) {
+            const c = col[i][0];
+            if (c === '' || c === null || c === undefined) continue;
+            if (_rfKey_(c) === want) return String(c);
+        }
+    } catch (e) {}
+    return null;
+}
+
+/**
+ * __59_ (P2-6): is this key already this worker's Visit ID (col AB)? A visit start retried after its key left the 100-key
+ * window is then a duplicate. Read only; never throws (false = create the row, as before).
+ */
+function _visitIdTaken_(sheet, workerName, key) {
+    try {
+        if (!sheet || !key) return false;
+        const last = sheet.getLastRow();
+        if (last < 2 || sheet.getMaxColumns() < VISIT_ID_COL) return false;
+        const ids = sheet.getRange(2, VISIT_ID_COL, last - 1, 1).getValues();
+        const s = _rfSnap_(sheet);
+        const want = _rfKey_(workerName);
+        for (let i = ids.length - 1; i >= 0; i--) {
+            if (String(ids[i][0] == null ? '' : ids[i][0]).trim() !== key) continue;
+            if (s.ac[i] && _rfKey_(s.ac[i][2]) === want) return true;
+        }
+    } catch (e) {}
+    return false;
+}
+
+/**
+ * __59_ (S3-3): may this phone sync / check notices for this worker? Staff row found by the caller. An empty col E is allowed
+ * (first-time setup must work); the master key is never refused.
+ */
+function _syncPhoneOk_(staffRow, deviceId, isHQ) {
+    if (isHQ) return true;
+    const bound = String(staffRow[4] == null ? '' : staffRow[4]).trim();
+    if (!bound) return true;
+    return String(deviceId == null ? '' : deviceId).trim() === bound;
+}
+
+/**
+ * __59_ (P2-5): a worker's latest open visit has a due time the server cannot read, so nothing would alert the contacts if the
+ * worker does not check out. Tell HQ at once: the Health email address (or the script owner) and, when the Settings tab has
+ * ADMIN_ALERT_TOPIC, a push to the System Administrator. One alert per row and value every 6 hours. Never throws.
+ */
+function _dueErrorAlert_(worker, rowNum, entry, dueRaw) {
+    try {
+        const val = String(dueRaw == null ? '' : dueRaw).substring(0, 60);
+        const ck = 'DUEERR_' + rowNum + '_' + val.replace(/[^A-Za-z0-9]/g, '').substring(0, 40);
+        try {
+            const cache = CacheService.getScriptCache();
+            if (cache.get(ck)) return;
+            cache.put(ck, '1', DUE_ERR_TTL_S);
+        } catch (_) {}
+        _audit_('checker:due-unreadable', worker, rowNum, entry ? entry[10] : '', '', '', '',
+                'col U "' + val + '" is not a date and time - HQ alerted (email' + (_settings_().adminAlertTopic ? ' and push' : '') + ')');
+        const e = function (s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
+        const org = (CONFIG.ORG_NAME && !String(CONFIG.ORG_NAME).includes('%%')) ? CONFIG.ORG_NAME : 'OTG';
+        const who = String(worker || 'a worker').substring(0, 60);
+        const subject = 'OTG - ' + who + "'s visit is not being watched: unreadable due time (" + org + ')';
+        const html =
+            '<div style="font-family:Arial,sans-serif;font-size:14px;color:#111">' +
+            '<p><b>The server cannot read the due time of an open visit, so the contacts will NOT be alerted if the worker does not check out.</b></p>' +
+            '<table cellpadding="4" style="border-collapse:collapse">' +
+            '<tr><td><b>Worker</b></td><td>' + e(worker) + '</td></tr>' +
+            '<tr><td><b>Visits row</b></td><td>' + e(rowNum) + '</td></tr>' +
+            '<tr><td><b>Status</b></td><td>' + e(entry ? entry[10] : '') + '</td></tr>' +
+            '<tr><td><b>Column U holds</b></td><td>' + e(val) + '</td></tr>' +
+            '<tr><td><b>Time</b></td><td>' + e(_fmtLocal_(new Date(), 'd MMM yyyy, h:mm:ss a')) + '</td></tr>' +
+            '</table>' +
+            '<p><b>What to do now</b></p><ol>' +
+            '<li>Phone the worker and check they are safe.</li>' +
+            '<li>Ask them to extend or end the visit in the app - an extend writes a new due time and the server watches the visit again.</li>' +
+            '<li>Or correct column U of that Visits row to a date and time (for example 2026-11-05T14:30:00+13:00).</li>' +
+            '</ol><p style="color:#666;font-size:12px">You get at most one of these per visit row every 6 hours while it stays unreadable. ' +
+            'Audit source checker:due-unreadable. ' + e(TEMPLATE_BUILD) + '</p></div>';
+        const to = (CONFIG.HEALTH_EMAIL && String(CONFIG.HEALTH_EMAIL).includes('@')) ? CONFIG.HEALTH_EMAIL : Session.getEffectiveUser().getEmail();
+        const topic = _settings_().adminAlertTopic;
+        const job = function () {
+            try { MailApp.sendEmail({ to: to, subject: subject, htmlBody: html }); }
+            catch (err) { _audit_('checker:due-unreadable-email-FAILED', worker, rowNum, '', '', '', '', String(err).substring(0, 160)); }
+            if (topic) {
+                try {
+                    const r = _sendNtfy(topic, 'OTG: visit not watched - ' + who,
+                                        who + "'s visit (Visits row " + rowNum + ') has an unreadable due time, so contacts will not be alerted if they do not check out. ' +
+                                        'Phone the worker; an extend in the app fixes it. Details by email.', 'high', 'warning');
+                    if (!r || !r.ok) _audit_('checker:due-unreadable-push-FAILED', worker, rowNum, '', '', '', '', 'push to the admin topic not accepted' + (r && r.code ? ' (HTTP ' + r.code + ')' : ''));
+                } catch (err) { _audit_('checker:due-unreadable-push-FAILED', worker, rowNum, '', '', '', '', String(err).substring(0, 160)); }
+            }
+        };
+        if (_CHECKER_ADMIN) _CHECKER_ADMIN.push(job); else job();
+    } catch (err) {
+        try { _audit_('checker:due-unreadable-error', worker, rowNum, '', '', '', '', String(err).substring(0, 160)); } catch (_) {}
     }
 }
