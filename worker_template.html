@@ -648,7 +648,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
  <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety On-The-Go!</span>
- <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__30_</span>
+ <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__31_</span>
  </h1>
  </div>
  <div class="flex items-center">
@@ -860,6 +860,9 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <!-- __25_ (R74): a one-line reminder, shown every time before a visit or trip is started -->
  <p id="muteReminder" class="mb-2 text-center text-xs font-bold text-gray-300" role="note">🔔 Check your phone is not on silent, so you hear its warnings.</p>
 
+ <!-- __31_ (F116-1): shown while this phone has not yet been registered with the server; never blocks a start -->
+ <p id="regPendingNote" class="hidden mb-2 text-center text-xs font-bold text-amber-300" role="note">⚠️ This phone is not registered with the server yet. It will register when it is next online. You can still start.</p>
+
  <!-- __27_ (R77): shown until the worker has practised once (the setup practice step can be skipped) -->
  <button id="practiceReminder" type="button" onclick="openPractice('main')" class="hidden w-full mb-2 text-center text-xs font-bold text-red-300 underline underline-offset-2">🆘 Not practised your alarms yet? Tap to try them safely.</button>
 
@@ -923,7 +926,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  OVERDUE
  </div>
  <!-- what3words address — populated on panic/alarm if w3wApiKey is configured in config.json -->
- <div id="w3wDisplay" class="hidden mt-1 text-emerald-400 font-mono text-sm font-bold tracking-tight"></div>
+ <div id="w3wDisplay" class="hidden mt-1 text-emerald-400 font-mono text-sm font-bold tracking-tight whitespace-pre-line"></div>
  <div id="countdownTimer" class="text-8xl font-bold font-mono text-white tracking-tighter">00:00</div>
  <!-- GPS accuracy warning — shown only when accuracy > 100m. Tappable for explanation. -->
  <div id="gpsAccuracyBadge"
@@ -1207,7 +1210,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
  <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
- <div id="appBuild" class="text-xs font-mono text-gray-400">worker__30_</div>
+ <div id="appBuild" class="text-xs font-mono text-gray-400">worker__31_</div>
  </div>
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">Backend Version</div>
@@ -1797,6 +1800,10 @@ const RISK_WELFARE_MAP = {
 //     amber "slide Wake to read" cue on the dim screen, with the sound and buzz once) exactly as in __28_.
 //   - Never during an alarm, never offline, never while the app is hidden (the poll); a wake check at most once a minute; a full
 //     sync from a check at most once a minute. A failed check says nothing and is tried again at the next poll.
+// __31_ changes (session 119, Sonnet 5.5 high, from __30_). Works with backend __57_ to __60_ (the contacts post waits for backend __61_).
+//   Group A (safety): A1 F116-1 registration retry; A2 contact guide link; A3 S113-3 contacts posted on Save (backend 61+ only);
+//   A4 R79 alarm-screen location age; A6 S117-D2 version re-check every 30 min; A7 F118-3 dead location fetch removed.
+//   A5 F118-5 (a post reporting the trip start as the current position) is NOT in this build: it waits for a decision.
 // __30_ changes (session 113, Sonnet 5.5 high, from __29_). Works with backend __57_ and __58_.
 //   S112-3  When a post comes back "success" with saved:false (backend __58_: this phone is not the one registered, so the server
 //           kept nothing), the app shows the server's own notice in an amber strip at the top until the worker taps OK. The post
@@ -1806,7 +1813,7 @@ const RISK_WELFARE_MAP = {
 //           otg- plus 24 random characters (made on the phone, 96 bits, never Math.random), and "Share it with my contact" sends
 //           the name and the steps through the share sheet (or copies them). A box that already has a topic is never replaced.
 // =============================================================================
-const WORKER_BUILD = 'worker__30_';
+const WORKER_BUILD = 'worker__31_';
 
 const CONFIG = {
  url: '',
@@ -2241,6 +2248,7 @@ let ctHeartbeatInterval = null; // __23_ (R60): 2-min liveness heartbeat on a Cr
 let deferredPrompt;
 let lastAlertTime = 0;
 let lastGPS = null;
+let lastGPSAt = null;   // __31_ (R79): when the fix held in lastGPS was taken (ms since 1970); null = none held
 let lastGPSCoords = null; // Raw {lat, lng} of previous fix — used for Haversine distance calc
 let gpsCurrentIntervalMs = 0; // Live adaptive poll interval — set by startGPSMonitoring()
 let gpsTrail = []; // Breadcrumb trail [{lat, lng}] for the current travel session
@@ -3125,6 +3133,12 @@ const START_FIX_MAX_ACC_M   = 150;     // a fix worse than this (metres) is not 
 const START_FIX_LATE_NOTE_S = 30;      // the report warns when the start fix came later than this
 let _lastFixInfo = null;               // { lat, lng, acc, ts } - newest fix from the warm-up, the poller or the watch
 
+/** __31_ (R79): when a position fix was taken - the phone gives it with the fix; now if it did not. Pure (tested). */
+function _fixTime(pos) {
+  const t = pos && pos.timestamp;
+  return (typeof t === 'number' && isFinite(t) && t > 0) ? t : Date.now();
+}
+
 function _noteFix(pos) {
   try {
     const c = pos && pos.coords;
@@ -3147,7 +3161,7 @@ function _recentGoodFix(maxAgeMs) {
 async function _acquireStartFix() {
   const t0 = Date.now();
   const warm = _recentGoodFix(START_FIX_MAX_AGE_MS);
-  if (warm) return { gps: warm.gps, note: 'warm ' + Math.round(warm.ageMs / 1000) + 's old, ' + Math.round(warm.acc) + ' m' };
+  if (warm) return { gps: warm.gps, ts: Date.now() - warm.ageMs, note: 'warm ' + Math.round(warm.ageMs / 1000) + 's old, ' + Math.round(warm.acc) + ' m' };
   let why = '';
   try {
     const pos = await new Promise((resolve, reject) => {
@@ -3156,7 +3170,7 @@ async function _acquireStartFix() {
     });
     _noteFix(pos);
     const gps = pos.coords.latitude.toFixed(6) + ',' + pos.coords.longitude.toFixed(6);
-    if (_isValidGPS(gps)) return { gps: gps, note: 'fresh ' + (Date.now() - t0) + ' ms, ' + Math.round(pos.coords.accuracy) + ' m' };
+    if (_isValidGPS(gps)) return { gps: gps, ts: (pos && typeof pos.timestamp === 'number' && pos.timestamp > 0) ? pos.timestamp : Date.now(), note: 'fresh ' + (Date.now() - t0) + ' ms, ' + Math.round(pos.coords.accuracy) + ' m' };
     why = ' (0,0 fix)';
   } catch (e) {
     why = ' (' + ((e && e.code) || (e && e.name) || 'error') + ')';
@@ -3222,8 +3236,9 @@ function _takeSingleGPSFix() {
  pos => {
  const lat = pos.coords.latitude;
  const lng = pos.coords.longitude;
- lastGPS = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+ lastGPS = `${lat.toFixed(6)}, ${lng.toFixed(6)}`; lastGPSAt = _fixTime(pos);   // __31_ (R79)
  _noteFix(pos); _adoptLateStartFix(pos);   // __22_ (R57)
+ try { _refreshAlarmLocationLine(); } catch (_) {}
  updateGPSBars(pos);
  // F76-1 (build __13_): the alarm post went out before any fix existed - send the position the moment one lands
  // (the regular alarm pulse is 2 minutes apart). Only while an alarm is still active.
@@ -3351,8 +3366,9 @@ function startTravelWatchPosition() {
 
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
-      lastGPS = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+      lastGPS = `${lat.toFixed(6)}, ${lng.toFixed(6)}`; lastGPSAt = _fixTime(pos);   // __31_ (R79)
       _noteFix(pos); _adoptLateStartFix(pos);   // __22_ (R57)
+      try { _refreshAlarmLocationLine(); } catch (_) {}
       updateGPSBars(pos);
       _consecutiveGPSFailures = 0;
 
@@ -4874,7 +4890,8 @@ async function triggerPanic(duress = false, alarmCode = null) {
  await new Promise(resolve => {
    navigator.geolocation.getCurrentPosition(
      pos => {
-       lastGPS = `${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`;
+       lastGPS = `${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`; lastGPSAt = _fixTime(pos);   // __31_ (R79)
+       try { _refreshAlarmLocationLine(); } catch (_) {}
        resolve();
      },
      () => resolve(),
@@ -5556,6 +5573,7 @@ async function saveWizard() {
  body: new URLSearchParams(regPayload).toString()
  });
  const data = await response.json();
+ state.registrationPending = false; saveState(); try { _regPendingUi(); } catch (_) {}   // __31_ (F116-1): the server answered
 
  if (data.status === 'device_denied') {
  // Hard block: this worker name is bound to a different physical device.
@@ -5582,7 +5600,8 @@ async function saveWizard() {
  // Network failure — warn but allow offline first-time setup
  console.warn('Registration request failed (offline?):', err);
  if (btnNext) { btnNext.disabled = false; btnNext.textContent = 'Finish Setup'; }
- showToast('⚠️ Could not reach server — registration will retry on next sync.');
+ state.registrationPending = true; saveState(); try { _regPendingUi(); } catch (_) {}   // __31_ (F116-1): retried at each sync
+ showToast('⚠️ Could not reach the server - this phone will register when it is next online.');
  }
  }
 
@@ -6347,9 +6366,67 @@ function updateArrivedButtonState() {
 
  // __26_ (R76): phone alerts are required (escape: hold "Start without phone alerts"). Never allowed to break the pill.
  try { _paGateApply(pill, label); } catch (e) { try { _diag('[R76] gate error: ' + (e && e.message || e), true); } catch (_) {} }
+ try { _regPendingUi(); } catch (_) {}   // __31_ (F116-1)
 }
 
 // __26_ (R76): phone alerts as a required step ------------------------------------------------------------------------
+// __31_ (F116-1): the setup wizard could not reach the server, so the phone is not registered yet. It tries again, quietly, at
+// each sync (never during an alarm, at most every 2 minutes) until the server answers. A start is NEVER blocked by this.
+const REG_RETRY_MIN_MS = 120000;
+const REG_RETRY_TIMEOUT_MS = 15000;
+let _regRetryAt = 0;
+let _regRetryBusy = false;
+
+/** The registerDevice form values for the worker saved on this phone. Pure (tested). */
+function _regFormFor(w, deviceId, key) {
+  const x = w || {};
+  return {
+    'action': 'registerDevice', 'key': key, 'Worker Name': x.name || '', 'Worker Phone Number': x.phone || '', 'Worker Email': x.email || '',
+    'Emergency Contact Name': x.emgName || '', 'Emergency Contact Phone': x.emgPhone || '', 'Emergency Contact Email': x.emgEmail || '', 'Emergency Contact Ntfy': x.emgNtfy || '',
+    'Escalation Contact Name': x.escName || '', 'Escalation Contact Phone': x.escPhone || '', 'Escalation Contact Email': x.escEmail || '', 'Escalation Contact Ntfy': x.escNtfy || '',
+    'deviceId': deviceId || '', 'Timestamp': new Date().toISOString()
+  };
+}
+
+/** The one-line note on the start screen while registration is pending. */
+function _regPendingUi() {
+  const el = document.getElementById('regPendingNote');
+  if (el) el.classList.toggle('hidden', !(state && state.registrationPending));
+}
+
+async function _retryRegistration() {
+  try {
+    if (!state || !state.registrationPending || !state.worker || !state.worker.name) return false;
+    if (_regRetryBusy) return false;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+    if (isPanicActive || isDuressActive || _noticeInAlarm()) return false;
+    if (!CONFIG.key || CONFIG.key.length < 3 || !CONFIG.url || CONFIG.url.length < 10) return false;
+    const now = Date.now();
+    if (now - _regRetryAt < REG_RETRY_MIN_MS) return false;
+    _regRetryAt = now; _regRetryBusy = true;
+    const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    const timer = setTimeout(() => { if (ctl) { try { ctl.abort(); } catch (_) {} } }, REG_RETRY_TIMEOUT_MS);
+    try {
+      const resp = await fetch(CONFIG.url, {
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, signal: ctl ? ctl.signal : undefined,
+        body: new URLSearchParams(_regFormFor(state.worker, state.deviceId || getDeviceID(), CONFIG.key)).toString()
+      });
+      const data = await resp.json();
+      state.registrationPending = false; saveState(); try { _regPendingUi(); } catch (_) {}
+      if (data && data.status === 'device_denied') {
+        const ob = document.getElementById('offlineBanner');
+        if (ob) { ob.textContent = '🔒 DEVICE NOT AUTHORISED - Contact your administrator'; ob.classList.remove('hidden'); ob.style.backgroundColor = '#7f1d1d'; }
+        showToast('Registration refused: another phone is registered for this name');
+      } else if (data && data.status === 'error') {
+        showToast('Registration failed: ' + String(data.message || 'check your name matches the staff list').substring(0, 120));
+      } else {
+        try { _diag('[F116-1] pending registration completed', true); } catch (_) {}
+      }
+      return true;
+    } finally { clearTimeout(timer); _regRetryBusy = false; }
+  } catch (_) { _regRetryBusy = false; return false; }   // no network or a bad reply: still pending, the next sync tries again
+}
+
 let _paStartAnyway = false;   // the worker held "Start without phone alerts" (one start only)
 let _paHoldTimer = null;
 let _paTestOk = false;        // a "Send test" was accepted by the server in this session
@@ -6505,7 +6582,7 @@ async function startVisit(isSkipCheck = false) {
  const _sf = await _acquireStartFix();   // __22_ (R57): warm fix at once, else up to START_FIX_WAIT_MS; the trip starts either way
  verifiedStartGPS = _sf.gps;
  _startFixNote = _sf.note;
- if (_isValidGPS(verifiedStartGPS)) lastGPS = verifiedStartGPS;
+ if (_isValidGPS(verifiedStartGPS)) { lastGPS = verifiedStartGPS; lastGPSAt = _sf.ts || Date.now(); }   // __31_ (R79)
  try { _diag('startVisit: start fix ' + _sf.note); } catch (_) {}
  if (!_isValidGPS(verifiedStartGPS)) showToast('⚠️ No GPS yet - your trip has started. Step outside if you can; the start position is added when GPS locks.', 6000);
  if (typeof startGPSMonitoring === 'function') {
@@ -6528,7 +6605,7 @@ async function startVisit(isSkipCheck = false) {
  // For regular site visits lastGPS stays as whatever it was from a prior session;
  // reset it so any later alarm GPS is clearly fresh rather than stale.
  if (!isTravelMode && locId !== 'travel') {
-   lastGPS = null;
+   lastGPS = null; lastGPSAt = null;   // __31_ (R79)
    // Start background GPS monitoring immediately so lastGPS is populated well
    // before any overdue pulse fires — even in critical timing mode where overdue
    // triggers instantly. The adaptive poller backs off to 10 min when stationary,
@@ -7510,7 +7587,8 @@ function _freshAlarmFix() {
       if (!navigator.geolocation) { resolve(false); return; }
       navigator.geolocation.getCurrentPosition(
         pos => {
-          lastGPS = `${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`;
+          lastGPS = `${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`; lastGPSAt = _fixTime(pos);   // __31_ (R79)
+          try { _refreshAlarmLocationLine(); } catch (_) {}
           resolve(true);
         },
         () => resolve(false),
@@ -8107,63 +8185,7 @@ function getDeviceID() {
  return id;
 }
 
-// Fetch locations from backend
-async function fetchLocationsFromBackend() {
- if (!CONFIG.url || !state || !state.worker || !state.worker.name) {
- console.warn('Cannot fetch locations: missing config or worker data');
- renderLocations(); // Render with empty list
- return;
- }
- 
- try {
- showToast('📡 Fetching locations...');
- 
- const url = `${CONFIG.url}?action=getLocations&worker=${encodeURIComponent(state.worker.name)}&deviceId=${state.deviceId}&key=${CONFIG.key}`;
- 
- console.log('Fetching from:', url);
- 
- const response = await fetch(url, {
- method: 'GET',
- headers: {
- 'Accept': 'application/json'
- }
- });
- 
- if (!response.ok) {
- throw new Error(`HTTP ${response.status}`);
- }
- 
- const data = await response.json();
- 
- console.log('Location fetch response:', data);
- 
- if (data.status === 'success' && data.locations && Array.isArray(data.locations)) {
- // Merge with existing locations (don't overwrite travel tile)
- const existingTravel = state.locations.find(l => l.id === 'travel');
- 
- state.locations = data.locations.filter(l => l.id !== 'travel');
- 
- // Re-add travel if it existed
- if (existingTravel) {
- state.locations.unshift(existingTravel);
- }
- 
- saveState();
- renderLocations();
- showToast(`✅ ${data.locations.length} locations loaded`);
- 
- console.log('Locations updated:', state.locations.length);
- } else {
- console.warn('Invalid response format:', data);
- renderLocations(); // Render with what we have
- showToast('⚠️ No locations from backend');
- }
- } catch (err) {
- console.error('Location fetch failed:', err);
- renderLocations(); // Render with what we have (at least travel tile)
- showToast('⚠️ Offline - using cached locations');
- }
-}
+// __31_ (F118-3): the unused location fetch was removed here (it asked the backend for an action it does not have; nothing called it).
 
 // ============================================================================
 // HIGH-INTEGRITY INITIALIZATION (Fixed Syntax)
@@ -8741,13 +8763,14 @@ function makeContactTopic(inputId, stateKey) {
 }
 
 /** The message for the contact: the topic name, the server if it is not ntfy.sh, and the steps. Pure (tested). */
-function _contactTopicMessage(topic, server) {
+function _contactTopicMessage(topic, server, guideUrl) {
   const onServer = server && server !== PHONE_ALERT_DEFAULT_SERVER;
   return 'I have set you up to get safety alerts from my lone-worker app, as one of my emergency contacts.\n' +
     '1. Install the free ntfy app (Google Play, F-Droid or the App Store).\n' +
     '2. In ntfy, subscribe to this topic: ' + topic + (onServer ? '\n   (use this ntfy server: ' + server + ')' : '') + '\n' +
     '3. Allow ntfy notifications with sound, and turn battery saving off for ntfy.\n' +
     'Or open this link on your phone: ' + (server || PHONE_ALERT_DEFAULT_SERVER) + '/' + topic + '\n' +
+    (guideUrl ? 'Step-by-step help with pictures: ' + guideUrl + '\n' : '') +   // __31_: only when the guide is really there
     'Please keep the topic name private - anyone who has it can read the alerts.';
 }
 
@@ -8767,12 +8790,40 @@ async function _copyPlainText(t) {
   return ok;
 }
 
+const CONTACT_GUIDE_FILE = 'ntfy_contact_guide.html';   // sits in the same folder as the app
+const CONTACT_GUIDE_CHECK_MS = 2000;
+let _contactGuideOk = '';
+
+/** The guide's address: same folder as this app. '' if it cannot be worked out. Pure apart from the default base (tested with a base). */
+function _contactGuideAddress(base) {
+  try { return new URL(CONTACT_GUIDE_FILE, base || location.href).href; } catch (_) { return ''; }
+}
+
+/** Is the guide really there? A HEAD request, never cached, 2 seconds at most. True only for HTTP 200. */
+async function _contactGuideExists(url) {
+  try {
+    if (!url) return false;
+    if (_contactGuideOk === url) return true;
+    const ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+    const timer = setTimeout(() => { if (ctl) { try { ctl.abort(); } catch (_) {} } }, CONTACT_GUIDE_CHECK_MS);
+    try {
+      const r = await fetch(url, { method: 'HEAD', cache: 'no-store', signal: ctl ? ctl.signal : undefined });
+      const ok = !!(r && r.status === 200);
+      if (ok) _contactGuideOk = url;
+      return ok;
+    } finally { clearTimeout(timer); }
+  } catch (_) { return false; }
+}
+
 async function shareContactTopic(inputId) {
   const el = document.getElementById(inputId);
   const t = el ? String(el.value || '').trim() : '';
   if (!t) { showToast('Make a topic first, or type the one your contact gave you'); return; }
   if (!PHONE_ALERT_TOPIC_RE.test(t)) { showToast('A topic can only use letters, numbers, - and _'); return; }
-  const text = _contactTopicMessage(t, _phoneAlertServer());
+  // __31_: a link to the step-by-step guide only when the guide file is really there (a broken link in a safety message is worse than none)
+  let guide = '';
+  try { const gu = _contactGuideAddress(); if (gu && await _contactGuideExists(gu)) guide = gu; } catch (_) { guide = ''; }
+  const text = _contactTopicMessage(t, _phoneAlertServer(), guide);
   if (navigator.share) {
     try { await navigator.share({ title: 'Safety alerts - ntfy topic', text: text }); return; }
     catch (e) { if (e && e.name === 'AbortError') return; }
@@ -8797,6 +8848,32 @@ function populateSettingsForm() {
  document.getElementById('setEscNtfy').value = s.escNtfy || '';
 }
 
+// __31_ (S113-3, S118-D7): the contacts' ntfy topics, posted when Settings are saved, so an alarm before the next visit post
+// goes to the new topic. The action (contactsUpdate) exists from backend __61_. An older backend does NOT answer an unknown
+// POST action with an error - it hands it to the visit logger - so it is posted only when the server says it is build 61+.
+const CONTACTS_UPDATE_MIN_BUILD = 61;
+
+/** Post the two contact topics (quiet; any reply is ignored). Returns true when a post was sent. */
+async function _postContactsUpdate() {
+  try {
+    if (!state || !state.worker || !state.worker.name) return false;
+    if (_backendBuildNo() < CONTACTS_UPDATE_MIN_BUILD) return false;
+    if (!CONFIG.key || CONFIG.key.length < 3 || !CONFIG.url || CONFIG.url.length < 10) return false;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+    const body = new URLSearchParams({
+      'action': 'contactsUpdate', 'key': CONFIG.key, 'Worker Name': state.worker.name,
+      'deviceId': state.deviceId || getDeviceID(),
+      'Emergency Contact Ntfy': state.worker.emgNtfy || '', 'Escalation Contact Ntfy': state.worker.escNtfy || ''
+    }).toString();
+    const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    const timer = setTimeout(() => { if (ctl) { try { ctl.abort(); } catch (_) {} } }, PHONE_ALERT_TIMEOUT_MS);
+    try {
+      await fetch(CONFIG.url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body, signal: ctl ? ctl.signal : undefined });
+    } finally { clearTimeout(timer); }
+    return true;
+  } catch (_) { return false; }
+}
+
 function saveSettings() {
  if (!state || !state.worker) return;
  
@@ -8814,6 +8891,7 @@ function saveSettings() {
  
  saveState();
  
+ try { _postContactsUpdate(); } catch (_) {}   // __31_ (S113-3)
  showToast('✅ Settings Saved');
  _warmAudio(); // Secondary warm-up opportunity on confirmed user gesture
  navigate('main');
@@ -9078,6 +9156,46 @@ function _showBuildMismatch(deployed) {
    document.body.appendChild(b);
  };
  if (document.body) show(); else document.addEventListener('DOMContentLoaded', show);
+}
+
+// ====== __31_ (S117-D2, F118-6): VERSION RE-CHECK ======
+// The app compared its own build with config.json's workerBuild only when it loaded, so a phone that keeps the app open for
+// days never noticed a new build. Now config.json is read again (never from the cache) at most every 30 minutes, when the app
+// is on screen, never during an alarm, and the existing red "App out of date" bar is shown when the builds differ.
+const VERSION_RECHECK_MIN_MS = 30 * 60 * 1000;
+const VERSION_RECHECK_TIMEOUT_MS = 8000;
+let _verCheckAt = Date.now();   // the load just read config.json, so the first re-check is 30 minutes after load
+let _verCheckBusy = false;
+
+/** Does the Factory's deployed build differ from the code running here? Empty = not stated = no. Pure (tested). */
+function _versionDiffers(deployed, running) {
+  const d = String(deployed == null ? '' : deployed).trim();
+  return d !== '' && d !== String(running);
+}
+
+function _versionRecheck(reason) {
+  try {
+    if (_verCheckBusy) return false;
+    const now = Date.now();
+    if (now - _verCheckAt < VERSION_RECHECK_MIN_MS) return false;   // the cheapest test first (this is called every 15 s)
+    if (document.visibilityState && document.visibilityState !== 'visible') return false;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+    if (isPanicActive || isDuressActive || _noticeInAlarm()) return false;
+    _verCheckAt = now; _verCheckBusy = true;
+    const ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => { try { ctl.abort(); } catch (_) {} }, VERSION_RECHECK_TIMEOUT_MS) : null;
+    const done = () => { _verCheckBusy = false; if (timer) clearTimeout(timer); };
+    fetch('./config.json', ctl ? { cache: 'no-store', signal: ctl.signal } : { cache: 'no-store' })
+      .then(r => (r && r.ok) ? r.json() : null)
+      .then(cfg => {
+        done();
+        if (cfg && _versionDiffers(cfg.workerBuild, WORKER_BUILD)) _showBuildMismatch(String(cfg.workerBuild).trim());
+      }, () => { done(); });   // offline, a timeout or a bad file: silent, the next chance tries again
+    return true;
+  } catch (e) {
+    _verCheckBusy = false;
+    return false;
+  }
 }
 
 async function forceAppUpdate() {
@@ -9754,6 +9872,8 @@ function forceSync(showUI, quiet) {
  if (banner) banner.classList.remove('hidden');
  }
  
+ try { _retryRegistration(); } catch (_) {}   // __31_ (F116-1): a pending registration is retried quietly, one try per sync
+
  const deviceId = getDeviceID();
  const workerName = state.worker.name;
  
@@ -9783,6 +9903,7 @@ function forceSync(showUI, quiet) {
  if (showUI) alert("❌ Sync Error: " + (data.message || 'Unknown error'));
  return;
  }
+ try { _versionRecheck('sync'); } catch (_) {}   // __31_ (S117-D2)
  updateLastSyncUI(); // Refreshes the "Just now" label
  if (showUI) showToast('✅ Sync Complete');
  
@@ -11572,6 +11693,7 @@ function _foregroundSync() {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
     if (!state || !state.worker || !state.worker.name) return false;
     if (_noticeInAlarm()) return false;
+    try { _versionRecheck('foreground'); } catch (_) {}   // __31_ (S117-D2)
     const now = Date.now();
     const lastOk = state.lastSyncTime ? (Date.parse(state.lastSyncTime) || 0) : 0;
     if (now - Math.max(_fgSyncAt, lastOk) < NOTICE_FG_SYNC_MIN_MS) return false;
@@ -11586,6 +11708,7 @@ function _foregroundSync() {
 
 /** A notice held back by an alarm or a prompt is tried again here; one already on screen is left alone. */
 function _noticeRetry() {
+  try { _versionRecheck('timer'); } catch (_) {}   // __31_ (S117-D2): the 15 s tick; the re-check itself is throttled to every 30 minutes
   try {
     if (document.visibilityState && document.visibilityState !== 'visible') return;
     const m = document.getElementById('noticeModal');
@@ -11937,33 +12060,117 @@ function callICE() {
 
 /**
 /**
- * fetchW3wForPanic — fetches a what3words address for the current GPS fix
- * and populates #w3wDisplay on the locked screen.
- * Only runs if CONFIG.w3wApiKey is set. Silent on failure.
- * Called from triggerPanic() and the overdue alarm path.
+ * __31_ (R79): the alarm-screen location line. It shows the most recent position the phone has, how old it is, and the
+ * what3words address when the key is set. It NEVER falls back to the visit's start position (on a trip that can be
+ * kilometres away) - with no fix it says so. Display only: nothing in the alarm send path reads or changes this.
+ *   under 2 minutes old : "just now" / "1 min ago"          (green)
+ *   older               : "18 min ago - may be out of date"  (amber)
+ *   no fix              : "No location yet"
+ * It refreshes when a fix arrives and every 30 seconds while an alarm is up (so "N min ago" keeps counting).
  */
-async function fetchW3wForPanic() {
- try {
-  const key = CONFIG.w3wApiKey;
-  if (!key || key.length < 8) return;
-  const gps = lastGPS || (state?.activeVisit?.startGPS) || null;
-  if (!gps || gps === '0,0') return;
-  const [lat, lng] = gps.split(',').map(s => s.trim());
-  if (!lat || !lng) return;
-  const url = `https://api.what3words.com/v3/convert-to-3wa?coordinates=${lat},${lng}&key=${encodeURIComponent(key)}`;
-  const res = await fetch(url);
-  if (!res.ok) return;
-  const data = await res.json();
-  if (!data.words) return;
-  const addr = `///${data.words}`;
-  const el = document.getElementById('w3wDisplay');
-  if (el) {
-   el.textContent = addr;
-   el.classList.remove('hidden');
+const ALARM_LOC_FRESH_MS = 2 * 60 * 1000;   // a fix under this old is shown as current
+const ALARM_LOC_TICK_MS = 30000;            // how often the age is refreshed while an alarm is up
+const ALARM_LOC_W3W_MIN_MS = 60000;         // at most one what3words lookup a minute from this line
+let _alarmLocTimer = null;
+let _alarmLocOn = false;                    // the line is in use (set when the overdue alarm shows it)
+let _w3wLine = { gps: '', words: '', at: 0, busy: false };
+
+/** "just now" / "1 min ago" / "18 min ago" / "2 h 5 min ago" for an age in milliseconds. Pure (tested). */
+function _fixAgeText(ageMs) {
+  const m = Math.floor(Math.max(0, ageMs) / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return m + ' min ago';
+  const h = Math.floor(m / 60), r = m % 60;
+  return h + ' h' + (r ? ' ' + r + ' min' : '') + ' ago';
+}
+
+/** The text and colour state of the line. gps = "lat,lng" or null, fixAt = ms or null, words = "a.b.c" or ''. Pure (tested). */
+function _alarmLocationText(gps, fixAt, now, words) {
+  if (!gps || !_isValidGPS(gps)) return { text: '\u{1F4CD} No location yet', stale: false, none: true };
+  const parts = gps.split(',').map(x => x.trim());
+  let t = '\u{1F4CD} ' + parts[0] + ', ' + parts[1];
+  if (words) t += '\n///' + words;
+  let stale = false;
+  if (typeof fixAt === 'number' && isFinite(fixAt)) {
+    const age = now - fixAt;
+    t += '\n' + _fixAgeText(age);
+    if (age >= ALARM_LOC_FRESH_MS) { t += ' - may be out of date'; stale = true; }
+  } else {
+    t += '\ntime of fix unknown - may be out of date'; stale = true;
   }
- } catch (e) {
-  console.warn('[OTG] w3w panic fetch failed:', e.message);
- }
+  return { text: t, stale: stale, none: false };
+}
+
+function _renderAlarmLocationLine() {
+  const el = document.getElementById('w3wDisplay');
+  if (!el) return;
+  const gps = _isValidGPS(lastGPS) ? lastGPS : null;
+  const key = gps ? gps.split(',').map(x => x.trim()).join(',') : '';
+  const words = (gps && _w3wLine.gps === key) ? _w3wLine.words : '';
+  const r = _alarmLocationText(gps, lastGPSAt, Date.now(), words);
+  el.textContent = r.text;
+  el.classList.remove('hidden');
+  el.classList.toggle('text-amber-400', r.stale || r.none);
+  el.classList.toggle('text-emerald-400', !(r.stale || r.none));
+}
+
+/** A fresh what3words address for the position, at most one lookup a minute; silent on failure. */
+async function _lookupAlarmW3w() {
+  try {
+    const key = CONFIG.w3wApiKey;
+    if (!key || key.length < 8) return;
+    const gps = _isValidGPS(lastGPS) ? lastGPS : null;
+    if (!gps) return;
+    const [lat, lng] = gps.split(',').map(x => x.trim());
+    if (!lat || !lng) return;
+    const k = lat + ',' + lng;
+    if (_w3wLine.busy) return;
+    if (_w3wLine.gps === k && _w3wLine.words) return;
+    if (Date.now() - _w3wLine.at < ALARM_LOC_W3W_MIN_MS) return;
+    _w3wLine.busy = true; _w3wLine.at = Date.now();
+    const res = await fetch(`https://api.what3words.com/v3/convert-to-3wa?coordinates=${lat},${lng}&key=${encodeURIComponent(key)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.words) { _w3wLine.gps = k; _w3wLine.words = String(data.words); }
+    }
+  } catch (e) {
+    console.warn('[OTG] w3w alarm line lookup failed:', e && e.message);
+  } finally {
+    _w3wLine.busy = false;
+    if (_alarmLocOn) { try { _renderAlarmLocationLine(); } catch (_) {} }
+  }
+}
+
+function _alarmLocationInUse() {
+  try { return !!(isPanicActive || isDuressActive || _noticeInAlarm()); } catch (_) { return false; }
+}
+
+/** Called when a fix arrives: update the line, only while it is in use. */
+function _refreshAlarmLocationLine() {
+  if (!_alarmLocOn) return;
+  _renderAlarmLocationLine();
+  _lookupAlarmW3w();
+}
+
+function _alarmLocationTick() {
+  if (!_alarmLocationInUse()) {
+    _alarmLocOn = false;
+    if (_alarmLocTimer) { clearInterval(_alarmLocTimer); _alarmLocTimer = null; }
+    return;
+  }
+  _renderAlarmLocationLine();
+}
+
+/** Show the line now and keep it honest while the alarm is up. Silent on failure. Called from the overdue alarm path. */
+async function fetchW3wForPanic() {
+  try {
+    _alarmLocOn = true;
+    _renderAlarmLocationLine();
+    if (!_alarmLocTimer) _alarmLocTimer = setInterval(_alarmLocationTick, ALARM_LOC_TICK_MS);
+    await _lookupAlarmW3w();
+  } catch (e) {
+    console.warn('[OTG] alarm location line failed:', e && e.message);
+  }
 }
 
 /**
