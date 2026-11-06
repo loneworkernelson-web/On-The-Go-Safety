@@ -192,6 +192,39 @@
  *   - Settings tab: two new keys added with their defaults (existing values never changed); Health email shows them.
  *   - Contact escalation (tiers, Critical ladder, col AA claims, All Clear audience) is unchanged.
  *
+ * __61_ (session 120, 6 Nov 2026, Opus 5.5 high) - SCHEMA BUILD, CONTACT TOPICS, SITE LOGOS, TRIP TRAIL, RELEASE A PHONE.
+ *   - S113-3: new POST action contactsUpdate (worker __31_ posts it on Save). Registered phone or master key only; writes
+ *     Staff H / I at once; a blank or malformed topic leaves the stored one unchanged (S120-D9); Audit staff:contacts-*.
+ *     Gate-neutral. (An older backend handed this action to the visit logger - F119-2 - so the worker sends it to 61+ only.)
+ *   - Company logos: Sites column N "Logo URL", sent in the sync as logoUrl (https only; Drive share links become the
+ *     thumbnail link). An older worker ignores the field.
+ *   - S114-D1 trip trail: the open trip's recent points are kept in the server's short-term memory (CacheService, by Visit
+ *     ID - never in the sheet), cleared when the trip ends, and sent in the Monitor feed as Trail only while the trip is
+ *     overdue or an alarm is up.
+ *   - S117-D3: admin menu "Release a worker's phone" clears Staff column E (Audit staff:released).
+ *   - initWorkbook (admin menu "Set up or repair workbook"): adds missing tabs and blank headers, never renames; reports
+ *     Visits headers that differ; P2-3 warning-only protection on Visits, Forms and Audit.
+ *   - P2-4: the overdue checker checks the Visits header row every run and tells HQ at once (email + ADMIN_ALERT_TOPIC,
+ *     6-hourly) when a column the server reads by position has moved. It never changes what the checker does.
+ *   - P2-7: the monthly archive writes phone, date and ID cells back as text (they used to turn into numbers and dates).
+ *   - F118-1: the form report email makes every posted value safe for HTML (template, worker, notes, questions, answers).
+ *   - Unchanged: alarm gate, row finder, ladders, alert and All Clear wording, what is sent and to whom.
+ *
+ * __60_ (session 118, 5 Nov 2026, Opus 5.5 high) - SAFE EMAIL TEXT, 3 WORDS IN THE PUSH, ENGINE WATCHER. Design: Russell.
+ *   - S3-6: every value that comes from a post (worker name, site, address, notes, status, battery, phone, GPS, contact names,
+ *     topic, 3 words) is made safe ONCE for the HTML of the alert email and the All Clear email (_h_). The push, its title,
+ *     the SMS and the email subject keep the plain value. GPS put into map links must be a real coordinate pair.
+ *   - R78: the 3-word location of the live fix is in the contact push (one message). The backend asks the ntfy proxy, which
+ *     gives up on what3words after 3 seconds (proxy_ntfy__3_.php), so the push waits at most about 3 s. Words are kept 6 hours
+ *     per spot. No proxy or an older proxy file: no words in the push (never an uncapped wait); the email has them as before.
+ *   - S3-7: getDistance, getDistanceWithTrail and getGlobalForms need the worker or master key (ping still needs none).
+ *   - S3-8: a JSONP callback must be letters, digits, _ . $ (1-64); unexpected errors reply "Server error" and the detail
+ *     goes to the Audit tab (at most once per message every 10 minutes).
+ *   - F116-5: checkEngineWatch runs every 5 minutes on its own trigger, which the engine creates by itself (checked hourly).
+ *     If the engine has not run for over 10 minutes: an urgent email to the Health address and a push to ADMIN_ALERT_TOPIC,
+ *     at most every 6 hours, then one "running again" message. The Monitor feed carries engine { level, ageMin, lastRun }.
+ *   - Unchanged: alarm gate, row finder, ladders, All Clear rules and wording, what is sent and to whom.
+ *
  * __59_ (session 116, 5 Nov 2026, Opus 5.5 high) - ONE ROW FINDER, ONE NAME, THE GATE ON OPEN VISITS. Design: Russell (S115-D1 to D3).
  *   - P2-8: one shared row finder (_latestRowFor_ / _rfScan_) decides "the worker's latest row" in handleWorkerPost, the gate,
  *     _formRouteFor_, the busy path, HQ Resolve, the All Clear guard, the overdue checker, the Health email, notice
@@ -456,7 +489,7 @@ const SETTINGS_DEFAULTS   = [      // [key, default value, note] - added to the 
     ['WORKER_WARN_QUIET_W2_MINS', 6, 'Standard visits and trips: the "check in now" reminder goes only if nothing has been heard from the phone for more than this many minutes (0 to 30; 0 = always send).'],
     ['AUDIT_KEEP_DAYS', 7, 'Days of Audit rows kept (1 to 90). The Audit tab is a debugging trail - Visits and Forms are the permanent records. Trimmed daily before the Health email.'],
     ['AUDIT_MAX_ROWS', 10000, 'Most Audit rows kept (1000 to 50000). Older rows beyond AUDIT_KEEP_DAYS or beyond this number - whichever limit is reached first - are removed daily.'],
-    ['ADMIN_ALERT_TOPIC', '', 'Optional. An ntfy topic for the System Administrator (letters, digits, - and _). Problems that stop the server watching a visit - for example an unreadable due time - are pushed here as well as emailed. Blank = email only (backend __59_).']
+    ['ADMIN_ALERT_TOPIC', '', 'Optional. An ntfy topic for the System Administrator (letters, digits, - and _). Problems that stop the server watching a visit - for example an unreadable due time, or the escalation engine stopping (__60_) - are pushed here as well as emailed. Blank = email only (backend __59_).']
 ];
 const WARN_TEST_BUSY_MSG  = 'Test not sent - please try again in a minute.';
 // __49_ (session 99, R60): when the server last heard from the phone on this visit row. Cols AD / AE are R03's.
@@ -500,6 +533,9 @@ function onOpen() {
       .addItem('Run System Diagnostics', 'runDiagnostics')
       .addItem('Geocode Site Locations', 'geocodeSiteLocations')
       .addItem('Force Sync Forms', 'getGlobalForms')
+      .addSeparator()
+      .addItem("Release a worker's phone", 'releaseWorkerPhone')        // __61_ (S117-D3)
+      .addItem('Set up or repair workbook', 'initWorkbook')            // __61_ (initWorkbook, P2-3)
       .addToUi();
 }
 
@@ -515,6 +551,9 @@ function doGet(e) {
       if (p.action === 'ping') {
           return sendResponse(e, { status: "success", version: CONFIG.VERSION, build: TEMPLATE_BUILD });
       }
+      const _keyOk = (p.key === CONFIG.MASTER_KEY || p.key === CONFIG.WORKER_KEY);   // __60_ (S3-7)
+      if ((p.action === 'getDistance' || p.action === 'getDistanceWithTrail' || p.action === 'getGlobalForms') && !_keyOk)
+          return sendResponse(e, {status:"error"});   // __60_ (S3-7): these use the organisation's ORS allowance / read the forms
       if (p.action === 'getDistance' && p.start && p.end) {
           const dist = getRouteDistance(p.start, p.end);
           return sendResponse(e, { status: "success", km: dist });
@@ -535,7 +574,7 @@ function doGet(e) {
           return getEmergencyProceduresViewer(p.siteName, p.companyName || '');
       }
       return sendResponse(e, {status:"error"});
-  } catch(err) { return sendResponse(e, {status:"error", message: err.toString()}); }
+  } catch(err) { _errAudit_('doGet:error', err); return sendResponse(e, {status:"error", message: "Server error"}); }   // __60_ (S3-8)
 }
 
 /**
@@ -575,7 +614,7 @@ function doPost(e) {
           threw = true;
           _audit_('doPost:error', _ep['Worker Name'], '', '', '', _ep['Alarm Status'], _ep.idempotencyKey,
                   err.toString().substring(0, 200));
-          reply = {status:"error", message: err.toString()};
+          reply = {status:"error", message: "Server error - please retry"};   // __60_ (S3-8): the detail is in the Audit row above
       }
       finally {
           if (_ikey && _DEFER && (_DEFER.sends.length || _DEFER.keys.length)) { _inflightSet_(_ikey, true); setInflight = true; }
@@ -621,6 +660,7 @@ function _doPostRoute_(p) {
     if (_gate) return _gate;
     if (p.action === 'resolve') { handleResolvePost(p); return { status: 'success' }; }
     if (p.action === 'registerDevice') return handleRegisterDevice(p);
+    if (p.action === 'contactsUpdate') return handleContactsUpdate(p);   // __61_ (S113-3)
     if (p.action === 'acknowledgeNotice') return handleNoticeAck(p);   // NEW 3: Notice Acknowledgments
     if (p.action === 'uploadEmergencyProcedures') {
         // __51_ (R63): a duplicate delivery must not save the photos or archive the old links a second time. The reply stays
@@ -718,7 +758,7 @@ function _busyPathAlert_(p) {
         if (!p) return;
         const act = (p.action || '').toString();
         const NON_ALERT_ACTIONS = ['resolve', 'registerDevice', 'acknowledgeNotice',
-                                   'uploadEmergencyProcedures', 'notifySafety', 'broadcast'];
+                                   'uploadEmergencyProcedures', 'notifySafety', 'broadcast', 'contactsUpdate'];   // __61_
         if (NON_ALERT_ACTIONS.indexOf(act) > -1) return;
 
         const status = (p['Alarm Status'] || '').toString().toUpperCase();
@@ -1360,6 +1400,7 @@ function handleWorkerPost(p) {
                         sheet.getRange(targetRow, 1).setValue(ts.toISOString());
                         _localColSet_(sheet, targetRow, ts);   // __47_ (R47): col AC
                         _lastHeardSet_(sheet, targetRow, ts);  // __49_ (R60): col AF - the phone was heard (any status)
+                        _trailPost_(rowData[VISIT_ID_COL - 1], p['Alarm Status'], status, rowData[11], p['Last Known GPS'], ts);   // __61_ (S114-D1)
                         // Guard col K against downgrades.
                         // HIGH_SEVERITY statuses (EMERGENCY, PANIC, DURESS, OVERDUE ALARM) must
                         // never be overwritten by lower-priority statuses (OVERDUE, ALARM_GPS_PULSE).
@@ -1571,9 +1612,11 @@ if (!rowUpdated) {
         p4
     ];
     sheet.appendRow(_cellRow_(row));   // __58_ (S3-5)
-    _visitIdSet_(sheet, sheet.getLastRow(), String(p.idempotencyKey || '') || _visitIdNew_(sheet.getLastRow()));   // __44_: col AB
+    const _vid61 = String(p.idempotencyKey || '') || _visitIdNew_(sheet.getLastRow());
+    _visitIdSet_(sheet, sheet.getLastRow(), _vid61);   // __44_: col AB
     _localColSet_(sheet, sheet.getLastRow(), ts);   // __47_ (R47): col AC
     _lastHeardSet_(sheet, sheet.getLastRow(), ts);  // __49_ (R60): col AF
+    _trailPost_(_vid61, p['Alarm Status'], '', polishedNotes, p['Last Known GPS'], ts);   // __61_ (S114-D1)
     _audit_('handleWorkerPost:new', workerName, sheet.getLastRow(), '', p['Alarm Status'], p['Alarm Status'], p.idempotencyKey, 'new row');
     _welfareArm_(sheet, sheet.getLastRow(), p, ts);   // __50_ (R03): col AD when welfare checks are On for this visit
     _ledgerRow = sheet.getLastRow(); _ledgerNew = true;   // __45_ (ledger)
@@ -1758,19 +1801,19 @@ function processFormEmail(p, reportObj, polishedNotes, p1, p2, p3, p4, sig) {
         mapHtml = `
         <div style="margin-top:20px; padding:15px; background:#f0f7ff; border-radius:8px; border:1px solid #cfe2ff; text-align:center;">
             <p style="margin:0 0 10px 0; font-size:11px; font-weight:800; color:#1e40af; text-transform:uppercase;">📍 Last known GPS (from the visit record)</p>
-            <p style="margin:0 0 10px 0; font-size:12px; color:#374151;">The phone had no GPS fix when this was sent. This is the last position the visit record holds: ${_lk}</p>
+            <p style="margin:0 0 10px 0; font-size:12px; color:#374151;">The phone had no GPS fix when this was sent. This is the last position the visit record holds: ${_h_(_lk)}</p>
             <a href="${_lkUrl}" style="display:inline-block; padding:12px 24px; background:#1e40af; color:#ffffff; text-decoration:none; border-radius:6px; font-weight:bold;">View Last Known Position</a>
         </div>`;
     }
 
     let subject = (safeTName === 'note to self') ? `[PRIVATE] Note to Self` : `[${templateName}] - ${p['Worker Name']}`;
     let html = `<div style="font-family:Arial,sans-serif;padding:20px;max-width:600px;border:1px solid #eee;border-radius:12px;background-color:#ffffff;color:#333;">
-        <h2 style="color:#1e40af;margin-top:0;">${templateName}</h2>
-        <p style="color:#666;font-size:12px;">Worker: ${p['Worker Name']} | Sent: ${_fmtLocal_(new Date(), 'dd/MM/yyyy, h:mm:ss a')}</p>
+        <h2 style="color:#1e40af;margin-top:0;">${_h_(templateName)}</h2>
+        <p style="color:#666;font-size:12px;">Worker: ${_h_(p['Worker Name'])} | Sent: ${_fmtLocal_(new Date(), 'dd/MM/yyyy, h:mm:ss a')}</p>
         <hr style="border:0;border-top:1px solid #eee;margin:20px 0;">
         
         <div style="background:#f9fafb;padding:15px;border-radius:8px;margin-bottom:20px;border-left:4px solid #1e40af;">
-            <p style="white-space:pre-wrap;margin:0;font-size:14px;line-height:1.6;">${polishedNotes}</p>
+            <p style="white-space:pre-wrap;margin:0;font-size:14px;line-height:1.6;">${_h_(polishedNotes)}</p>
         </div>
         
         <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
@@ -1781,7 +1824,7 @@ function processFormEmail(p, reportObj, polishedNotes, p1, p2, p3, p4, sig) {
     for (const [key, value] of Object.entries(reportObj)) {
         if (skipKeys.has(key)) continue;
         if (typeof value === 'string' && value.startsWith('data:')) continue;
-        html += `<tr style="border-bottom:1px solid #f3f4f6;"><td style="padding:8px 0;font-size:13px;color:#6b7280;width:40%;">${key}</td><td style="padding:8px 0;font-size:13px;font-weight:600;color:#111827;">${value}</td></tr>`;
+        html += `<tr style="border-bottom:1px solid #f3f4f6;"><td style="padding:8px 0;font-size:13px;color:#6b7280;width:40%;">${_h_(key)}</td><td style="padding:8px 0;font-size:13px;font-weight:600;color:#111827;">${_h_(`${value}`)}</td></tr>`   // __61_ (F118-1);
     }
     
     html += `</tbody></table>
@@ -2100,7 +2143,7 @@ function triggerAlerts(p, type) {
         ? `https://maps.google.com/?q=${encodeURIComponent(rawGPS.trim())}`
         : null;
     let   gpsText  = hasGPS   // __47_ (R51): let - the time or the site position is added below
-        ? `<a href="${gpsLink}" style="color:#2563eb;">${rawGPS.trim()}</a>`
+        ? `<a href="${gpsLink}" style="color:#2563eb;">${_h_(rawGPS.trim())}</a>`
         : `Not available — please use the address above to locate the worker.`;
     // __43_ (Decision C): the SMS-only reverse geocode moved into the SMS step below. It used to run here, first,
     // delaying every alert (ntfy included) by a Nominatim round trip.
@@ -2116,8 +2159,8 @@ function triggerAlerts(p, type) {
     // Plain text uses workerPhone; ntfy/SMS also use workerPhone (not the link).
     const workerPhoneTel  = _cleanPhone((p['Worker Phone Number'] || '').toString()) || '';
     const workerPhoneLink = workerPhoneTel
-        ? `<a href="tel:${workerPhoneTel}" style="color:inherit;font-weight:bold;text-decoration:none;">${workerPhone}</a>`
-        : `<strong>${workerPhone}</strong>`;
+        ? `<a href="tel:${workerPhoneTel}" style="color:inherit;font-weight:bold;text-decoration:none;">${_h_(workerPhone)}</a>`
+        : `<strong>${_h_(workerPhone)}</strong>`;
     const locationName  = p['Location Name']  || 'Unknown location';
     const locationAddr  = p['Location Address'] || '';
     // Format battery: stored as decimal (0.79) — display as percentage (79%)
@@ -2133,6 +2176,10 @@ function triggerAlerts(p, type) {
     // The [CRITICAL_TIMING] tag is injected by the worker PWA at visit start and preserved
     // in col L (Notes). visitNotes carries that original row value via triggerEscalation.
     const isCriticalTiming = status.includes('CRITICAL TIMING') || visitNotes.includes('[CRITICAL_TIMING]');
+    // __60_ (S3-6): the HTML copies. Every value from the post is made safe ONCE here and the email uses these; the push, its
+    // title, the SMS and the email subject use the plain values above (escaping there would show "&amp;").
+    const _hWorkerName = _h_(workerName), _hWorkerFirst = _h_(workerFirst), _hLocationName = _h_(locationName),
+          _hLocationAddr = _h_(locationAddr), _hNotes = _h_(notes), _hBattery = _h_(battery), _hStatus = _h_(status);
 
     // Detect travel visit and extract start GPS from [START_GPS:...] tag in visit notes.
     // visitNotes contains the original TRAVELLING row Notes:
@@ -2140,11 +2187,12 @@ function triggerAlerts(p, type) {
     const isTravel       = visitNotes.includes('Travel to');
     const startGPSMatch  = visitNotes.match(/\[START_GPS:([^\]]+)\]/);
     const startGPS       = startGPSMatch ? startGPSMatch[1].trim() : null;
-    const travelDestAddr = locationAddr ? ` (${locationAddr})` : '';
+    const travelDestAddr = locationAddr ? ` (${_hLocationAddr})` : '';
 
     // Three-location block for travel overdue messages.
     // GPS strings are stored as "lat, lng" (with space) — strip for URL use.
-    const _gpsUrl = (gps) => gps ? gps.replace(/\s/g, '') : null;
+    // __60_ (S3-6): a GPS value goes into a map link only when it is a real coordinate pair (it comes from the post / visit notes)
+    const _gpsUrl = (gps) => { const g = gps ? String(gps).replace(/\s/g, '') : ''; return /^-?\d{1,3}(\.\d+)?,-?\d{1,3}(\.\d+)?$/.test(g) ? g : null; };
     const currentGPS      = (p['Last Known GPS'] || '').trim();
     // __47_ (R51, R46): when the last position was recorded (col P on a ladder alert), in am/pm with how long ago. Only a
     // Date or ISO text is trusted: a phone's locale text ("22/10/2026, 3:16:05 pm") could be read as the wrong time.
@@ -2171,8 +2219,8 @@ function triggerAlerts(p, type) {
         : null;
     const destMapLink    = _isGeneralTrip ? '<strong>Not given (general travel)</strong>'   // __47_ (R51)
         : locationAddr
-        ? `<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(locationAddr)}" style="color:#93c5fd;">${locationName}${travelDestAddr} (map)</a>`
-        : `<strong>${locationName}</strong>`;
+        ? `<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(locationAddr)}" style="color:#93c5fd;">${_hLocationName}${travelDestAddr} (map)</a>`
+        : `<strong>${_hLocationName}</strong>`;
 
     // Combined multi-point Google Maps URL using the ?api=1 format, which reliably
     // renders labelled pins (A = departure, B = last known, C = destination).
@@ -2236,7 +2284,7 @@ function triggerAlerts(p, type) {
     const _stdTier   = LADDER_STD_STATUSES.indexOf(status) + 1;   // 1-4 on the standard ladder, 0 otherwise
     const _firstAlertClock = (_overMin !== null && _stdTier > 1) ? _clockText_(new Date(_dueAt.getTime() + _graceMinutes_() * 60000)) : '';
     let   _dueSentence = (_overMin === null) ? '' :
-        `<strong>${workerName} was due to ${isTravel ? 'arrive' : 'check out'} at ${_dueClock}` +
+        `<strong>${_hWorkerName} was due to ${isTravel ? 'arrive' : 'check out'} at ${_dueClock}` +
         (_overMin >= 1 ? ` and is now ${_overMin} minute${_overMin === 1 ? '' : 's'} overdue.` : ' and is now overdue.') + '</strong>';
     // __50_ (R03): a missed welfare check. The ladder runs from an effective due time worked out from the miss, so "was due
     // to check out at ... N minutes overdue" would be wrong: say which welfare check was not answered, and when.
@@ -2244,15 +2292,15 @@ function triggerAlerts(p, type) {
     const _wfMin   = _wfAt ? Math.max(0, Math.floor((_nowMs - _wfAt.getTime()) / 60000)) : null;
     const _wfClock = _wfAt ? _clockText_(_wfAt) : '';
     const _wfVisitDue = _wfAt ? _alertDue_(p['Visit Due']) : null;
-    if (_wfAt) _dueSentence = `<strong>${workerName} did not answer a welfare check at ${_wfClock}` +
+    if (_wfAt) _dueSentence = `<strong>${_hWorkerName} did not answer a welfare check at ${_wfClock}` +
         (_wfMin >= 1 ? ` (${_wfMin} minute${_wfMin === 1 ? '' : 's'} ago).` : '.') + '</strong>' +
         (_wfVisitDue ? ` Their visit was due to end at ${_clockText_(_wfVisitDue)}.` : '');
     // __46_ (R37): steps for any contact - a manager, a friend or family - who may not know the site.
     const _plainSteps = isTravel
-        ? `<li><strong>Call or text ${workerFirst} now</strong> on ${workerPhoneLink}</li>
-            <li>If there is no answer, check whether they have arrived at <strong>${locationName}</strong> - contact someone there, or anyone who may know where they are</li>
+        ? `<li><strong>Call or text ${_hWorkerFirst} now</strong> on ${workerPhoneLink}</li>
+            <li>If there is no answer, check whether they have arrived at <strong>${_hLocationName}</strong> - contact someone there, or anyone who may know where they are</li>
             <li>If you cannot reach them and are worried, <strong>call emergency services (${EMERGENCY_NUMBER})</strong> and give the departure point and destination below</li>`
-        : `<li><strong>Call or text ${workerFirst} now</strong> on ${workerPhoneLink}</li>
+        : `<li><strong>Call or text ${_hWorkerFirst} now</strong> on ${workerPhoneLink}</li>
             <li>If there is no answer, try anyone who may know where they are - the site, the person they were visiting, or their workplace</li>
             <li>If you cannot reach them and are worried, <strong>call emergency services (${EMERGENCY_NUMBER})</strong> and give the location below</li>`;
 
@@ -2272,8 +2320,8 @@ function triggerAlerts(p, type) {
         ntfyTags      = 'rotating_light,purple_circle';
         whatHappened  = `This worker has activated a <strong>DURESS signal</strong>. This may mean they are under threat and unable to speak freely. <strong>Please treat this as a real emergency.</strong>`;
         actionSteps   = `
-            <li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhoneLink}</li>
-            <li><strong>${_duressCallLine}</strong></li>
+            <li>Try to <strong>call or text ${_hWorkerFirst}</strong> on ${workerPhoneLink}</li>
+            <li><strong>${_h_(_duressCallLine)}</strong></li>
             <li>If there is no answer within a few minutes, contact someone at the site and ask them to check on the worker's safety</li>
             <li>If you believe they are in danger, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>
             <li>Once contact is made, ask them to resolve the alert using their safety app or call their Safety Manager</li>`;
@@ -2286,7 +2334,7 @@ function triggerAlerts(p, type) {
         ntfyTags      = 'rotating_light,red_circle';
         whatHappened  = `This worker has <strong>manually triggered a SOS panic alarm</strong>. They may be in immediate danger.`;
         actionSteps   = `
-            <li>Try to <strong>call ${workerFirst}</strong> on ${workerPhoneLink} immediately</li>
+            <li>Try to <strong>call ${_hWorkerFirst}</strong> on ${workerPhoneLink} immediately</li>
             <li>If there is no answer, contact someone at the site to check on the worker</li>
             <li>If you believe they are in danger, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>
             <li>Once contact is made, ask them to clear the alarm using their app PIN</li>`;
@@ -2298,13 +2346,13 @@ function triggerAlerts(p, type) {
         ntfyPriority  = 'urgent';
         ntfyTags      = 'rotating_light,red_circle';
         whatHappened  = isTravel
-            ? `This worker was <strong>travelling to ${locationName}${travelDestAddr}</strong> and <strong>has not arrived at the scheduled time</strong>. They had activated Critical Timing Mode before departing — this bypasses the normal grace period and triggers an immediate alert. <strong>Please treat this as a genuine emergency.</strong>`
+            ? `This worker was <strong>travelling to ${_hLocationName}${travelDestAddr}</strong> and <strong>has not arrived at the scheduled time</strong>. They had activated Critical Timing Mode before departing — this bypasses the normal grace period and triggers an immediate alert. <strong>Please treat this as a genuine emergency.</strong>`
             : `This worker <strong>did not check out at the scheduled time and had activated Critical Timing Mode</strong> before their visit. Critical Timing Mode is used when a worker has specific concern about the importance of timely contact — it bypasses the normal grace period and triggers an immediate alert. <strong>Please treat this as a genuine emergency.</strong>`;
         actionSteps   = isTravel
-            ? `<li>Try to <strong>call ${workerFirst}</strong> on ${workerPhoneLink} immediately</li>
-            <li>If there is no answer, check whether they have arrived at <strong>${locationName}</strong> — contact someone there if possible</li>
+            ? `<li>Try to <strong>call ${_hWorkerFirst}</strong> on ${workerPhoneLink} immediately</li>
+            <li>If there is no answer, check whether they have arrived at <strong>${_hLocationName}</strong> — contact someone there if possible</li>
             <li>If unreachable, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong> and provide the departure point and intended destination above</li>`
-            : `<li>Try to <strong>call ${workerFirst}</strong> on ${workerPhoneLink} immediately</li>
+            : `<li>Try to <strong>call ${_hWorkerFirst}</strong> on ${workerPhoneLink} immediately</li>
             <li>If there is no answer, contact someone at the site to check on the worker's welfare</li>
             <li>If unreachable, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong> and provide the location above</li>`;
         noteToContact = isTravel
@@ -2315,10 +2363,10 @@ function triggerAlerts(p, type) {
         // statusLabel feeds the email subject, SMS and ntfy title, so it must carry the message alone.
         if (status.includes('CRITICAL TIMING FINAL NOTICE')) {
             statusLabel  = 'FINAL NOTICE — SAFETY STILL UNRESOLVED (CRITICAL TIMING) — NO FURTHER ALERTS';
-            whatHappened = `<strong>FINAL NOTICE — ${workerName} is still unaccounted for.</strong> This is the third and final automatic alert. Their safety has not been confirmed. <strong>No further alerts will be sent — please act now.</strong><br><br>` + whatHappened;
+            whatHappened = `<strong>FINAL NOTICE — ${_hWorkerName} is still unaccounted for.</strong> This is the third and final automatic alert. Their safety has not been confirmed. <strong>No further alerts will be sent — please act now.</strong><br><br>` + whatHappened;
         } else if (status.includes('CRITICAL TIMING REPEAT')) {
             statusLabel  = 'SECOND ALERT — ' + statusLabel;
-            whatHappened = `<strong>SECOND ALERT — there has still been no contact from ${workerName}.</strong> One final notice will follow if their safety is not confirmed.<br><br>` + whatHappened;
+            whatHappened = `<strong>SECOND ALERT — there has still been no contact from ${_hWorkerName}.</strong> One final notice will follow if their safety is not confirmed.<br><br>` + whatHappened;
         }
         if (_dueSentence) whatHappened = _dueSentence + '<br><br>' + whatHappened;   // __46_ (R36)
     }
@@ -2328,18 +2376,18 @@ function triggerAlerts(p, type) {
         ntfyPriority  = 'urgent';
         ntfyTags      = 'rotating_light,red_circle';
         whatHappened  = isTravel
-            ? `This worker was <strong>travelling to ${locationName}${travelDestAddr}</strong> and is <strong>significantly overdue</strong>. We have not been able to confirm their safety.`
+            ? `This worker was <strong>travelling to ${_hLocationName}${travelDestAddr}</strong> and is <strong>significantly overdue</strong>. We have not been able to confirm their safety.`
             : `This worker is <strong>significantly overdue</strong> and we have not been able to confirm their safety. Their grace period has expired.`;
         if (_dueSentence) {   // __46_ (R36/R37)
-            whatHappened = _dueSentence + (isTravel ? ` They were travelling to <strong>${locationName}${travelDestAddr}</strong>.` : '') +
+            whatHappened = _dueSentence + (isTravel ? ` They were travelling to <strong>${_hLocationName}${travelDestAddr}</strong>.` : '') +
                 ' We have not been able to confirm their safety.' +
                 (_stdTier === 4 ? `<br><br>The main contact was first alerted at ${_firstAlertClock}. All contacts have now been alerted. <strong>This is the final automatic alert.</strong>` : '');
         }
         actionSteps   = isTravel
-            ? `<li>Try to <strong>call ${workerFirst}</strong> on ${workerPhoneLink} immediately</li>
-            <li>Check whether they have arrived at <strong>${locationName}</strong> — contact someone there if possible</li>
+            ? `<li>Try to <strong>call ${_hWorkerFirst}</strong> on ${workerPhoneLink} immediately</li>
+            <li>Check whether they have arrived at <strong>${_hLocationName}</strong> — contact someone there if possible</li>
             <li>If unreachable after a reasonable effort, <strong>consider contacting emergency services (${EMERGENCY_NUMBER})</strong> and providing the departure point and intended destination above</li>`
-            : `<li>Try to <strong>call ${workerFirst}</strong> on ${workerPhoneLink} immediately</li>
+            : `<li>Try to <strong>call ${_hWorkerFirst}</strong> on ${workerPhoneLink} immediately</li>
             <li>Contact someone at the site to check on the worker's welfare</li>
             <li>If unreachable after a reasonable effort, <strong>consider contacting emergency services (${EMERGENCY_NUMBER})</strong> and providing the location above</li>`;
         actionSteps   = _plainSteps;   // __46_ (R37)
@@ -2356,23 +2404,23 @@ function triggerAlerts(p, type) {
         ntfyTags      = isCriticalTiming ? 'rotating_light,red_circle' : 'warning,yellow_circle';
         whatHappened  = isTravel
             ? (isCriticalTiming
-                ? `This worker was <strong>travelling to ${locationName}${travelDestAddr}</strong> and <strong>has not arrived as scheduled</strong>. They had activated Critical Timing Mode before departing. <strong>Please act on this promptly.</strong>`
-                : `This worker was <strong>travelling to ${locationName}${travelDestAddr}</strong> and <strong>has not arrived as scheduled</strong>. They may be delayed, unreachable, or in difficulty.`)
+                ? `This worker was <strong>travelling to ${_hLocationName}${travelDestAddr}</strong> and <strong>has not arrived as scheduled</strong>. They had activated Critical Timing Mode before departing. <strong>Please act on this promptly.</strong>`
+                : `This worker was <strong>travelling to ${_hLocationName}${travelDestAddr}</strong> and <strong>has not arrived as scheduled</strong>. They may be delayed, unreachable, or in difficulty.`)
             : (isCriticalTiming
                 ? `This worker <strong>has not checked out as scheduled and had activated Critical Timing Mode</strong> before their visit. Critical Timing Mode is used when a worker has specific concern about the importance of timely contact. <strong>Please act on this promptly.</strong>`
                 : `This worker <strong>has not checked out as scheduled</strong>. They may be delayed, unreachable, or in difficulty.`);
         if (_dueSentence) {   // __46_ (R36/R37)
             whatHappened = isCriticalTiming
                 ? _dueSentence + '<br><br>' + whatHappened
-                : _dueSentence + (isTravel ? ` They were travelling to <strong>${locationName}${travelDestAddr}</strong> and may be delayed, unreachable, or in difficulty.`
+                : _dueSentence + (isTravel ? ` They were travelling to <strong>${_hLocationName}${travelDestAddr}</strong> and may be delayed, unreachable, or in difficulty.`
                                            : ' They may be delayed, unreachable, or in difficulty.');
             if (_stdTier === 2 || _stdTier === 3) whatHappened += `<br><br>You were first alerted at ${_firstAlertClock}. <strong>There has still been no contact.</strong>`;
         }
         actionSteps   = isTravel
-            ? `<li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhoneLink}</li>
-            <li>Check whether they have arrived at <strong>${locationName}</strong> — contact someone there if possible</li>
+            ? `<li>Try to <strong>call or text ${_hWorkerFirst}</strong> on ${workerPhoneLink}</li>
+            <li>Check whether they have arrived at <strong>${_hLocationName}</strong> — contact someone there if possible</li>
             <li>If they remain unreachable and you have concerns, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>`
-            : `<li>Try to <strong>call or text ${workerFirst}</strong> on ${workerPhoneLink}</li>
+            : `<li>Try to <strong>call or text ${_hWorkerFirst}</strong> on ${workerPhoneLink}</li>
             <li>If you cannot reach them, contact someone at the site and ask them to check on the worker's safety</li>
             <li>If they remain unreachable and you have concerns, <strong>contact emergency services (${EMERGENCY_NUMBER})</strong></li>`;
         if (!isCriticalTiming) actionSteps = _plainSteps;   // __46_ (R37)
@@ -2389,17 +2437,17 @@ function triggerAlerts(p, type) {
         statusLabel   = 'TEST — Safety System Check';
         ntfyPriority  = 'default';
         ntfyTags      = 'test_tube,blue_circle';
-        whatHappened  = `This is a <strong>scheduled test</strong> of ${workerName}'s lone worker safety app. <strong>No action is required.</strong>`;
+        whatHappened  = `This is a <strong>scheduled test</strong> of ${_hWorkerName}'s lone worker safety app. <strong>No action is required.</strong>`;
         actionSteps   = `
             <li>No action required — this confirms your emergency contact details are correct and alerts are reaching your inbox</li>
             <li>Please check that this email did not land in your spam folder</li>
-            <li>If you did <em>not</em> expect this test, contact ${workerName} on ${workerPhoneLink} to confirm it was sent intentionally</li>`;
+            <li>If you did <em>not</em> expect this test, contact ${_hWorkerName} on ${workerPhoneLink} to confirm it was sent intentionally</li>`;
         noteToContact = '';
     }
     else {
         // Fallback for any other status (CRITICAL TIMING, LOW BATTERY, etc.)
-        whatHappened  = `A safety event has been recorded for this worker. Status: <strong>${status}</strong>.`;
-        actionSteps   = `<li>Try to contact <strong>${workerFirst}</strong> on ${workerPhoneLink}</li>
+        whatHappened  = `A safety event has been recorded for this worker. Status: <strong>${_hStatus}</strong>.`;
+        actionSteps   = `<li>Try to contact <strong>${_hWorkerFirst}</strong> on ${workerPhoneLink}</li>
                          <li>If you have concerns about their safety, contact emergency services (${EMERGENCY_NUMBER})</li>`;
         noteToContact = '';
     }
@@ -2410,16 +2458,16 @@ function triggerAlerts(p, type) {
         if (isCriticalTiming) {
             statusLabel  = (_wfFinal ? 'FINAL NOTICE - ' : _wfRepeat ? 'SECOND ALERT - ' : '') + 'WELFARE CHECK NOT ANSWERED (CRITICAL TIMING)';
             whatHappened = _dueSentence + '<br><br>' +
-                (_wfFinal ? `<strong>FINAL NOTICE - ${workerName} is still unaccounted for.</strong> This is the third and final automatic alert. <strong>No further alerts will be sent - please act now.</strong><br><br>`
-                 : _wfRepeat ? `<strong>SECOND ALERT - there has still been no contact from ${workerName}.</strong> One final notice will follow if their safety is not confirmed.<br><br>` : '') +
-                `${workerName} had activated Critical Timing Mode for this visit, so timely contact matters. <strong>Please treat this as a genuine emergency.</strong>`;
-            noteToContact = `The safety app asked ${workerFirst} "Are you OK?" at ${_wfClock} and there was no answer. Critical Timing Mode was on, so treat this with the same urgency as a manual panic alarm.`;
+                (_wfFinal ? `<strong>FINAL NOTICE - ${_hWorkerName} is still unaccounted for.</strong> This is the third and final automatic alert. <strong>No further alerts will be sent - please act now.</strong><br><br>`
+                 : _wfRepeat ? `<strong>SECOND ALERT - there has still been no contact from ${_hWorkerName}.</strong> One final notice will follow if their safety is not confirmed.<br><br>` : '') +
+                `${_hWorkerName} had activated Critical Timing Mode for this visit, so timely contact matters. <strong>Please treat this as a genuine emergency.</strong>`;
+            noteToContact = `The safety app asked ${_hWorkerFirst} "Are you OK?" at ${_wfClock} and there was no answer. Critical Timing Mode was on, so treat this with the same urgency as a manual panic alarm.`;
         } else {
             statusLabel  = (_stdTier === 4 ? 'EMERGENCY - ' : '') + 'WELFARE CHECK NOT ANSWERED';
             whatHappened = _dueSentence + ' They may be unwell, unable to reach their phone, or in difficulty.' +
                 ((_stdTier === 2 || _stdTier === 3) ? `<br><br>You were first alerted at ${_firstAlertClock}. <strong>There has still been no contact.</strong>` : '') +
                 (_stdTier === 4 ? `<br><br>The main contact was first alerted at ${_firstAlertClock}. All contacts have now been alerted. <strong>This is the final automatic alert.</strong>` : '');
-            noteToContact = `The safety app asked ${workerFirst} "Are you OK?" at ${_wfClock} and there was no answer. Before calling emergency services, consider that the phone may be out of reach, out of coverage or flat - try calling, texting and the site first.`;
+            noteToContact = `The safety app asked ${_hWorkerFirst} "Are you OK?" at ${_wfClock} and there was no answer. Before calling emergency services, consider that the phone may be out of reach, out of coverage or flat - try calling, texting and the site first.`;
         }
     }
     const headerEmoji = status.includes('TEST_ALERT') ? '🧪' : '🚨';
@@ -2465,6 +2513,8 @@ function triggerAlerts(p, type) {
         ? (isTravel ? `Last known position${_gpsAtText ? ' at ' + _gpsAtText : ''}: ${gpsLink}` : `GPS${_gpsAtText ? ' (at ' + _gpsAtText + ')' : ''}: ${gpsLink}`)
         : (isTravel ? 'Last known position: not reported since the trip started'
                     : (_siteFix ? `Site location (the site's recorded position, not a live one): ${_siteMapUrl}` : 'GPS: Not available'));
+    // __60_ (R78, Russell 5 Nov): the 3 words of the live fix, through the proxy (it gives up after 3 s); one message either way
+    const _w3wPush = hasValidGps ? _w3wForPush_(gpsLat, gpsLng, workerName) : null;
     const ntfyMessage = [
         status.includes('DURESS') ? _duressCallLine : '',   // __47_ (R45)
         _wfAt ? `Did not answer a welfare check at ${_wfClock}${_wfMin >= 1 ? ' (' + _wfMin + ' min ago)' : ''}. Call ${workerFirst} now.` :   // __50_ (R03)
@@ -2474,6 +2524,7 @@ function triggerAlerts(p, type) {
         isTravel ? `Heading to: ${_isGeneralTrip ? 'not given (general travel)' : locationName + (locationAddr ? ' (' + locationAddr + ')' : '')}` : `Site: ${locationName}`,   // __47_ (R51)
         (!isTravel && locationAddr) ? `Address: ${locationAddr}` : '',
         _ntfyGpsLine,
+        (_w3wPush && _w3wPush.words) ? `what3words: ///${_w3wPush.words}` : '',   // __60_ (R78)
         `Battery: ${battery}`,
         `Sent: ${sentAt}`
     ].filter(Boolean).join('\n');
@@ -2513,14 +2564,14 @@ function triggerAlerts(p, type) {
     // ── BUILD HTML EMAIL ───────────────────────────────────────────────────
     // what3words — optional. Only looked up when a valid GPS fix exists.
     const w3wAddress = (hasValidGps && CONFIG.W3W_API_KEY && !CONFIG.W3W_API_KEY.includes('%%'))
-        ? getW3wAddress_(gpsLat, gpsLng)
+        ? _w3wForEmail_(gpsLat, gpsLng, _w3wPush)   // __60_ (R78): reuses the push lookup / 6-hour memory
         : null;
 
     const locationBlock = [
-        `<tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap;vertical-align:top">Site:</td><td style="padding:4px 0"><strong>${locationName}</strong></td></tr>`,
-        locationAddr ? `<tr><td style="color:#6b7280;padding:4px 12px 4px 0;vertical-align:top">Address:</td><td style="padding:4px 0">${locationAddr}</td></tr>` : '',
+        `<tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap;vertical-align:top">Site:</td><td style="padding:4px 0"><strong>${_hLocationName}</strong></td></tr>`,
+        locationAddr ? `<tr><td style="color:#6b7280;padding:4px 12px 4px 0;vertical-align:top">Address:</td><td style="padding:4px 0">${_hLocationAddr}</td></tr>` : '',
         `<tr><td style="color:#6b7280;padding:4px 12px 4px 0;vertical-align:top">GPS:</td><td style="padding:4px 0">${gpsText}</td></tr>`,
-        w3wAddress ? `<tr><td style="color:#6b7280;padding:4px 12px 4px 0;vertical-align:top">what3words:</td><td style="padding:4px 0"><a href="https://what3words.com/${w3wAddress.replace('///', '')}" style="color:#2563eb;">${w3wAddress}</a></td></tr>` : ''
+        w3wAddress ? `<tr><td style="color:#6b7280;padding:4px 12px 4px 0;vertical-align:top">what3words:</td><td style="padding:4px 0"><a href="https://what3words.com/${_h_(w3wAddress.replace('///', ''))}" style="color:#2563eb;">${_h_(w3wAddress)}</a></td></tr>` : ''
     ].filter(Boolean).join('');
 
     // Build a per-recipient email with the correct salutation.
@@ -2528,7 +2579,7 @@ function triggerAlerts(p, type) {
     // ntfyTopic: if provided, a subscribe deeplink is shown in TEST emails so contacts can opt in to push.
     const buildHtml = (recipientName, ntfyTopic) => {
         const salutation = recipientName
-            ? `Dear ${recipientName.split(' ')[0]},`
+            ? `Dear ${_h_(recipientName.split(' ')[0])},`
             : 'Dear Emergency Contact,';
         const ntfyServer = (CONFIG.NTFY_SERVER && !CONFIG.NTFY_SERVER.includes('%%'))
             ? CONFIG.NTFY_SERVER.replace(/\/$/, '')
@@ -2539,8 +2590,8 @@ function triggerAlerts(p, type) {
             ? (ntfyTopic && ntfyTopic.trim()
                 ? `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:16px 20px;margin:24px 0 0">
                      <p style="margin:0 0 8px;font-size:13px;font-weight:bold;color:#1e40af">📲 Enable Instant Push Notifications</p>
-                     <p style="margin:0 0 12px;font-size:13px;color:#374151">Install the free <strong>ntfy app</strong> on your phone and tap the button below to subscribe to <strong>${workerName}'s</strong> safety alerts. You'll receive a push notification the instant an alarm fires — no need to check your email.</p>
-                     <a href="${ntfyServer}/${ntfyTopic.trim()}" style="display:inline-block;background:#1d4ed8;color:#fff;font-size:13px;font-weight:bold;padding:10px 20px;border-radius:6px;text-decoration:none">Subscribe to Push Alerts →</a>
+                     <p style="margin:0 0 12px;font-size:13px;color:#374151">Install the free <strong>ntfy app</strong> on your phone and tap the button below to subscribe to <strong>${_hWorkerName}'s</strong> safety alerts. You'll receive a push notification the instant an alarm fires — no need to check your email.</p>
+                     <a href="${ntfyServer}/${_h_(encodeURIComponent(ntfyTopic.trim()))}" style="display:inline-block;background:#1d4ed8;color:#fff;font-size:13px;font-weight:bold;padding:10px 20px;border-radius:6px;text-decoration:none">Subscribe to Push Alerts →</a>
                      <p style="margin:10px 0 0;font-size:11px;color:#6b7280">Download ntfy: <a href="https://apps.apple.com/app/ntfy/id1625396347" style="color:#2563eb">iOS App Store</a> · <a href="https://play.google.com/store/apps/details?id=io.heckel.ntfy" style="color:#2563eb">Google Play</a> · <a href="https://ntfy.sh" style="color:#2563eb">Web browser</a></p>
                    </div>`
                 : `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px 20px;margin:24px 0 0">
@@ -2551,7 +2602,7 @@ function triggerAlerts(p, type) {
                        <li>Download the free <strong>ntfy app</strong> (links below)</li>
                        <li>Open the app and tap <strong>Subscribe to topic</strong></li>
                        <li>Choose a private topic name — anything memorable, e.g. <em>jane-safety-alerts</em></li>
-                       <li>Share that topic name with <strong>${workerFirst}</strong> so they can enter it in their safety app</li>
+                       <li>Share that topic name with <strong>${_hWorkerFirst}</strong> so they can enter it in their safety app</li>
                      </ol>
                      <p style="margin:0 0 4px;font-size:11px;color:#6b7280">Download ntfy: <a href="https://apps.apple.com/app/ntfy/id1625396347" style="color:#16a34a">iOS App Store</a> · <a href="https://play.google.com/store/apps/details?id=io.heckel.ntfy" style="color:#16a34a">Google Play</a> · <a href="https://ntfy.sh" style="color:#16a34a">Web browser</a></p>
                      <p style="margin:4px 0 0;font-size:11px;color:#6b7280">ntfy is free and open source. Topics are private — nobody can find yours unless you share the name.</p>
@@ -2567,22 +2618,22 @@ function triggerAlerts(p, type) {
       <!-- Header -->
       <tr><td style="background:${headerColour};color:#fff;padding:24px 28px;border-radius:8px 8px 0 0">
         <div style="font-size:11px;font-weight:bold;letter-spacing:3px;opacity:0.85;text-transform:uppercase;margin-bottom:6px">OTG Lone Worker Safety</div>
-        <div style="font-size:22px;font-weight:bold">${headerEmoji} ${statusLabel}</div>
+        <div style="font-size:22px;font-weight:bold">${headerEmoji} ${_h_(statusLabel)}</div>
       </td></tr>
 
       <!-- Body -->
       <tr><td style="background:#fff;padding:28px;border-radius:0 0 8px 8px">
 
         <p style="margin:0 0 20px">${salutation}</p>
-        <p style="margin:0 0 20px">You are receiving this message because you are listed as <strong>${workerName}</strong>'s emergency contact.</p>
+        <p style="margin:0 0 20px">You are receiving this message because you are listed as <strong>${_hWorkerName}</strong>'s emergency contact.</p>
 
         <h2 style="font-size:14px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:8px;margin:0 0 12px">What Has Happened</h2>
         <p style="margin:0 0 6px">${whatHappened}</p>
-        ${notes ? `<p style="margin:8px 0 0;color:#6b7280;font-style:italic">&ldquo;${notes}&rdquo;</p>` : ''}
+        ${notes ? `<p style="margin:8px 0 0;color:#6b7280;font-style:italic">&ldquo;${_hNotes}&rdquo;</p>` : ''}
 
         <h2 style="font-size:14px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:8px;margin:24px 0 12px">Worker Details</h2>
         <table cellpadding="0" cellspacing="0">
-          <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Name:</td><td style="padding:4px 0"><strong>${workerName}</strong></td></tr>
+          <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Name:</td><td style="padding:4px 0"><strong>${_hWorkerName}</strong></td></tr>
           <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Phone:</td><td style="padding:4px 0">${workerPhoneLink}</td></tr>
         </table>
 
@@ -2601,8 +2652,8 @@ function triggerAlerts(p, type) {
 
         <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0">
         <table cellpadding="0" cellspacing="0" style="font-size:12px;color:#6b7280;width:100%">
-          <tr><td style="padding:2px 12px 2px 0;white-space:nowrap">Status:</td><td>${statusLabel}</td></tr>
-          <tr><td style="padding:2px 12px 2px 0;white-space:nowrap">Battery:</td><td>${battery}</td></tr>
+          <tr><td style="padding:2px 12px 2px 0;white-space:nowrap">Status:</td><td>${_h_(statusLabel)}</td></tr>
+          <tr><td style="padding:2px 12px 2px 0;white-space:nowrap">Battery:</td><td>${_hBattery}</td></tr>
           <tr><td style="padding:2px 12px 2px 0;white-space:nowrap">Sent at:</td><td>${sentAt}</td></tr>
         </table>
 
@@ -2865,6 +2916,7 @@ function checkOverdueVisits() {
         // Only fires here (after the loop) so a crash or early return leaves Healthchecks
         // without a ping, which it correctly interprets as a system failure.
         if (completed) _pingHealthcheck();
+        _engineWatchEnsure_();   // __60_ (F116-5): at most hourly, after the alerts; never throws
     } finally {
         _checkerGuardRelease_(guard);
     }
@@ -2885,6 +2937,7 @@ function _checkOverdueLocked_(sends, warns) {
     const sheet = ss.getSheetByName('Visits');
     if(!sheet) return false;
     const data = sheet.getDataRange().getValues();
+    _visitsHeaderCheck_(data[0]);   // __61_ (P2-4): never throws, never changes this run; HQ told at once
     const now = new Date();
     const latest = {};
     // __59_ (P2-8, S115-F4): the shared row finder rule - PRE_VISIT / DATA_ENTRY_ONLY records skipped (a pre-visit record
@@ -3826,6 +3879,14 @@ function runDiagnostics() {
     Logger.log('── TRIGGERS ──');
     const RECOMMENDED = [
         {
+            fn:       'checkEngineWatch',
+            label:    'Escalation engine watcher (__60_)',
+            required: false,
+            note:     'Emails and pushes the System Administrator if the escalation engine stops. The engine creates this ' +
+                      'trigger by itself within an hour of its first run on backend __60_ - if it is still missing after that, ' +
+                      'add it by hand: checkEngineWatch, time-driven, every 5 minutes.'
+        },
+        {
             fn:       'checkOverdueVisits',
             label:    'Escalation engine',
             required: true,
@@ -4048,6 +4109,7 @@ function getDashboardData() {
         Logger.log('[getDashboardData] Could not read site positions: ' + e.toString());
     }
 
+    const _now61 = Date.now();   // __61_ (S114-D1)
     const workers = data.map(r => {
         const obj = {};
         COLS.forEach(c => { obj[c[1]] = PHONE_INDICES.has(c[0]) ? String(r[c[0]] || '') : r[c[0]]; });
@@ -4063,6 +4125,7 @@ function getDashboardData() {
         }
         return obj;
     });
+    _trailAttach_(workers, _now61);   // __61_ (S114-D1): Trail only while overdue or in an alarm state; one cache read
 
     return {workers: workers, escalation_limit: CONFIG.ESCALATION_MINUTES, serverNow: new Date().toISOString(), build: TEMPLATE_BUILD};
 }
@@ -4282,11 +4345,11 @@ function _archiveVisits_(ss, sheet, cutoff) {
         return { moved: 0, kept: keep.length - 1, fitFailed: true, note: 'nothing moved - Archive tab could not be prepared' };
     }
     if (move.length > 0) {
-        archive.getRange(archive.getLastRow() + 1, 1, move.length, width).setValues(move.map(_cellRow_));   // __58_ (S3-5)
+        archive.getRange(archive.getLastRow() + 1, 1, move.length, width).setValues(move.map(_textKeepRow_(ARCHIVE_TEXT_IDX_VISITS)));   // __58_ (S3-5), __61_ (P2-7)
         // __39_: kept rows are written over the top of Visits FIRST, then the leftover rows
         // below them are cleared. The sheet is never empty, and a failure between the two
         // calls leaves duplicates (recoverable) instead of a wiped sheet.
-        sheet.getRange(1, 1, keep.length, keep[0].length).setValues(keep.map(_cellRow_));   // __58_ (S3-5)
+        sheet.getRange(1, 1, keep.length, keep[0].length).setValues(keep.map(_textKeepRow_(ARCHIVE_TEXT_IDX_VISITS)));   // __58_ (S3-5), __61_ (P2-7)
         if (data.length > keep.length) {
             sheet.getRange(keep.length + 1, 1, data.length - keep.length, keep[0].length).clearContent();
         }
@@ -4370,9 +4433,9 @@ function _archiveForms_(ss, cutoff) {
         if (changed) fa.getRange(1, 1, 1, width).setValues([h]);
     }
     _sheetFitRows_(fa, fa.getLastRow() + move.length);
-    fa.getRange(fa.getLastRow() + 1, 1, move.length, width).setValues(move.map(_cellRow_));   // __58_ (S3-5)
+    fa.getRange(fa.getLastRow() + 1, 1, move.length, width).setValues(move.map(_textKeepRow_(ARCHIVE_TEXT_IDX_FORMS)));   // __58_ (S3-5), __61_ (P2-7)
     // Same safety order as Visits: kept rows written over the top first, then the leftover rows cleared.
-    fsh.getRange(1, 1, keep.length, width).setValues(keep.map(_cellRow_));   // __58_ (S3-5)
+    fsh.getRange(1, 1, keep.length, width).setValues(keep.map(_textKeepRow_(ARCHIVE_TEXT_IDX_FORMS)));   // __58_ (S3-5), __61_ (P2-7)
     if (data.length > keep.length) fsh.getRange(keep.length + 1, 1, data.length - keep.length, width).clearContent();
     _audit_('archiveForms', '', '', '', '', '', '', 'Forms sheet rewritten (write then trim): ' + move.length + ' form(s) archived, ' + (keep.length - 1) + ' kept');
     return { moved: move.length, kept: keep.length - 1 };
@@ -4459,6 +4522,9 @@ function _sendWeeklySummaryImpl_() {
 function sendResponse(e, data) {
     const json = JSON.stringify(data);
     if (e && e.parameter && e.parameter.callback) {
+        // __60_ (S3-8): only a plain function name is ever wrapped round the reply
+        if (!_callbackOk_(e.parameter.callback))
+            return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Bad callback' })).setMimeType(ContentService.MimeType.JSON);
         return ContentService.createTextOutput(`${e.parameter.callback}(${json})`)
             .setMimeType(ContentService.MimeType.JAVASCRIPT);
     }
@@ -4666,7 +4732,8 @@ function getSyncData(workerName, deviceId, isHQ) {
                     contactPhone: sData[i][6], contactEmail: sData[i][7], 
                     notes: sData[i][8], emergencyProcedures: sData[i][9],
                     riskLevel: sData[i][10] || '',  // Column K — Low / Medium / High / Critical
-                    preVisitForm: sData[i][11] === true || sData[i][11] === 'TRUE' || sData[i][11] === 'true'  // Column L
+                    preVisitForm: sData[i][11] === true || sData[i][11] === 'TRUE' || sData[i][11] === 'true',  // Column L
+                    logoUrl: _logoUrl_(sData[i][SITES_LOGO_COL - 1])   // __61_: Column N, https only (Drive links -> thumbnail)
                 });
             }
         }
@@ -4970,11 +5037,11 @@ function _sendAllClear_(p, stillMonitored, scope) {
     const resolvedAt  = _fmtLocal_(new Date(), "dd/MM/yyyy, h:mm:ss a");   // __47_ (R46)
     const workerPhoneTel2  = _cleanPhone((p['Worker Phone Number'] || '').toString()) || '';
     const workerPhoneLink2 = workerPhoneTel2
-        ? `<a href="tel:${workerPhoneTel2}" style="color:inherit;font-weight:bold;text-decoration:none;">${workerPhone}</a>`
-        : `<strong>${workerPhone}</strong>`;
+        ? `<a href="tel:${workerPhoneTel2}" style="color:inherit;font-weight:bold;text-decoration:none;">${_h_(workerPhone)}</a>`
+        : `<strong>${_h_(workerPhone)}</strong>`;
 
     const buildAllClearHtml = (recipientName) => {
-        const salutation = recipientName ? `Dear ${recipientName.split(' ')[0]},` : 'Dear Emergency Contact,';
+        const salutation = recipientName ? `Dear ${_h_(recipientName.split(' ')[0])},` : 'Dear Emergency Contact,';
         return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"></head>
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif">
@@ -4987,13 +5054,13 @@ function _sendAllClear_(p, stillMonitored, scope) {
       </td></tr>
       <tr><td style="background:#fff;padding:28px;border-radius:0 0 8px 8px">
         <p style="margin:0 0 20px">${salutation}</p>
-        <p style="margin:0 0 20px"><strong>${workerName}</strong> has confirmed they are safe. The previous safety alert is now resolved. ${stillMonitored
+        <p style="margin:0 0 20px"><strong>${_h_(workerName)}</strong> has confirmed they are safe. The previous safety alert is now resolved. ${stillMonitored
             ? '<strong>Their visit is still being monitored, and you will be alerted again if they do not check in on time.</strong>'
             : '<strong>No further action is required.</strong>'}</p>
         <table cellpadding="0" cellspacing="0" style="font-size:13px;color:#374151">
-          <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Worker:</td><td>${workerName}</td></tr>
+          <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Worker:</td><td>${_h_(workerName)}</td></tr>
           <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Phone:</td><td>${workerPhoneLink2}</td></tr>
-          <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Location:</td><td>${p['Location Name'] || 'Unknown'}</td></tr>
+          <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Location:</td><td>${_h_(p['Location Name'] || 'Unknown')}</td></tr>
           <tr><td style="color:#6b7280;padding:4px 12px 4px 0;white-space:nowrap">Cleared at:</td><td>${resolvedAt}</td></tr>
         </table>
         <p style="margin:20px 0 0;font-size:13px;color:#6b7280">If you have any concerns, please contact the worker directly on ${workerPhoneLink2}.</p>
@@ -5564,7 +5631,7 @@ function _formsGps_(sheet, rowNum, p) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__59_';
+const TEMPLATE_BUILD = 'backend__61_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
@@ -7195,6 +7262,11 @@ function _broadcastSend_(id, priority, target, title, body, isEm, click, send, n
  */
 function _dashboardExtras_(out) {
     try {
+        try {   // __60_ (F116-5): for a Monitor banner when the engine stops (the Monitor ignores fields it does not know)
+            const _eg = _engineAge_(new Date());
+            out.engine = { level: _eg.level, ageMin: _eg.ageMin === null ? null : Math.round(_eg.ageMin * 10) / 10,
+                           lastRun: _eg.time ? _eg.time.toISOString() : '' };
+        } catch (_) {}
         const ss = SpreadsheetApp.getActiveSpreadsheet();
         try {
             const st = ss.getSheetByName('Staff');
@@ -7324,7 +7396,7 @@ const GATE_REFUSED_NOTICE = 'This phone is not the one registered for this worke
                             'Ask your administrator to re-register this phone, or phone HQ.';
 const GATE_MAIL_TTL_S = 21600;   // one admin email per alarm visit row, at most once every 6 hours (CacheService maximum)
 const GATE_CLEAR_WORDS = ['USER_SAFE', 'EXTENDED', 'DEPARTED', 'COMPLETED'];   // the words handleWorkerPost treats as a clear
-const GATE_NEUTRAL_ACTIONS = ['registerDevice', 'acknowledgeNotice', 'broadcast', 'workerTopic', 'workerTopicTest'];
+const GATE_NEUTRAL_ACTIONS = ['registerDevice', 'acknowledgeNotice', 'broadcast', 'workerTopic', 'workerTopicTest', 'contactsUpdate'];   // __61_
 const NAME_MAX_CHARS = 60;
 
 /** __58_ (S3-1): "lat,lng" - two numbers in range, a comma, optional spaces. The same shape Monitor __17_ accepts. */
@@ -7776,4 +7848,688 @@ function _dueErrorAlert_(worker, rowNum, entry, dueRaw) {
     } catch (err) {
         try { _audit_('checker:due-unreadable-error', worker, rowNum, '', '', '', '', String(err).substring(0, 160)); } catch (_) {}
     }
+}
+
+// ==========================================
+// __60_ (session 118, 5 Nov 2026, Opus 5.5 high) - SAFE EMAIL TEXT (S3-6), 3 WORDS IN THE PUSH (R78), ENGINE WATCHER (F116-5)
+// ==========================================
+
+/**
+ * __60_ (S3-6): text made safe for an HTML email. Every character that HTML gives a meaning to (& < > " ') becomes plain text,
+ * so a worker name, site, note or GPS value typed into (or posted by) a phone can never add links, images or markup to an alert
+ * email. Used ONLY where a value goes into HTML; the push, its title, the SMS and the email subject are plain text and keep the
+ * value as it is (escaping there would show "&amp;").
+ */
+function _h_(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                                     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/**
+ * __60_ (S3-8): a JSONP callback name the backend will wrap a reply in. Letters, digits, _ . $ only, up to 64 characters
+ * (the Monitor uses _gasLogin_<digits> and _gasCallback_<digits>). Anything else could run script in the caller's page.
+ */
+function _callbackOk_(cb) { return /^[A-Za-z0-9_.$]{1,64}$/.test(String(cb == null ? '' : cb)); }
+
+/**
+ * __60_ (S3-8): an unexpected error in doGet / doPost. The caller gets a plain "Server error"; the detail goes to the Audit tab,
+ * at most once per source and message every 10 minutes (the Monitor polls every 10 seconds, so a repeating error must not fill
+ * the Audit). Never throws.
+ */
+function _errAudit_(source, err, worker, status, key) {
+    try {
+        const msg = String(err == null ? '' : err).substring(0, 200);
+        const ck = 'ERRA_' + source + '_' + msg.replace(/[^A-Za-z0-9]/g, '').substring(0, 60);
+        try {
+            const c = CacheService.getScriptCache();
+            if (c.get(ck)) return;
+            c.put(ck, '1', 600);
+        } catch (_) {}
+        _audit_(source, worker || '', '', '', '', status || '', key || '', msg);
+    } catch (_) {}
+}
+
+// ------------------------------------------------------------------------------------------------------------------------------
+// R78 (Russell, 5 Nov 2026): the what3words 3-word location of the LIVE fix goes in the contact push. One message: the backend
+// asks the ntfy proxy for the words; the proxy (proxy_ntfy__3_.php) gives up on what3words after 3 seconds, so the alarm push
+// waits at most about 3 seconds and then goes, with the words if they came back and without them if not. Google Apps Script
+// cannot put a time limit on a web request itself, which is why the limit lives in the proxy. The words for a spot are kept for
+// 6 hours, so later alerts at the same place (ladder steps, the email) do not wait or use what3words again.
+// No proxy, or the proxy is an older file: no words in the push (never an uncapped wait); the email looks them up as before.
+// ------------------------------------------------------------------------------------------------------------------------------
+const W3W_CACHE_TTL_S = 6 * 3600;
+const W3W_WORDS_RE = /^[^\s.\/\\<>&"'`]{1,40}\.[^\s.\/\\<>&"'`]{1,40}\.[^\s.\/\\<>&"'`]{1,40}$/;
+
+function _w3wKey_() {
+    const k = String(CONFIG.W3W_API_KEY || '');
+    return (k && !k.includes('%%') && k.length >= 8) ? k : '';
+}
+function _w3wCacheKey_(lat, lng) { return 'W3W_' + Number(lat).toFixed(5) + ',' + Number(lng).toFixed(5); }
+function _w3wCacheGet_(lat, lng) {
+    try { const v = CacheService.getScriptCache().get(_w3wCacheKey_(lat, lng)); return (v && W3W_WORDS_RE.test(v)) ? v : null; }
+    catch (_) { return null; }
+}
+function _w3wCachePut_(lat, lng, words) {
+    try { if (W3W_WORDS_RE.test(words)) CacheService.getScriptCache().put(_w3wCacheKey_(lat, lng), words, W3W_CACHE_TTL_S); } catch (_) {}
+}
+/** The proxy address, only when it is a .php file with a secret (an older proxy then answers 400 "no topic", never a push). */
+function _w3wProxy_() {
+    const url = (CONFIG.NTFY_PROXY_URL && !String(CONFIG.NTFY_PROXY_URL).includes('%%')) ? String(CONFIG.NTFY_PROXY_URL).replace(/\/$/, '') : '';
+    const secret = (CONFIG.NTFY_PROXY_SECRET && !String(CONFIG.NTFY_PROXY_SECRET).includes('%%')) ? String(CONFIG.NTFY_PROXY_SECRET) : '';
+    return (url && secret && /\.php$/i.test(url.split('?')[0])) ? { url: url, secret: secret } : null;
+}
+/** At most one Audit row per reason every 6 hours (alerts are rare, but a broken proxy must not fill the Audit). */
+function _w3wNote_(worker, how, ms, code, detail) {
+    try {
+        const ck = 'W3W_NOTE_' + how;
+        try { const c = CacheService.getScriptCache(); if (c.get(ck)) return; c.put(ck, '1', W3W_CACHE_TTL_S); } catch (_) {}
+        _audit_('w3w:push-without-words', worker || '', '', '', '', '', '',
+                how + ' after ' + ms + ' ms' + (code ? ' (HTTP ' + code + ')' : '') + (detail ? ': ' + String(detail).substring(0, 100) : '') +
+                (how === 'old-proxy' ? ' - upload proxy_ntfy__3_.php to get the 3 words in the push' : ''));
+    } catch (_) {}
+}
+
+/**
+ * The 3 words for the push. Returns { words: 'filled.count.soap' | null, how, ms }. how: cache, proxy, no-key, no-proxy,
+ * old-proxy, timeout, failed. Never throws, and never waits on what3words except through the proxy (capped at 3 s there).
+ */
+function _w3wForPush_(lat, lng, worker) {
+    const t0 = Date.now();
+    try {
+        if (!_w3wKey_()) return { words: null, how: 'no-key', ms: 0 };
+        const c = _w3wCacheGet_(lat, lng);
+        if (c) return { words: c, how: 'cache', ms: 0 };
+        const px = _w3wProxy_();
+        if (!px) return { words: null, how: 'no-proxy', ms: 0 };
+        const url = px.url + '?w3w=' + Number(lat).toFixed(6) + ',' + Number(lng).toFixed(6);
+        const r = UrlFetchApp.fetch(url, { method: 'get', muteHttpExceptions: true, followRedirects: false,
+                                           headers: { 'X-Proxy-Secret': px.secret, 'X-W3W-Key': _w3wKey_() } });
+        const ms = Date.now() - t0, code = r.getResponseCode();
+        let j = null;
+        try { j = JSON.parse(r.getContentText()); } catch (_) { j = null; }
+        if (code === 200 && j && typeof j.words === 'string' && W3W_WORDS_RE.test(j.words)) {
+            _w3wCachePut_(lat, lng, j.words);
+            if (ms > 1500) _w3wNote_(worker, 'slow', ms, 0, 'words arrived and were sent');
+            return { words: j.words, how: 'proxy', ms: ms };
+        }
+        const how = (j && j.error === 'timeout') ? 'timeout' : (!j && code === 400) ? 'old-proxy' : 'failed';
+        _w3wNote_(worker, how, ms, code, j && j.error);
+        return { words: null, how: how, ms: ms };
+    } catch (e) {
+        const ms = Date.now() - t0;
+        _w3wNote_(worker, 'failed', ms, 0, String(e));
+        return { words: null, how: 'failed', ms: ms };
+    }
+}
+
+/**
+ * The 3 words for the alert email ('///a.b.c' or null). Reuses the push lookup; otherwise the 6-hour memory, otherwise the
+ * direct lookup the email always made (it goes after the push, so it never delays it). Skipped when the proxy just reported
+ * that what3words timed out - it is slow, and the emails should not wait for it either.
+ */
+function _w3wForEmail_(lat, lng, pushRes) {
+    try {
+        if (pushRes && pushRes.words) return '///' + pushRes.words;
+        if (!_w3wKey_()) return null;
+        if (pushRes && pushRes.how === 'timeout') return null;
+        const c = _w3wCacheGet_(lat, lng);
+        if (c) return '///' + c;
+        const w = getW3wAddress_(lat, lng);
+        const bare = w ? String(w).replace(/^\/\/\//, '') : '';
+        if (bare && W3W_WORDS_RE.test(bare)) { _w3wCachePut_(lat, lng, bare); return '///' + bare; }
+        return null;
+    } catch (_) { return null; }
+}
+
+// ------------------------------------------------------------------------------------------------------------------------------
+// F116-5 (session 79 decision): tell the System Administrator within about 10 minutes if the 1-minute escalation engine
+// (checkOverdueVisits) stops. The engine cannot report its own stop, so a separate watcher runs every 5 minutes on its own
+// trigger. The engine installs that trigger by itself (checked at most once an hour, after its alerts have gone) - no setup
+// step. Alerts: the Health email address (or the script owner) plus a push to the Settings key ADMIN_ALERT_TOPIC when filled;
+// at most one every 6 hours while it stays stopped, and one "running again" message when it recovers.
+// What it cannot see: Google stopping EVERY trigger in the project (for example, permission withdrawn) stops the watcher too -
+// Healthchecks.io, outside Google, is the cover for that.
+// ------------------------------------------------------------------------------------------------------------------------------
+const ENGINE_WATCH_FN       = 'checkEngineWatch';
+const ENGINE_WATCH_EVERY_MIN = 5;
+const ENGINE_WATCH_REPEAT_H = 6;
+const ENGINE_WATCH_ENSURE_MS = 60 * 60 * 1000;
+
+/** The watcher (its own 5-minute trigger). Reads two script properties; writes only when it alerts. Never throws. */
+function checkEngineWatch() {
+    try {
+        _settingsReset_();
+        const now = new Date();
+        const eng = _engineAge_(now);
+        const alertedAt = sp.getProperty('ENGINE_STALE_ALERTED_AT');
+        if (eng.level === 'STALE' || eng.level === 'NEVER') {
+            const last = alertedAt ? new Date(alertedAt) : null;
+            if (!last || isNaN(last.getTime()) || (now - last) >= ENGINE_WATCH_REPEAT_H * 3600000) {
+                sp.setProperty('ENGINE_STALE_ALERTED_AT', now.toISOString());
+                _engineWatchSend_('stale', eng, now);
+            }
+        } else if (eng.level === 'OK' && alertedAt) {
+            sp.deleteProperty('ENGINE_STALE_ALERTED_AT');
+            _engineWatchSend_('recovered', eng, now);
+        }
+    } catch (err) {
+        try { _audit_('watch:error', '', '', '', '', '', '', String(err).substring(0, 160)); } catch (_) {}
+    }
+}
+
+function _engineWatchSend_(kind, eng, now) {
+    const org = (CONFIG.ORG_NAME && !String(CONFIG.ORG_NAME).includes('%%')) ? CONFIG.ORG_NAME : 'OTG';
+    const to = (CONFIG.HEALTH_EMAIL && String(CONFIG.HEALTH_EMAIL).includes('@')) ? CONFIG.HEALTH_EMAIL : Session.getEffectiveUser().getEmail();
+    const topic = _settings_().adminAlertTopic;
+    const mins = eng.ageMin === null ? null : Math.floor(eng.ageMin);
+    const lastRun = eng.time ? _fmtLocal_(eng.time, 'd MMM yyyy, h:mm a') : 'never recorded';
+    let subject, html, pushTitle, pushBody, prio, tags;
+    if (kind === 'stale') {
+        subject = 'OTG URGENT - overdue alerts have STOPPED: the escalation engine has not run ' +
+                  (mins === null ? '(never recorded)' : 'for ' + mins + ' minutes') + ' (' + org + ')';
+        html = '<div style="font-family:Arial,sans-serif;font-size:14px;color:#111">' +
+            '<p><b>The escalation engine (checkOverdueVisits) has not run ' + (mins === null ? '- no run has ever been recorded' : 'for ' + mins + ' minutes') +
+            '. Until it runs again, NO overdue or missed welfare check alerts will reach any contact.</b> Panic and duress alarms ' +
+            'sent from a phone still go out at once.</p>' +
+            '<p>Last run: ' + _h_(lastRun) + '</p>' +
+            '<p><b>What to do now</b></p><ol>' +
+            '<li>Anyone on a visit right now: phone them, or watch them on the Monitor, until this is fixed.</li>' +
+            '<li>Open the Apps Script editor &gt; <b>Triggers</b> (alarm clock icon). There must be a trigger for <b>checkOverdueVisits</b>, ' +
+            'time-driven, every 1 minute. If it is missing, add it.</li>' +
+            '<li>Open <b>Executions</b> and look for checkOverdueVisits runs that failed - the error says why.</li>' +
+            '<li>Run checkOverdueVisits once by hand from the editor (allow any permission it asks for).</li>' +
+            '</ol><p style="color:#666;font-size:12px">You get at most one of these every ' + ENGINE_WATCH_REPEAT_H + ' hours while the engine ' +
+            'stays stopped, and one message when it runs again. Sent by the engine watcher (checkEngineWatch, every ' + ENGINE_WATCH_EVERY_MIN +
+            ' minutes). ' + _h_(TEMPLATE_BUILD) + '</p></div>';
+        pushTitle = 'OTG: overdue alerts STOPPED (' + org + ')';
+        pushBody = 'The escalation engine has not run ' + (mins === null ? '(never recorded)' : 'for ' + mins + ' min') +
+                   '. Overdue alerts are not reaching contacts. Phone anyone on a visit; check Apps Script Triggers and Executions. Details by email.';
+        prio = 'urgent'; tags = 'rotating_light,warning';
+    } else {
+        subject = 'OTG - the escalation engine is running again (' + org + ')';
+        html = '<div style="font-family:Arial,sans-serif;font-size:14px;color:#111"><p><b>The escalation engine (checkOverdueVisits) is running ' +
+               'again.</b> Last run: ' + _h_(lastRun) + '. Overdue alerts are being sent normally.</p>' +
+               '<p>Check the Visits sheet for anyone who was due while it was stopped.</p>' +
+               '<p style="color:#666;font-size:12px">Sent by the engine watcher. ' + _h_(TEMPLATE_BUILD) + '</p></div>';
+        pushTitle = 'OTG: escalation engine running again (' + org + ')';
+        pushBody = 'Overdue alerts are being sent normally again. Check for anyone who was due while it was stopped.';
+        prio = 'default'; tags = 'white_check_mark';
+    }
+    _audit_('watch:engine-' + kind, '', '', '', '', '', '',
+            'engine last ran ' + lastRun + (mins === null ? '' : ' (' + mins + ' min ago)') + ' - HQ told by email' + (topic ? ' and push' : ''));
+    try { MailApp.sendEmail({ to: to, subject: subject, htmlBody: html }); }
+    catch (err) { _audit_('watch:email-FAILED', '', '', '', '', '', '', String(err).substring(0, 160)); }
+    if (topic) {
+        try {
+            const r = _sendNtfy(topic, pushTitle, pushBody, prio, tags);
+            if (!r || !r.ok) _audit_('watch:push-FAILED', '', '', '', '', '', '', 'push to the admin topic not accepted' + (r && r.code ? ' (HTTP ' + r.code + ')' : ''));
+        } catch (err) { _audit_('watch:push-FAILED', '', '', '', '', '', '', String(err).substring(0, 160)); }
+    }
+}
+
+/**
+ * Called by the engine after its alerts have gone (lock released): at most once an hour, make sure the watcher trigger exists,
+ * and create it if not. A failure is audited at most once a day. Never throws.
+ */
+function _engineWatchEnsure_() {
+    try {
+        const nowMs = Date.now();
+        const last = Number(sp.getProperty('ENGINE_WATCH_CHECKED_MS') || 0);
+        if (last && nowMs - last < ENGINE_WATCH_ENSURE_MS) return;
+        sp.setProperty('ENGINE_WATCH_CHECKED_MS', String(nowMs));
+        const has = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === ENGINE_WATCH_FN; });
+        if (has) return;
+        ScriptApp.newTrigger(ENGINE_WATCH_FN).timeBased().everyMinutes(ENGINE_WATCH_EVERY_MIN).create();
+        _audit_('watch:installed', '', '', '', '', '', '', 'engine watcher trigger created (' + ENGINE_WATCH_FN + ', every ' + ENGINE_WATCH_EVERY_MIN + ' min)');
+    } catch (err) {
+        try {
+            const lastFail = Number(sp.getProperty('ENGINE_WATCH_FAIL_MS') || 0);
+            if (!lastFail || Date.now() - lastFail >= 24 * 3600000) {
+                sp.setProperty('ENGINE_WATCH_FAIL_MS', String(Date.now()));
+                _audit_('watch:install-FAILED', '', '', '', '', '', '', String(err).substring(0, 160));
+            }
+        } catch (_) {}
+    }
+}
+
+// ==========================================
+// __61_ (session 120, 6 Nov 2026, Opus 5.5 high) - SCHEMA BUILD, CONTACT TOPICS, SITE LOGOS, TRIP TRAIL, RELEASE A PHONE
+// ==========================================
+
+// ---------------------------------------------------------------- S113-3 / S118-D7: contactsUpdate (worker __31_ posts it on Save)
+
+/**
+ * __61_ (S113-3): the worker saved new contact ntfy topics in Settings. Writes Staff H (emergency) and I (escalation) at once,
+ * so an alarm before the next visit post goes to the new topic. Gate-neutral (no visit row is touched).
+ *   - Only the phone registered in Staff column E, or the master key, may change them (same rule as the visit posts, S115-F3).
+ *   - A blank topic leaves the stored one unchanged (Russell, 6 Nov - S120-D9): an app fault that sends blanks must never
+ *     silently switch off a contact's alerts. A value that is not a topic name (letters, digits, - and _) is also kept out.
+ *   - Refusals reply success with saved:false (the phone ignores the reply; the Audit row says why). Never throws.
+ */
+function handleContactsUpdate(p) {
+    try {
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        const sheet = ss.getSheetByName('Staff');
+        if (!sheet) return { status: 'success', saved: false, message: 'Staff sheet missing' };
+        const data = sheet.getDataRange().getValues();
+        const key = _rfKey_(p['Worker Name']);
+        let i = -1;
+        for (let r = 1; key && r < data.length; r++) { if (_rfKey_(data[r][0]) === key) { i = r; break; } }
+        const incoming = String(p.deviceId == null ? '' : p.deviceId).trim();
+        if (i < 0) {
+            _audit_('staff:contacts-unknown', p['Worker Name'], '', '', '', 'contactsUpdate', p.idempotencyKey,
+                    'contact topics posted for a name not in the Staff tab - nothing changed');
+            return { status: 'success', saved: false, message: 'Worker not found' };
+        }
+        const bound = String(data[i][4] == null ? '' : data[i][4]).trim();
+        const master = String(p.key) === String(CONFIG.MASTER_KEY);
+        if (!master && !(bound && incoming === bound)) {
+            _audit_('staff:contacts-refused', data[i][0], '', '', '', 'contactsUpdate', p.idempotencyKey,
+                    'contact topics from phone ' + _idTail_(incoming) + ' (registered ' + (bound ? _idTail_(bound) : 'none') +
+                    ') - only the registered phone may change them; Staff H/I not changed');
+            return { status: 'success', saved: false, message: 'Not the registered phone' };
+        }
+        const changed = [], kept = [];
+        [['Emergency Contact Ntfy', 8, 'H'], ['Escalation Contact Ntfy', 9, 'I']].forEach(function (f) {
+            const v = String(p[f[0]] == null ? '' : p[f[0]]).trim();
+            if (!v) { kept.push(f[2] + ' blank sent, kept'); return; }
+            if (!_topicOk_(v)) { kept.push(f[2] + ' not a topic name, kept'); return; }
+            const old = String(data[i][f[1] - 1] == null ? '' : data[i][f[1] - 1]).trim();
+            if (v === old) return;
+            if (sheet.getMaxColumns() < f[1]) sheet.insertColumnsAfter(sheet.getMaxColumns(), f[1] - sheet.getMaxColumns());
+            sheet.getRange(i + 1, f[1]).setValue(_cell_(v));
+            changed.push(f[2]);
+        });
+        _audit_(changed.length ? 'staff:contacts-updated' : 'staff:contacts-same', data[i][0], '', '', '', 'contactsUpdate', p.idempotencyKey,
+                (changed.length ? 'Staff ' + changed.join(' and ') + ' changed' : 'no change') + (kept.length ? ' (' + kept.join('; ') + ')' : '') +
+                ' - from ' + (master ? 'the master key' : 'the registered phone ' + _idTail_(incoming)));
+        return { status: 'success', saved: true, changed: changed };
+    } catch (err) {
+        try { _audit_('staff:contacts-error', p && p['Worker Name'], '', '', '', 'contactsUpdate', p && p.idempotencyKey, String(err).substring(0, 160)); } catch (_) {}
+        return { status: 'success', saved: false, message: 'Server error' };
+    }
+}
+
+// ---------------------------------------------------------------- Company logos on site tiles (S120-D4, D5): Sites column N
+
+const SITES_LOGO_COL    = 14;           // Sites col N
+const SITES_LOGO_HEADER = 'Logo URL';
+
+/**
+ * __61_: a Sites column N value as a logo link the worker app may show, or ''.
+ * Only https; no spaces, quotes, angle brackets, back-ticks or back-slashes; at most 500 characters. A Google Drive share
+ * link (file/d/ID/..., open?id=ID, uc?id=ID) becomes the thumbnail link, which an <img> can show when the file is shared
+ * "anyone with the link". The worker app checks https again and falls back to the plain tile when the image does not load.
+ */
+function _logoUrl_(v) {
+    const s = String(v == null ? '' : v).trim();
+    if (!s || s.length > 500) return '';
+    if (!/^https:\/\/[^\/]/i.test(s)) return '';
+    if (/[\s"'<>`\\]/.test(s)) return '';
+    const m = /^https:\/\/drive\.google\.com\/(?:file\/d\/([A-Za-z0-9_-]{10,})|(?:open|uc)\?(?:[^#]*&)?id=([A-Za-z0-9_-]{10,}))/i.exec(s);
+    if (m) return 'https://drive.google.com/thumbnail?id=' + (m[1] || m[2]) + '&sz=w200';
+    return s;
+}
+
+// ---------------------------------------------------------------- Trip trail (S114-D1): points kept while the trip is open
+
+const TRAIL_MAX_POINTS = 60;            // about 2 hours of the 2-minute trip pulse
+const TRAIL_TTL_S      = 21600;         // CacheService maximum; renewed by every new point
+const TRAIL_ALARM_RE   = /PANIC|DURESS|SOS|OVERDUE|ESCALAT|WELFARE_MISSED|EMERGENCY/i;
+const TRAIL_CLOSED_RE  = /DEPARTED|COMPLETED|USER_SAFE|DATA_ENTRY_ONLY|PRE_VISIT/i;
+
+/**
+ * __61_ (S114-D1, Russell 5 Nov): the backend keeps the open trip's recent positions so the Monitor can draw the trail
+ * from the start of the trip - but ONLY in the server's short-term memory (CacheService, keyed by the Visit ID), never in the
+ * sheet. Nothing about where a worker travelled is written down; the points go when the trip ends (DEPARTED / COMPLETED)
+ * or 6 hours after the last point. Recorded for trips, and for any visit while it is in an alarm state. The Monitor feed
+ * carries them only while the trip is overdue or an alarm is up (_trailForFeed_). A display aid only: a cache miss means
+ * the Monitor shows the single latest point, as it did before. Never throws.
+ */
+function _trailKey_(visitId) {
+    const v = String(visitId == null ? '' : visitId).replace(/[^A-Za-z0-9_.-]/g, '').substring(0, 200);
+    return v ? 'TRAIL_' + v : '';
+}
+
+function _trailPost_(visitId, incomingStatus, rowStatus, notes, gps, ts) {
+    try {
+        const k = _trailKey_(visitId);
+        if (!k) return;
+        const cache = CacheService.getScriptCache();
+        const inc = String(incomingStatus || '');
+        if (/DEPARTED|COMPLETED/i.test(inc)) { if (typeof cache.remove === 'function') cache.remove(k); return; }
+        const isTrip = /\[START_GPS:/.test(String(notes || '')) || /TRAVELLING/i.test(inc) || /TRAVELLING/i.test(String(rowStatus || ''));
+        const isAlarm = TRAIL_ALARM_RE.test(inc) || TRAIL_ALARM_RE.test(String(rowStatus || ''));
+        if (!isTrip && !isAlarm) return;
+        if (!_isCoordPair_(gps)) return;
+        const m = _COORD_PAIR_RE_.exec(String(gps));
+        const lat = Math.round(Number(m[1]) * 100000) / 100000, lng = Math.round(Number(m[2]) * 100000) / 100000;
+        if (Math.abs(lat) <= 0.001 && Math.abs(lng) <= 0.001) return;   // "0,0" = no fix
+        let pts = [];
+        try { pts = JSON.parse(cache.get(k) || '[]'); if (!Array.isArray(pts)) pts = []; } catch (_) { pts = []; }
+        const last = pts.length ? pts[pts.length - 1] : null;
+        if (last && last[0] === lat && last[1] === lng) return;
+        pts.push([lat, lng, (ts || new Date()).toISOString()]);
+        if (pts.length > TRAIL_MAX_POINTS) pts = pts.slice(pts.length - TRAIL_MAX_POINTS);
+        cache.put(k, JSON.stringify(pts), TRAIL_TTL_S);
+    } catch (err) {
+        try { _audit_('trail:error', '', '', '', '', incomingStatus, '', String(err).substring(0, 160)); } catch (_) {}
+    }
+}
+
+/** __61_: true when a Monitor feed row may carry its trail - an open row, overdue or in an alarm state (pure, tested). */
+function _trailEligible_(obj, nowMs) {
+    const vid = String(obj && obj['Visit ID'] || '');
+    const st = String(obj && obj['Alarm Status'] || '');
+    if (!vid || TRAIL_CLOSED_RE.test(st)) return false;
+    let due = NaN;
+    const dv = obj['Anticipated Departure Time'];
+    if (dv) due = (Object.prototype.toString.call(dv) === '[object Date]') ? dv.getTime() : new Date(String(dv)).getTime();
+    const overdue = !isNaN(due) && due < nowMs;
+    return overdue || TRAIL_ALARM_RE.test(st);
+}
+
+/** __61_: the trail for one Monitor feed row, or null. */
+function _trailForFeed_(obj, nowMs) {
+    try {
+        if (!_trailEligible_(obj, nowMs)) return null;
+        const k = _trailKey_(obj['Visit ID']);
+        const raw = k ? CacheService.getScriptCache().get(k) : null;
+        return _trailParse_(raw);
+    } catch (_) { return null; }
+}
+
+function _trailParse_(raw) {
+    try { if (!raw) return null; const pts = JSON.parse(raw); return Array.isArray(pts) && pts.length ? pts : null; }
+    catch (_) { return null; }
+}
+
+/** __61_: adds Trail to the eligible feed rows with ONE cache read (the Monitor polls every 10 s over up to 501 rows). */
+function _trailAttach_(workers, nowMs) {
+    try {
+        const want = [];
+        (workers || []).forEach(function (o) { if (_trailEligible_(o, nowMs)) { const k = _trailKey_(o['Visit ID']); if (k) want.push([o, k]); } });
+        if (!want.length) return;
+        const cache = CacheService.getScriptCache();
+        const keys = want.map(function (w) { return w[1]; });
+        let got = null;
+        if (typeof cache.getAll === 'function') got = cache.getAll(keys) || {};
+        want.forEach(function (w) {
+            const pts = _trailParse_(got ? got[w[1]] : cache.get(w[1]));
+            if (pts) w[0]['Trail'] = pts;
+        });
+    } catch (_) {}
+}
+
+// ---------------------------------------------------------------- Release a worker's phone (S117-D3)
+
+/** __61_ (S117-D3): admin menu. One click instead of hand-clearing Staff column E for a worker who changed phones. */
+function releaseWorkerPhone() {
+    const ui = SpreadsheetApp.getUi();
+    const resp = ui.prompt("Release a worker's phone",
+        "Type the worker's name as it is in the Staff tab (column A).\n\nTheir registered phone (column E) is cleared, so they can run Setup on their new phone.",
+        ui.ButtonSet.OK_CANCEL);
+    if (resp.getSelectedButton() !== ui.Button.OK) return;
+    const look = _releasePhoneLookup_(resp.getResponseText());
+    if (!look.ok) { ui.alert(look.message); return; }
+    if (look.openVisit) {
+        const c = ui.alert('Open visit',
+            look.name + ' has an open visit or alarm (' + look.openStatus + ').\n\nIf you release the phone now, posts from the old phone are still accepted, ' +
+            'and the old phone becomes the registered one again if it starts the next visit before the new phone runs Setup.\n\nRelease anyway?',
+            ui.ButtonSet.YES_NO);
+        if (c !== ui.Button.YES) return;
+    }
+    ui.alert(_releasePhoneDo_(look.name).message);
+}
+
+/** __61_: find the Staff row for a release. Never writes. */
+function _releasePhoneLookup_(name) {
+    const key = _rfKey_(name);
+    if (!key) return { ok: false, message: 'No name typed - nothing changed.' };
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const staff = ss.getSheetByName('Staff');
+    if (!staff) return { ok: false, message: 'There is no Staff tab - nothing changed.' };
+    const data = staff.getDataRange().getValues();
+    let i = -1;
+    for (let r = 1; r < data.length; r++) { if (_rfKey_(data[r][0]) === key) { i = r; break; } }
+    if (i < 0) return { ok: false, message: 'No worker called "' + String(name).trim() + '" in the Staff tab - nothing changed. Check the spelling in column A.' };
+    const staffName = String(data[i][0]);
+    const dev = String(data[i][4] == null ? '' : data[i][4]).trim();
+    if (!dev) return { ok: false, message: staffName + ' has no registered phone (Staff column E is empty) - nothing to release. They can run Setup now.' };
+    let openVisit = false, openStatus = '';
+    try {
+        const v = ss.getSheetByName('Visits');
+        const lr = v ? _latestRowFor_(v, staffName, _readWidth_(v)) : null;
+        if (lr && lr.data) { openStatus = String(lr.data[10] || ''); openVisit = !TRAIL_CLOSED_RE.test(openStatus) && openStatus !== ''; }
+    } catch (_) {}
+    return { ok: true, name: staffName, row: i + 1, deviceTail: _idTail_(dev), openVisit: openVisit, openStatus: openStatus };
+}
+
+/** __61_: clear Staff column E for the worker, under the script lock (a post may be reading it). Returns { ok, message }. */
+function _releasePhoneDo_(name) {
+    const lock = LockService.getScriptLock();
+    let got = false;
+    try { got = lock.tryLock(20000); } catch (_) { got = false; }
+    if (!got) return { ok: false, message: 'The server is busy - nothing changed. Please try again in a minute.' };
+    try {
+        const look = _releasePhoneLookup_(name);   // read again under the lock
+        if (!look.ok) return { ok: false, message: look.message };
+        SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Staff').getRange(look.row, 5).setValue('');
+        _audit_('staff:released', look.name, '', '', '', 'releaseWorkerPhone', '',
+                'an administrator released phone ' + look.deviceTail + ' (Staff col E cleared' + (look.openVisit ? ', a visit or alarm was open: ' + look.openStatus : '') + ')');
+        return { ok: true, message: 'Done. ' + look.name + "'s phone " + look.deviceTail + ' is released.\n\n' +
+            'Next: ' + look.name + ' opens the app on the new phone and runs Setup. Make sure the old phone is not used - ' +
+            'if it starts a visit first, it becomes the registered phone again.' };
+    } catch (err) {
+        return { ok: false, message: 'Something went wrong - nothing may have changed: ' + String(err).substring(0, 120) };
+    } finally {
+        try { SpreadsheetApp.flush(); } catch (_) {}
+        lock.releaseLock();
+    }
+}
+
+// ---------------------------------------------------------------- initWorkbook, text columns (P2-7), warn-only protection (P2-3)
+
+const SCHEMA_TABS = {
+    Visits: ['Timestamp', 'Date', 'Worker Name', 'Worker Phone Number', 'Emergency Contact Name', 'Emergency Contact Number',
+             'Emergency Contact Email', 'Escalation Contact Name', 'Escalation Contact Number', 'Escalation Contact Email',
+             'Alarm Status', 'Notes', 'Location Name', 'Location Address', 'Last Known GPS', 'GPS Timestamp', 'Battery Level',
+             'Photo 1', 'Distance (km)', 'Visit Report Data', 'Anticipated Departure Time', 'Signature', 'Photo 2', 'Photo 3',
+             'Photo 4', WARN_HEADER, LADDER_MEM_HEADER, VISIT_ID_HEADER, LOCAL_UPDATE_HEADER, WELFARE_DUE_HEADER,
+             WELFARE_MEM_HEADER, LAST_HEARD_HEADER],
+    Staff: ['Name', 'Role', 'Status', 'Group Membership', 'DeviceID', 'LastVehCheck', 'WOFExpiry', 'Primary Ntfy',
+            'Escalation Ntfy', WORKER_TOPIC_HEADER],
+    Sites: ['Assigned To', 'Template Name', 'Company Name', 'Site Name', 'Address', 'Contact Name', 'Contact Phone',
+            'Contact Email', 'Site Notes', 'Emergency Procedures', 'Risk Level', 'Pre-Visit Form', 'Site GPS', SITES_LOGO_HEADER],
+    Templates: (function () {
+        const h = ['Type', 'Template Name', 'Assigned To (Worker Names or ALL)', 'Email Recipient'];
+        for (let q = 1; q <= 30; q++) h.push('Question ' + q);
+        h.push('Form Timing');
+        return h;
+    })(),
+    Notices: NOTICES_HEADERS,
+    Resources: ['Category', 'Title', 'Type', 'URL', 'Assigned To']
+};
+// initWorkbook: how much it does to a tab that already exists. 'check' = fill blank headers and report ones that differ
+// (Visits: the server reads it by position); 'fill' = fill blank headers only; 'create' = only make the tab when missing.
+const SCHEMA_MODE = { Visits: 'check', Staff: 'fill', Sites: 'fill', Templates: 'create', Notices: 'create', Resources: 'create' };
+const WARN_PROTECT_TABS = ['Visits', 'Forms', 'Audit'];
+const WARN_PROTECT_DESC = 'OTG: warns before editing or sorting. Do not sort this tab - use Data > Create a filter view (P2-3).';
+
+/** Header text compared ignoring case, spaces and punctuation. */
+function _hdrNorm_(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]/g, ''); }
+
+/** __61_: admin menu "Set up or repair workbook". Safe to run any number of times. */
+function initWorkbook() {
+    const r = _initWorkbook_();
+    try { SpreadsheetApp.getUi().alert('Set up or repair workbook', r.summary, SpreadsheetApp.getUi().ButtonSet.OK); } catch (_) {}
+    return r;
+}
+
+/**
+ * __61_: makes the workbook ready - on a new install and on an existing one. It ADDS, never changes or removes:
+ *   - a missing tab (Visits, Staff, Sites, Templates, Notices, Resources, Forms, Settings, Audit) with its header row;
+ *   - a blank header cell filled in; a header that differs is reported, never renamed (columns are read by position);
+ *   - P2-3: a warning-only protection on Visits, Forms and Audit (Sheets asks "are you sure?" before an edit or a sort;
+ *     the server's own writes are not affected).
+ * Runs under the script lock so a post never sees a half-made header. Returns a summary in plain words.
+ */
+function _initWorkbook_() {
+    const out = { created: [], filled: [], differ: [], protectedTabs: [], problems: [], summary: '' };
+    const lock = LockService.getScriptLock();
+    let got = false;
+    try { got = lock.tryLock(20000); } catch (_) { got = false; }
+    if (!got) { out.summary = 'The server is busy - nothing changed. Please try again in a minute.'; return out; }
+    try {
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        Object.keys(SCHEMA_TABS).forEach(function (tab) {
+            try {
+                const hdr = SCHEMA_TABS[tab];
+                let sh = ss.getSheetByName(tab);
+                if (!sh) {
+                    sh = ss.insertSheet(tab);
+                    sh.appendRow(hdr.slice());
+                    try { sh.setFrozenRows(1); } catch (_) {}
+                    out.created.push(tab);
+                    return;
+                }
+                const mode = SCHEMA_MODE[tab] || 'create';
+                if (mode === 'create') return;
+                if (sh.getMaxColumns() < hdr.length) sh.insertColumnsAfter(sh.getMaxColumns(), hdr.length - sh.getMaxColumns());
+                const row = sh.getRange(1, 1, 1, hdr.length).getValues()[0];
+                hdr.forEach(function (h, j) {
+                    const cur = String(row[j] == null ? '' : row[j]).trim();
+                    if (!cur) { sh.getRange(1, j + 1).setValue(h); out.filled.push(tab + ' ' + _colA1_(j + 1) + ' "' + h + '"'); }
+                    else if (mode === 'check' && _hdrNorm_(cur) !== _hdrNorm_(h)) out.differ.push(tab + ' ' + _colA1_(j + 1) + ' is "' + cur + '" (expected "' + h + '")');
+                });
+            } catch (e) { out.problems.push(tab + ': ' + String(e).substring(0, 120)); }
+        });
+        try { _formsSheet_(ss); } catch (e) { out.problems.push('Forms: ' + String(e).substring(0, 120)); }
+        try { CacheService.getScriptCache().put('SETTINGS_ENSURED', '0', 1); } catch (_) {}
+        try { _settingsEnsure_(); } catch (e) { out.problems.push('Settings: ' + String(e).substring(0, 120)); }
+        WARN_PROTECT_TABS.forEach(function (tab) {
+            const sh = ss.getSheetByName(tab);
+            if (!sh) return;
+            try {
+                const PT = SpreadsheetApp.ProtectionType;
+                const have = (sh.getProtections(PT ? PT.SHEET : 'SHEET') || []).some(function (p) {
+                    return String(p.getDescription ? p.getDescription() : '').indexOf('OTG:') === 0;
+                });
+                if (!have) { sh.protect().setDescription(WARN_PROTECT_DESC).setWarningOnly(true); out.protectedTabs.push(tab); }
+            } catch (e) { out.problems.push(tab + ' protection: ' + String(e).substring(0, 120)); }
+        });
+    } finally {
+        try { SpreadsheetApp.flush(); } catch (_) {}
+        lock.releaseLock();
+    }
+    const L = [];
+    L.push(out.created.length ? 'Tabs created: ' + out.created.join(', ') + '.' : 'No tabs were missing.');
+    if (out.filled.length) L.push('Blank headers filled: ' + out.filled.join('; ') + '.');
+    if (out.differ.length) L.push('Headers that differ (NOT changed - check the column has not moved): ' + out.differ.join('; ') + '.');
+    if (out.protectedTabs.length) L.push('Warn-before-editing added to: ' + out.protectedTabs.join(', ') + '. Never sort these tabs; use Data > Create a filter view.');
+    if (out.problems.length) L.push('Problems: ' + out.problems.join('; ') + '.');
+    out.summary = L.join('\n\n');
+    _audit_('workbook:init', '', '', '', '', '', '', out.summary.replace(/\n+/g, ' ').substring(0, 480));
+    return out;
+}
+
+/** 1 -> A, 27 -> AA. */
+function _colA1_(n) { let s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+
+// ---------------------------------------------------------------- P2-4: a moved Visits column is reported at once
+
+// Columns the server reads by POSITION on the alarm path. A-U must have these headers (as the Factory makes them).
+const VISITS_FIXED_HEADERS = [[1, 'Timestamp'], [3, 'Worker Name'], [11, 'Alarm Status'], [12, 'Notes'], [15, 'Last Known GPS'],
+                              [21, 'Anticipated Departure Time']];
+// Columns Z-AF: their headers are written by the server when first used. A blank is fine; a header that belongs to ANOTHER
+// of the server's columns means the columns have shifted.
+const VISITS_SERVER_HEADERS = [[WARN_COL, WARN_HEADER], [LADDER_MEM_COL, LADDER_MEM_HEADER], [VISIT_ID_COL, VISIT_ID_HEADER],
+                               [LOCAL_UPDATE_COL, LOCAL_UPDATE_HEADER], [WELFARE_DUE_COL, WELFARE_DUE_HEADER],
+                               [WELFARE_MEM_COL, WELFARE_MEM_HEADER], [LAST_HEARD_COL, LAST_HEARD_HEADER]];
+const HDR_ALERT_TTL_S = 21600;
+
+/** __61_ (P2-4): the problems with the Visits header row, as plain-words strings (pure, tested). */
+function _visitsHeaderProblems_(hdrRow) {
+    const row = hdrRow || [];
+    const cell = function (c) { return String(row[c - 1] == null ? '' : row[c - 1]).trim(); };
+    const out = [];
+    VISITS_FIXED_HEADERS.forEach(function (x) {
+        if (_hdrNorm_(cell(x[0])) !== _hdrNorm_(x[1])) out.push('column ' + _colA1_(x[0]) + ' should be "' + x[1] + '" but is "' + cell(x[0]) + '"');
+    });
+    const known = {};
+    VISITS_FIXED_HEADERS.concat(VISITS_SERVER_HEADERS).forEach(function (x) { known[_hdrNorm_(x[1])] = x; });
+    VISITS_SERVER_HEADERS.forEach(function (x) {
+        const v = cell(x[0]);
+        if (!v || _hdrNorm_(v) === _hdrNorm_(x[1])) return;
+        const other = known[_hdrNorm_(v)];
+        if (other) out.push('column ' + _colA1_(x[0]) + ' should be "' + x[1] + '" but holds "' + v + '" (the header of column ' + _colA1_(other[0]) + ')');
+    });
+    return out;
+}
+
+/**
+ * __61_ (P2-4): called by the overdue checker with the header row it already read. When a column has moved, the checker
+ * would read the due time or status from the wrong column, so HQ is told at once: email to the Health address and a push to
+ * ADMIN_ALERT_TOPIC, at most every 6 hours for the same problem, plus an Audit row. It never changes what the checker does
+ * and never throws.
+ */
+function _visitsHeaderCheck_(hdrRow) {
+    try {
+        const probs = _visitsHeaderProblems_(hdrRow);
+        if (!probs.length) return;
+        const text = probs.join('; ');
+        const cache = CacheService.getScriptCache();
+        let h = 0; for (let i = 0; i < text.length; i++) h = ((h * 31) + text.charCodeAt(i)) | 0;
+        const ck = 'HDRCHK_' + (h >>> 0).toString(36);
+        if (cache.get(ck)) return;
+        cache.put(ck, '1', HDR_ALERT_TTL_S);
+        const topic = _settings_().adminAlertTopic;
+        _audit_('checker:header-mismatch', '', 1, '', '', '', '', text.substring(0, 400) + ' - HQ alerted (email' + (topic ? ' and push' : '') + ')');
+        const org = (CONFIG.ORG_NAME && !String(CONFIG.ORG_NAME).includes('%%')) ? CONFIG.ORG_NAME : 'OTG';
+        const subject = 'OTG - Visits columns have moved: overdue alerts may fail (' + org + ')';
+        const html = '<div style="font-family:Arial,sans-serif;font-size:14px;color:#111">' +
+            '<p><b>The Visits tab header row is not what the server expects.</b> The server reads the status, notes, GPS and due time by column ' +
+            'position, so a moved or inserted column can stop overdue alerts for every worker.</p><ul>' +
+            probs.map(function (s) { return '<li>' + _h_(s) + '</li>'; }).join('') + '</ul>' +
+            '<p><b>What to do now</b></p><ol><li>Undo the change (Edit &gt; Undo, or File &gt; Version history), or move the column back.</li>' +
+            '<li>Do not insert, delete, move or sort columns in Visits. Add your own columns to the right of column AF only.</li>' +
+            '<li>Run OTG Admin &gt; Set up or repair workbook to see the full header check.</li></ol>' +
+            '<p style="color:#666;font-size:12px">At most one of these every 6 hours for the same problem. Audit source checker:header-mismatch. ' +
+            _h_(TEMPLATE_BUILD) + '</p></div>';
+        const to = (CONFIG.HEALTH_EMAIL && String(CONFIG.HEALTH_EMAIL).includes('@')) ? CONFIG.HEALTH_EMAIL : Session.getEffectiveUser().getEmail();
+        const job = function () {
+            try { MailApp.sendEmail({ to: to, subject: subject, htmlBody: html }); }
+            catch (err) { _audit_('checker:header-email-FAILED', '', 1, '', '', '', '', String(err).substring(0, 160)); }
+            if (topic) {
+                try {
+                    const r = _sendNtfy(topic, 'OTG: Visits columns have moved',
+                                        'The Visits header row has changed (' + text.substring(0, 200) + '). Overdue alerts may fail. Undo the change. Details by email.', 'high', 'warning');
+                    if (!r || !r.ok) _audit_('checker:header-push-FAILED', '', 1, '', '', '', '', 'push to the admin topic not accepted' + (r && r.code ? ' (HTTP ' + r.code + ')' : ''));
+                } catch (err) { _audit_('checker:header-push-FAILED', '', 1, '', '', '', '', String(err).substring(0, 160)); }
+            }
+        };
+        if (_CHECKER_ADMIN) _CHECKER_ADMIN.push(job); else job();
+    } catch (err) {
+        try { _audit_('checker:header-check-error', '', 1, '', '', '', '', String(err).substring(0, 160)); } catch (_) {}
+    }
+}
+
+// ---------------------------------------------------------------- P2-7: the monthly archive keeps text cells as text
+
+// 0-based columns the server writes as text. Read back by getValues() they are plain strings, and writing a plain string
+// lets Sheets turn "0211234567" into 211234567 and "22 Oct 2026, 3:16 pm" into a date. The archive now writes them back the
+// way the server writes them in the first place (leading apostrophe, which Sheets hides). A real Date or number cell is left
+// as it is. Visits: B Date, D / F / I phone numbers, AB Visit ID, AC Last Update (local). Forms: Visit ID, Idempotency Key,
+// Received (local).
+const ARCHIVE_TEXT_IDX_VISITS = [1, 3, 5, 8, VISIT_ID_COL - 1, LOCAL_UPDATE_COL - 1];
+const ARCHIVE_TEXT_IDX_FORMS  = [4, 16, 18];
+
+/** __61_ (P2-7): a row writer for the archive. Text columns keep text; every other cell is made safe as before (_cell_). */
+function _textKeepRow_(idx) {
+    return function (row) {
+        return (row || []).map(function (v, j) {
+            if (idx.indexOf(j) > -1 && typeof v === 'string' && v !== '' && v.charAt(0) !== "'") return "'" + v;
+            return _cell_(v);
+        });
+    };
 }
