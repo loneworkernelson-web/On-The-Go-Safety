@@ -728,7 +728,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
   <div class="flex-1 h-px bg-indigo-900/50"></div>
  </div>
 </div>
- <!-- Site search — shown automatically when site count exceeds 15 -->
+ <!-- Site search and filter chips - shown automatically from 7 sites (__31_, S120-D3) -->
  <div id="siteSearchRow" class="hidden mb-3">
  <div class="relative">
  <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none">🔍</span>
@@ -737,6 +737,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  oninput="renderLocations()">
  </div>
  </div>
+ <div id="siteFilterRow" class="hidden mb-3 -mt-1 flex flex-shrink-0 gap-2 overflow-x-auto pb-1" role="group" aria-label="Filter sites"></div>
 
  <!-- FIRST-USE VERIFICATION CARD — shown until dismissed after wizard -->
  <div id="verifyCard" class="hidden mb-4 rounded-2xl border border-amber-600/50 bg-amber-950/60 p-4">
@@ -1803,7 +1804,9 @@ const RISK_WELFARE_MAP = {
 // __31_ changes (session 119, Sonnet 5.5 high, from __30_). Works with backend __57_ to __60_ (the contacts post waits for backend __61_).
 //   Group A (safety): A1 F116-1 registration retry; A2 contact guide link; A3 S113-3 contacts posted on Save (backend 61+ only);
 //   A4 R79 alarm-screen location age; A6 S117-D2 version re-check every 30 min; A7 F118-3 dead location fetch removed.
-//   A5 F118-5 (a post reporting the trip start as the current position) is NOT in this build: it waits for a decision.
+//   Group B (session 121, Sonnet 5.5 high; S120-D1: one build): B1 personal site editing; B2 site filtering (search from 7 sites, chips);
+//   B3 company logos on tiles and rows (sync field logoUrl from backend __61_; none from older backends); B4 prefilled "Travel time (minutes)"
+//   in the Travel Report. A5 F118-5 (S120-D8): buildPayload no longer reports the trip START as the current position (alarm path - Opus reviews).
 // __30_ changes (session 113, Sonnet 5.5 high, from __29_). Works with backend __57_ and __58_.
 //   S112-3  When a post comes back "success" with saved:false (backend __58_: this phone is not the one registered, so the server
 //           kept nothing), the app shows the server's own notice in an amber strip at the top until the worker taps OK. The post
@@ -4021,6 +4024,37 @@ function _injectTripEndpointFields(container) {
     distWrapper.appendChild(startNote);
   }
 
+  // ── Travel time (minutes) - __31_ (B4, S120-D6) ───────────────────────────
+  // Report only (never the alarm path): trip start to the moment the report opens, editable, like the distance. A template that
+  // already has a travel-time field is filled in place; otherwise one is added just below the distance.
+  const _ttMin = (() => {   // whole minutes from the trip start to now (at least 1); '' when the start time is unknown
+    const a = Number(_av.startTime), b = Date.now();
+    return (isFinite(a) && a > 0 && b >= a) ? String(Math.max(1, Math.round((b - a) / 60000))) : '';
+  })();
+  const _existingTT = Array.from(
+    container.querySelectorAll('input[data-key], textarea[data-key]')
+  ).find(el => /travel\s*time/i.test(el.getAttribute('data-key') || ''));
+  if (_existingTT) {
+    if (_ttMin && !_existingTT.value) {
+      _existingTT.value = _ttMin;
+      _existingTT.style.border = '2px solid #4ade80';
+      _existingTT.classList.add('bg-green-900/20');
+      _existingTT.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  } else {
+    const tt = makeField('Travel time (minutes)', 'Travel Time (minutes)', _ttMin, 'Enter minutes');
+    tt.input.type = 'number';
+    tt.input.inputMode = 'numeric';
+    tt.input.min = '0';
+    tt.input.step = '1';
+    if (_ttMin) {
+      tt.input.style.border = '2px solid #4ade80';
+      tt.input.classList.add('bg-green-900/20');
+    }
+    if (distWrapper && distWrapper.parentNode) distWrapper.parentNode.insertBefore(tt.wrapper, distWrapper.nextSibling);
+    else container.appendChild(tt.wrapper);
+  }
+
   // Prepend Start Point and Destination at top (Distance is either already in
   // template position or was prepended above — either way it sits below these two)
   container.insertBefore(dest.wrapper, container.firstChild);
@@ -5332,6 +5366,120 @@ function cycleSiteSort() {
 }
 
 // ============================================================================
+// SITE FILTERING (__31_, B2, S120-D3) - memory only: a reload shows every site, so nobody is left with a hidden list.
+// ============================================================================
+let siteFilterChip = 'all';   // 'all' | 'mine' | 'co:<company, lower case>'
+
+/** The chips to offer for these sites: All, Mine (when a personal site exists), one per company (when there are 2 or more). [] = none. */
+function _siteFilterChips(sites) {
+  const list = Array.isArray(sites) ? sites : [];
+  const chips = [{ key: 'all', label: 'All' }];
+  if (list.some(l => l && String(l.id).startsWith('loc_'))) chips.push({ key: 'mine', label: 'Mine' });
+  const seen = {}, cos = [];
+  list.forEach(l => {
+    if (!l || String(l.id).startsWith('loc_')) return;           // companies come from the organisation's sites
+    const c = String(l.companyName || '').trim(), k = c.toLowerCase();
+    if (c && !seen[k]) { seen[k] = 1; cos.push({ key: 'co:' + k, label: c }); }
+  });
+  if (cos.length >= 2) { cos.sort((a, b) => a.label.localeCompare(b.label)); cos.forEach(c => chips.push(c)); }
+  return chips.length > 1 ? chips : [];
+}
+
+function _siteFilterMatch(loc, chip) {
+  if (!chip || chip === 'all') return true;
+  if (chip === 'mine') return String(loc.id).startsWith('loc_');
+  if (chip.indexOf('co:') === 0) return String(loc.companyName || '').trim().toLowerCase() === chip.slice(3);
+  return true;
+}
+
+/** Search text plus chip. The selected site is ALWAYS kept, so a worker never has a selection they cannot see. Pure. */
+function _siteFilterApply(sorted, term, chip, selectedId) {
+  const t = String(term || '').toLowerCase().trim();
+  const c = chip || 'all';
+  if (!t && c === 'all') return sorted;
+  return sorted.filter(loc =>
+    (selectedId && loc.id === selectedId) ||
+    (_siteFilterMatch(loc, c) && (!t ||
+      (loc.name || '').toLowerCase().includes(t) ||
+      (loc.companyName || '').toLowerCase().includes(t) ||
+      (loc.address || '').toLowerCase().includes(t))));
+}
+
+function _renderSiteFilterRow(chips) {
+  const row = document.getElementById('siteFilterRow');
+  if (!row) return;
+  row.innerHTML = '';
+  row.classList.toggle('hidden', !chips.length);
+  chips.forEach(ch => {
+    const on = siteFilterChip === ch.key;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'flex-shrink-0 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap ' +
+      (on ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-800 border-gray-600 text-gray-300');
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.textContent = ch.label;
+    b.onclick = () => setSiteFilter(ch.key);
+    row.appendChild(b);
+  });
+}
+
+function setSiteFilter(key) { siteFilterChip = (siteFilterChip === key) ? 'all' : key; renderLocations(); }
+function _siteFilterReset() { siteFilterChip = 'all'; const i = document.getElementById('siteSearch'); if (i && i.value) i.value = ''; }
+function clearSiteFilter() { _siteFilterReset(); renderLocations(); }
+
+// ============================================================================
+// COMPANY LOGOS (__31_, B3, S120-D4/D5) - cosmetic only: a missing, slow or broken logo must never get in the way of a visit.
+// ============================================================================
+/** A logo link the app may show, or ''. https only; no spaces, quotes, angle brackets, back-ticks or back-slashes; 500 characters at most. */
+function _safeLogoUrl(v) {
+  const u = String(v == null ? '' : v).trim();
+  if (!u || u.length > 500) return '';
+  if (!/^https:\/\/[^\/]/i.test(u)) return '';
+  if (/[\s"'<>`\\]/.test(u)) return '';
+  return u;
+}
+
+/** The logo for a site: its own, else the first one found for the same company (S120-D5). Personal sites have none. */
+function _logoFor(loc) {
+  if (!loc || String(loc.id).startsWith('loc_')) return '';
+  const own = _safeLogoUrl(loc.logoUrl);
+  if (own) return own;
+  const co = String(loc.companyName || '').trim().toLowerCase();
+  if (!co) return '';
+  const all = (state && state.locations) || [];
+  for (let i = 0; i < all.length; i++) {
+    const o = all[i];
+    if (!o || String(o.id).startsWith('loc_')) continue;
+    if (String(o.companyName || '').trim().toLowerCase() !== co) continue;
+    const u = _safeLogoUrl(o.logoUrl);
+    if (u) return u;
+  }
+  return '';
+}
+
+/** The icon spot of a tile ('tile': the logo, else the emoji) or the logo spot of a row ('row': the logo, else nothing). */
+function _siteLogoHtml(loc, kind, icon) {
+  const url = _logoFor(loc);
+  if (!url) return kind === 'tile' ? `<span class="text-2xl">${icon}</span>` : '';
+  const img = `<img src="${escapeHtml(url)}" alt="" referrerpolicy="no-referrer" loading="lazy" decoding="async" style="max-width:100%;max-height:100%;object-fit:contain" onerror="_logoFail(this)">`;
+  const h = kind === 'tile' ? 28 : 32;
+  return `<span class="inline-flex items-center justify-center rounded-md bg-white/95 p-0.5 flex-shrink-0" style="width:36px;height:${h}px" data-fallback="${kind === 'tile' ? escapeHtml(icon) : ''}">${img}</span>`;
+}
+
+/** The image did not load (dead link, no signal): a tile gets its emoji back, a row simply has no logo. */
+function _logoFail(img) {
+  try {
+    const p = img && img.parentNode;
+    if (!p) return;
+    const fb = p.getAttribute('data-fallback') || '';
+    if (!fb) { p.remove(); return; }
+    p.removeAttribute('style');
+    p.className = 'text-2xl';
+    p.textContent = fb;
+  } catch (_) {}
+}
+
+// ============================================================================
 // ENHANCED RENDER LOCATIONS (Layout Corrected)
 // ============================================================================
 function renderLocations() {
@@ -5374,13 +5522,18 @@ function renderLocations() {
 
  // ── 3. Decide layout ─────────────────────────────────────────────────────
  // ≤6 → 2-col card grid (unchanged)
- // 7–15 → compact list, no search
- // 16+ → compact list + search bar
+ // 7+ → compact list + search bar + filter chips (__31_, S120-D3: the search used to start at 16)
  const count = sites.length;
  const useList = count > 6;
- const showSearch = count > 15;
+ const showSearch = useList;
 
  if (searchRow) searchRow.classList.toggle('hidden', !showSearch);
+
+ // __31_ (B2): a running visit or trip never carries a filter over; a chip that no longer exists (after a sync) is dropped.
+ if (state.activeVisit) _siteFilterReset();
+ const _chips = useList ? _siteFilterChips(sites) : [];
+ if (siteFilterChip !== 'all' && !_chips.some(c => c.key === siteFilterChip)) siteFilterChip = 'all';
+ _renderSiteFilterRow(_chips);
 
  // ── 4. Sort ──────────────────────────────────────────────────────────────
  const lastId = state.lastVisitedLocationId;
@@ -5402,13 +5555,8 @@ function renderLocations() {
  return (a.name || '').localeCompare(b.name || '');
  });
 
- // ── 5. Apply search filter (only active at 16+) ──────────────────────────
- const visible = searchTerm
- ? sorted.filter(loc =>
- (loc.name || '').toLowerCase().includes(searchTerm) ||
- (loc.companyName || '').toLowerCase().includes(searchTerm) ||
- (loc.address || '').toLowerCase().includes(searchTerm))
- : sorted;
+ // ── 5. Apply search text and chip (from 7 sites; the selected site is always kept) ──
+ const visible = _siteFilterApply(sorted, searchTerm, useList ? siteFilterChip : 'all', state.selectedLocationId);
 
  // ── 6. Render ────────────────────────────────────────────────────────────
  if (useList) {
@@ -5417,6 +5565,12 @@ function renderLocations() {
  const none = document.createElement('div');
  none.className = 'py-8 text-center text-xs font-bold text-gray-500 tracking-widest';
  none.textContent = 'No sites match your search.';
+ const _clr = document.createElement('button');   // __31_ (B2)
+ _clr.type = 'button';
+ _clr.className = 'block mx-auto mt-3 px-4 py-2 rounded-xl bg-gray-700 text-white text-xs font-black';
+ _clr.textContent = 'Clear filter';
+ _clr.onclick = clearSiteFilter;
+ none.appendChild(_clr);
  list.appendChild(none);
  } else {
  visible.forEach(loc => list.appendChild(createLocationRow(loc)));
@@ -5987,7 +6141,7 @@ function createLocationTile(loc) {
  
  tile.innerHTML = `
  <div class="flex justify-between items-start">
- <span class="text-2xl">${icon}</span>
+ ${_siteLogoHtml(loc, 'tile', icon)}
  ${isTripMode && isSel
   ? `<span class="text-[9px] font-black text-indigo-300 bg-indigo-900 border border-indigo-700 rounded px-1.5 py-0.5 leading-none">Dest</span>`
   : (hasInfo ? `<button class="text-gray-300 hover:text-white p-1 -mt-1 -mr-1 z-20 text-xl" aria-label="Site safety information" onclick="showSiteInfo('${escapeHtml(loc.id)}', event)">ℹ️</button>` : '')
@@ -6057,6 +6211,7 @@ function createLocationRow(loc) {
 
  row.innerHTML = `
  <div class="w-1 self-stretch rounded-full flex-shrink-0 my-2" style="background:${riskBarColour}"></div>
+ ${_siteLogoHtml(loc, 'row', '')}
  <div class="flex-1 min-w-0 py-2.5">
  <div class="flex items-center gap-1.5 flex-wrap">
  <span class="text-[13px] font-black text-white truncate leading-tight">${escapeHtml(loc.name)}</span>
@@ -6789,7 +6944,9 @@ return {
  'Anticipated Departure Time': dt,
  'Timestamp': new Date().toISOString(),
  'deviceId': state.deviceId || "",
- 'Last Known GPS': d['Last Known GPS'] || (state.activeVisit?.startGPS) || "0,0",
+ // __31_ (A5, F118-5, S120-D8): no fallback to the trip's START position. A post that does not know where the phone is says "0,0"
+ // (no fix), which the server never lets overwrite a real position, so the last position and its true age stay.
+ 'Last Known GPS': d['Last Known GPS'] || "0,0",
  'Worker Build': WORKER_BUILD, // X1 (build __15_)
  ...d
  };
@@ -8947,10 +9104,17 @@ function openAddLocationModal() {
  showModal('location');
 }
 
+/** __31_ (B1): the Edit button in the site info panel (personal sites only). */
+function editPersonalSite(id) {
+ if (!id || !String(id).startsWith('loc_')) return;
+ closeModal('info');
+ editManualLocation(id);
+}
+
 // Edit manual location - opens modal pre-filled
 function editManualLocation(id) {
  const location = state.locations.find(x => x.id === id);
- if (!location) return;
+ if (!location || !String(location.id).startsWith('loc_')) return;   // __31_ (B1): personal sites only - an org site would be put back at the next sync
  
  const titleEl = document.querySelector('#locationModal h2');
  if (titleEl) titleEl.textContent = 'Edit Location';
@@ -9924,6 +10088,7 @@ function forceSync(showUI, quiet) {
  isCritical: s.critical || false,
  riskLevel: s.riskLevel || '', // Low / Medium / High / Critical — from Sites sheet col K
  preVisitForm: s.preVisitForm || false, // TRUE triggers pre-visit form gate — from Sites sheet col L
+ logoUrl: s.logoUrl || '', // __31_ (B3): Sites sheet col N via backend __61_ (an older backend sends none); checked again before use
  // NEW: Capture the emergency info from the spreadsheet
  'Emergency Procedures': s.emergencyProcedures || s['Emergency Procedures'] || ''
  }));
@@ -10082,39 +10247,23 @@ function updateCriticalTimingBadge() {
 
 // Feature 9: Site Info Modal
 
-// Feature 13: Location Management (Add/Edit/Delete)
-function openLocationEditor(locationId) {
- const location = state.locations.find(l => l.id === locationId);
- if (!location) return;
- 
- document.getElementById('locId').value = location.id;
- document.getElementById('locBusiness').value = location.companyName || '';
- document.getElementById('locName').value = location.name || '';
- document.getElementById('locAddr').value = location.address || '';
- document.getElementById('locContactName').value = location.contactName || '';
- document.getElementById('locContactPhone').value = location.contactPhone || '';
- document.getElementById('locContactEmail').value = location.contactEmail || '';
- 
- const criticalCheckbox = document.getElementById('locCritical');
- if (criticalCheckbox) {
- criticalCheckbox.checked = location.isCritical || false;
- }
- 
- const btnDel = document.getElementById('btnDelLoc');
- if (location.id.startsWith('loc_')) {
- if (btnDel) btnDel.classList.remove('hidden');
- } else {
- if (btnDel) btnDel.classList.add('hidden');
- }
- 
- showModal('location');
-}
-
+// Feature 13: Location Management (Add/Edit/Delete) - the Edit button is in the site info panel (editPersonalSite)
 // Ensure the "Save" button in your locationModal calls this
 function saveLoc() {
  const locId = document.getElementById('locId').value;
  const name = document.getElementById('locName').value.trim();
  if (!name) { alert('Site name is required'); return; }
+ // __31_ (B1): only a personal (loc_) site is saved here; an organisation site comes back from the server at every sync.
+ if (locId && !String(locId).startsWith('loc_')) { showToast('⚠️ Only personal sites can be edited'); return; }
+ // __31_ (B1): a rename may not take a name another site already has (the import skips duplicates the same way).
+ const _prev = locId ? state.locations.find(l => l && l.id === locId) : null;
+ if (_prev && name.toLowerCase() !== String(_prev.name || '').toLowerCase().trim()) {
+ const _lc = name.toLowerCase();
+ if (state.locations.some(l => l && l.id !== locId && String(l.name || '').toLowerCase().trim() === _lc)) {
+ alert('A site called "' + name + '" already exists. Please choose a different name.');
+ return;
+ }
+ }
 
  const templateInput = document.getElementById('locTemplate');
  const requiresReportEl = document.getElementById('locRequiresReport');
@@ -10135,13 +10284,16 @@ function saveLoc() {
  };
 
  const idx = state.locations.findIndex(l => l.id === locationData.id);
- if (idx >= 0) state.locations[idx] = locationData;
+ // __31_ (B1, F120-2): merge, so a field the form does not show (notes, a welfare interval, ...) is not lost on every edit.
+ if (idx >= 0) state.locations[idx] = { ...state.locations[idx], ...locationData };
  else state.locations.push(locationData);
 
  saveState();
  renderLocations();
  closeModal('location');
- showToast('✅ Location saved');
+ // S120-D7: a visit running at this site keeps the name and address it started with.
+ const _running = !!(idx >= 0 && state.activeVisit && state.activeVisit.locationId === locationData.id);
+ showToast(_running ? '✅ Saved - the name and address change from your next visit' : '✅ Location saved');
 }
 
 function deleteLoc() {
@@ -11361,9 +11513,13 @@ function populateSiteInfoModal(location) {
 
  html += `</div>`;
 
- // Delete button — personal (loc_) sites only. Org-configured sites are not deletable.
+ // Edit and Delete buttons - personal (loc_) sites only. Org-configured sites are neither editable nor deletable (the server sends them again at every sync).
  if (location.id.startsWith('loc_')) {
- html += `<div class="pt-4 border-t border-gray-700 mt-4">
+ html += `<div class="pt-4 border-t border-gray-700 mt-4 space-y-2">
+ <button onclick="editPersonalSite('${escapeHtml(location.id)}')"
+ class="w-full py-3 bg-blue-900/30 border border-blue-700/50 text-blue-300 font-black rounded-xl text-sm hover:bg-blue-900/50 active:scale-95 transition-all">
+ ✏️ Edit Personal Site
+ </button>
  <button onclick="deletePersonalSite('${escapeHtml(location.id)}')"
  class="w-full py-3 bg-red-900/30 border border-red-800/50 text-red-400 font-black rounded-xl text-sm hover:bg-red-900/50 active:scale-95 transition-all">
  🗑️ Delete Personal Site
