@@ -648,7 +648,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
  <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety On-The-Go!</span>
- <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__31_</span>
+ <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__32_</span>
  </h1>
  </div>
  <div class="flex items-center">
@@ -1211,7 +1211,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
  <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
- <div id="appBuild" class="text-xs font-mono text-gray-400">worker__31_</div>
+ <div id="appBuild" class="text-xs font-mono text-gray-400">worker__32_</div>
  </div>
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">Backend Version</div>
@@ -1801,6 +1801,21 @@ const RISK_WELFARE_MAP = {
 //     amber "slide Wake to read" cue on the dim screen, with the sound and buzz once) exactly as in __28_.
 //   - Never during an alarm, never offline, never while the app is hidden (the poll); a wake check at most once a minute; a full
 //     sync from a check at most once a minute. A failed check says nothing and is tried again at the next poll.
+// __32_ changes (session 125, Opus 5.5 high, from __31_). Works with backend __57_ to __61_ (no backend change).
+//   F125-2  SAFETY: the storage name is now made from the app's own folder on the web host (host + folder, lower case), not from
+//           the backend address. A new Apps Script deployment (new /exec address) used to give the app a brand-new, empty storage
+//           name, so the worker's set-up, a running visit and its unsent alerts were stranded under the old name (seen on
+//           WorkplaceSupport, 10 Nov 2026). One-off copy on first run from the backend-address name (__24_ to __31_), else from the
+//           pre-__24_ name; unsent outbox records move with it (by targetUrl, as in __24_). "Reset app data" also clears the moved copy.
+//   F125-1  One device id. Posts and registration sent state.deviceId; sync and the notice check sent the separate storage key.
+//           When the two differed, posts were accepted and every sync was refused ("DEVICE NOT AUTHORISED", seen on SafetyBuddy).
+//           getDeviceID() now returns state.deviceId when there is one and writes it back to the key. A successful sync hides the
+//           red "DEVICE NOT AUTHORISED" bar (before, only a restart or an "online" event hid it).
+//   S124-D8 The home-screen GPS meter is lit by the trip-setup pre-warm fix, and goes grey with "idle" about a minute after the last
+//           fix when no visit, trip or alarm is running (no stale bars after a cancelled trip set-up). No extra GPS use.
+//   F125-4  After one failed GPS fix the bars were given an inline grey that later fixes never overrode (grey until a restart).
+//   R125-1  F101-1 review (Opus): the start-in-progress clock is stamped inside startVisit, where the flag is set, so a start
+//           resumed after the pre-visit form or the WOF warning is not mistaken for a stale one (a second slide could start twice).
 // __31_ changes (session 119, Sonnet 5.5 high, from __30_). Works with backend __57_ to __60_ (the contacts post waits for backend __61_).
 //   Group A (safety): A1 F116-1 registration retry; A2 contact guide link; A3 S113-3 contacts posted on Save (backend 61+ only);
 //   A4 R79 alarm-screen location age; A6 S117-D2 version re-check every 30 min; A7 F118-3 dead location fetch removed.
@@ -1816,7 +1831,7 @@ const RISK_WELFARE_MAP = {
 //           otg- plus 24 random characters (made on the phone, 96 bits, never Math.random), and "Share it with my contact" sends
 //           the name and the steps through the share sheet (or copies them). A box that already has a topic is never replaced.
 // =============================================================================
-const WORKER_BUILD = 'worker__31_';
+const WORKER_BUILD = 'worker__32_';
 
 const CONFIG = {
  url: '',
@@ -1844,10 +1859,11 @@ const CONFIG = {
 // file:// path during testing, or two organisations installed from one web host -
 // nzchurchsafety.com/SafetyBuddy and nzchurchsafety.com/WorkplaceSupport share one origin).
 //
-// __24_ (F101-8): _storageNs is 'u' + a hash of the WHOLE backend URL, set in
-// applyConfig() (the first place CONFIG.url is known). It defaults to
-// 'default' until then so that module-scope code that runs before config is
-// loaded always has a valid (if generic) value.
+// __32_ (F125-2): _storageNs is 'p' + a hash of the app's own folder (host + folder path, lower case, file name
+// dropped), set in applyConfig(). Two apps on one host always live in different folders, and the folder does not
+// change when the backend is redeployed. (__24_ to __31_ used a hash of the backend URL: a new Apps Script deployment
+// gave an empty storage name and the worker's set-up seemed lost.) It defaults to 'default' until then so that
+// module-scope code that runs before config is loaded always has a valid (if generic) value.
 //
 // _sk(key) — wraps every localStorage key and the IndexedDB DB name with the
 // namespace slug. All storage access MUST go through this helper.
@@ -1875,35 +1891,92 @@ function _nsHash(str) {
   }
   return h1.toString(36).padStart(7, '0') + h2.toString(36).padStart(7, '0');
 }
+/** __32_ (F125-2): the app's own folder on its web host, e.g. "nzchurchsafety.com/safetybuddy/". '' if unknown. */
+function _nsPathKey() {
+  try {
+    const loc = (typeof location !== 'undefined' && location) ? location : null;
+    if (!loc) return '';
+    let p = String(loc.pathname || '/');
+    try { p = decodeURI(p); } catch (_) {}
+    const parts = p.split('/');
+    if (parts.length && /\.[A-Za-z0-9]+$/.test(parts[parts.length - 1])) parts[parts.length - 1] = '';   // index.html -> folder
+    p = parts.join('/');
+    if (!p.endsWith('/')) p += '/';
+    if (!p.startsWith('/')) p = '/' + p;
+    return (String(loc.host || '') + p).toLowerCase();
+  } catch (e) { return ''; }
+}
+function _nsForPath(key) { const k = String(key || ''); return k ? 'p' + _nsHash(k) : ''; }
 function _nsFor(url) { const u = String(url || '').trim(); return u ? 'u' + _nsHash(u) : 'default'; }
 function _nsLegacy(url) {
   try { const slug = btoa(String(url || '')).replace(/[^a-zA-Z0-9]/g, '').slice(-8); return slug || 'default'; } catch (e) { return 'default'; }
 }
 let _NS_MIGRATION = null;   // { from, state, copied, reason } - read by _outboxMigrateNs() and the diagnostics
 
-/** Copy the old-name data to the new name once (see above). Never throws; never deletes anything. */
+/**
+ * Copy the old-name data to this app's name once. Never throws; never deletes anything.
+ * __32_ (F125-2): the sources, newest naming first:
+ *   1. the backend-address name (__24_ to __31_). If another folder with the same backend address has already taken it, this
+ *      app keeps only the device id and starts fresh (two installs of one organisation never share a running visit).
+ *   2. the pre-__24_ name (last 8 base64 characters of the backend URL), as in __24_. Skipped when it was already moved to the
+ *      backend-address name (then this app's own data was there and was cleared by a reset).
+ * The old copy is left in place, marked as moved. Unsent outbox records follow in _outboxMigrateNs (by targetUrl).
+ */
 function _nsMigrate(url) {
   const res = { from: '', state: false, copied: 0, reason: '' };
   try {
-    const oldNs = _nsLegacy(url);
-    if (!url || oldNs === 'default' || oldNs === _storageNs) { res.reason = 'nothing to move'; return res; }
-    const ready = _storageNs + '_otg_ns_ready';
+    const target = _storageNs;
+    if (!target || target === 'default') { res.reason = 'no storage name'; return res; }
+    const ready = target + '_otg_ns_ready';
     if (localStorage.getItem(ready) !== null) { res.reason = 'already done'; return res; }
-    const pre = oldNs + '_', marker = oldNs + '_otg_ns_moved_to';
-    const movedTo = localStorage.getItem(marker);
-    const keys = [];
-    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf(pre) === 0 && k !== marker) keys.push(k); }
-    if (movedTo && movedTo !== _storageNs) {
-      // The old name belonged to another organisation on this phone, which has already taken it. Same phone: keep the id.
-      const dev = localStorage.getItem(pre + 'otg_device_id');
-      if (dev !== null && localStorage.getItem(_storageNs + '_otg_device_id') === null) localStorage.setItem(_storageNs + '_otg_device_id', dev);
-      res.reason = 'old name already moved to another organisation - starting fresh (device id kept)';
-    } else if (localStorage.getItem(pre + 'loneWorkerState') !== null) {
-      keys.forEach(k => { localStorage.setItem(_storageNs + '_' + k.slice(pre.length), localStorage.getItem(k)); });
-      localStorage.setItem(marker, _storageNs);
-      res.from = oldNs; res.state = true; res.copied = keys.length; res.reason = 'moved';
-    } else {
-      res.reason = 'no data under the old name';
+    const urlNs = url ? _nsFor(url) : 'default';
+    const legacyNs = url ? _nsLegacy(url) : 'default';
+    const copyAll = (ns) => {
+      const pre = ns + '_', marker = pre + 'otg_ns_moved_to', keys = [];
+      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf(pre) === 0 && k !== marker) keys.push(k); }
+      keys.forEach(k => { localStorage.setItem(target + '_' + k.slice(pre.length), localStorage.getItem(k)); });
+      localStorage.setItem(marker, target);
+      res.from = ns; res.state = true; res.copied = keys.length;
+    };
+    const keepDevice = (ns) => {
+      const dev = localStorage.getItem(ns + '_otg_device_id');
+      if (dev !== null && localStorage.getItem(target + '_otg_device_id') === null) localStorage.setItem(target + '_otg_device_id', dev);
+    };
+    let done = false;
+    // 1. the backend-address name
+    if (urlNs !== 'default' && urlNs !== target) {
+      const movedTo = localStorage.getItem(urlNs + '_otg_ns_moved_to');
+      if (movedTo && movedTo !== target) {
+        keepDevice(urlNs);
+        res.reason = 'backend-address name already moved to another folder - starting fresh (device id kept)';
+        done = true;
+      } else if (localStorage.getItem(urlNs + '_loneWorkerState') !== null) {
+        copyAll(urlNs);
+        res.reason = 'moved from the backend-address name';
+        done = true;
+      }
+    }
+    // 2. the pre-__24_ name
+    if (!done && legacyNs !== 'default' && legacyNs !== target && legacyNs !== urlNs) {
+      const movedTo = localStorage.getItem(legacyNs + '_otg_ns_moved_to');
+      if (movedTo && (movedTo === urlNs || movedTo === target)) {
+        if (urlNs !== 'default') keepDevice(urlNs);
+        res.reason = 'nothing to move';
+      } else if (movedTo) {
+        keepDevice(legacyNs);
+        res.reason = 'old name already moved to another organisation - starting fresh (device id kept)';
+      } else if (localStorage.getItem(legacyNs + '_loneWorkerState') !== null) {
+        copyAll(legacyNs);
+        res.reason = 'moved from the pre-__24_ name';
+      } else {
+        if (urlNs !== 'default') keepDevice(urlNs);
+        res.reason = 'no data under the old names';
+      }
+      done = true;
+    }
+    if (!done) {
+      if (urlNs !== 'default' && urlNs !== target) keepDevice(urlNs);
+      res.reason = 'no data under the old names';
     }
     localStorage.setItem(ready, '1');
   } catch (e) { res.reason = 'error: ' + (e && e.message || e); }
@@ -1973,8 +2046,13 @@ async function _outboxMigrateNs() {
 function _clearOwnStorage() {
   const own = [_storageNs + '_'];
   try {
+    // __32_ (F125-2): our moved copies - the backend-address name if it was moved here, and the pre-__24_ name if it was moved here
+    // or to that backend-address name.
+    const ours = [_storageNs];
+    const urlNs = _nsFor(CONFIG.url);
+    if (urlNs !== 'default' && urlNs !== _storageNs && localStorage.getItem(urlNs + '_otg_ns_moved_to') === _storageNs) { own.push(urlNs + '_'); ours.push(urlNs); }
     const legacy = _nsLegacy(CONFIG.url);
-    if (legacy !== 'default' && localStorage.getItem(legacy + '_otg_ns_moved_to') === _storageNs) own.push(legacy + '_');   // our moved copy
+    if (legacy !== 'default' && legacy !== urlNs && ours.indexOf(localStorage.getItem(legacy + '_otg_ns_moved_to')) >= 0) own.push(legacy + '_');
   } catch (_) {}
   const ks = [];
   for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && own.some(p => k.indexOf(p) === 0)) ks.push(k); }
@@ -2013,7 +2091,9 @@ function applyTheme(theme) {
 function applyConfig(cfg) {
  // Establish storage namespace first — must happen before any localStorage
  // access so that config-version checks below use the correct namespaced key.
- _storageNs = _nsFor(cfg.backendUrl);   // __24_ (F101-8): was the last 8 base64 characters of the URL
+ // __32_ (F125-2): named after the app's own folder (stable when the backend is redeployed); the backend-address name only if
+ // the folder cannot be read (never on a real phone).
+ _storageNs = _nsForPath(_nsPathKey()) || _nsFor(cfg.backendUrl);
  _NS_MIGRATION = _nsMigrate(cfg.backendUrl || '');   // one-off copy from the old name (see _nsMigrate)
 
  // Core
@@ -3168,7 +3248,9 @@ async function _acquireStartFix() {
   let why = '';
   try {
     const pos = await new Promise((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(resolve, reject,
+      // __31_ (F101-1): the browser's own timeout is not always honoured. A hard limit means a silent GPS can never hang a trip start.
+      const _hard = setTimeout(() => reject({ name: 'hard-timeout' }), START_FIX_WAIT_MS + 2000);
+      navigator.geolocation.getCurrentPosition(p => { clearTimeout(_hard); resolve(p); }, er => { clearTimeout(_hard); reject(er); },
         { enableHighAccuracy: true, timeout: START_FIX_WAIT_MS, maximumAge: 30000 });
     });
     _noteFix(pos);
@@ -3410,7 +3492,7 @@ function updateGPSBars(pos) {
  const accuracy = pos.coords.accuracy;
  const bars = document.querySelectorAll('.gps-bar');
  const label = document.getElementById('gpsLabel');
- bars.forEach(b => b.classList.remove('active-red', 'active-amber', 'active-green'));
+ bars.forEach(b => { b.classList.remove('active-red', 'active-amber', 'active-green'); b.style.backgroundColor = ''; });   // __32_ (F125-4): drop the failure grey
 
  // Colour the bars by signal quality
  if (accuracy > 200) {
@@ -3440,6 +3522,8 @@ function updateGPSBars(pos) {
 
  // Cache last accuracy so toggleGpsDisplay() can re-render without waiting for a new fix
  updateGPSBars._lastAccuracy = accuracy;
+ if (pos && typeof pos.timestamp === 'number') { updateGPSBars._lastAt = Date.now(); try { _gpsIdleArm(); } catch (_) {} }   // __32_ (S124-D8): a real fix (not a label toggle)
+ if (label) label.removeAttribute('title');
 
  // GPS accuracy badge on the locked screen.
  // Shown only when accuracy is poor (>100 m) — a fine lock stays silent.
@@ -3467,6 +3551,32 @@ function updateGPSBars(pos) {
  saverHUD.classList.add('hidden');
  }
  }
+}
+
+// __32_ (S124-D8): no fix is taken outside a visit, trip or alarm, so the bars would keep showing an old fix (for example after a
+// cancelled trip set-up). About a minute after the last fix, with nothing live, the meter goes grey and says "idle". During a
+// visit, trip or alarm it is never greyed here (a grey meter then is a real fault - copy the Diagnostics report).
+const GPS_IDLE_MS = 60000;
+let _gpsIdleTimer = null;
+function _gpsLiveContext() {
+ try {
+ return !!(state && state.activeVisit) || !!isPanicActive || !!isDuressActive ||
+ (typeof gpsWatchPositionId !== 'undefined' && gpsWatchPositionId !== null) || (typeof gpsWatchId !== 'undefined' && gpsWatchId !== null);
+ } catch (_) { return true; }
+}
+function _gpsIdleArm() {
+ if (_gpsIdleTimer) clearTimeout(_gpsIdleTimer);
+ _gpsIdleTimer = setTimeout(_gpsIdleCheck, GPS_IDLE_MS);
+}
+function _gpsIdleCheck() {
+ _gpsIdleTimer = null;
+ if (Date.now() - (updateGPSBars._lastAt || 0) < GPS_IDLE_MS - 1000) { _gpsIdleArm(); return false; }
+ if (_gpsLiveContext()) return false;
+ document.querySelectorAll('.gps-bar').forEach(b => { b.classList.remove('active-red', 'active-amber', 'active-green'); b.style.backgroundColor = ''; });
+ const label = document.getElementById('gpsLabel');
+ if (label) { label.textContent = 'idle'; label.title = 'GPS idle - the app takes a position only during a visit, a trip set-up, a trip or an alarm'; }
+ updateGPSBars._lastAccuracy = undefined;   // a label toggle must not light old bars again
+ return true;
 }
 
 /**
@@ -6655,7 +6765,7 @@ async function startVisit(isSkipCheck = false) {
  if (isPreVisitForm) return; // Pre-visit form is on screen — block stray re-entry
  const btn = document.getElementById('btnStart');
  if (btn && btn.dataset.starting) return;
- if (btn) btn.dataset.starting = '1';
+ if (btn) { btn.dataset.starting = '1'; try { window._startCalledAt = Date.now(); } catch (_) {} }   // __32_ (R125-1): the flag's own age, also for a resumed start
 
  isMidVisitUpdate = false;
 
@@ -8036,7 +8146,7 @@ function warmUpGps() {
  if (!navigator.geolocation) return;
 
  navigator.geolocation.getCurrentPosition(
- (pos) => { _noteFix(pos); },
+ (pos) => { _noteFix(pos); try { updateGPSBars(pos); } catch (_) {} },   // __32_ (S124-D8): the home meter shows the pre-warm fix
  (err) => {
  if (err.code === 1) showToast("📍 GPS Permission Required");
  },
@@ -8332,14 +8442,41 @@ function clearSig(id, event) {
 // ============================================================================
 
 // Helper: Get Device ID
+// __32_ (F125-1): ONE device id. Registration and every post send state.deviceId, and that is what Staff col E holds. The sync and
+// the notice check used to read the separate storage key, so a phone whose two copies differed had every sync refused while its
+// posts were accepted. The saved state's id wins; the key is written back to match it (one diagnostics line when it changes).
 function getDeviceID() {
- let id = localStorage.getItem(_sk('otg_device_id'));
+ let sid = '';
+ try { sid = (state && typeof state.deviceId === 'string') ? state.deviceId.trim() : ''; } catch (_) { sid = ''; }   // before the state exists
+ let id = null;
+ try { id = localStorage.getItem(_sk('otg_device_id')); } catch (_) {}
+ if (sid) {
+ if (id !== sid) {
+ try { localStorage.setItem(_sk('otg_device_id'), sid); } catch (_) {}
+ if (!getDeviceID._aligned) {
+ getDeviceID._aligned = true;
+ try { _diag('[F125-1] device id key set to the saved id ...' + sid.slice(-4) + ' (it was ' + (id ? '...' + String(id).slice(-4) : 'empty') + ')', true); } catch (_) {}
+ }
+ }
+ return sid;
+ }
  if (!id) {
  id = 'dev_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now().toString(36);
  localStorage.setItem(_sk('otg_device_id'), id);
  console.log('New device ID generated:', id);
  }
  return id;
+}
+
+/** __32_ (F125-1): a sync was accepted, so a red "DEVICE NOT AUTHORISED" bar left by an earlier refusal is out of date. */
+function _clearDeniedBanner() {
+ const ob = document.getElementById('offlineBanner');
+ if (!ob || ob.classList.contains('hidden')) return false;
+ if (!/NOT AUTHORISED/i.test(ob.textContent || '')) return false;
+ ob.classList.add('hidden');
+ ob.style.backgroundColor = '';
+ try { _diag('[F125-1] sync accepted - DEVICE NOT AUTHORISED bar cleared', true); } catch (_) {}
+ return true;
 }
 
 // __31_ (F118-3): the unused location fetch was removed here (it asked the backend for an action it does not have; nothing called it).
@@ -10068,6 +10205,7 @@ function forceSync(showUI, quiet) {
  return;
  }
  try { _versionRecheck('sync'); } catch (_) {}   // __31_ (S117-D2)
+ try { _clearDeniedBanner(); } catch (_) {}   // __32_ (F125-1)
  updateLastSyncUI(); // Refreshes the "Just now" label
  if (showUI) showToast('✅ Sync Complete');
  
@@ -11077,7 +11215,26 @@ function initAllActionPills() {
  if (durationMins <= 0) return showToast('⏳ Select a duration first');
  if (!state.isTravelActive && !state.selectedLocationId) return showToast('📍 Select a site first');
  if (state.isTravelActive && !state.selectedLocationId && !state.isGeneralDest) return showToast('📍 Select a destination or tap General');
- startVisit();
+ // __31_ (F101-1): startVisit() sets a "starting" flag on the pill and ignores every call while it is set. If a start hangs or
+ // throws, the flag would stay set until the app is reopened. A flag older than 20 s is stale (a real start takes under 10 s).
+ const _sb = document.getElementById('btnStart');
+ if (_sb && _sb.dataset.starting) {
+  const _age = Date.now() - (window._startCalledAt || 0);
+  if (_age > 20000 && !state.activeVisit && !isPreVisitForm) {
+   _diag('[F101-1] stale start flag cleared after ' + Math.round(_age / 1000) + ' s', true);
+   delete _sb.dataset.starting;
+  } else {
+   _diag('[F101-1] slide ignored: a start is already in progress (' + Math.round(_age / 1000) + ' s)');
+   return showToast('Starting - one moment');
+  }
+ }
+ window._startCalledAt = Date.now();
+ Promise.resolve(startVisit()).catch(e => {
+  _diag('[F101-1] startVisit threw: ' + ((e && e.message) || e), true);
+  const _b2 = document.getElementById('btnStart');
+  if (_b2) delete _b2.dataset.starting;
+  showToast('Could not start - please try again');
+ });
  });
 
  // Depart pill
@@ -11123,12 +11280,21 @@ function initSlidePill(pillId, thumbId, labelId, onComplete) {
 
  function getClientX(e) { return e.touches ? e.touches[0].clientX : e.clientX; }
 
+ // __31_ (F101-1): say why a touch on this pill was ignored (at most one line per 10 s, so the diagnostics are not flooded).
+ let _lastIgnoredAt = 0;
+ function _ignored(why) {
+  const n = Date.now();
+  if (n - _lastIgnoredAt < 10000) return;
+  _lastIgnoredAt = n;
+  _diag('[F101-1] ' + pillId + ' touch ignored: ' + why);
+ }
+
  function onStart(e) {
- if (pill.classList.contains('pill-disabled')) return;
+ if (pill.classList.contains('pill-disabled')) { _ignored('pill is disabled'); return; }
  const rect = pill.getBoundingClientRect();
  const relX = getClientX(e) - rect.left;
  maxSlide = rect.width - THUMB_W - 8;
- if (relX / rect.width > START_ZONE) return;
+ if (relX / rect.width > START_ZONE) { _ignored('outside the start zone (x ' + Math.round(relX) + ' of ' + Math.round(rect.width) + ')'); return; }
  isSliding = true;
  gestureValid = true;
  startClientX = getClientX(e);
@@ -11175,6 +11341,7 @@ function initSlidePill(pillId, thumbId, labelId, onComplete) {
  window.addEventListener('touchmove', onMove, { passive: false });
  window.addEventListener('mousemove', onMove);
  window.addEventListener('touchend', onEnd);
+ window.addEventListener('touchcancel', onEnd);   // __31_ (F101-1): a cancelled touch (call, edge swipe) must reset the thumb
  window.addEventListener('mouseup', onEnd);
 }
 
