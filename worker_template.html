@@ -490,6 +490,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  </div>
  
  <div class="content-area flex flex-col">
+ <button type="button" onclick="installThisApp()" class="otg-install-btn hidden w-full mb-4 py-3 bg-blue-600 text-white font-black rounded-xl shadow-lg">📲 Install this app</button>   <!-- __33_ (F129-1) -->
  <div id="wizStep1" class="wizard-step active">
  <h2 class="text-lg font-bold mb-4">Your Identity</h2>
  <input id="wizName" type="text" placeholder="Full Name" class="form-input" aria-label="Full name">
@@ -648,7 +649,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
  <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety On-The-Go!</span>
- <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__32_</span>
+ <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__33_</span>
  </h1>
  </div>
  <div class="flex items-center">
@@ -1078,6 +1079,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <button onclick="navigate('main')" aria-label="Close settings" class="text-3xl text-gray-400 hover:text-white px-2">×</button>
  </div>
  <div class="content-area pb-24">
+ <button type="button" onclick="installThisApp()" class="otg-install-btn hidden w-full mb-4 py-3 bg-blue-600 text-white font-black rounded-xl shadow-lg">📲 Install this app</button>   <!-- __33_ (F129-1) -->
 
  <div class="mb-6">
  <div class="flex items-baseline justify-between mb-4">
@@ -1211,7 +1213,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
  <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
- <div id="appBuild" class="text-xs font-mono text-gray-400">worker__32_</div>
+ <div id="appBuild" class="text-xs font-mono text-gray-400">worker__33_</div>
  </div>
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">Backend Version</div>
@@ -1523,6 +1525,17 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  </div>
 </div>
 
+<!-- __33_ (F129-1): how to install when the browser has not offered its own install prompt (yet) -->
+<div id="installHelpModal" class="hidden fixed inset-0 z-[460] flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="installHelpTitle">
+ <div class="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm p-6 border-2 border-blue-500">
+ <h2 id="installHelpTitle" class="text-xl font-black text-white mb-3">📲 Install this app</h2>
+ <p class="text-sm text-gray-200 font-bold mb-2">1. Open your browser's menu (in Chrome, the three dots at the top right).</p>
+ <p class="text-sm text-gray-200 font-bold mb-2">2. Tap <span class="text-blue-300">Install app</span> or <span class="text-blue-300">Add to Home screen</span>.</p>
+ <p class="text-sm text-gray-200 font-bold mb-5">3. Open the app from your home screen from now on.</p>
+ <button onclick="closeModal('installHelp')" class="w-full py-3 bg-blue-600 text-white font-black rounded-xl">Got it</button>
+ </div>
+</div>
+
 <!-- Android Install Banner (Phase 3, Feature 17) -->
 <div id="installBanner" class="hidden fixed top-0 left-0 w-full bg-blue-600 text-white p-5 z-[150] shadow-xl flex items-center justify-between">
  <div class="flex items-center gap-4">
@@ -1801,6 +1814,22 @@ const RISK_WELFARE_MAP = {
 //     amber "slide Wake to read" cue on the dim screen, with the sound and buzz once) exactly as in __28_.
 //   - Never during an alarm, never offline, never while the app is hidden (the poll); a wake check at most once a minute; a full
 //     sync from a check at most once a minute. A failed check says nothing and is tried again at the next poll.
+// __33_ changes (session 132, Opus 5.5, from __32_). Works with backend __57_ to __62_. Storage naming (F125-2) and registration unchanged.
+//   F126-4  A trip that starts with no GPS fix drops any older position (a site visit already did), and every post that carries
+//           the phone's current fix also carries that fix's own time ('GPS Timestamp', ISO). Before, it was the time of sending
+//           (locale text, PANIC/DURESS only) and the server stamped its own time, so an old position looked current. Backend
+//           __62_ uses it for col P, the trail, the Monitor and the alert emails; older backends ignore it or read ISO safely.
+//   F126-3  Travel Report Start Point: "Locating... please wait", then "Address unavailable - please type it".
+//   F127-1  Trip distance: the road-trail answer is checked against the breadcrumb path. Inflated (over 1.4 times and 0.5 km longer)
+//           -> the start-to-end road route if shorter, else the path plus 10% (S132-D2). The route, path km, trail km and
+//           start-to-end km are kept in the Travel Report data (S132-D1) and the getDistance: Diagnostics line.
+//   F125-5  The setup wizard always starts at step 1 (counter, steps and buttons reset together).
+//   F121-1  The info panel buttons no longer carry the site name or the safety-information link inside their click code.
+//   F121-3  A logo link that failed is not asked for again until the app is reopened.
+//   F129-1  "Install this app" button on the setup wizard and in Settings while the app is not installed (S132-D3).
+//   S130-D2 The Start slider is never silent: every early exit of startVisit and of the slide callback writes an [F101-1]
+//           Diagnostics line and shows a toast; one line per slide attempt with the pill state. [F126-1] notes the server's
+//           'heard' answer to the notice check when it changes (backend __62_).
 // __32_ changes (session 125, Opus 5.5 high, from __31_). Works with backend __57_ to __61_ (no backend change).
 //   F125-2  SAFETY: the storage name is now made from the app's own folder on the web host (host + folder, lower case), not from
 //           the backend address. A new Apps Script deployment (new /exec address) used to give the app a brand-new, empty storage
@@ -1831,7 +1860,7 @@ const RISK_WELFARE_MAP = {
 //           otg- plus 24 random characters (made on the phone, 96 bits, never Math.random), and "Share it with my contact" sends
 //           the name and the steps through the share sheet (or copies them). A box that already has a topic is never replaced.
 // =============================================================================
-const WORKER_BUILD = 'worker__32_';
+const WORKER_BUILD = 'worker__33_';
 
 const CONFIG = {
  url: '',
@@ -2196,7 +2225,7 @@ function applyConfig(cfg) {
  * served even during the brief window between SW install and first activate,
  * and in browsers that don't support the SW manifest intercept path.
  * Uses a dedicated 'otg-manifest' cache that is preserved across SW version
- * bumps (the activate handler only wipes versioned 'otg-safety-*' caches).
+ * bumps (the Factory sw.js activate step removes only this folder's own older 'otg-safety--<folder>--' caches, F102-2).
  */
 function _injectDynamicManifest(cfg) {
  try {
@@ -2233,7 +2262,7 @@ function _injectDynamicManifest(cfg) {
 
  // ── Layer 3: SW cache write — subsequent loads and offline ─────────────
  // 'otg-manifest' is a dedicated long-lived cache. The SW activate handler
- // only purges versioned 'otg-safety-*' caches, so this survives SW updates.
+ // removes only this folder's own older 'otg-safety--<folder>--' caches (Factory index__14_, F102-2), so this survives SW updates.
  // The SW manifest intercept also rebuilds from config.json, but this write
  // provides a belt-and-suspenders fallback for edge cases.
  if ('caches' in window) {
@@ -2667,7 +2696,7 @@ async function logSafety(type, message, extra) {   // __24_: extra = more fields
  'Alarm Status': type,
  'Notes': message,
  'Last Known GPS': lastGPS || "0,0",
- 'GPS Timestamp': new Date().toLocaleString(),
+ // __33_ (F126-4): 'GPS Timestamp' (the fix's own time) is added by buildPayload; this was the time of sending, as locale text
  'Battery Level': await getBatteryPercent(),
  'App Version': CONFIG.buildVersion
  };
@@ -2772,6 +2801,15 @@ function submitReport() {
    d.jsonPayload['_distStartFix']     = ((typeof state !== 'undefined' && state && state.activeVisit && state.activeVisit.startFixNote) || 'unknown');   // __22_ (R57): warm / fresh / late / none
    // __24_ (R55): the km the app calculated, so the Travel Report can say when the worker changed the figure (backend __51_)
    d.jsonPayload['_distCalcKm']       = (calculatedDist && calculatedDist.type !== 'none' && calculatedDist.km !== '' && calculatedDist.km != null) ? String(calculatedDist.km) : '';
+   // __33_ (F127-1 fix 2, S132-D1): the evidence, so an admin can check any trip's distance later (every trip; the form email goes out
+   // only when the Templates tab gives the Travel Report an Email Recipient)
+   try {
+     const _ev = (calculatedDist && calculatedDist.ev) || {};
+     d.jsonPayload['_distCrowKm']  = _pathLenKm(gpsTrail).toFixed(3);   // the breadcrumb path (straight lines), a lower bound
+     d.jsonPayload['_distTrailKm'] = _ev.trailKm || '';                 // the road-trail figure, even when it was not used
+     d.jsonPayload['_distAtoBKm']  = _ev.atobKm || '';                  // the start-to-end road route, when it was fetched
+     d.jsonPayload['_distTrail']   = _distTrailText(gpsTrail);          // the route: lat,lng;lat,lng (5 decimals)
+   } catch (_) {}
  }
 
  // 4. BUILD PAYLOAD
@@ -3772,7 +3810,7 @@ function _welfareHeartbeat(v, now) {
   processUploadQueue(buildPayload({
     'Alarm Status': 'ALARM_GPS_PULSE',
     'Notes': 'Heartbeat - welfare check.',
-    'Last Known GPS': '0,0'   // explicit: buildPayload would otherwise fall back to the start position
+    'Last Known GPS': '0,0'   // a heartbeat says the phone is alive, not where it is (the server keeps the real last position)
   }));
 }
 
@@ -3979,6 +4017,8 @@ function startTravellingPulse() {
  * Resolves: Inline Currency ($), Suffix Units (km/hrs/%), and Card-style Checkboxes.
  */
 
+const START_POINT_NONE_TEXT = 'Address unavailable - please type it';   // __33_ (F126-3)
+
 /**
  * Prepends Start Point and Destination fields to the Travel Report form.
  * Destination: reverse-geocoded from lastGPS at the moment the form opens (i.e. actual trip
@@ -4047,9 +4087,11 @@ function _injectTripEndpointFields(container) {
 
   // ── Start Point ───────────────────────────────────────────────────────────
   const startAddr = state.activeVisit.startAddress;
-  const start = makeField('Start Point', 'Trip Start Point', startAddr || '', startAddr === null ? 'Locating…' : '');
+  // __33_ (F126-3): plain wording. A trip with no start position has no look-up running, so it says so at once.
+  const _noStartFix = !_isValidGPS(state.activeVisit.startGPS);
+  const start = makeField('Start Point', 'Trip Start Point', startAddr || '', startAddr === null ? (_noStartFix ? START_POINT_NONE_TEXT : 'Locating... please wait') : '');
 
-  if (startAddr === null) {
+  if (startAddr === null && !_noStartFix) {
     let attempts = 0;
     const poll = setInterval(() => {
       attempts++;
@@ -4059,7 +4101,7 @@ function _injectTripEndpointFields(container) {
         start.input.placeholder = '';
         clearInterval(poll);
       } else if (attempts >= 60) {
-        start.input.placeholder = 'Address unavailable';
+        start.input.placeholder = START_POINT_NONE_TEXT;   // __33_ (F126-3)
         clearInterval(poll);
       }
     }, 500);
@@ -5245,7 +5287,7 @@ function _ctHeartbeatBeat() {
  processUploadQueue(buildPayload({
   'Alarm Status': 'ALARM_GPS_PULSE',
   'Notes': 'Heartbeat - Critical Timing visit.',
-  'Last Known GPS': '0,0'   // explicit: buildPayload would otherwise fall back to the start position
+  'Last Known GPS': '0,0'   // a heartbeat says the phone is alive, not where it is (the server keeps the real last position)
  }));
 }
 
@@ -5553,7 +5595,7 @@ function _safeLogoUrl(v) {
 function _logoFor(loc) {
   if (!loc || String(loc.id).startsWith('loc_')) return '';
   const own = _safeLogoUrl(loc.logoUrl);
-  if (own) return own;
+  if (own && !(typeof _logoDeadSet === 'object' && _logoDeadSet && _logoDeadSet.has(own))) return own;   // __33_ (F121-3)
   const co = String(loc.companyName || '').trim().toLowerCase();
   if (!co) return '';
   const all = (state && state.locations) || [];
@@ -5562,7 +5604,7 @@ function _logoFor(loc) {
     if (!o || String(o.id).startsWith('loc_')) continue;
     if (String(o.companyName || '').trim().toLowerCase() !== co) continue;
     const u = _safeLogoUrl(o.logoUrl);
-    if (u) return u;
+    if (u && !(typeof _logoDeadSet === 'object' && _logoDeadSet && _logoDeadSet.has(u))) return u;   // __33_ (F121-3)
   }
   return '';
 }
@@ -5577,7 +5619,11 @@ function _siteLogoHtml(loc, kind, icon) {
 }
 
 /** The image did not load (dead link, no signal): a tile gets its emoji back, a row simply has no logo. */
+var _infoPanelCtx = null;   // __33_ (F121-1): the site the info panel shows, read by its buttons
+var _logoDeadSet = new Set();   // __33_ (F121-3): links that failed since the app opened; not asked for again until it is reopened
+
 function _logoFail(img) {
+  try { const s = img && img.getAttribute && img.getAttribute('src'); if (s && typeof _logoDeadSet === 'object') _logoDeadSet.add(s); } catch (_) {}   // __33_ (F121-3)
   try {
     const p = img && img.parentNode;
     if (!p) return;
@@ -5937,6 +5983,7 @@ function _browserCopyCheck() {
       document.body.appendChild(b);
     }
     if (b) b.style.display = show ? 'block' : 'none';
+    try { _installBtnRefresh(show); } catch (_) {}   // __33_ (F129-1): the Install button follows the same rule
     if (show) {
       ['installBanner', 'iosInstallModal'].forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
       if (!_browserCopyCheck._logged) { _browserCopyCheck._logged = true; try { _diag('[R66] running visit open in a browser tab - browser-copy banner shown', true); } catch (_) {} }
@@ -5944,6 +5991,31 @@ function _browserCopyCheck() {
     return show;
   } catch (_) { return false; }
 }
+
+/**
+ * __33_ (F129-1, S132-D3): the permanent "Install this app" button (setup wizard and Settings). Shown whenever the app is not
+ * installed, whether or not the browser has offered its banner or the banner was dismissed (otg_install_dismissed). Never while a
+ * visit runs in a browser tab (the R66 browser-copy banner says what to do). No change to registration or the device id.
+ */
+function _installBtnRefresh(browserCopy) {
+  const show = !_isInstalledApp() && !browserCopy && !(typeof state !== 'undefined' && state && state.activeVisit);
+  document.querySelectorAll('.otg-install-btn').forEach(b => b.classList.toggle('hidden', !show));
+  return show;
+}
+function installThisApp() {
+  const isIos = /iphone|ipad|ipod/.test(String(navigator.userAgent || '').toLowerCase());
+  const how = deferredPrompt ? 'browser prompt' : (isIos ? 'iPhone steps' : 'menu steps');
+  try { _diag('[F129-1] Install button: ' + how); } catch (_) {}
+  if (typeof state !== 'undefined' && state && state.activeVisit && !_isInstalledApp()) { showToast(BROWSER_COPY_TEXT); return; }
+  if (deferredPrompt) { triggerInstall(); return; }
+  if (isIos) { const m = document.getElementById('iosInstallModal'); if (m) m.classList.remove('hidden'); return; }
+  showModal('installHelp');
+}
+window.addEventListener('appinstalled', () => {   // __33_ (F129-1)
+  deferredPrompt = null;
+  try { _diag('[F129-1] app installed'); } catch (_) {}
+  document.querySelectorAll('.otg-install-btn').forEach(b => b.classList.add('hidden'));
+});
 
 // ============================================================================
 // PWA SETUP
@@ -6751,6 +6823,27 @@ function confirmPhoneAlerts() {
 }
 
 /**
+ * __33_ (S130-D2, F101-1): the Start pill's state in one short line for Diagnostics. Never throws.
+ */
+function _f101State() {
+  try {
+    const b = document.getElementById('btnStart');
+    const s = (typeof state !== 'undefined' && state) || {};
+    return '(trip ' + (s.isTravelActive ? 'y' : 'n') + ', site ' + (s.selectedLocationId ? 'y' : 'n') + ', general ' + (s.isGeneralDest ? 'y' : 'n') +
+      ', ' + (s.visitDurationMinutes || 0) + ' min, visit ' + (s.activeVisit ? 'y' : 'n') +
+      ', form ' + (typeof isPreVisitForm !== 'undefined' && isPreVisitForm ? 'open' : '-') + '/' + (typeof isPreVisitFormDone !== 'undefined' && isPreVisitFormDone ? 'done' : '-') +
+      ', starting ' + (b && b.dataset.starting ? 'y' : 'n') + ', pill ' + (b && b.classList.contains('pill-disabled') ? 'disabled' : 'ok') +
+      ', ' + (navigator.onLine === false ? 'offline' : 'online') + ')';
+  } catch (_) { return '(state unknown)'; }
+}
+
+/** __33_ (S130-D2, F101-1): an early exit from a start - one [F101-1] Diagnostics line, and the toast when there is one. */
+function _f101Exit(why, toast) {
+  try { _diag('[F101-1] start stopped: ' + why + ' ' + _f101State()); } catch (_) {}
+  if (toast) { try { showToast(toast); } catch (_) {} }
+}
+
+/**
  * setupHoldToStart — retained as no-op for any legacy callers.
  * The Start pill is wired once by initAllActionPills() at startup.
  */
@@ -6761,10 +6854,11 @@ function setupHoldToStart() { /* wired via initAllActionPills */ }
  * Logic: Ensures site address is captured for the spreadsheet.
  */
 async function startVisit(isSkipCheck = false) {
- if (state.activeVisit) return;
- if (isPreVisitForm) return; // Pre-visit form is on screen — block stray re-entry
+ // __33_ (S130-D2): every early exit says why, in Diagnostics and on screen, so a dead slide is never silent (F101-1)
+ if (state.activeVisit) { _f101Exit('a visit is already running', 'A visit is already running'); return; }
+ if (isPreVisitForm) { _f101Exit('the pre-visit form is open', 'Finish the form on screen first'); return; }   // the pre-visit form is on screen - block stray re-entry
  const btn = document.getElementById('btnStart');
- if (btn && btn.dataset.starting) return;
+ if (btn && btn.dataset.starting) { _f101Exit('a start is already in progress', 'Starting - one moment'); return; }
  if (btn) { btn.dataset.starting = '1'; try { window._startCalledAt = Date.now(); } catch (_) {} }   // __32_ (R125-1): the flag's own age, also for a resumed start
 
  isMidVisitUpdate = false;
@@ -6772,6 +6866,7 @@ async function startVisit(isSkipCheck = false) {
  // __26_ (R76): phone alerts required - the pill is disabled, this also stops any other caller.
  if (_paRequiredMissing() && !_paStartAnyway) {
  if (btn) delete btn.dataset.starting;
+ _f101Exit('phone alerts not set up', '');   // __33_ (S130-D2): the toast below says it
  updateArrivedButtonState();
  return showToast('⚠️ Set up phone alerts first (Settings), or hold "Start without phone alerts"');
  }
@@ -6780,6 +6875,7 @@ async function startVisit(isSkipCheck = false) {
  const isTravelEarly = !!state.isTravelActive;
  if (!isSkipCheck && typeof checkVehicleBeforeVisit === 'function' && checkVehicleBeforeVisit(isTravelEarly)) {
  if (btn) delete btn.dataset.starting;
+ _f101Exit('the WOF check is showing', 'WOF check - answer the box to continue');   // __33_ (S130-D2): if no box appears, this line says so
  return;
  }
 
@@ -6792,6 +6888,7 @@ async function startVisit(isSkipCheck = false) {
  
  if (!locId && !isTravelMode) {
  if (btn) delete btn.dataset.starting;
+ _f101Exit('no destination selected', '');   // __33_ (S130-D2): the toast below says it
  return showToast('⚠️ Select a destination first');
  }
 
@@ -6823,6 +6920,7 @@ async function startVisit(isSkipCheck = false) {
  const preTemplate = (state.globalForms || []).find(f => f.formTiming === 'pre-visit');
  if (preTemplate) {
  if (btn) delete btn.dataset.starting;
+ _f101Exit('the pre-visit form opens first (' + preTemplate.name + ')', 'Fill in the form to start');   // __33_ (S130-D2)
  isPreVisitForm = true;
  isPreVisitFormDone = true; // prevent infinite loop when we resume
  isMidVisitUpdate = true; // prevent submitReport() treating it as a departure
@@ -6848,6 +6946,7 @@ async function startVisit(isSkipCheck = false) {
  verifiedStartGPS = _sf.gps;
  _startFixNote = _sf.note;
  if (_isValidGPS(verifiedStartGPS)) { lastGPS = verifiedStartGPS; lastGPSAt = _sf.ts || Date.now(); }   // __31_ (R79)
+ else { lastGPS = null; lastGPSAt = null; }   // __33_ (F126-4): no fix at the start - an older position must never be sent as this trip's
  try { _diag('startVisit: start fix ' + _sf.note); } catch (_) {}
  if (!_isValidGPS(verifiedStartGPS)) showToast('⚠️ No GPS yet - your trip has started. Step outside if you can; the start position is added when GPS locks.', 6000);
  if (typeof startGPSMonitoring === 'function') {
@@ -7032,7 +7131,7 @@ function buildPayload(d) {
  }
  }
  
-return {
+const _p = {
  'action': d.action || 'logVisit', 
  'key': CONFIG.key,
  'Worker Name': state.worker?.name || "",
@@ -7060,6 +7159,16 @@ return {
  'Worker Build': WORKER_BUILD, // X1 (build __15_)
  ...d
  };
+ // __33_ (F126-4, S126-D2): a post that carries the phone's current fix (lastGPS) also carries that fix's own time, as ISO text,
+ // if it is believable here too (not over 24 hours old, not over 2 minutes ahead - the limits backend __62_ applies). Any other
+ // post has no GPS Timestamp, and the server uses its own time as before. Covers every caller: pulses, trip start, alarms, departures.
+ const _lkg = _p['Last Known GPS'], _sentGps = String(_lkg == null ? '' : _lkg).replace(/\s+/g, '');
+ const _heldGps = (typeof lastGPS === 'string') ? lastGPS.replace(/\s+/g, '') : '';
+ const _heldAt = (typeof lastGPSAt === 'number') ? lastGPSAt : NaN, _nowMs = Date.now();
+ if (_heldGps && _sentGps === _heldGps && _sentGps !== '0,0' && isFinite(_heldAt) && _heldAt > 0 &&
+     _heldAt <= _nowMs + 120000 && _heldAt >= _nowMs - 86400000) _p['GPS Timestamp'] = new Date(_heldAt).toISOString();
+ else delete _p['GPS Timestamp'];
+ return _p;
 }
 
 // ============================================================================
@@ -8672,6 +8781,7 @@ function _initApp() {
  
  if (!state.worker || !state.worker.name) {
  navigate('setup');
+ startWizard();   // __33_ (F125-5): counter, steps and buttons reset together (a saved step 3 showed step 1, Next ran the final save)
  } else {
  navigate(state.activeVisit ? 'locked' : 'main');
  showVerificationCard();
@@ -10516,6 +10626,46 @@ function haversine(p1, p2) {
  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
+// __33_ (F127-1, S132-D1/D2): the road-trail answer is checked against the breadcrumb path - the straight lines from point to point,
+// a lower bound of the road length. One stray breadcrumb can make the router drive out to it and back (12 Nov: 10.89 km reported
+// for a 6.8 km drive). Inflated = more than DIST_INFLATED_RATIO times the path AND at least DIST_INFLATED_MIN_EXCESS_KM longer.
+const DIST_INFLATED_RATIO = 1.4;
+const DIST_INFLATED_MIN_EXCESS_KM = 0.5;
+const DIST_PATH_ALLOWANCE = 1.10;          // no time left for the start-to-end road route: the path plus 10% (S132-D2)
+const DIST_TRAIL_MAX_POINTS = 500;         // the saved route is thinned to this many points (the cell stays small)
+const DIST_ATOB_TYPE = 'road-A-to-B (trail looked inflated)';
+const DIST_PATH_TYPE = 'trail-crow+10% (trail looked inflated)';
+
+/** Length in km of the straight lines from breadcrumb to breadcrumb ([{lat, lng}]; invalid points skipped). Pure (tested). */
+function _pathLenKm(trail) {
+  let m = 0, prev = null;
+  (trail || []).forEach(p => {
+    if (!p || !_isValidGPS(p.lat + ',' + p.lng)) return;
+    if (prev) m += _gpsHaversineMetres(prev.lat, prev.lng, p.lat, p.lng);
+    prev = p;
+  });
+  return m / 1000;
+}
+
+/** True when a road-trail figure is implausibly long for its breadcrumb path (see the constants above). Pure (tested). */
+function _distLooksInflated(trailKm, pathKm) {
+  const t = Number(trailKm), p = Number(pathKm);
+  if (!isFinite(t) || !isFinite(p) || p <= 0) return false;
+  return t > p * DIST_INFLATED_RATIO && (t - p) >= DIST_INFLATED_MIN_EXCESS_KM;
+}
+
+/** The breadcrumbs as 'lat,lng;lat,lng' (5 decimals, about 1 m), thinned evenly to DIST_TRAIL_MAX_POINTS keeping both ends. Pure (tested). */
+function _distTrailText(trail) {
+  const pts = (trail || []).filter(p => p && _isValidGPS(p.lat + ',' + p.lng));
+  let keep = pts;
+  if (pts.length > DIST_TRAIL_MAX_POINTS) {
+    keep = [];
+    const step = (pts.length - 1) / (DIST_TRAIL_MAX_POINTS - 1);
+    for (let i = 0; i < DIST_TRAIL_MAX_POINTS; i++) keep.push(pts[Math.round(i * step)]);
+  }
+  return keep.map(p => Number(p.lat).toFixed(5) + ',' + Number(p.lng).toFixed(5)).join(';');
+}
+
 // Y3 (build __16_): the road lookups (Tier 1 and Tier 3) are plain fetches to the backend. With no timeout a stalled
 // request left the Depart pill waiting for minutes (session 84). All network time inside one getDistance() call is
 // now limited to DISTANCE_LOOKUP_BUDGET_MS; when it is used up the straight-line tiers answer instead.
@@ -10541,9 +10691,14 @@ async function getDistance(p1, p2, trail = []) {
   const _t0 = Date.now();
   const _budgetLeft = () => DISTANCE_LOOKUP_BUDGET_MS - (Date.now() - _t0);
   const _trace = []; // Y4: what each tier did and how long it took - saved in the report data as _distLookup
+  // __33_ (F127-1 fix 2): the evidence travels with the answer (report data) and goes into the Diagnostics line
+  const _ev = { pathKm: _pathLenKm(trail), crowKm: haversine(p1, p2), n: (trail || []).length, speedKm: (_speedAccumM || 0) / 1000, trailKm: '', atobKm: '' };
   const _out = (r) => {
     r.trace = _trace.join(' ');
-    try { _diag('getDistance: ' + r.km + ' km ' + r.type + ' [' + r.trace + ']'); } catch (_e) {}
+    r.ev = _ev;
+    try { _diag('getDistance: ' + r.km + ' km ' + r.type + ' [' + r.trace + '] breadcrumbs ' + _ev.n + ', path ' + _ev.pathKm.toFixed(2) +
+                ' km, straight A-B ' + _ev.crowKm.toFixed(2) + ' km, speed ' + _ev.speedKm.toFixed(2) + ' km' +
+                (_ev.trailKm !== '' ? ', trail ' + _ev.trailKm + ' km' : '') + (_ev.atobKm !== '' ? ', road A-B ' + _ev.atobKm + ' km' : '')); } catch (_e) {}
     return r;
   };
 
@@ -10590,7 +10745,34 @@ async function getDistance(p1, p2, trail = []) {
       const url = `${CONFIG.url}?action=getDistanceWithTrail&trail=${encodeURIComponent(trailStr)}&key=${CONFIG.key}`;
       const data = await _fetchJsonWithTimeout(url, _budgetLeft());
       if (data.status === 'success' && data.km) {
-        _trace.push('t1:ok ' + (Date.now() - _t1) + 'ms');
+        _trace.push('t1:ok ' + (Date.now() - _t1) + 'ms' + (data.ors ? ' ' + data.ors : ''));   // __33_: backend __62_ says strict or relaxed
+        // __33_ (F127-1 fix 1, S132-D2): is the trail answer plausible for the breadcrumb path?
+        _ev.trailKm = String(data.km);
+        const _t1Km = parseFloat(data.km), _pKm = _pathLenKm(validTrail);
+        if (_distLooksInflated(_t1Km, _pKm)) {
+          _trace.push('check:inflated ' + _t1Km.toFixed(2) + '/' + _pKm.toFixed(2));
+          if (_budgetLeft() >= 1000) {
+            const _t3b = Date.now();
+            try {
+              const url3 = `${CONFIG.url}?action=getDistance&start=${p1}&end=${p2}&key=${CONFIG.key}`;
+              const d3 = await _fetchJsonWithTimeout(url3, _budgetLeft());
+              if (d3.status === 'success' && d3.km) {
+                _ev.atobKm = String(d3.km);
+                _trace.push('t3:ok ' + (Date.now() - _t3b) + 'ms');
+                const r3 = withFloor({ km: d3.km, type: DIST_ATOB_TYPE });
+                if (parseFloat(r3.km) < _t1Km) return _out(r3);
+                _trace.push('t3:not-shorter');   // the normal road route is no shorter: the trail figure stands
+                return _out({ km: data.km, type: 'road-trail' });
+              }
+              _trace.push('t3:no-result ' + (Date.now() - _t3b) + 'ms');
+            } catch (e3) {
+              _trace.push('t3:fail ' + (Date.now() - _t3b) + 'ms');
+            }
+          } else {
+            _trace.push('t3:skipped');
+          }
+          return _out({ km: (_pKm * DIST_PATH_ALLOWANCE).toFixed(2), type: DIST_PATH_TYPE });
+        }
         return _out({ km: data.km, type: 'road-trail' });
       }
       _trace.push('t1:no-result ' + (Date.now() - _t1) + 'ms');
@@ -11212,9 +11394,10 @@ function initAllActionPills() {
  // Start Visit pill
  initSlidePill('btnStart', 'slideStartThumb', 'slideStartLabel', () => {
  const durationMins = state.visitDurationMinutes || 0;
- if (durationMins <= 0) return showToast('⏳ Select a duration first');
- if (!state.isTravelActive && !state.selectedLocationId) return showToast('📍 Select a site first');
- if (state.isTravelActive && !state.selectedLocationId && !state.isGeneralDest) return showToast('📍 Select a destination or tap General');
+ // __33_ (S130-D2): each of these exits also writes an [F101-1] line
+ if (durationMins <= 0) { _f101Exit('slide: no duration selected', ''); return showToast('⏳ Select a duration first'); }
+ if (!state.isTravelActive && !state.selectedLocationId) { _f101Exit('slide: no site selected', ''); return showToast('📍 Select a site first'); }
+ if (state.isTravelActive && !state.selectedLocationId && !state.isGeneralDest) { _f101Exit('slide: no trip destination', ''); return showToast('📍 Select a destination or tap General'); }
  // __31_ (F101-1): startVisit() sets a "starting" flag on the pill and ignores every call while it is set. If a start hangs or
  // throws, the flag would stay set until the app is reopened. A flag older than 20 s is stale (a real start takes under 10 s).
  const _sb = document.getElementById('btnStart');
@@ -11277,6 +11460,7 @@ function initSlidePill(pillId, thumbId, labelId, onComplete) {
  let gestureValid = false;
  let startClientX = 0;
  let maxSlide = 0;
+ let _lastProgress = 0;   // __33_ (S130-D2): how far the last slide got
 
  function getClientX(e) { return e.touches ? e.touches[0].clientX : e.clientX; }
 
@@ -11298,6 +11482,8 @@ function initSlidePill(pillId, thumbId, labelId, onComplete) {
  isSliding = true;
  gestureValid = true;
  startClientX = getClientX(e);
+ _lastProgress = 0;
+ if (pillId === 'btnStart') { try { _diag('[F101-1] btnStart slide started ' + _f101State()); } catch (_) {} }   // __33_ (S130-D2)
  thumb.style.transition = 'none';
  e.preventDefault();
  }
@@ -11307,12 +11493,14 @@ function initSlidePill(pillId, thumbId, labelId, onComplete) {
  const delta = Math.max(0, Math.min(getClientX(e) - startClientX, maxSlide));
  thumb.style.transform = `translateX(${delta}px)`;
  const progress = delta / maxSlide;
+ _lastProgress = progress;
  if (label) label.style.opacity = String(Math.max(0, 1 - progress * 1.3));
  if (progress >= 0.85) completeSlide();
  }
 
  function onEnd() {
  if (!isSliding) return;
+ if (pillId === 'btnStart') { try { _diag('[F101-1] btnStart released at ' + Math.round((_lastProgress || 0) * 100) + '% (85% starts)'); } catch (_) {} }   // __33_ (S130-D2)
  isSliding = false;
  gestureValid = false;
  thumb.style.transition = 'transform 0.3s ease';
@@ -11575,20 +11763,19 @@ function populateSiteInfoModal(location) {
  if (location.address) html += `<div><label class="text-sm text-gray-300 font-black tracking-widest">Address</label><div class="text-white">${escapeHtml(location.address)}</div></div>`;
  
  // 2. SITE SAFETY INFO LOGIC: View existing or trigger context-aware submission
+ // __33_ (F121-1, S132-D4): the buttons read the site's details from here, so a quote or other odd character in a site name or a
+ // safety-information link can no longer break their click code.
+ _infoPanelCtx = { proc: location['Emergency Procedures'] || '', ctx: { siteName: location.name, companyName: location.companyName || "" } };
  if (location['Emergency Procedures']) {
  html += `<div class="pt-2">
- <button onclick="viewEmergencyProcedures('${location['Emergency Procedures']}')" 
+ <button onclick="viewEmergencyProcedures(_infoPanelCtx.proc)" 
  class="w-full py-4 bg-red-600 text-white font-black rounded-2xl flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-transform">
  🛡️ VIEW SITE SAFETY INFORMATION
  </button>
  </div>`;
  } else {
- // Prepare context object and escape quotes for HTML attribute safety
- const ctx = { siteName: location.name, companyName: location.companyName || "" };
- const ctxSafe = JSON.stringify(ctx).replace(/"/g, '&quot;'); 
- 
  html += `<div class="pt-2">
- <button onclick="closeModal('info'); loadFormAndShow('Update Site Procedures', ${ctxSafe})" 
+ <button onclick="closeModal('info'); loadFormAndShow('Update Site Procedures', _infoPanelCtx.ctx)" 
  class="w-full py-4 bg-gray-800 border-2 border-dashed border-gray-600 text-gray-400 font-bold rounded-2xl flex flex-col items-center justify-center gap-1 active:bg-gray-700 active:scale-95 transition-all">
  <span class="text-xs tracking-widest opacity-60">No Site Safety Information found</span>
  <span class="text-xs text-blue-400 font-black ">Click to submit documentation</span>
@@ -12099,6 +12286,11 @@ function _noticeLightCheck(reason) {
             try { _diag('[R75] light notice check: backend older than __57_, no poll', true); } catch (_) {}
           }
           return;
+        }
+        // __33_ (F126-1, backend __62_): one line when the server's 'heard' answer changes, so a "No signal" report can be explained
+        if (reason === 'poll' && data.heard && data.heard !== _noticeLightCheck._heard) {
+          _noticeLightCheck._heard = data.heard;
+          try { _diag('[F126-1] notice check: ' + (data.heard === 'stamped' ? 'counted as heard' : 'not counted as heard (' + data.heard + ')')); } catch (_) {}
         }
         if (!_noticeIdsDiffer(data.ids)) return;
         if (_noticeInAlarm()) return;                      // an alarm started while we were asking: stay out of its way
