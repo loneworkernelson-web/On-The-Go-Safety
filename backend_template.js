@@ -192,6 +192,29 @@
  *   - Settings tab: two new keys added with their defaults (existing values never changed); Health email shows them.
  *   - Contact escalation (tiers, Critical ladder, col AA claims, All Clear audience) is unchanged.
  *
+ * __62_ (session 131, 17 Nov 2026, Opus 5.5 high) - BLANK DUE TIME, ORG IN THE PUSH, NOTICE CHECK = HEARD, REAL FIX TIME,
+ *        TIGHTER TRAIL ROUTE. Design: Russell (HANDOVER_130 section 6a, S126-D1 option B, S126-D2, S127-D1).
+ *   - F125-8: an open visit or trip row whose due time (col U) is BLANK used to be skipped by the overdue checker without a
+ *     word. It now gets the same HQ alert as an unreadable due time (email + ADMIN_ALERT_TOPIC, once per row every 6 hours,
+ *     Audit checker:due-unreadable "col U is blank"). Only rows whose status is a visit status (DUE_NEEDED_WORDS): an alarm
+ *     raised with no visit running, a form or note record, LOW BATTERY and pulses legitimately have no due time.
+ *   - F125-7: the "visit not watched" push title names the organisation, as the engine-stopped push does.
+ *   - F126-1: the phone's light notice check (GET noticeCheck, every 5 minutes on a visit while the app is visible and not
+ *     in an alarm) stamps Visits col AF for the worker's open visit - registered phone only (Staff col E set and matching),
+ *     never the master key, never a closed row or one in an alarm state (rank 2+). Short script lock, the row re-checked by
+ *     name and Visit ID before the write (the archive deletes rows). The reply gains `heard` (ignored by older phones).
+ *     R60 meaning kept: heard = the app is awake and shows its own warnings, so a W1 / W2 / early welfare push can now be held
+ *     back on a site visit whose app is open. Welfare and Critical Timing heartbeats are posts and unchanged.
+ *   - F126-4: a post's GPS Timestamp is the phone's real fix time when it is ISO text (or ms), not more than 2 minutes ahead and
+ *     not older than 24 hours; otherwise it is cleared and the old rule applies (server time on an existing row, the post's
+ *     Timestamp on a new row). It is used for col P, the trail point time (the Monitor "Last GPS Fix" line) and the alert
+ *     emails ("Last known position at ..."). The locale text older workers send was never trusted and still is not.
+ *   - F127-1 fix 3: the ORS trail request adds continue_straight and a snap radius (100 m for breadcrumbs, 350 m - the ORS
+ *     default - for the first and last point). If it fails, ONE retry with the old body. The reply gains `ors` (strict or
+ *     relaxed); a retry gets an Audit row distance:ors-retry (no coordinates). A mitigation only (the worker check is fix 1).
+ *   - Unchanged: alarm gate, alarm clearing paths, ladders and who is alerted, All Clear, Audit retention, the escalation engine
+ *     as the only authority for escalation emails. No new POST or GET action.
+ *
  * __61_ (session 120, 6 Nov 2026, Opus 5.5 high) - SCHEMA BUILD, CONTACT TOPICS, SITE LOGOS, TRIP TRAIL, RELEASE A PHONE.
  *   - S113-3: new POST action contactsUpdate (worker __31_ posts it on Save). Registered phone or master key only; writes
  *     Staff H / I at once; a blank or malformed topic leaves the stored one unchanged (S120-D9); Audit staff:contacts-*.
@@ -559,9 +582,9 @@ function doGet(e) {
           return sendResponse(e, { status: "success", km: dist });
       }
       if (p.action === 'getDistanceWithTrail' && p.trail) {
-          const dist = getRouteDistanceWithTrail(p.trail);
-          return dist !== null
-              ? sendResponse(e, { status: 'success', km: dist, type: 'road-trail' })
+          const _rt = _routeTrail_(p.trail);   // __62_ (F127-1 fix 3): strict request, one retry with the old body
+          return _rt !== null
+              ? sendResponse(e, { status: 'success', km: _rt.km, type: 'road-trail', ors: _rt.mode })
               : sendResponse(e, { status: 'error', message: 'ORS waypoint routing failed' });
       }
       if(p.test) return (p.key === CONFIG.MASTER_KEY) ? sendResponse(e, {status:"success"}) : sendResponse(e, {status:"error"});
@@ -586,6 +609,7 @@ function doPost(e) {
   if(e.parameter.key !== CONFIG.MASTER_KEY && e.parameter.key !== CONFIG.WORKER_KEY) return sendJSON({status:"error"});
   const _ep = e.parameter;
   _cleanInputs_(_ep);   // __58_ (S3-1): GPS and worker name checked before anything uses them (busy path too)
+  _fixTimeClean_(_ep);  // __62_ (F126-4): GPS Timestamp = the phone's real fix time if believable, else '' (busy path too)
   _settingsReset_();   // __48_: Settings are read once per execution
   _AUDIT_CTX = _auditCtxFor_(_ep); // __43_ (F86-7): template name + worker build on every audit row of this run
   const _epStatusIn = String(_ep['Alarm Status'] || ''); // __44_: as sent - handleWorkerPost may rewrite it (PIN clear)
@@ -1318,6 +1342,7 @@ function handleWorkerPost(p) {
     }
 
     const ts = new Date();
+    const _fixAt = _isRealFix_(p['Last Known GPS']) ? _fixTimeOf_(p['GPS Timestamp'], ts.getTime()) : null;   // __62_ (F126-4): or null
     const dateStr = _localCell_(ts);   // __47_ (R47): col B "22 Oct 2026, 3:16 pm" (text), set once at row creation
     let polishedNotes = p['Notes'] || "";
     const hasFormData = p['Visit Report Data'] && p['Visit Report Data'].length > 2;
@@ -1400,7 +1425,7 @@ function handleWorkerPost(p) {
                         sheet.getRange(targetRow, 1).setValue(ts.toISOString());
                         _localColSet_(sheet, targetRow, ts);   // __47_ (R47): col AC
                         _lastHeardSet_(sheet, targetRow, ts);  // __49_ (R60): col AF - the phone was heard (any status)
-                        _trailPost_(rowData[VISIT_ID_COL - 1], p['Alarm Status'], status, rowData[11], p['Last Known GPS'], ts);   // __61_ (S114-D1)
+                        _trailPost_(rowData[VISIT_ID_COL - 1], p['Alarm Status'], status, rowData[11], p['Last Known GPS'], _fixAt || ts);   // __61_ (S114-D1); __62_ (F126-4) fix time
                         // Guard col K against downgrades.
                         // HIGH_SEVERITY statuses (EMERGENCY, PANIC, DURESS, OVERDUE ALARM) must
                         // never be overwritten by lower-priority statuses (OVERDUE, ALARM_GPS_PULSE).
@@ -1508,7 +1533,7 @@ function handleWorkerPost(p) {
                         const _gpsIn = (p['Last Known GPS'] || '').toString().replace(/\s+/g, '');
                         if (_gpsIn && _gpsIn !== '0,0' && _gpsIn !== '0.0,0.0') {
                             sheet.getRange(targetRow, 15).setValue(_cell_(p['Last Known GPS'])); // col O: Last Known GPS
-                            sheet.getRange(targetRow, 16).setValue(ts.toISOString());    // col P: GPS Timestamp
+                            sheet.getRange(targetRow, 16).setValue((_fixAt || ts).toISOString());    // col P: GPS Timestamp (__62_ F126-4: the fix time)
                         }
                         if (p['Visit Report Data']) sheet.getRange(targetRow, headers.indexOf("Visit Report Data") + 1).setValue(_cell_(p['Visit Report Data']));
                         const deptCol = headers.indexOf("Anticipated Departure Time");
@@ -1600,7 +1625,7 @@ if (!rowUpdated) {
         p['Location Name'], 
         p['Location Address'], 
         p['Last Known GPS'], 
-        p['Timestamp'], 
+        _fixAt ? _fixAt.toISOString() : p['Timestamp'],   // col P: __62_ (F126-4) the fix time, else the post's Timestamp as before
         p['Battery Level'], 
         p1, 
         distanceValue, 
@@ -1616,7 +1641,7 @@ if (!rowUpdated) {
     _visitIdSet_(sheet, sheet.getLastRow(), _vid61);   // __44_: col AB
     _localColSet_(sheet, sheet.getLastRow(), ts);   // __47_ (R47): col AC
     _lastHeardSet_(sheet, sheet.getLastRow(), ts);  // __49_ (R60): col AF
-    _trailPost_(_vid61, p['Alarm Status'], '', polishedNotes, p['Last Known GPS'], ts);   // __61_ (S114-D1)
+    _trailPost_(_vid61, p['Alarm Status'], '', polishedNotes, p['Last Known GPS'], _fixAt || ts);   // __61_ (S114-D1); __62_ (F126-4) fix time
     _audit_('handleWorkerPost:new', workerName, sheet.getLastRow(), '', p['Alarm Status'], p['Alarm Status'], p.idempotencyKey, 'new row');
     _welfareArm_(sheet, sheet.getLastRow(), p, ts);   // __50_ (R03): col AD when welfare checks are On for this visit
     _ledgerRow = sheet.getLastRow(); _ledgerNew = true;   // __45_ (ledger)
@@ -2955,6 +2980,14 @@ function _checkOverdueLocked_(sends, warns) {
             const dueTimeStr = entry[20]; 
             const isClosed = status.includes("DEPARTED") || status.includes("COMPLETED") || status.includes("DATA_ENTRY_ONLY") || status.includes("USER_SAFE");
             
+            // __62_ (F125-8): an open VISIT row with a blank due time was skipped here without a word, so nothing would alert
+            // the contacts. Same HQ alert as an unreadable due time. Rows that legitimately have no due time are left alone.
+            if (!isClosed && !dueTimeStr && _dueNeeded_(status)) {
+                console.error('[checkOverdueVisits] Blank due time for ' + worker + ' (' + status + ')');
+                try { sp.setProperty('LAST_DUE_PARSE_ERROR', new Date().toISOString() + ' | ' + worker + ' | col U is blank (' + status.substring(0, 40) + ')'); } catch (_) {}
+                _dueErrorAlert_(worker, latest[worker].r, entry, dueTimeStr);
+                return;
+            }
             if(!isClosed && dueTimeStr) {
                 let due = new Date(dueTimeStr);   // __50_ (R03): let - a missed welfare check brings it forward
                 // A12 (session 72): an unreadable due time used to give NaN and silently never
@@ -4596,44 +4629,9 @@ function getRouteDistance(start, end) {
  * internal convention of "lat,lng".
  */
 function getRouteDistanceWithTrail(trailStr) {
-    if (!CONFIG.ORS_API_KEY || CONFIG.ORS_API_KEY.length < 5) return null;
-
-    // Parse "lat,lng|lat,lng|..." into ORS-format [lng, lat] pairs
-    const points = trailStr.split('|').map(seg => {
-        const parts = seg.split(',');
-        const lat = parseFloat(parts[0]);
-        const lng = parseFloat(parts[1]);
-        return (!isNaN(lat) && !isNaN(lng)) ? [lng, lat] : null;
-    }).filter(Boolean);
-
-    if (points.length < 2) return null;
-
-    const coords = _decimateTrail(points, 40); // ORS free tier supports 50; 40 gives accuracy headroom
-
-    try {
-        const v = getOrsVersion_(CONFIG.ORS_API_KEY);
-        if (!v) return null;
-        const response = UrlFetchApp.fetch(
-            `https://api.openrouteservice.org/${v}/directions/driving-car`,
-            {
-                method: 'post',
-                contentType: 'application/json; charset=utf-8',
-                headers: { 'Authorization': CONFIG.ORS_API_KEY },
-                payload: JSON.stringify({ coordinates: coords }),
-                muteHttpExceptions: true
-            }
-        );
-
-        if (response.getResponseCode() === 200) {
-            const json = JSON.parse(response.getContentText());
-            const metres = json.routes[0].summary.distance;
-            return (metres / 1000).toFixed(2);
-        }
-        console.warn('ORS waypoint HTTP ' + response.getResponseCode() + ': ' + response.getContentText().substring(0, 200));
-    } catch (e) {
-        console.warn('ORS Waypoints Error: ' + e.toString());
-    }
-    return null;
+    // __62_ (F127-1 fix 3): same name and answer (km as text, or null) for every caller; the work is in _routeTrail_.
+    const r = _routeTrail_(trailStr);
+    return r ? r.km : null;
 }
 
 /**
@@ -5631,7 +5629,7 @@ function _formsGps_(sheet, rowNum, p) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__61_';
+const TEMPLATE_BUILD = 'backend__62_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
@@ -7330,7 +7328,8 @@ function _staffPeople_(stData) {
 // Why: a phone left open on a visit (screen dim or not) never asked for notices, and a full sync is big (sites, forms,
 // form templates, notices). The phone now asks this tiny question every few minutes and on waking, and does the full sync
 // only when the answer changed. Design: Russell, 30 Oct 2026 ("cheap A and the cheaper B").
-//   - Read only. It writes nothing (no Audit row, no stamp) - the full sync does not either, so nothing is lost.
+//   - Read only in __57_ to __61_. __62_ (F126-1): it also stamps Visits col AF ("Last Heard") for the worker's open visit
+//     when the registered phone asks (_noticeHeard_). No Audit row unless the stamp was slow or failed.
 //   - Same keys as the sync (master or worker key), same worker gate (a name in Staff, not Inactive), same filter (Status
 //     exactly 'Active', Target through _targetMatch_ - the rule the sync and the broadcast push share), same newest-first
 //     walk and the same limit of 10. So "the ids this answers" are exactly the ids of the sync's meta.noticeHistory.
@@ -7348,13 +7347,14 @@ function handleNoticeCheck_(workerName, deviceId, isHQ) {
         if (!stSheet) return { status: 'error', message: 'Staff sheet missing.' };
         const name = (workerName || '').toString().toLowerCase().trim();
         const stData = stSheet.getDataRange().getValues();
-        let found = false, groups = '';
+        let found = false, groups = '', staffRow = null, staffName = '';   // __62_ (F126-1): the row, for the heard stamp
         for (let i = 1; i < stData.length; i++) {
             if ((stData[i][0] || '').toString().toLowerCase().trim() === name) {
                 if ((stData[i][2] || '').toString().trim().toLowerCase() === 'inactive') return { status: 'error', message: 'Access Denied.' };
                 if (!_syncPhoneOk_(stData[i], deviceId, isHQ)) return { status: 'device_denied', message: SYNC_DENIED_MSG };   // __59_ (S3-3)
                 found = true;
                 groups = (stData[i][3] || '').toString().toLowerCase();
+                staffRow = stData[i]; staffName = String(stData[i][0]);   // __62_
                 break;
             }
         }
@@ -7367,7 +7367,8 @@ function handleNoticeCheck_(workerName, deviceId, isHQ) {
                 if (nData[i][6] === 'Active' && _targetMatch_(nData[i][7], name, groups)) ids.push(nData[i][1]);
             }
         }
-        return { status: 'success', ids: ids, build: TEMPLATE_BUILD };
+        const heard = _noticeHeard_(staffName, staffRow, deviceId, isHQ);   // __62_ (F126-1): never throws, never changes the answer
+        return { status: 'success', ids: ids, build: TEMPLATE_BUILD, heard: heard };
     } catch (err) {
         return { status: 'error', message: String(err) };
     }
@@ -7802,6 +7803,7 @@ function _syncPhoneOk_(staffRow, deviceId, isHQ) {
 function _dueErrorAlert_(worker, rowNum, entry, dueRaw) {
     try {
         const val = String(dueRaw == null ? '' : dueRaw).substring(0, 60);
+        const blank = !dueRaw;   // __62_ (F125-8): col U empty, not merely unreadable
         const ck = 'DUEERR_' + rowNum + '_' + val.replace(/[^A-Za-z0-9]/g, '').substring(0, 40);
         try {
             const cache = CacheService.getScriptCache();
@@ -7809,19 +7811,20 @@ function _dueErrorAlert_(worker, rowNum, entry, dueRaw) {
             cache.put(ck, '1', DUE_ERR_TTL_S);
         } catch (_) {}
         _audit_('checker:due-unreadable', worker, rowNum, entry ? entry[10] : '', '', '', '',
-                'col U "' + val + '" is not a date and time - HQ alerted (email' + (_settings_().adminAlertTopic ? ' and push' : '') + ')');
+                (blank ? 'col U is blank on an open visit' : 'col U "' + val + '" is not a date and time') + ' - HQ alerted (email' + (_settings_().adminAlertTopic ? ' and push' : '') + ')');
         const e = function (s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
         const org = (CONFIG.ORG_NAME && !String(CONFIG.ORG_NAME).includes('%%')) ? CONFIG.ORG_NAME : 'OTG';
         const who = String(worker || 'a worker').substring(0, 60);
-        const subject = 'OTG - ' + who + "'s visit is not being watched: unreadable due time (" + org + ')';
+        const subject = 'OTG - ' + who + "'s visit is not being watched: " + (blank ? 'no due time' : 'unreadable due time') + " (" + org + ')';
         const html =
             '<div style="font-family:Arial,sans-serif;font-size:14px;color:#111">' +
-            '<p><b>The server cannot read the due time of an open visit, so the contacts will NOT be alerted if the worker does not check out.</b></p>' +
+            (blank ? '<p><b>This open visit has no due time (column U is blank), so the contacts will NOT be alerted if the worker does not check out.</b></p>'   // __62_
+                   : '<p><b>The server cannot read the due time of an open visit, so the contacts will NOT be alerted if the worker does not check out.</b></p>') +
             '<table cellpadding="4" style="border-collapse:collapse">' +
             '<tr><td><b>Worker</b></td><td>' + e(worker) + '</td></tr>' +
             '<tr><td><b>Visits row</b></td><td>' + e(rowNum) + '</td></tr>' +
             '<tr><td><b>Status</b></td><td>' + e(entry ? entry[10] : '') + '</td></tr>' +
-            '<tr><td><b>Column U holds</b></td><td>' + e(val) + '</td></tr>' +
+            '<tr><td><b>Column U holds</b></td><td>' + e(blank ? '(blank)' : val) + '</td></tr>' +
             '<tr><td><b>Time</b></td><td>' + e(_fmtLocal_(new Date(), 'd MMM yyyy, h:mm:ss a')) + '</td></tr>' +
             '</table>' +
             '<p><b>What to do now</b></p><ol>' +
@@ -7837,8 +7840,8 @@ function _dueErrorAlert_(worker, rowNum, entry, dueRaw) {
             catch (err) { _audit_('checker:due-unreadable-email-FAILED', worker, rowNum, '', '', '', '', String(err).substring(0, 160)); }
             if (topic) {
                 try {
-                    const r = _sendNtfy(topic, 'OTG: visit not watched - ' + who,
-                                        who + "'s visit (Visits row " + rowNum + ') has an unreadable due time, so contacts will not be alerted if they do not check out. ' +
+                    const r = _sendNtfy(topic, 'OTG: visit not watched - ' + who + ' (' + org + ')',   // __62_ (F125-7): which install
+                                        who + "'s visit (Visits row " + rowNum + ') has ' + (blank ? 'no due time' : 'an unreadable due time') + ', so contacts will not be alerted if they do not check out. ' +
                                         'Phone the worker; an extend in the app fixes it. Details by email.', 'high', 'warning');
                     if (!r || !r.ok) _audit_('checker:due-unreadable-push-FAILED', worker, rowNum, '', '', '', '', 'push to the admin topic not accepted' + (r && r.code ? ' (HTTP ' + r.code + ')' : ''));
                 } catch (err) { _audit_('checker:due-unreadable-push-FAILED', worker, rowNum, '', '', '', '', String(err).substring(0, 160)); }
@@ -7848,6 +7851,236 @@ function _dueErrorAlert_(worker, rowNum, entry, dueRaw) {
     } catch (err) {
         try { _audit_('checker:due-unreadable-error', worker, rowNum, '', '', '', '', String(err).substring(0, 160)); } catch (_) {}
     }
+}
+
+// ==========================================
+// __62_ (session 131, 17 Nov 2026, Opus 5.5 high) - BLANK DUE TIME (F125-8), NOTICE CHECK = HEARD (F126-1),
+// REAL FIX TIME (F126-4), TIGHTER TRAIL ROUTE (F127-1 fix 3). Design: Russell, HANDOVER_130 section 6a.
+// ==========================================
+
+/**
+ * __62_ (F125-8): words of a col K status that only a visit or trip row carries - the start (ARRIVED / TRAVELLING), an
+ * extend, a PIN clear or HQ "still on site" (back to ARRIVED / TRAVELLING), and every overdue, Critical Timing and welfare
+ * step. A row showing one of these must have a due time. Matched by word, like the checker's closed test.
+ * Not in the list, on purpose (these rows legitimately have no due time): an alarm raised with no visit running (PANIC,
+ * DURESS, SOS - the post itself alerts the contacts at once), a form or note record with no visit (ON SITE,
+ * VEHICLE_CHECK_COMPLETED, NOTE_LOGGED, PROCEDURES_UPDATED), LOW BATTERY, GPS pulses. TEST_ALERT never reaches Visits.
+ */
+const DUE_NEEDED_WORDS = ['ARRIVED', 'TRAVELLING', 'EXTENDED', 'OVERDUE', 'CRITICAL TIMING', '60MIN BREACH', 'WELFARE_MISSED'];
+function _dueNeeded_(status) {
+    const s = String(status == null ? '' : status).toUpperCase();
+    return DUE_NEEDED_WORDS.some(function (w) { return s.indexOf(w) > -1; });
+}
+
+// ---------------------------------------------------------------- F126-1: the notice check counts as "heard"
+
+const NOTICE_HEARD_LOCK_MS = 2000;   // the stamp waits at most this long for the script lock, then skips (the next check stamps)
+const NOTICE_HEARD_SLOW_MS = 1500;   // a stamp that waited for or held the lock this long gets an Audit row (lock-hold watch item)
+const HEARD_CLOSED_WORDS   = ['DEPARTED', 'COMPLETED', 'DATA_ENTRY_ONLY', 'USER_SAFE', 'PRE_VISIT'];
+
+/** __62_ (F126-1): '' when a latest row may be stamped as heard, else why not: 'closed', 'alarm' (rank 2+) or 'not-a-visit'. */
+function _heardSkip_(status) {
+    const s = String(status == null ? '' : status).toUpperCase();
+    if (HEARD_CLOSED_WORDS.some(function (w) { return s.indexOf(w) > -1; })) return 'closed';
+    if (_alarmRank_(s) >= 2) return 'alarm';
+    if (!_dueNeeded_(s)) return 'not-a-visit';
+    return '';
+}
+
+/**
+ * __62_ (F126-1, Russell S126-D1 option B): the phone's light notice check also means "this phone was heard", so the open
+ * visit's Visits col AF is stamped with the server time. Before, a named-site visit posted nothing between start and end, so
+ * col AF went quiet after the start and the Monitor showed "No signal" on every normal visit longer than 10 minutes.
+ * The phone sends this check only while the app is visible, online, on a visit and NOT in an alarm (worker __29_ onwards),
+ * so "heard" keeps its R60 meaning: the app is awake and shows its own warnings.
+ * Rules: only the registered phone (Staff col E set and equal to the deviceId sent) - never an empty col E, never the master
+ * key; only the worker's latest row, and only while it is an open visit with no alarm (rank below 2), so a stamp can never
+ * hide a silent phone during an alarm. The archive deletes Visits rows under the script lock, so the write is made under the
+ * same lock (short wait), after the row is read again and found to be the same visit (name and Visit ID, or col A when a
+ * legacy row has no Visit ID). Returns a short word for the reply ('stamped', 'hq', 'not-registered', 'no-visit', 'closed',
+ * 'alarm', 'not-a-visit', 'busy', 'changed', 'error'). Never throws; a failure leaves col AF as it was (the phone looks
+ * silent - the safe side).
+ */
+function _noticeHeard_(staffName, staffRow, deviceId, isHQ) {
+    try {
+        if (isHQ) return 'hq';
+        const bound = String(staffRow && staffRow[4] != null ? staffRow[4] : '').trim();
+        if (!bound || String(deviceId == null ? '' : deviceId).trim() !== bound) return 'not-registered';
+        const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Visits');
+        if (!sheet) return 'no-visit';
+        _rfInvalidate_();   // a fresh read in this execution
+        const lr = _latestRowFor_(sheet, staffName, VISIT_ID_COL);
+        if (!lr) return 'no-visit';
+        const why = _heardSkip_(lr.status);
+        if (why) return why;
+        const vid = String(lr.data[VISIT_ID_COL - 1] == null ? '' : lr.data[VISIT_ID_COL - 1]).trim();
+        const aWas = String(lr.data[0]);
+        const lock = LockService.getScriptLock();
+        const t0 = Date.now();
+        let got = false;
+        try { got = lock.tryLock(NOTICE_HEARD_LOCK_MS); } catch (_) { got = false; }
+        const waitMs = Date.now() - t0;
+        if (!got) return 'busy';
+        let out = 'changed', heldMs = 0;
+        const h0 = Date.now();
+        try {
+            if (lr.row <= sheet.getLastRow()) {
+                const w = Math.max(21, Math.min(VISIT_ID_COL, sheet.getMaxColumns()));
+                const row = sheet.getRange(lr.row, 1, 1, w).getValues()[0];
+                const vidNow = String(row[VISIT_ID_COL - 1] == null ? '' : row[VISIT_ID_COL - 1]).trim();
+                const same = _rfKey_(row[2]) === _rfKey_(staffName) && (vid ? vidNow === vid : String(row[0]) === aWas);
+                const whyNow = same ? _heardSkip_(row[10]) : '';
+                if (same && !whyNow) { _lastHeardSet_(sheet, lr.row, new Date()); out = 'stamped'; }
+                else if (whyNow) out = whyNow;
+            }
+            try { SpreadsheetApp.flush(); } catch (_) {}
+        } finally {
+            heldMs = Date.now() - h0;
+            lock.releaseLock();
+        }
+        if (waitMs >= NOTICE_HEARD_SLOW_MS || heldMs >= NOTICE_HEARD_SLOW_MS) {
+            _audit_('heard:slow', staffName, lr.row, lr.status, '', 'noticeCheck', '', 'lockWait=' + waitMs + 'ms lockHeld=' + heldMs + 'ms result=' + out);
+        }
+        return out;
+    } catch (e) {
+        try { _audit_('heard:error', staffName, '', '', '', 'noticeCheck', '', String(e).substring(0, 160) + ' - col AF not stamped (the phone looks silent: the safe side)'); } catch (_) {}
+        return 'error';
+    }
+}
+
+// ---------------------------------------------------------------- F126-4: the phone's real fix time
+
+const FIX_TIME_AHEAD_OK_MS = 120000;     // up to 2 minutes ahead of the server counts as now (phone clocks drift a little)
+const FIX_TIME_MAX_AGE_MS  = 86400000;   // older than 24 hours is not a believable fix for an open visit
+
+/** __62_ (F126-4): a coordinate pair that is not the phone's "0,0" no-fix value (the same test as the trail). */
+function _isRealFix_(gps) {
+    if (!_isCoordPair_(gps)) return false;
+    const m = _COORD_PAIR_RE_.exec(String(gps));
+    return !(Math.abs(Number(m[1])) <= 0.001 && Math.abs(Number(m[2])) <= 0.001);
+}
+
+/**
+ * __62_ (F126-4): the phone's fix time as a Date, or null. Accepted: ISO text (what worker __33_ sends), a Date, or
+ * milliseconds since 1970 (a number, or 12-13 digits). Not trusted: anything else (the locale text "17/11/2026, 3:16:05 pm"
+ * older workers send), a time more than 2 minutes ahead of the server, or one older than 24 hours. 0 to 2 minutes ahead
+ * counts as now. why (optional array) gets 'ahead' or 'old'.
+ */
+function _fixTimeOf_(raw, nowMs, why) {
+    let t = NaN;
+    if (Object.prototype.toString.call(raw) === '[object Date]') t = raw.getTime();
+    else if (typeof raw === 'number') t = raw;
+    else {
+        const s = String(raw == null ? '' : raw).trim();
+        if (/^\d{12,13}$/.test(s)) t = Number(s);
+        else { const d = _gpsTime_(s); t = d ? d.getTime() : NaN; }
+    }
+    if (!isFinite(t)) return null;
+    if (t > nowMs + FIX_TIME_AHEAD_OK_MS) { if (why) why.push('ahead'); return null; }
+    if (nowMs - t > FIX_TIME_MAX_AGE_MS) { if (why) why.push('old'); return null; }
+    return new Date(Math.min(t, nowMs));
+}
+
+/**
+ * __62_ (F126-4): run in doPost straight after _cleanInputs_, before the lock (the busy path too). Leaves p['GPS Timestamp']
+ * as the trusted ISO fix time, or '' when the post has no real fix, no fix time, or one that is not believable - so every
+ * reader (col P, the trail, the alert emails) sees one answer. A fix time that parses but is not believable gets an Audit
+ * note (input:cleaned); the locale text older workers send is cleared quietly (it was never trusted). Never throws.
+ */
+function _fixTimeClean_(p) {
+    try {
+        if (!p || !Object.prototype.hasOwnProperty.call(p, 'GPS Timestamp')) return;
+        const raw = p['GPS Timestamp'];
+        const why = [];
+        const d = _isRealFix_(p['Last Known GPS']) ? _fixTimeOf_(raw, Date.now(), why) : null;
+        p['GPS Timestamp'] = d ? d.toISOString() : '';
+        if (why.length) {
+            _INPUT_NOTES.push('GPS Timestamp "' + String(raw).substring(0, 40).replace(/[^\x20-\x7E]/g, '?') + '" is ' +
+                              (why[0] === 'ahead' ? 'more than 2 min ahead of the server' : 'older than 24 h') +
+                              ' - not used as the fix time (the old rule applies)');
+        }
+    } catch (e) {
+        try { p['GPS Timestamp'] = ''; } catch (_) {}
+        _INPUT_NOTES.push('fix time check error: ' + String(e).substring(0, 120));
+    }
+}
+
+// ---------------------------------------------------------------- F127-1 fix 3: a tighter ORS trail request
+
+const ORS_TRAIL_SNAP_M     = 100;   // breadcrumbs: the worker keeps only fixes of 50 m or better, so the road is near
+const ORS_TRAIL_END_SNAP_M = 350;   // first and last point (start, departure): the ORS default, as before
+
+/** __62_ (F127-1): the ORS body. strict = continue_straight (no U-turn at a breadcrumb) and a snap radius per point. */
+function _orsTrailBody_(coords, strict) {
+    const b = { coordinates: coords };
+    if (strict) {
+        b.continue_straight = true;
+        b.radiuses = coords.map(function (c, i) { return (i === 0 || i === coords.length - 1) ? ORS_TRAIL_END_SNAP_M : ORS_TRAIL_SNAP_M; });
+    }
+    return b;
+}
+
+/**
+ * __62_ (F127-1): one ORS trail request: { km } (text, 2 decimals - the old answer) or { err }. The error is the HTTP code
+ * and the ORS error code only: the ORS message names the coordinates, and nothing about where a worker travelled is
+ * written down (S114-D1). Never throws.
+ */
+function _orsTrailFetch_(v, coords, strict) {
+    try {
+        const response = UrlFetchApp.fetch(
+            `https://api.openrouteservice.org/${v}/directions/driving-car`,
+            {
+                method: 'post',
+                contentType: 'application/json; charset=utf-8',
+                headers: { 'Authorization': CONFIG.ORS_API_KEY },
+                payload: JSON.stringify(_orsTrailBody_(coords, strict)),
+                muteHttpExceptions: true
+            }
+        );
+        const code = response.getResponseCode();
+        if (code === 200) {
+            const json = JSON.parse(response.getContentText());
+            const metres = json.routes[0].summary.distance;
+            return { km: (metres / 1000).toFixed(2) };   // as before
+        }
+        let oc = '';
+        try { const j = JSON.parse(response.getContentText()); if (j && j.error && j.error.code !== undefined) oc = ' (ORS code ' + String(j.error.code).replace(/[^0-9A-Za-z]/g, '').substring(0, 8) + ')'; } catch (_) {}
+        return { err: 'HTTP ' + code + oc };
+    } catch (e) {
+        return { err: String(e && e.name || 'error').substring(0, 40) + ' - no answer' };
+    }
+}
+
+/**
+ * __62_ (F127-1 fix 3): the trail distance and how it was got: { km, mode } or null. mode 'strict' = the tighter request
+ * answered; 'relaxed' = it failed (often a breadcrumb more than 100 m from any road) and the old request answered - so a
+ * strict failure never drops the worker to the straight-line tier. Two requests at most.
+ */
+function _routeTrail_(trailStr) {
+    if (!CONFIG.ORS_API_KEY || CONFIG.ORS_API_KEY.length < 5) return null;
+    // Parse "lat,lng|lat,lng|..." into ORS-format [lng, lat] pairs
+    const points = String(trailStr == null ? '' : trailStr).split('|').map(seg => {
+        const parts = seg.split(',');
+        const lat = parseFloat(parts[0]);
+        const lng = parseFloat(parts[1]);
+        return (!isNaN(lat) && !isNaN(lng)) ? [lng, lat] : null;
+    }).filter(Boolean);
+    if (points.length < 2) return null;
+    const coords = _decimateTrail(points, 40); // ORS free tier supports 50; 40 gives accuracy headroom
+    let v = null;
+    try { v = getOrsVersion_(CONFIG.ORS_API_KEY); } catch (_) { v = null; }
+    if (!v) return null;
+    const a = _orsTrailFetch_(v, coords, true);
+    if (a.km !== undefined) return { km: a.km, mode: 'strict' };
+    const b = _orsTrailFetch_(v, coords, false);
+    try {
+        _audit_('distance:ors-retry', '', '', '', '', 'getDistanceWithTrail', '',
+                'strict trail request failed (' + a.err + ') - retried once with the old settings: ' +
+                (b.km !== undefined ? 'answered' : 'failed too (' + b.err + ')') + '; ' + coords.length + ' points');
+    } catch (_) {}
+    if (b.km !== undefined) return { km: b.km, mode: 'relaxed' };
+    console.warn('ORS waypoint routing failed: strict ' + a.err + ', relaxed ' + b.err);
+    return null;
 }
 
 // ==========================================
