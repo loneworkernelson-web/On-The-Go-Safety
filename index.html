@@ -6,6 +6,8 @@
        worker build written to config.json as workerBuild and shown on the download step (R08); blank grace period defaults to 15 (R09);
        archive trigger wording monthly (R10); proxy template forwards Click and Actions (R40/D32); Staff blueprint columns match the sheet;
        service worker caches are per install folder (F102-2). Built from index__13_ by patch_fac14.py. -->
+  <!-- index__15_ (S137, F135-1): sw.js gets the worker template's OTG-SW-OUTBOX block (background sending on Android) when the
+       Worker App Pack is made; an older worker template gives the same sw.js as index__14_. Built from index__14_ by patch_fac15.py. -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏭</text></svg>">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>On-The-Go App Factory v84.0 — Config Model</title>
@@ -911,6 +913,11 @@ async function cacheFirst(request) {
     }
 }
 
+// ─── 5. OUTBOX (index__15_, F135-1) ─────────────────────────────────────────
+// The worker app's OTG-SW-OUTBOX block is copied in place of the next line when the pack is made (background sending on
+// Android). With an older worker template the line stays a comment and this service worker works exactly as before.
+/* %%SW_OUTBOX%% */
+
 // ─── 4. MESSAGES ─────────────────────────────────────────────────────────────
 self.addEventListener('message', event => {
     if (event.data && event.data.type === 'SKIP_WAITING') {
@@ -979,7 +986,22 @@ self.addEventListener('message', event => {
     function updateCharCount(el) { document.getElementById('charCount').innerText = `${el.value.length}/${el.maxLength}`; }
 
     // S103 helpers ------------------------------------------------------------------------------------------
-    const FACTORY_BUILD = 'index__14_';
+    const FACTORY_BUILD = 'index__15_';
+    // index__15_ (F135-1): the worker template's OTG-SW-OUTBOX block goes into sw.js, copied exactly. Function replacers are used,
+    // so '$' signs in the block are never read as replacement patterns. Missing, or a marker found twice: no block, and sw.js works
+    // exactly as index__14_'s did (only the comment line differs).
+    const SW_OUTBOX_START = '/* OTG-SW-OUTBOX-START', SW_OUTBOX_END = '/* OTG-SW-OUTBOX-END */';
+    function _swOutboxBlock(workerHtml) {
+        const w = String(workerHtml || '');
+        const a = w.indexOf(SW_OUTBOX_START), b = w.indexOf(SW_OUTBOX_END);
+        if (a < 0 || b < a || w.indexOf(SW_OUTBOX_START, a + 1) >= 0 || w.indexOf(SW_OUTBOX_END, b + 1) >= 0) return '';
+        return w.slice(a, b + SW_OUTBOX_END.length);
+    }
+    function _swSourceForPack(version) {
+        const block = _swOutboxBlock(TEMPLATES.worker);
+        const src = SW_SOURCE.replace('%%SW_BUILD%%', () => String(version));
+        return src.replace('/* %%SW_OUTBOX%% */', () => block || '/* (this worker build has no OTG-SW-OUTBOX block: no background sending) */');
+    }
     // R09: a blank, zero or non-numeric Alarm Grace Period used to write `ESCALATION_MINUTES: ,` into the backend (a syntax error). Default 15, as config.json.
     function _escalationMinutes() {
         const n = parseInt(String(document.getElementById('escalationMins').value).trim(), 10);
@@ -1652,6 +1674,10 @@ function testConnection() {
             const wb = _workerBuildId();
             wbNote.textContent = wb ? ('Worker app build in this pack: ' + wb + ' (also written to config.json as workerBuild).')
                                     : 'Worker app build could not be read from worker_template.html - config.json will not carry a build ID.';
+            // index__15_ (F135-1): say whether this pack's sw.js can send in the background (Android)
+            wbNote.textContent += _swOutboxBlock(TEMPLATES.worker)
+                ? ' Background sending (Android): included in sw.js.'
+                : ' Background sending: not in this worker build (sw.js is as before).';
             wbNote.classList.toggle('text-emerald-400', !!wb);
             wbNote.classList.toggle('text-amber-400', !wb);
         }
@@ -1820,7 +1846,7 @@ it is self-contained and does not need hosting.
         try {
             const zip = new JSZip();
             zip.file('index.html',    TEMPLATES.worker);
-            zip.file('sw.js', SW_SOURCE.replace('%%SW_BUILD%%', cfg.version));
+            zip.file('sw.js', _swSourceForPack(cfg.version));   // index__15_ (F135-1)
             zip.file('manifest.json', buildManifestJson());
             zip.file('config.json',   configJson);
             if (hasIcon) zip.file('icon.png', iconB64, { base64: true });
