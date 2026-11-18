@@ -70,6 +70,11 @@ body {
 .footer-bar {
  flex-shrink: 0; /* Prevents the footer from being squashed by long forms */
 }
+/* __34_ (F135-2): on a small screen (or with the Vehicle Check bar showing) the home-screen footer was taller than the space left,
+   so the Start pill was pushed off the bottom edge. The footer now shrinks and scrolls, and the Forms + Start row stays pinned at
+   its bottom, clear of the screen edge. Only the main screen's footer; the slider itself is unchanged (S130-D2). */
+#mainFooter { flex-shrink: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: max(6px, env(safe-area-inset-bottom)); }
+#startRow { position: sticky; bottom: 0; z-index: 5; background-color: var(--primary); box-shadow: 0 -6px 8px var(--primary); }
 /* 4. LONG-PRESS INTERACTION STYLES */
 .long-press-btn { position: relative; overflow: hidden; transition: all 0.2s; user-select: none; }
 .long-press-btn.pressing::after,
@@ -649,7 +654,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
  <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety On-The-Go!</span>
- <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__33_</span>
+ <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__35_</span>
  </h1>
  </div>
  <div class="flex items-center">
@@ -790,7 +795,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <!-- Regular locations — grid (≤6) or compact list (7+) -->
  <div id="locationList" class="grid grid-cols-2 gap-3"></div>
  </div>
- <div class="footer-bar">
+ <div class="footer-bar" id="mainFooter">
  <!-- Selection banner — hidden until a selection is made, content set by updateArrivedButtonState() -->
  <div id="selectionBanner" class="hidden mb-3"></div>
 
@@ -878,7 +883,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  </div>
 
  <!-- Forms Button + Slide to Begin Visit Pill — always visible -->
- <div class="flex gap-3 h-16 items-stretch">
+ <div id="startRow" class="flex gap-3 h-16 items-stretch">
  <button id="btnForms" onclick="openFormsLibrary()"
  class="w-1/4 bg-indigo-950 text-indigo-300 font-black rounded-2xl border border-indigo-700/50 shadow-lg active:scale-95 transition text-xs tracking-tighter leading-none">
  Forms
@@ -1213,7 +1218,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
  <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
- <div id="appBuild" class="text-xs font-mono text-gray-400">worker__33_</div>
+ <div id="appBuild" class="text-xs font-mono text-gray-400">worker__35_</div>
  </div>
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">Backend Version</div>
@@ -1225,7 +1230,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  </div>
  </div>
  <button onclick="forceSync(true)" class="w-full bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs font-bold text-white mb-2">Force Sync</button>
- <button onclick="forceAppUpdate()"
+ <button id="btnForceAppUpdate" onclick="forceAppUpdate()"
  class="w-full bg-orange-900/40 hover:bg-orange-900/60 border border-orange-700/50 py-2 rounded text-xs font-bold text-orange-300 tracking-widest">
  🔄 Force App Update
  </button>
@@ -1264,7 +1269,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <button id="btnDiagShare" onclick="shareDiagReport()"
  class="flex-1 bg-amber-900/40 border border-amber-700/50 py-1.5 rounded text-xs font-bold text-amber-300">✉️ Share</button>
  </div>
- <button onclick="try{localStorage.removeItem('otg_f743_diag');}catch(_){} updateOutboxStatus();"
+ <button onclick="_diagClear(); updateOutboxStatus();"
  class="mt-1 w-full bg-gray-800 py-1 rounded text-xs font-bold text-amber-300">Clear diag log</button>
  </div>
  <button onclick="outboxRequeueFailedAndFlush(); showToast('🔄 Flushing outbox…')"
@@ -1814,6 +1819,28 @@ const RISK_WELFARE_MAP = {
 //     amber "slide Wake to read" cue on the dim screen, with the sound and buzz once) exactly as in __28_.
 //   - Never during an alarm, never offline, never while the app is hidden (the poll); a wake check at most once a minute; a full
 //     sync from a check at most once a minute. A failed check says nothing and is tried again at the next poll.
+// __35_ changes (session 141, Opus 5.5, from __34_). Works with backend __57_ to __62_ and old or new sw.js (no change to the
+//   OTG-SW-OUTBOX block, so Factory index__15_ needs no change). Storage naming, registration, the alarm and send paths unchanged.
+//   F138-1  SAFETY (saved data): the phone lost the whole site's saved settings twice while the outboxes (IndexedDB) survived.
+//           A copy of the worker's set-up (never a running visit, an alarm or queued posts) is now kept in this app's own
+//           IndexedDB database (otg-backup-<storage name>), and put back at start if the saved settings are missing or
+//           unreadable; the worker is told, and told to contact their monitor if a visit was running. Every start is recorded
+//           (Diagnostics, Copy report and a 30-entry start-up journal in that database). Reset app data deletes the copy first.
+//   F141-1  Reset app data stays reset: a sync reply arriving in the second before the reload no longer writes the set-up back.
+// __34_ changes (session 137, Opus 5.5, from __33_). Works with backend __57_ to __62_ and old or new sw.js. Storage naming (F125-2),
+//   registration, the alarm clearing paths and the lane ordering rules unchanged.
+//   F135-1  SAFETY: a post no longer depends on the app staying open. Small posts (under 24 KB, no photos) are "keep going" sends
+//           (keepalive), so the phone finishes sending them if the app leaves the screen. On Android, when something is still
+//           waiting as the app goes into the background, the app asks the phone to send it by itself (Background Sync): the
+//           service worker runs the OTG-SW-OUTBOX block (copied into sw.js by Factory index__15_) with the app closed, by the
+//           same lane rules. iPhones have no Background Sync: the foreground retries (R49) carry on. The orange bar says which.
+//   S102    Version gate: the red bar also says "Server out of date" when the backend is older than __62_ (tell the administrator).
+//           Neither red-bar text shows during an alarm or DURESS.
+//   F135-4  Tapping the red bar wakes the dim screen and opens Settings > Diagnostics at Force App Update (or Backend Version).
+//   F135-2  Start slider: the release line says how the touch ended, how many moves arrived and how far the finger went, and where
+//           the pill sits on screen; the pill row stays on screen whatever bars show (the footer scrolls instead).
+//   F135-3  The Diagnostics log is kept under this app's own storage name (two apps on one web host no longer share it).
+//   F133-1, F132-1, F132-2  fix time in _noteFix; "0,0" for no fix; no Travel Report error on a phone that has never synced.
 // __33_ changes (session 132, Opus 5.5, from __32_). Works with backend __57_ to __62_. Storage naming (F125-2) and registration unchanged.
 //   F126-4  A trip that starts with no GPS fix drops any older position (a site visit already did), and every post that carries
 //           the phone's current fix also carries that fix's own time ('GPS Timestamp', ISO). Before, it was the time of sending
@@ -1860,7 +1887,7 @@ const RISK_WELFARE_MAP = {
 //           otg- plus 24 random characters (made on the phone, 96 bits, never Math.random), and "Share it with my contact" sends
 //           the name and the steps through the share sheet (or copies them). A box that already has a topic is never replaced.
 // =============================================================================
-const WORKER_BUILD = 'worker__33_';
+const WORKER_BUILD = 'worker__35_';
 
 const CONFIG = {
  url: '',
@@ -2315,17 +2342,21 @@ async function loadConfig() {
  throw new Error('config.json appears to be the example template — please populate your organisation values and re-deploy.');
  }
 
+ const _f138Snap = _f138Snapshot();   // __35_ (F138-1): what localStorage held BEFORE applyConfig (the one-off name move writes into it)
  applyConfig(cfg);
+ const _f138Go = _f138StartWait(_f138Snap);   // __35_ (F138-1): start-up check, and the restore if the set-up was lost
 
  if (bootStatus) bootStatus.textContent = 'Ready.';
 
  // Short pause so "Ready" is visible, then hide boot screen
  await new Promise(r => setTimeout(r, 150));
+ await _f138Go;   // __35_ (F138-1): a restore must be in place before _initApp reads the saved state (3 s at most)
  const bootScreen = document.getElementById('bootScreen');
  if (bootScreen) bootScreen.style.display = 'none';
 
  // Trigger normal app initialization (equivalent to window.onload body)
  _initApp();
+ _f138AfterInit();   // __35_ (F138-1): the restore message, and the first copy of the set-up
 
  } catch (err) {
  console.error('[OTG] Config load failed:', err);
@@ -2406,7 +2437,26 @@ function _fmtDateTime12(d, withYear) {
   return String(t.getDate()).padStart(2, '0') + '/' + String(t.getMonth() + 1).padStart(2, '0') +
          (withYear ? '/' + t.getFullYear() : '') + ', ' + _fmtClock12(t, true);
 }
-const _DIAG_KEY = 'otg_f743_diag';
+const _DIAG_KEY = 'otg_f743_diag';   // __34_ (F135-3): now only the name INSIDE this app's storage name - see _diagKey()
+/*
+ * __34_ (F135-3): the Diagnostics log used to sit under the bare key 'otg_f743_diag', shared by every app on the same web host
+ * (each one's Copy report showed the other's lines, and Clear diag log cleared both). It is now kept under this app's storage name
+ * (_sk). Lines written before the storage name is known wait in memory and are saved with the first line after it is. The old
+ * shared log is left alone (it may hold the other app's lines); nothing writes to it any more.
+ */
+let _diagEarly = [];
+function _diagReady() { return typeof _storageNs !== 'undefined' && _storageNs !== 'default'; }
+function _diagKey() { return _sk(_DIAG_KEY); }
+/** The log, oldest first (saved lines, then any still waiting in memory). A corrupt saved log THROWS, so Copy report still says
+ *  "(unavailable)" rather than "(empty)" (both callers catch it); the next _diag() line starts a fresh log, as before. */
+function _diagRead() {
+  const arr = _diagReady() ? JSON.parse(localStorage.getItem(_diagKey()) || '[]') : [];
+  return arr.concat(_diagEarly);
+}
+function _diagClear() {
+  try { if (_diagReady()) localStorage.removeItem(_diagKey()); } catch (_) {}
+  _diagEarly = [];
+}
 function _diag(label, withStack) {
  try {
   const t = new Date();
@@ -2418,11 +2468,13 @@ function _diag(label, withStack) {
     .map(s => s.trim().replace(/^at\s+/, '').replace(/\(?https?:\/\/[^\s)]*\/([^\/\s)]*)\)?/, '$1')).join(' < ');
    line += ' | ' + st;
   }
+  if (!_diagReady()) { _diagEarly.push(line); if (_diagEarly.length > 200) _diagEarly = _diagEarly.slice(-200); return; }   // __34_ (F135-3)
   let arr = [];
-  try { arr = JSON.parse(localStorage.getItem(_DIAG_KEY) || '[]'); } catch (_) { arr = []; }
+  try { arr = JSON.parse(localStorage.getItem(_diagKey()) || '[]'); } catch (_) { arr = []; }
+  if (_diagEarly.length) { arr = arr.concat(_diagEarly); _diagEarly = []; }
   arr.push(line);
   if (arr.length > 200) arr = arr.slice(-200);
-  try { localStorage.setItem(_DIAG_KEY, JSON.stringify(arr)); } catch (_) {}
+  try { localStorage.setItem(_diagKey(), JSON.stringify(arr)); } catch (_) {}
  } catch (_) { /* diagnostics must never affect the app */ }
 }
 let isPreVisitForm = false; // True while a pre-visit form is being completed
@@ -2558,10 +2610,321 @@ function loadState() {
 
 function saveState() {
  try {
+ if (_f138Cleared) return;   // __35_ (F141-1): Reset app data has cleared the saved state - nothing may write it back before the reload
  localStorage.setItem(_sk('loneWorkerState'), JSON.stringify(state));
  } catch (e) {
  console.error('Save state failed:', e);
  }
+ _f138BackupSoon();   // __35_ (F138-1): the copy of the set-up follows (at most once a second, only when the set-up changed)
+}
+
+// =============================================================================
+// __35_ (F138-1): a second copy of the worker's set-up, and a start-up journal, in this app's OWN IndexedDB database
+// (otg-backup-<storage name>). On Russell's phone something outside the app cleared ALL of the site's localStorage twice
+// (17 and 18 Nov 2026) while IndexedDB (both outboxes) survived. So:
+//  - every start records what localStorage held BEFORE anything could change it (Diagnostics, Copy report, the journal);
+//  - the set-up (F138_SETUP_FIELDS - never a running visit, alarm flags or queued posts) is copied whenever it changes;
+//  - at start, if the saved state is missing or unreadable AND a copy for THIS storage name exists, the set-up is put back
+//    (with no visit) before _initApp builds its state, and the worker sees a message that stays until tapped.
+// Nothing here depends on a localStorage marker: all of localStorage goes at once. Reset app data deletes the copy FIRST and
+// waits for it, then clears localStorage. The outbox database (otg-outbox-..., shared with sw.js) is never opened here.
+// =============================================================================
+const F138_DB_PREFIX = 'otg-backup-';
+const F138_JOURNAL_MAX = 30;         // D6: the last 30 starts (and resets)
+const F138_START_WAIT_MS = 3000;     // the most a start waits for the copy (normally a few ms); later answers change nothing
+const F138_QUERY_WAIT_MS = 800;      // each storage question (persisted, persist, estimate)
+const F138_RESET_WAIT_MS = 5000;     // Reset app data gives up (and deletes nothing) after this
+const F138_BACKUP_DELAY_MS = 1000;
+// D2: the set-up. NOT copied (live state): activeVisit, pendingUploads, photoStore, visitDurationMinutes, visitWelfareOverride,
+// selectedLocationId, isGeneralDest, isTravelActive, travelNoReport, timerDisplay, idleSeconds, lastSyncTime and the sync caches
+// globalForms and cachedForms (the next sync brings them back).
+const F138_SETUP_FIELDS = ['currentWizStep', 'worker', 'settings', 'pins', 'deviceId', 'locations', 'meta', 'vehicle', 'lastVisitedLocationId',
+  'travelNoReportDefault', 'setupVerified', 'registrationPending', 'phoneAlertsOkFor', 'highRiskMode', 'welfareSettingsLast'];
+const F138_PREF_KEYS = ['otg_site_sort', 'otg_gps_display'];   // small settings kept under their own keys
+const F138_NOTICE_TEXT = 'Your set-up was restored after the phone lost it. If you were on a visit, it was not restored - contact your monitor now.';
+const F138_RESET_FAIL_TEXT = 'Reset app data could not finish, so nothing was deleted. Close the app completely, open it again and try once more.';
+let _f138Db = null;           // the open backup database, or null
+let _f138Pending = null;      // the backup timer
+let _f138LastJson = null;     // the set-up as last written (or as read at start)
+let _f138Resetting = false;   // Reset app data has started: this page never writes the copy again
+let _f138Cleared = false;     // F141-1: Reset app data has cleared localStorage: saveState writes nothing until the reload
+let _f138TooLate = false;     // the start stopped waiting: a late answer must not touch the saved state
+let _f138Start = null;        // this start's record (Copy report)
+let _f138Restored = null;     // { copyAt } when this start put the set-up back
+
+function _f138NsOk() { return typeof _storageNs === 'string' && _storageNs !== 'default' && /^[A-Za-z0-9_-]+$/.test(_storageNs); }
+function _f138When(t) { try { return _fmtDateTime12(new Date(t), false); } catch (_) { return String(t); } }
+/** A promise, or the fallback if it fails or takes longer than ms. Never rejects. */
+function _f138Within(p, ms, dflt) {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve(dflt), ms);
+    Promise.resolve(p).then(v => { clearTimeout(timer); resolve(v); }, () => { clearTimeout(timer); resolve(dflt); });
+  });
+}
+/** A blank state with the same fields as _initApp's (the restore fills in the set-up; everything live stays empty). */
+function _f138Blank() {
+  return { currentWizStep: 1, worker: {}, settings: { isAdvanced: false }, pins: { std: '', duress: '' }, activeVisit: null, pendingUploads: [],
+    locations: [], visitWelfareOverride: null, photoStore: {}, meta: { lastVehCheck: null, wofExpiry: null },
+    vehicle: { wofExpiry: '', regoExpiry: '', lastVehCheck: null }, visitDurationMinutes: 0, lastVisitedLocationId: null,
+    travelNoReportDefault: false, setupVerified: false };
+}
+/** The set-up fields of a state, or null when there is no worker name yet (nothing worth keeping). Pure. */
+function _f138Pick(st) {
+  if (!st || typeof st !== 'object' || !st.worker || typeof st.worker !== 'object' || !st.worker.name) return null;
+  const out = {};
+  F138_SETUP_FIELDS.forEach(k => { if (st[k] !== undefined) out[k] = st[k]; });
+  return out;
+}
+/** What localStorage holds right now: every key, and the raw saved state of every app on this site. Before applyConfig. */
+function _f138Snapshot() {
+  const snap = { keys: null, states: {}, err: '' };
+  try {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k !== null) keys.push(k); }
+    keys.forEach(k => { if (/_loneWorkerState$/.test(k)) snap.states[k] = localStorage.getItem(k); });
+    snap.keys = keys;
+  } catch (e) { snap.err = String(e && e.message || e); }
+  return snap;
+}
+/** The shape of an unreadable saved state, with no content: every letter shown as a and every digit as 9 (a PIN, a name or a
+ *  phone number can never appear), plus its length, a short hash and the first and last character codes. */
+function _f138Evidence(raw) {
+  const t = String(raw);
+  const mask = x => x.replace(/[A-Za-z]/g, 'a').replace(/[0-9]/g, '9').replace(/[^\x20-\x7e]/g, '?');
+  return { len: t.length, hash: _nsHash(t), firstCode: t.charCodeAt(0), lastCode: t.charCodeAt(t.length - 1), head: mask(t.slice(0, 80)), tail: mask(t.slice(-40)) };
+}
+/** One line for Diagnostics and Copy report. */
+function _f138Line(r) {
+  if (!r) return '-';
+  if (r.kind === 'reset') return 'Reset app data: set-up copy deleted (' + (r.build || '?') + ')';
+  const yn = v => v === true ? 'granted' : v === false ? 'not granted' : 'unknown';
+  const mb = v => (typeof v === 'number' && isFinite(v)) ? (v / 1048576).toFixed(1) + ' MB' : '?';
+  let s = 'start (' + (r.build || '?') + '): saved set-up ' + (r.present ? r.len + ' chars, ' + (r.read === 'ok' ? 'readable' : String(r.read).toUpperCase()) : 'MISSING') +
+    '; saved items: this app ' + (r.own == null ? '?' : r.own) + ', whole site ' + (r.site == null ? '?' : r.site) +
+    '; persistent storage ' + yn(r.persisted) + ' (asked: ' + yn(r.asked) + '); storage used ' + mb(r.usage) + ' of ' + mb(r.quota) +
+    '; copy ' + (r.copyAt ? 'from ' + _f138When(r.copyAt) : 'none') + '; restore ' + (r.restored ? 'YES' : 'no') + (r.why ? ' (' + r.why + ')' : '');
+  if (r.migrate && r.migrate !== 'already done') s += '; name move: ' + r.migrate;
+  const e = r.evidence;
+  if (e) s += '; unreadable text: ' + e.len + ' chars, hash ' + e.hash + ', codes ' + e.firstCode + '/' + e.lastCode + ', starts "' + e.head + '", ends "' + e.tail + '"';
+  return s;
+}
+/** Open (or create) this app's backup database. Resolves the database or null; never rejects, never opens the outbox. */
+function _f138Open() {
+  if (_f138Db) return Promise.resolve(_f138Db);
+  return new Promise(resolve => {
+    try {
+      if (typeof indexedDB === 'undefined' || !indexedDB || !_f138NsOk()) { resolve(null); return; }
+      const req = indexedDB.open(F138_DB_PREFIX + _storageNs, 1);
+      req.onupgradeneeded = e => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('copy')) db.createObjectStore('copy');
+        if (!db.objectStoreNames.contains('journal')) db.createObjectStore('journal', { autoIncrement: true });
+      };
+      req.onsuccess = e => {
+        const db = e.target.result;
+        db.onversionchange = () => { try { db.close(); } catch (_) {} if (_f138Db === db) _f138Db = null; };
+        _f138Db = db; resolve(db);
+      };
+      req.onerror = e => { try { if (e && e.preventDefault) e.preventDefault(); } catch (_) {} resolve(null); };
+      req.onblocked = () => resolve(null);
+    } catch (_) { resolve(null); }
+  });
+}
+/** Run fill(tx) in one transaction. Resolves true once it has COMPLETED (committed), false on any error. */
+function _f138Tx(db, stores, mode, fill, opts) {
+  return new Promise(resolve => {
+    try {
+      const tx = opts ? db.transaction(stores, mode, opts) : db.transaction(stores, mode);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = e => { try { if (e && e.preventDefault) e.preventDefault(); } catch (_) {} resolve(false); };
+      tx.onabort = () => resolve(false);
+      fill(tx);
+    } catch (_) { resolve(false); }
+  });
+}
+function _f138Get(db, store, key) {
+  return new Promise(resolve => {
+    try { const rq = db.transaction(store, 'readonly').objectStore(store).get(key); rq.onsuccess = () => resolve(rq.result || null); rq.onerror = () => resolve(null); }
+    catch (_) { resolve(null); }
+  });
+}
+function _f138All(db, store) {
+  return new Promise(resolve => {
+    try { const rq = db.transaction(store, 'readonly').objectStore(store).getAll(); rq.onsuccess = () => resolve(rq.result || []); rq.onerror = () => resolve([]); }
+    catch (_) { resolve([]); }
+  });
+}
+/** Add one journal entry and keep only the newest F138_JOURNAL_MAX. */
+function _f138JournalAdd(db, rec) {
+  return _f138Tx(db, ['journal'], 'readwrite', tx => {
+    const st = tx.objectStore('journal');
+    st.add(rec);
+    const cq = st.count();
+    cq.onsuccess = () => {
+      let extra = cq.result - F138_JOURNAL_MAX;
+      if (extra <= 0) return;
+      const cur = st.openCursor();
+      cur.onsuccess = e => { const c = e.target.result; if (c && extra > 0) { c.delete(); extra--; c.continue(); } };
+    };
+  });
+}
+/** The saved-state text a restore writes, from a copy - or null if the copy has no worker name. Never a visit (D2). */
+function _f138RestoreJson(copy) {
+  const data = JSON.parse(copy.json);
+  const setup = data && data.setup;
+  if (!setup || typeof setup !== 'object' || !setup.worker || !setup.worker.name) return null;
+  const st = _f138Blank();
+  F138_SETUP_FIELDS.forEach(k => { if (setup[k] !== undefined) st[k] = setup[k]; });
+  st.activeVisit = null; st.pendingUploads = []; st.photoStore = {};   // never a visit, an alarm or queued posts (D2)
+  return { json: JSON.stringify(st), deviceId: (typeof st.deviceId === 'string') ? st.deviceId : '', prefs: (data && data.prefs) || {} };
+}
+/**
+ * The start-up check (and restore), after applyConfig and before _initApp. snap = _f138Snapshot() from BEFORE applyConfig, so a copy
+ * made by the one-off name move (_nsMigrate) cannot hide a lost set-up. Never throws.
+ */
+async function _f138StartUp(snap) {
+  if (_f138Start) return _f138Start;   // once per page
+  const rec = { kind: 'start', t: Date.now(), build: WORKER_BUILD, ns: _storageNs, present: false, len: 0, read: '-', own: null, site: null,
+    persisted: null, asked: null, usage: null, quota: null, migrate: '', copyAt: null, restored: false, why: '', evidence: null };
+  _f138Start = rec;
+  try {
+    if (snap && snap.keys) {
+      const key = _sk('loneWorkerState');
+      rec.site = snap.keys.length;
+      rec.own = snap.keys.filter(k => k.indexOf(_storageNs + '_') === 0).length;
+      const raw = Object.prototype.hasOwnProperty.call(snap.states, key) ? snap.states[key] : null;
+      rec.present = !!raw;   // '' counts as missing, as in loadState
+      rec.len = raw ? raw.length : 0;
+      if (raw) {
+        let v = null; try { v = JSON.parse(raw); rec.read = (v && typeof v === 'object') ? 'ok' : 'not an object'; } catch (_) { rec.read = 'unreadable'; }
+        if (rec.read !== 'ok') rec.evidence = _f138Evidence(raw);   // kept BEFORE anything overwrites it
+      }
+    } else rec.why = 'localStorage could not be read' + (snap && snap.err ? ': ' + snap.err : '');
+    rec.migrate = (typeof _NS_MIGRATION !== 'undefined' && _NS_MIGRATION && _NS_MIGRATION.reason) || '';
+    const sto = (typeof navigator !== 'undefined' && navigator.storage) ? navigator.storage : null;
+    const ask = f => { try { return (sto && typeof sto[f] === 'function') ? _f138Within(sto[f](), F138_QUERY_WAIT_MS, null) : Promise.resolve(null); } catch (_) { return Promise.resolve(null); } };
+    const [db, persisted, asked, est] = await Promise.all([_f138Open(), ask('persisted'), ask('persist'), ask('estimate')]);
+    rec.persisted = (typeof persisted === 'boolean') ? persisted : null;
+    rec.asked = (typeof asked === 'boolean') ? asked : null;
+    if (est && typeof est === 'object') { rec.usage = est.usage; rec.quota = est.quota; }
+    const lost = !rec.present || rec.read !== 'ok';
+    let copy = db ? await _f138Get(db, 'copy', 'setup') : null;
+    if (copy && copy.ns !== _storageNs) copy = null;   // never another app's set-up
+    if (copy) rec.copyAt = copy.at;
+    let plan = null;
+    if (lost && copy) {
+      try { plan = _f138RestoreJson(copy); if (!plan) rec.why = 'the copy has no worker name'; } catch (e) { rec.why = 'the copy could not be read'; }
+    } else if (lost) rec.why = rec.why || (db ? 'no copy for this app' : 'backup database unavailable');
+    if (copy && !lost) _f138LastJson = copy.json;
+    if (plan && _f138TooLate) { plan = null; rec.why = 'copy found too late - not restored'; }
+    if (plan) { rec.restored = true; rec.why = 'set-up from ' + _f138When(copy.at) + ' put back, no visit'; }
+    if (db) await _f138JournalAdd(db, rec);
+    if (plan) {
+      if (_f138TooLate) {   // the start stopped waiting while the journal was written: change nothing now
+        rec.restored = false; rec.why = 'copy found too late - not restored';
+        if (db) await _f138JournalAdd(db, Object.assign({}, rec, { t: Date.now() }));
+      } else {
+        try {
+          localStorage.setItem(_sk('loneWorkerState'), plan.json);
+          if (plan.deviceId) localStorage.setItem(_sk('otg_device_id'), plan.deviceId);
+          F138_PREF_KEYS.forEach(k => { if (typeof plan.prefs[k] === 'string') localStorage.setItem(_sk(k), plan.prefs[k]); });
+          _f138Restored = { copyAt: copy.at };
+          _f138LastJson = copy.json;
+        } catch (e) {
+          rec.restored = false; rec.why = 'restore could not be saved: ' + (e && e.message || e);
+          if (db) await _f138JournalAdd(db, Object.assign({}, rec, { t: Date.now() }));
+        }
+      }
+    }
+  } catch (e) { rec.why = 'start-up check error: ' + (e && e.message || e); }
+  try { _diag('[F138-1] ' + _f138Line(rec)); } catch (_) {}
+  return rec;
+}
+/** _f138StartUp, but never longer than F138_START_WAIT_MS: after that the start goes on and a late answer changes nothing. */
+function _f138StartWait(snap) {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => { _f138TooLate = true; resolve(null); }, F138_START_WAIT_MS);
+    _f138StartUp(snap).then(r => { clearTimeout(timer); resolve(r); }, () => { clearTimeout(timer); resolve(null); });
+  });
+}
+/** After _initApp: tell the worker about a restore (D3) and make the first copy (a phone updated from __33_ or __34_ gets it now). */
+function _f138AfterInit() {
+  try {
+    if (_f138Restored) {
+      _f138Notice(F138_NOTICE_TEXT);
+      _diag('[F138-1] RESTORED - the worker was shown: ' + F138_NOTICE_TEXT, true);
+    }
+  } catch (_) {}
+  _f138BackupNow();
+}
+/** A message that stays on screen until tapped (below the alarm screen). */
+function _f138Notice(text) {
+  try {
+    const old = document.getElementById('f138Notice'); if (old) old.remove();
+    const d = document.createElement('div');
+    d.id = 'f138Notice'; d.setAttribute('role', 'alert');
+    d.style.cssText = 'position:fixed;left:12px;right:12px;top:18%;z-index:8990;background:#1e3a8a;color:#fff;font-weight:800;font-size:17px;' +
+      'line-height:1.35;text-align:center;padding:18px 16px;border-radius:14px;border:3px solid #fbbf24;box-shadow:0 10px 30px rgba(0,0,0,0.6);';
+    const p = document.createElement('div'); p.textContent = text; d.appendChild(p);
+    const tap = document.createElement('div'); tap.style.cssText = 'margin-top:12px;font-size:13px;font-weight:700;opacity:0.85;'; tap.textContent = 'Tap to close';
+    d.appendChild(tap);
+    d.addEventListener('click', () => { try { d.remove(); _diag('[F138-1] message closed by the worker'); } catch (_) {} });
+    document.body.appendChild(d);
+  } catch (_) {}
+}
+/** Called by saveState: write the copy a second later (one timer at a time). */
+function _f138BackupSoon() {
+  try {
+    if (_f138Resetting || _f138Pending) return;
+    _f138Pending = setTimeout(() => { _f138Pending = null; _f138BackupNow(); }, F138_BACKUP_DELAY_MS);
+  } catch (_) {}
+}
+/** Write the copy if the set-up changed since it was last written. Resolves true if it wrote. Never throws. */
+async function _f138BackupNow() {
+  try {
+    if (_f138Resetting || !_f138NsOk() || typeof state === 'undefined') return false;
+    const setup = _f138Pick(state);
+    if (!setup) return false;
+    const prefs = {};
+    F138_PREF_KEYS.forEach(k => { try { const v = localStorage.getItem(_sk(k)); if (v !== null) prefs[k] = v; } catch (_) {} });
+    const json = JSON.stringify({ setup, prefs });
+    if (json === _f138LastJson) return false;
+    const db = await _f138Open();
+    if (!db || _f138Resetting) return false;   // checked again after the wait: a reset that started meanwhile wins
+    const ok = await _f138Tx(db, ['copy'], 'readwrite', tx => tx.objectStore('copy').put({ ns: _storageNs, at: Date.now(), build: WORKER_BUILD, json }, 'setup'));
+    if (ok) _f138LastJson = json;
+    return ok;
+  } catch (_) { return false; }
+}
+/**
+ * Reset app data, step 1: delete this app's copy and WAIT until the deletion has committed (a "reset" entry goes in the journal
+ * in the same transaction). Resolves true when it is gone (or there can be none), false when that cannot be confirmed - then
+ * the caller deletes nothing. No localStorage is touched here.
+ */
+async function _f138Reset() {
+  _f138Resetting = true;
+  if (_f138Pending) { try { clearTimeout(_f138Pending); } catch (_) {} _f138Pending = null; }
+  try {
+    if (typeof indexedDB === 'undefined' || !indexedDB || !_f138NsOk()) return true;   // no backup database can exist
+    const db = await _f138Within(_f138Open(), F138_RESET_WAIT_MS, null);
+    if (!db) return false;
+    return await _f138Within(_f138Tx(db, ['copy', 'journal'], 'readwrite', tx => {
+      tx.objectStore('copy').delete('setup');
+      tx.objectStore('journal').add({ kind: 'reset', t: Date.now(), build: WORKER_BUILD, ns: _storageNs });
+    }, { durability: 'strict' }), F138_RESET_WAIT_MS, false);
+  } catch (_) { return false; }
+}
+/** Copy report section. */
+async function _f138Report(L) {
+  L.push('', '--- START-UP CHECK (F138-1) ---');
+  L.push('This start: ' + (_f138Start ? _f138Line(_f138Start) : 'not run'));
+  const db = await _f138Within(_f138Open(), 1500, null);
+  if (!db) { L.push('Backup database: unavailable'); return; }
+  const copy = await _f138Get(db, 'copy', 'setup');
+  L.push('Set-up copy: ' + ((copy && copy.ns === _storageNs) ? 'saved ' + _f138When(copy.at) + ' by ' + copy.build : 'none'));
+  const j = await _f138All(db, 'journal');
+  L.push('Start-up journal (' + j.length + ', newest first):');
+  j.slice().reverse().forEach(r => L.push('  ' + _f138When(r.t) + ' ' + _f138Line(r)));
 }
 
 // ============================================================================
@@ -3264,7 +3627,7 @@ function _noteFix(pos) {
   try {
     const c = pos && pos.coords;
     if (!c || !isFinite(c.latitude) || !isFinite(c.longitude)) return;
-    _lastFixInfo = { lat: c.latitude, lng: c.longitude, acc: c.accuracy, ts: Date.now() };
+    _lastFixInfo = { lat: c.latitude, lng: c.longitude, acc: c.accuracy, ts: Math.min(_fixTime(pos), Date.now()) };   // __34_ (F133-1): the fix's own time
   } catch (_) {}
 }
 
@@ -4217,7 +4580,7 @@ function buildReportForm(templateName, fieldArea) {
  if (!fieldArea) return;
  fieldArea.innerHTML = ''; 
 
- const template = state.globalForms.find(f => f.name === templateName) || 
+ const template = (state.globalForms || []).find(f => f.name === templateName) ||   // __34_ (F132-2): a phone that never synced
  { name: templateName, questions: ["[NOTE] Site Information", "[TEXT] Notes", "[SIGN] Signature"] };
  
  const questions = template.questions || [];
@@ -6021,6 +6384,7 @@ window.addEventListener('appinstalled', () => {   // __33_ (F129-1)
 // PWA SETUP
 // ============================================================================
 if ('serviceWorker' in navigator) {
+ const _swHadController = !!navigator.serviceWorker.controller;   // __34_ (F135-4)
  navigator.serviceWorker.register('sw.js')
  .then(registration => {
  console.log('Service Worker registered:', registration.scope);
@@ -6052,6 +6416,9 @@ if ('serviceWorker' in navigator) {
  // timers and alarm handling. Hold it and reload the next time the app goes to the background with
  // no visit running (see the visibilitychange handler below).
  if (typeof state !== 'undefined' && state && state.activeVisit) {
+ // __34_ (F135-4): a page that had no service worker when it loaded (first install, or just after Force App Update) is already the
+ // newest app: the first service worker taking control is not an update, so no reload is held and no X7 line is written.
+ if (!_swHadController) return;
  _swReloadPending = true;
  try { _diag('X7: app update ready - reload held until the visit ends', true); } catch (e) {}
  return;
@@ -7316,6 +7683,12 @@ async function outboxEnqueue(payload) {
  *   - Alarm-lane records are NEVER marked failed. They retry until delivered.
  *   'failed' records show in the Event Outbox panel; Flush Outbox re-queues them.
  */
+/* OTG-SW-OUTBOX-START
+ * __34_ (F135-1): everything from here to OTG-SW-OUTBOX-END is ALSO copied, exactly as it is, into sw.js by the Factory
+ * (index__15_ and later) when it makes the Worker App Pack. So the page and the background sender always use the same lane rules
+ * (_outboxIsAlarmRecord, _outboxIsVisitStart, _outboxPick), the same send (_outboxSend) and the same reply handling.
+ * Code in this block must also work inside a service worker: no DOM, no window, no app state (CONFIG, state) at load time.
+ */
 const OUTBOX_ROUTINE_MAX_SERVER_FAILS = 10;
 const OUTBOX_TIMEOUT_MS       = 30000; // plain records
 const OUTBOX_TIMEOUT_MEDIA_MS = 90000; // records carrying photos / signature
@@ -7391,17 +7764,26 @@ function _outboxUpdateRecord(db, id, mutate) {
  */
 async function _outboxSend(record) {
  const fd = new FormData();
- for (const k in record.payload) fd.append(k, record.payload[k]);
+ // __34_ (F132-1): a post made before the first fix carried the text "null" as its position; it now says "0,0" (no fix),
+ // which the backend already reads as no fix.
+ for (const k in record.payload) {
+   const v = record.payload[k];
+   fd.append(k, (k === 'Last Known GPS' && (v === null || v === undefined || v === 'null')) ? '0,0' : v);
+ }
  const p = record.payload || {};
  const hasMedia = ['Photo 1', 'Photo 2', 'Photo 3', 'Photo 4', 'Signature', 'photos']
    .some(k => p[k] && String(p[k]).length > 100);
+ // __34_ (F135-1): a "keep going" send (keepalive): the phone finishes it even if the app leaves the screen or is closed mid-send.
+ // Only small posts (the browser allows about 64 KB in flight in all, and both lanes can send at once), never photos or a signature,
+ // and only on every other try (the first try uses it), so a browser that refuses keepalive can never block a record.
+ const keepalive = !hasMedia && ((record.attempts || 0) % 2 === 0) && _outboxPayloadBytes(p) <= OUTBOX_KEEPALIVE_MAX_BYTES;
  const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
  const timer = ctrl ? setTimeout(() => ctrl.abort(), hasMedia ? OUTBOX_TIMEOUT_MEDIA_MS : OUTBOX_TIMEOUT_MS) : null;
  try {
    // No 'no-cors': the GAS reply is readable (proven by device registration).
-   const resp = await fetch(record.targetUrl || CONFIG.url, {
-     method: 'POST', body: fd, signal: ctrl ? ctrl.signal : undefined
-   });
+   const opts = { method: 'POST', body: fd, signal: ctrl ? ctrl.signal : undefined };
+   if (keepalive) opts.keepalive = true;   // __34_ (F135-1)
+   const resp = await fetch(record.targetUrl || (typeof CONFIG !== 'undefined' ? CONFIG.url : ''), opts);   // __34_: no CONFIG in sw.js
    let data = null;
    try { data = await resp.json(); }
    catch (_) { return { outcome: 'server', detail: `Unreadable reply (HTTP ${resp.status})` }; }
@@ -7414,11 +7796,146 @@ async function _outboxSend(record) {
    if (data && data.status === 'error' && !data.message) return { outcome: 'rejected', detail: 'Rejected by server (check app key)' };
    return { outcome: 'server', detail: String(data?.message || 'Unknown server reply').slice(0, 200) };
  } catch (e) {
-   return { outcome: 'retry', detail: e && e.name === 'AbortError' ? 'Timed out' : 'Network error' };
+   return { outcome: 'retry', detail: (e && e.name === 'AbortError' ? 'Timed out' : 'Network error') + (keepalive ? ' (keep-going send)' : '') };
  } finally {
    if (timer) clearTimeout(timer);
  }
 }
+
+
+/** __34_ (F135-1): the size of a post as sent, rounded up (field names, values in UTF-8, about 120 bytes per field of form overhead). */
+const OUTBOX_KEEPALIVE_MAX_BYTES = 24 * 1024;
+function _outboxPayloadBytes(p) {
+  let n = 0;
+  const enc = (typeof TextEncoder === 'function') ? new TextEncoder() : null;
+  for (const k in (p || {})) {
+    const v = String(p[k] == null ? '' : p[k]);
+    n += 120 + k.length + (enc ? enc.encode(v).length : v.length * 3);
+  }
+  return n;
+}
+
+const OUTBOX_NOTICE_MAX = 300;
+const OUTBOX_NOTICE_FALLBACK = 'This was not saved. Please phone HQ if you need help.';
+
+/** The server's notice as plain one-line text (control characters out, 300 characters at most). Pure (tested). */
+function _outboxNoticeText(n) {
+  const t = String(n == null ? '' : n).replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, OUTBOX_NOTICE_MAX);
+  return t || OUTBOX_NOTICE_FALLBACK;
+}
+
+/*
+ * __34_ (F135-1): the background sender (Background Sync, Android Chrome). The page names the request 'otg-outbox:' + its outbox
+ * database name, so a service worker only ever opens its own app's outbox (two apps on one web host have separate service
+ * workers and separate databases). It works only while the app is NOT on screen (the page does it then), sends what is waiting
+ * oldest first by the page's own lane rules, records each result as _outboxRunLane would (sentBy 'background'; a "saved nothing"
+ * reply is kept for the page to show when it is next opened), shows nothing on screen and sends no notification (DURESS stays
+ * invisible), never re-queues failed records (F100-2), and rejects while something is still waiting so the browser tries again.
+ */
+const OUTBOX_BG_TAG_PREFIX = 'otg-outbox:';
+const OUTBOX_BG_BUDGET_MS = 170000;   // no new send after this (the browser allows a background run a few minutes)
+const OUTBOX_BG_VERSION = 1;          // the page asks the service worker for it (Diagnostics: "not in this sw.js" when absent)
+
+/** Open an EXISTING outbox database by name; never creates one. Resolves the database or null. */
+function _outboxBgOpen(dbName) {
+  return new Promise(resolve => {
+    if (typeof indexedDB === 'undefined' || !/^otg-outbox-[A-Za-z0-9_-]+$/.test(String(dbName || ''))) { resolve(null); return; }
+    let req;
+    try { req = indexedDB.open(dbName); } catch (_) { resolve(null); return; }
+    req.onupgradeneeded = e => { try { e.target.transaction.abort(); } catch (_) {} };   // it did not exist: create nothing
+    req.onsuccess = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('events')) { try { db.close(); } catch (_) {} resolve(null); } else resolve(db);
+    };
+    req.onerror = e => { try { if (e && e.preventDefault) e.preventDefault(); } catch (_) {} resolve(null); };
+    req.onblocked = () => resolve(null);
+  });
+}
+
+/** Is a window of THIS app on screen? (only windows this service worker controls, inside its own folder) */
+async function _outboxBgAppOnScreen() {
+  try {
+    const scope = (self.registration && self.registration.scope) || '';
+    const wins = await self.clients.matchAll({ type: 'window' });
+    return wins.some(c => c.visibilityState === 'visible' && (!scope || String(c.url || '').indexOf(scope) === 0));
+  } catch (_) { return false; }
+}
+
+/** Write one background send's result to its record, by the same rules as _outboxRunLane. Resolves true when the queue moved on. */
+async function _outboxBgRecord(db, record, res, lane) {
+  let moved = false;
+  await _outboxUpdateRecord(db, record.id, row => {
+    if (row.status !== 'pending') { moved = true; return; }   // the app dealt with it meanwhile
+    row.attempts = (row.attempts || 0) + 1;
+    row.bgTries = (row.bgTries || 0) + 1;
+    if (res.outcome === 'sent') {
+      row.status = 'sent';
+      row.sentAt = new Date().toISOString();
+      row.sentBy = 'background';
+      if (row.lastError) row.prevError = row.lastError;
+      row.lastError = null;
+      if (res.refused) { row.refused = true; row.notice = res.notice; row.noticeShown = false; }   // shown by the app when opened
+      moved = true;
+      return;
+    }
+    row.lastError = res.detail + ' (background)';
+    if (res.outcome === 'server') row.serverFails = (row.serverFails || 0) + 1;
+    if (lane !== 'alarm' && (res.outcome === 'rejected' || (row.serverFails || 0) >= OUTBOX_ROUTINE_MAX_SERVER_FAILS)) {
+      row.status = 'failed';   // routine only, as in _outboxRunLane; alarm-lane records are never marked failed
+      moved = true;
+    }
+  });
+  return moved;
+}
+
+/** One background run. Resolves a short summary; REJECTS while something is still waiting (the browser retries with growing gaps). */
+async function _outboxBgRun(dbName) {
+  if (await _outboxBgAppOnScreen()) return 'app on screen - left to the app';
+  const db = await _outboxBgOpen(dbName);
+  if (!db) return 'no outbox';
+  const t0 = Date.now();
+  let sent = 0, waiting = false, why = '';
+  try {
+    for (let guard = 0; guard < 500; guard++) {
+      const pending = await _outboxPendingRecords(db);
+      if (!pending.length) break;
+      let lane = 'alarm', record = _outboxPick(pending, 'alarm');
+      if (!record) { lane = 'routine'; record = _outboxPick(pending, 'routine'); }
+      if (!record) { waiting = true; why = 'nothing can go yet'; break; }   // not possible with today's rules; never spin
+      if (!record.targetUrl) { why = 'a record with no server address - left to the app'; break; }
+      if (Date.now() - t0 > OUTBOX_BG_BUDGET_MS) { waiting = true; why = 'time limit'; break; }
+      if (await _outboxBgAppOnScreen()) { why = 'app back on screen'; break; }
+      const res = await _outboxSend(record);
+      const moved = await _outboxBgRecord(db, record, res, lane);
+      if (res.outcome === 'sent') sent++;
+      if (!moved) { waiting = true; why = res.detail; break; }   // one failed try ends the run; the browser decides when to retry
+    }
+  } finally {
+    try { db.close(); } catch (_) {}
+  }
+  try {
+    const wins = await self.clients.matchAll({ type: 'window' });
+    wins.forEach(c => { try { c.postMessage({ type: 'OTG_OUTBOX_CHANGED', sent: sent }); } catch (_) {} });
+  } catch (_) {}
+  if (waiting) throw new Error('outbox still waiting (' + why + '), ' + sent + ' sent');
+  return sent + ' sent' + (why ? ' (' + why + ')' : '');
+}
+
+// Wired only inside a service worker (in the page, ServiceWorkerGlobalScope does not exist).
+if (typeof ServiceWorkerGlobalScope !== 'undefined' && typeof self !== 'undefined' && self instanceof ServiceWorkerGlobalScope) {
+  self.addEventListener('sync', event => {
+    const tag = String(event.tag || '');
+    if (tag.indexOf(OUTBOX_BG_TAG_PREFIX) !== 0) return;
+    event.waitUntil(_outboxBgRun(tag.slice(OUTBOX_BG_TAG_PREFIX.length)));
+  });
+  self.addEventListener('message', event => {
+    const d = event.data || {};
+    if (d.type !== 'OTG_OUTBOX_BG?') return;
+    const port = event.ports && event.ports[0];
+    if (port) port.postMessage({ type: 'OTG_OUTBOX_BG', version: OUTBOX_BG_VERSION });
+  });
+}
+/* OTG-SW-OUTBOX-END */
 
 /** Run one lane: pick, send, record the result, schedule the next run. */
 async function _outboxRunLane(lane) {
@@ -7438,6 +7955,7 @@ async function _outboxRunLane(lane) {
 
    if (res.outcome === 'sent') {
      await _outboxUpdateRecord(db, record.id, row => {
+       if (row.status === 'sent') return;   // __34_ (F135-1): the background sender got there first
        row.status = 'sent';
        row.sentAt = new Date().toISOString();
        row.attempts = (row.attempts || 0) + 1;
@@ -7453,6 +7971,7 @@ async function _outboxRunLane(lane) {
    } else {
      let markedFailed = false;
      await _outboxUpdateRecord(db, record.id, row => {
+       if (row.status !== 'pending') return;   // __34_ (F135-1): already sent (or failed) by the background sender - leave it
        row.attempts = (row.attempts || 0) + 1;
        row.lastError = res.detail;
        if (res.outcome === 'server') row.serverFails = (row.serverFails || 0) + 1;
@@ -7533,6 +8052,7 @@ async function _outboxResume(reason, resetDelay) {
      outboxProcess();
    }
  } catch (_) { /* never block the app */ }
+ if (resetDelay) _outboxBgReport();   // __34_ (F135-1): say what the background sender did while the app was away
  _refreshUnconfirmedBanner();
 }
 
@@ -7543,10 +8063,121 @@ function _outboxWireResume() {
  setTimeout(() => _outboxResume('app start', true), 1500);
  document.addEventListener('visibilitychange', () => {
    if (document.visibilityState === 'visible') _outboxResume('foreground', true);
+   else _outboxOnHide('app in background');   // __34_ (F135-1)
  });
+ window.addEventListener('pagehide', () => _outboxOnHide('app closing'));   // __34_ (F135-1)
+ try {
+   if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => {
+     if (e && e.data && e.data.type === 'OTG_OUTBOX_CHANGED') { _refreshAlarmDeliveryCue(); _refreshUnconfirmedBanner(); }
+   });
+ } catch (_) {}
+ setTimeout(_outboxBgProbe, 2500);   // __34_ (F135-1): is background sending available on this phone?
  setInterval(() => {
    if (document.visibilityState === 'visible') _outboxResume(null, false);
  }, OUTBOX_RESUME_EVERY_MS);
+}
+
+/*
+ * __34_ (F135-1): the page side of background sending. When something is still waiting and the app goes into the background
+ * (or is closed), the app starts a send at once (a "keep going" send while the page can still run) and asks the phone for a
+ * background send (Background Sync). On Android Chrome with sw.js from Factory index__15_ or later, the service worker then runs
+ * the OTG-SW-OUTBOX block even with the app closed. iPhone: no Background Sync; the R49 retries on opening carry on as before.
+ * None of this shows anything during DURESS. Never throws.
+ */
+let _outboxBgState = 'unknown';   // 'available' | 'switched off' | 'not supported on this phone' | 'not in this sw.js' | 'unknown'
+
+function _outboxBgTag() { return OUTBOX_BG_TAG_PREFIX + 'otg-outbox-' + _storageNs; }
+
+function _outboxBgSetState(st) {
+  if (st === _outboxBgState) return;
+  const was = _outboxBgState;
+  _outboxBgState = st;
+  try { _diag('F135-1: background sending ' + st + (was === 'unknown' ? '' : ' (was ' + was + ')')); } catch (_) {}
+  try { _refreshUnconfirmedBanner(); } catch (_) {}
+}
+
+/** Ask the service worker whether it has the background sender (sw.js from Factory index__15_ or later). */
+function _outboxBgAskSw(reg) {
+  return new Promise(resolve => {
+    try {
+      const sw = (reg && reg.active) || navigator.serviceWorker.controller;
+      if (!sw || typeof MessageChannel === 'undefined') { resolve(false); return; }
+      const ch = new MessageChannel();
+      const t = setTimeout(() => resolve(false), 2000);
+      ch.port1.onmessage = e => { clearTimeout(t); resolve(!!(e && e.data && e.data.type === 'OTG_OUTBOX_BG')); };
+      sw.postMessage({ type: 'OTG_OUTBOX_BG?' }, [ch.port2]);
+    } catch (_) { resolve(false); }
+  });
+}
+
+/** At start-up: is background sending available here? Sets _outboxBgState (Diagnostics, orange bar wording). */
+async function _outboxBgProbe() {
+  try {
+    if (!('serviceWorker' in navigator)) { _outboxBgSetState('not supported on this phone'); return; }
+    const reg = await Promise.race([navigator.serviceWorker.ready, new Promise(r => setTimeout(() => r(null), 5000))]);
+    if (!reg) return;   // no service worker yet; the state stays 'unknown' (the orange bar uses the keep-it-open wording)
+    if (!('sync' in reg) || !reg.sync) { _outboxBgSetState('not supported on this phone'); return; }
+    if (!(await _outboxBgAskSw(reg))) { _outboxBgSetState('not in this sw.js'); return; }
+    let perm = '';
+    try { if (navigator.permissions && navigator.permissions.query) perm = (await navigator.permissions.query({ name: 'background-sync' })).state; } catch (_) {}
+    _outboxBgSetState(perm === 'denied' ? 'switched off' : 'available');
+  } catch (e) { try { _diag('F135-1: background check failed - ' + String((e && e.message) || e).slice(0, 120)); } catch (_) {} }
+}
+
+/** Ask the phone for a background send if anything is waiting. Resolves true when asked. */
+async function _outboxBgAsk(reason) {
+  try {
+    if (!('serviceWorker' in navigator)) return false;
+    const db = await _outboxDB();
+    const pending = await _outboxPendingRecords(db);
+    if (!pending.length) return false;
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (!reg || !reg.sync) return false;
+    await reg.sync.register(_outboxBgTag());
+    _diag('F135-1: background send requested (' + reason + ') - ' + pending.length + ' waiting');
+    return true;
+  } catch (e) {
+    const m = String((e && e.message) || e);
+    if (/disabled|denied|permission/i.test(m)) _outboxBgSetState('switched off');
+    try { _diag('F135-1: background send not available (' + reason + ') - ' + m.slice(0, 120)); } catch (_) {}
+    return false;
+  }
+}
+
+/** The app is going into the background or closing: send now (keep-going) and ask for a background send. */
+function _outboxOnHide(reason) {
+  try { outboxProcess(); } catch (_) {}
+  try { _outboxBgAsk(reason); } catch (_) {}
+}
+
+/** One Diagnostics line per post the background sender delivered, and its "saved nothing" notice, once, when the app is back. */
+async function _outboxBgReport() {
+  try {
+    const db = await _outboxDB();
+    const rows = await new Promise(resolve => {
+      const found = [];
+      const tx = db.transaction('events', 'readonly');
+      const rq = tx.objectStore('events').openCursor(null, 'prev');   // newest first; only the last 200 records are looked at
+      let seen = 0;
+      rq.onsuccess = e => {
+        const c = e.target.result;
+        if (!c || seen++ >= 200) { resolve(found); return; }
+        const r = c.value;
+        if (r && r.status === 'sent' && r.sentBy === 'background' && !r.bgLogged) found.push(r);
+        c.continue();
+      };
+      rq.onerror = () => resolve(found);
+    });
+    for (const r of rows.reverse()) {
+      const p = r.payload || {};
+      const what = p['Alarm Status'] || p.action || 'a post';
+      _diag('outbox: ' + what + ' sent in the background at ' + _fmtDateTime12(new Date(r.sentAt || Date.now()), false) +
+            ' (' + (r.bgTries || 1) + ' background tr' + ((r.bgTries || 1) === 1 ? 'y' : 'ies') + ')' + (r.refused ? ' - the server saved nothing' : ''));
+      const showNotice = r.refused && r.noticeShown === false;
+      await _outboxUpdateRecord(db, r.id, row => { row.bgLogged = true; if (showNotice) row.noticeShown = true; });
+      if (showNotice) _outboxRefusalShow(r, _outboxNoticeText(r.notice));   // never shown during DURESS (its own check)
+    }
+  } catch (_) { /* never affects delivery */ }
 }
 
 /** __21_ (R49 item 3): one diag line per failed try (first 5, then every 10th) and on a late success. */
@@ -7597,7 +8228,10 @@ async function _refreshUnconfirmedBanner() {
    let b = document.getElementById('unconfirmedBanner');
    if (duressNow()) _outboxRefusalHide();   // __30_ (S112-3): nothing unusual on screen during DURESS
    if (!kinds.length || duressNow()) { if (b) b.remove(); return; }   // re-checked after the await
-   const text = kinds.join(' and ') + ' not yet confirmed by the server - keep the app open';
+   // __34_ (F135-1): with background sending the phone keeps trying by itself; without it (iPhone) only the open app retries
+   const text = _outboxBgState === 'available'
+     ? kinds.join(' and ') + ' not yet confirmed by the server - it will keep trying in the background. Keep the app open if you can'
+     : kinds.join(' and ') + ' NOT confirmed by the server - keep the app open until this bar goes';
    if (!b) {
      b = document.createElement('div');
      b.id = 'unconfirmedBanner';
@@ -7627,14 +8261,8 @@ async function _refreshUnconfirmedBanner() {
  * reason and never mentions an alarm. Amber strip at the top (under any other banner) until the worker taps OK.
  * NEVER shown during DURESS (nothing unusual may appear on screen then) and removed if DURESS starts while it is up.
  */
-const OUTBOX_NOTICE_MAX = 300;
-const OUTBOX_NOTICE_FALLBACK = 'This was not saved. Please phone HQ if you need help.';
-
-/** The server's notice as plain one-line text (control characters out, 300 characters at most). Pure (tested). */
-function _outboxNoticeText(n) {
-  const t = String(n == null ? '' : n).replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, OUTBOX_NOTICE_MAX);
-  return t || OUTBOX_NOTICE_FALLBACK;
-}
+// __34_ (F135-1): OUTBOX_NOTICE_MAX, OUTBOX_NOTICE_FALLBACK and _outboxNoticeText() moved up into the OTG-SW-OUTBOX block
+// (the background sender in sw.js uses them too). Unchanged.
 
 function _outboxRefusalHide() {
   try { const b = document.getElementById('refusedBanner'); if (b) b.remove(); } catch (_) {}
@@ -8910,8 +9538,11 @@ async function _buildDiagReport() {
  add('Welfare checks', safe(() => { const w = _welfareSettings(); return (w.on ? 'On' : 'Off') + ' (' + w.source + '), default ' + _welfareDefaultMins() + ' min, answer time ' + w.grace + ' min'; }, '-'));   // __24_
  add('Shake level', safe(() => SHAKE_LEVELS[_shakeLevelKey()].label + ' - last practice: ' + ((state.settings && state.settings.lastPractice) || 'never'), '-'));   // __27_ (R77)
  add('Backend build (sync)', safe(() => (state.meta && state.meta.backendBuild) || 'not sent (older than __51_)', '-'));   // __24_
+ add('Background sending', safe(() => _outboxBgState, '-'));   // __34_ (F135-1)
+ add('Server check', safe(() => _backendGateText(state.meta, state.lastSyncTime, WORKER_MIN_BACKEND) ? 'older than __' + WORKER_MIN_BACKEND + '_' : (state.lastSyncTime ? 'ok' : 'no sync yet'), '-'));   // __34_ (S102)
  add('Storage name', safe(() => _storageNs + (_NS_MIGRATION ? ' - ' + _NS_MIGRATION.reason + (_NS_MIGRATION.copied ? ' (' + _NS_MIGRATION.copied + ' items from ' + _NS_MIGRATION.from + ')' : '') : ''), '-'));   // __24_ (F101-8)
  add('Device', safe(() => navigator.userAgent, '-'));
+ try { await _f138Report(L); } catch (_) { L.push('Start-up check: (unavailable)'); }   // __35_ (F138-1)
 
  L.push('', '--- VISIT ---');
  const v = safe(() => state.activeVisit, null);
@@ -8970,7 +9601,7 @@ async function _buildDiagReport() {
 
  L.push('', '--- DIAG LOG (oldest first) ---');
  try {
-  const arr = JSON.parse(localStorage.getItem(_DIAG_KEY) || '[]');
+  const arr = _diagRead();   // __34_ (F135-3)
   if (arr.length) arr.forEach(x => L.push(x)); else L.push('(empty)');
  } catch (_) { L.push('(unavailable)'); }
 
@@ -9522,9 +10153,20 @@ function clearFormsCache() {
 function clearData() {
  if (confirm('⚠️ WARNING: This will erase ALL app data including settings, locations, and queued uploads.\n\nAre you absolutely sure?')) {
  if (confirm('⚠️ FINAL WARNING: There is NO UNDO. All data will be permanently deleted.\n\nContinue?')) {
+ // __35_ (F138-1): the copy of the set-up goes FIRST, and must be gone before localStorage is cleared - otherwise the next start
+ // would put the set-up back. If that cannot be confirmed, nothing is deleted and the worker is told.
+ _f138Reset().then(ok => {
+ if (!ok) {
+ _f138Resetting = false;
+ _diag('[F138-1] Reset app data stopped: the set-up copy could not be deleted, so nothing was deleted', true);
+ _f138Notice(F138_RESET_FAIL_TEXT);
+ return;
+ }
+ _f138Cleared = true;   // __35_ (F141-1): a sync reply arriving before the reload used to write the whole set-up back
  _clearOwnStorage();   // __24_ (F101-8): this used to clear ALL storage on the host - including any other organisation's app
  showToast('🗑️ All data cleared - Reloading...');
  setTimeout(() => location.reload(), 1000);
+ });
  }
  }
 }
@@ -9554,19 +10196,86 @@ function clearData() {
  * X1 (build __15_): red banner when the code on this phone is not the worker build the Factory deployed
  * (config.json 'workerBuild'). Tapping it opens Settings, where Force App Update is.
  */
+/*
+ * __34_ (S102 version gate, F135-4): ONE red bar at the top with two possible texts.
+ *   'app'    "App out of date" (X1 / R08): this phone runs another app build than config.json names. The worker can fix it.
+ *   'server' "Server out of date": the backend's build in the sync (meta.backendBuild) is older than WORKER_MIN_BACKEND. The worker
+ *            cannot fix it, so the bar says to tell the administrator. Only after a successful sync. Each feature keeps its own
+ *            gate, so nothing stops working on an older backend - this is a warning, not a lock.
+ * 'app' wins when both apply. Neither shows during an alarm or DURESS; the bar is taken down if one starts and put back by the 15 s
+ * tick afterwards. A tap wakes the dim screen and opens Settings > Diagnostics at Force App Update ('app') or Backend Version.
+ */
+const WORKER_MIN_BACKEND = 62;
+let _redBarWant = null;   // { kind: 'app' | 'server', text } - what the bar shows whenever it may be shown
+
+/** The "Server out of date" text, or '' (no successful sync yet, or the backend is new enough). Pure (tested). */
+function _backendGateText(meta, lastSyncTime, minBuild) {
+  if (!lastSyncTime || !meta || typeof meta !== 'object') return '';
+  const m = /backend__(\d+)_/.exec(String(meta.backendBuild || ''));
+  const n = m ? parseInt(m[1], 10) : 0;
+  if (n >= minBuild) return '';
+  return '⚠️ Server out of date (server ' + (n ? '__' + n + '_' : 'older than __51_') + ', this app needs __' + minBuild + '_) - please tell your administrator. Tap for details.';
+}
+
+/** True while the red bar must not show (an alarm, the welfare alarm, PANIC or DURESS). Errs on the side of hiding. */
+function _redBarHeld() {
+  try {
+    return !!(isPanicActive || isDuressActive || (state && state.activeVisit && state.activeVisit.isDuress) || _noticeInAlarm());
+  } catch (_) { return true; }
+}
+
+/** Show, change or remove the bar to match _redBarWant and the alarm state. Never throws. */
+function _redBarSync() {
+  try {
+    const want = _redBarWant;
+    let b = document.getElementById('buildMismatchBanner');
+    if (!want || _redBarHeld()) { if (b) b.remove(); return; }
+    if (b && b.dataset.kind === want.kind && b.textContent === want.text) return;
+    if (!b) {
+      b = document.createElement('div');
+      b.id = 'buildMismatchBanner';
+      b.setAttribute('role', 'alert');
+      b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#b91c1c;color:#fff;font-weight:800;font-size:12px;text-align:center;padding:10px 12px;';
+      b.onclick = () => _redBarTap();
+      document.body.appendChild(b);
+    }
+    b.dataset.kind = want.kind;
+    b.textContent = want.text;
+  } catch (_) {}
+}
+
+/** F135-4: wake the dim screen, open Settings > Diagnostics, and bring Force App Update (or Backend Version) into view. */
+function _redBarTap() {
+  const b = document.getElementById('buildMismatchBanner');
+  const kind = (b && b.dataset.kind) || 'app';
+  try { _diag('F135-4: red bar tapped (' + kind + ')' + (isBatterySaverActive ? ' - dim screen woken' : '')); } catch (_) {}
+  try { if (typeof dimTimer !== 'undefined') clearTimeout(dimTimer); deactivateBatterySaver(); } catch (_) {}
+  try { navigate('settings'); } catch (_) {}
+  try {
+    const panel = document.getElementById('diagnosticsPanel');
+    if (panel && panel.classList.contains('hidden')) toggleDiagnostics();
+    const target = document.getElementById(kind === 'server' ? 'backendVersion' : 'btnForceAppUpdate');
+    if (target) setTimeout(() => { try { target.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) {} }, 150);
+  } catch (_) {}
+}
+
+/** S102: the 15 s tick (and start-up) - work out the server text when the app text is not up, then sync the bar. */
+function _redBarTick() {
+  try {
+    if (!_redBarWant || _redBarWant.kind !== 'app') {
+      const t = (typeof state !== 'undefined' && state) ? _backendGateText(state.meta, state.lastSyncTime, WORKER_MIN_BACKEND) : '';
+      const was = _redBarWant ? _redBarWant.text : '';
+      _redBarWant = t ? { kind: 'server', text: t } : null;
+      if (t !== was) { try { _diag('S102: ' + (t ? 'server out of date - ' + ((state.meta && state.meta.backendBuild) || 'no build sent') : 'server check ok')); } catch (_) {} }
+    }
+    _redBarSync();
+  } catch (_) {}
+}
+
 function _showBuildMismatch(deployed) {
  try { _diag('X1: build mismatch - running ' + WORKER_BUILD + ', deployed ' + deployed, true); } catch (e) {}
- const show = () => {
-   if (document.getElementById('buildMismatchBanner')) return;
-   const b = document.createElement('div');
-   b.id = 'buildMismatchBanner';
-   b.setAttribute('role', 'alert');
-   b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#b91c1c;color:#fff;font-weight:800;font-size:12px;text-align:center;padding:10px 12px;';
-   b.textContent = '⚠️ App out of date (running ' + WORKER_BUILD + ', deployed ' + deployed + ') - tap here, then Force App Update';
-   b.onclick = () => { try { navigate('settings'); } catch (e) {} };
-   document.body.appendChild(b);
- };
- if (document.body) show(); else document.addEventListener('DOMContentLoaded', show);
+ _redBarWant = { kind: 'app', text: '⚠️ App out of date (running ' + WORKER_BUILD + ', deployed ' + deployed + ') - tap here, then Force App Update' };
+ if (document.body) _redBarSync(); else document.addEventListener('DOMContentLoaded', _redBarSync);
 }
 
 // ====== __31_ (S117-D2, F118-6): VERSION RE-CHECK ======
@@ -9774,7 +10483,7 @@ async function updateOutboxStatus() {
  try {
   const box = document.getElementById('diagLogBox');
   if (box) {
-   const arr = JSON.parse(localStorage.getItem('otg_f743_diag') || '[]');
+   const arr = _diagRead();   // __34_ (F135-3)
    box.textContent = arr.length ? arr.join('\n') : '(empty)';
   }
  } catch (_) {}
@@ -11461,6 +12170,7 @@ function initSlidePill(pillId, thumbId, labelId, onComplete) {
  let startClientX = 0;
  let maxSlide = 0;
  let _lastProgress = 0;   // __33_ (S130-D2): how far the last slide got
+ let _moves = 0, _furthest = 0;   // __34_ (F135-2): touchmove events seen this slide, and the furthest the finger went (px)
 
  function getClientX(e) { return e.touches ? e.touches[0].clientX : e.clientX; }
 
@@ -11483,6 +12193,7 @@ function initSlidePill(pillId, thumbId, labelId, onComplete) {
  gestureValid = true;
  startClientX = getClientX(e);
  _lastProgress = 0;
+ _moves = 0; _furthest = 0;   // __34_ (F135-2)
  if (pillId === 'btnStart') { try { _diag('[F101-1] btnStart slide started ' + _f101State()); } catch (_) {} }   // __33_ (S130-D2)
  thumb.style.transition = 'none';
  e.preventDefault();
@@ -11494,13 +12205,15 @@ function initSlidePill(pillId, thumbId, labelId, onComplete) {
  thumb.style.transform = `translateX(${delta}px)`;
  const progress = delta / maxSlide;
  _lastProgress = progress;
+ _moves++; try { _furthest = Math.max(_furthest, Math.abs(getClientX(e) - startClientX)); } catch (_) {}   // __34_ (F135-2)
  if (label) label.style.opacity = String(Math.max(0, 1 - progress * 1.3));
  if (progress >= 0.85) completeSlide();
  }
 
- function onEnd() {
+ function onEnd(e) {
  if (!isSliding) return;
- if (pillId === 'btnStart') { try { _diag('[F101-1] btnStart released at ' + Math.round((_lastProgress || 0) * 100) + '% (85% starts)'); } catch (_) {} }   // __33_ (S130-D2)
+ // __33_ (S130-D2); __34_ (F135-2): also how the touch ended, how many moves arrived, how far the finger went and where the pill sits
+ if (pillId === 'btnStart') { try { const _r = pill.getBoundingClientRect(); _diag('[F101-1] btnStart released at ' + Math.round((_lastProgress || 0) * 100) + '% (85% starts) - ' + ((e && e.type) || '?') + ', ' + _moves + ' moves, furthest ' + Math.round(_furthest) + ' px, pill bottom ' + Math.round(_r.bottom) + ' of ' + window.innerHeight + ' px'); } catch (_) {} }
  isSliding = false;
  gestureValid = false;
  thumb.style.transition = 'transform 0.3s ease';
@@ -12219,6 +12932,7 @@ function _foregroundSync() {
 /** A notice held back by an alarm or a prompt is tried again here; one already on screen is left alone. */
 function _noticeRetry() {
   try { _versionRecheck('timer'); } catch (_) {}   // __31_ (S117-D2): the 15 s tick; the re-check itself is throttled to every 30 minutes
+  try { _redBarTick(); } catch (_) {}   // __34_ (S102, F135-4): the red bar follows the server check and the alarm state (first check within 15 s of start-up)
   try {
     if (document.visibilityState && document.visibilityState !== 'visible') return;
     const m = document.getElementById('noticeModal');
