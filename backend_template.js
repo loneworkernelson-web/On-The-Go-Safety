@@ -192,6 +192,34 @@
  *   - Settings tab: two new keys added with their defaults (existing values never changed); Health email shows them.
  *   - Contact escalation (tiers, Critical ladder, col AA claims, All Clear audience) is unchanged.
  *
+ * __63_ (session 145, 20 Nov 2026, Opus 5.5 High) - NO-VISIT ALARM REPEATS, POSITION FOLLOW-UP, NEW VISIT BEHIND AN ALARM,
+ *        ALARM STATE IN THE SYNC. Design: Russell (HANDOVER_145 section 5, S144-D2, S144-D5 to S144-D8).
+ *   - BE1 (F144-1): an open alarm row with NO due time (a PANIC / DURESS / SOS raised with no visit running) used to alert the
+ *     contacts once (the post) and never again - the checker skipped rows with a blank col U on purpose. It now repeats on the
+ *     Critical Timing pattern: the post's own alert is step 1 (claimed in col AA, keyed to the time the post arrived, marked
+ *     SENT once the alert has gone), step 2 "SECOND ALERT" at +5 min, step 3 "FINAL NOTICE" at +10 min, both contacts, then
+ *     nothing more. Same rules as the Critical Timing ladder: one step per run, claimed before send, re-sent once 3 min after
+ *     an unconfirmed claim. Col K is never written (PANIC / DURESS stay). A later alarm post on the row (a DURESS after a
+ *     PANIC) alerts at once as before and restarts the repeats from its own time. Stops when the row is closed (PIN clear,
+ *     HQ resolve, a hand edit to a non-alarm status) or is no longer the worker's latest row (a new visit - see BE3). An open
+ *     alarm row with no repeat memory (open before __63_, or a failed claim) is adopted only if its col A is under 15 minutes
+ *     old (repeats then run from the adoption time); an older one is left as before.
+ *   - BE2 (S144-D2): when the first real position arrives (a pulse or any post) on an open PANIC / DURESS / SOS row whose alarm
+ *     alert went out with no position, ONE follow-up goes to both contacts: a push to each contact's ntfy topic, an email to a
+ *     contact with no topic or whose push was not accepted. No SMS. Notes tags record it: "[NO GPS IN ALERT ...]" when an alarm
+ *     alert starts with no position, "[GPS SENT TO CONTACTS ...]" when a position has reached them (claimed before send). Also
+ *     on an alarm raised during a visit. what3words only through the proxy (_w3wForPush_, F118-2). Sent after the lock.
+ *   - BE3 (S144-D7): a new visit (ARRIVED / TRAVELLING) started while the worker's latest row is an open alarm with no due time:
+ *     an email to the Health address (+ ADMIN_ALERT_TOPIC push), a "[NEW VISIT STARTED ...]" note on the old row, Audit
+ *     handleWorkerPost:new-visit-behind-alarm. The old row is NOT closed; its repeats stop (the checker reads the latest row
+ *     only) and the Monitor's Resolve cannot reach it, so the email says to close it by hand. Once per old row.
+ *   - BE4 (S144-D8): GET sync takes an optional alarmId (the phone's saved alarm's Visit ID = the outbox key of the post that
+ *     made the row). The reply gains meta.alarmState = { id, state }: 'open' (the row is open and col K is an alarm, rank 2+),
+ *     'resolved' (closed, or col K no longer an alarm), 'not-found' (no row with that Visit ID for this worker), 'error'. Only
+ *     when alarmId is sent; older phones see nothing new. No new POST action (F119-2).
+ *   - Unchanged: pulses never write col K; PIN entry is the only phone clearance path; one All Clear per clear (the All Clear
+ *     audience reads col K and due-time keyed col AA entries, so the BE1 entries change nothing there); in-visit ladders.
+ *
  * __62_ (session 131, 17 Nov 2026, Opus 5.5 high) - BLANK DUE TIME, ORG IN THE PUSH, NOTICE CHECK = HEARD, REAL FIX TIME,
  *        TIGHTER TRAIL ROUTE. Design: Russell (HANDOVER_130 section 6a, S126-D1 option B, S126-D2, S127-D1).
  *   - F125-8: an open visit or trip row whose due time (col U) is BLANK used to be skipped by the overdue checker without a
@@ -589,7 +617,7 @@ function doGet(e) {
       }
       if(p.test) return (p.key === CONFIG.MASTER_KEY) ? sendResponse(e, {status:"success"}) : sendResponse(e, {status:"error"});
       if(p.key === CONFIG.MASTER_KEY && !p.action) return sendResponse(e, _dashboardExtras_(getDashboardData()));   // __55_ (R75): + groups, notices
-      if(p.action === 'sync') return (p.key === CONFIG.MASTER_KEY || p.key === CONFIG.WORKER_KEY) ? sendResponse(e, getSyncData(p.worker, p.deviceId, p.key === CONFIG.MASTER_KEY)) : sendResponse(e, {status:"error"});   // __59_ (S3-3)
+      if(p.action === 'sync') return (p.key === CONFIG.MASTER_KEY || p.key === CONFIG.WORKER_KEY) ? sendResponse(e, getSyncData(p.worker, p.deviceId, p.key === CONFIG.MASTER_KEY, p.alarmId)) : sendResponse(e, {status:"error"});   // __59_ (S3-3); __63_ (BE4) alarmId
       if(p.action === 'noticeCheck') return (p.key === CONFIG.MASTER_KEY || p.key === CONFIG.WORKER_KEY) ? sendResponse(e, handleNoticeCheck_(p.worker, p.deviceId, p.key === CONFIG.MASTER_KEY)) : sendResponse(e, {status:"error"});   // __59_ (S3-3)   // __57_: ids only, read only
       if(p.action === 'getGlobalForms') return sendResponse(e, getGlobalForms());
       if(p.action === 'viewProcedures' && p.siteName) {
@@ -1369,6 +1397,7 @@ function handleWorkerPost(p) {
     let criticalBridgeSuppressed = false; // merge: server ladder already alerting for this visit
     let _wfMissDone = false;     // __50_ (R03): a missed welfare check was escalated by the welfare path (no Critical bridge)
     let _mergeMark = null;       // __43_: the phone-merged BREACH claim, marked '|SENT' once its alerts have gone
+    let _idleMark = null;        // __63_ (BE1): step 1 of a no-visit alarm's repeats, marked '|SENT' once the alert has gone
     let _ledgerRow = null, _ledgerNew = false;   // __45_ (ledger): the Visits row this post wrote, and whether it was new
     // __44_ (Decision A / F87-3 / HANDOVER_84 item 2): a form record goes to the Forms tab and never writes the trip row.
     const _formRoute = isNoteToSelf ? null : _formRouteFor_(sheet, workerName, p);
@@ -1535,6 +1564,9 @@ function handleWorkerPost(p) {
                             sheet.getRange(targetRow, 15).setValue(_cell_(p['Last Known GPS'])); // col O: Last Known GPS
                             sheet.getRange(targetRow, 16).setValue((_fixAt || ts).toISOString());    // col P: GPS Timestamp (__62_ F126-4: the fix time)
                         }
+                        // __63_ (BE1, BE2): an alarm post on a row with no due time starts the repeats; the first real position
+                        // after an alarm alert sent without one goes to the contacts once. Never throws.
+                        _idleMark = _alarmPostHooks_(sheet, targetRow, rowData, p, ts, _incomingClears, _fixAt);
                         if (p['Visit Report Data']) sheet.getRange(targetRow, headers.indexOf("Visit Report Data") + 1).setValue(_cell_(p['Visit Report Data']));
                         const deptCol = headers.indexOf("Anticipated Departure Time");
                         // __42_ B3: on an existing row the due time only moves LATER (extend, PIN clear after due).
@@ -1608,6 +1640,8 @@ function handleWorkerPost(p) {
 const emgPhone = p['Emergency Contact Number'] || p['Emergency Contact Phone'] || "";
 const escPhone = p['Escalation Contact Number'] || p['Escalation Contact Phone'] || "";
 
+// __63_ (BE3): a new visit started while the worker's latest row is an open alarm with no due time - HQ told, note on that row
+if (!rowUpdated && isNewVisit && _statusAsSent !== 'PRE_VISIT') _newVisitBehindAlarm_(sheet, workerName, p, ts);
 if (!rowUpdated) {
     const row = [
         ts.toISOString(), 
@@ -1645,6 +1679,7 @@ if (!rowUpdated) {
     _audit_('handleWorkerPost:new', workerName, sheet.getLastRow(), '', p['Alarm Status'], p['Alarm Status'], p.idempotencyKey, 'new row');
     _welfareArm_(sheet, sheet.getLastRow(), p, ts);   // __50_ (R03): col AD when welfare checks are On for this visit
     _ledgerRow = sheet.getLastRow(); _ledgerNew = true;   // __45_ (ledger)
+    _idleMark = _alarmPostNewRow_(sheet, sheet.getLastRow(), p, ts, workerName);   // __63_ (BE1, BE2): never throws
 }
         // __45_ (Forms ledger): every post that carries report data also gets a Forms row, so Forms holds every report
         // (filter by Template). The Visits row above is written exactly as before (Travel Report / Monthly Stats read it).
@@ -1672,7 +1707,7 @@ if (!rowUpdated) {
         console.log('Critical Timing bridge: server ladder already started for ' + workerName + ' - no extra alert.');
     } else if(p['Alarm Status'].includes("EMERGENCY") || p['Alarm Status'].includes("PANIC") || p['Alarm Status'].includes("DURESS")) {
         p['Visit Notes'] = p['Visit Notes'] || existingVisitNotes;
-        _queueImmediateAlert_(p, _mergeMark);   // __43_: sent after the lock is released
+        _queueImmediateAlert_(p, _mergeMark || _idleMark);   // __43_: sent after the lock is released; __63_ (BE1) step 1 marked SENT
     } else if (p['Alarm Status'].includes("OVERDUE ALARM") && p['Critical Timing'] === 'true' && !_wfMissDone) {   // __50_: not after a welfare miss
         // Critical timing OVERDUE ALARM — fire ntfy immediately via the doPost execution context,
         // which can reach ntfy.sh. Standard (non-critical) OVERDUE ALARM escalation continues to
@@ -2477,6 +2512,20 @@ function triggerAlerts(p, type) {
         noteToContact = '';
     }
 
+    // __63_ (BE1): the repeat (+5) and final notice (+10) of an alarm raised with no visit running. statusLabel feeds the push
+    // title, the email subject and the SMS, so it carries the message alone.
+    const _idleRep = (status.includes('DURESS') || status.includes('PANIC') || status.includes('SOS'))
+        ? (status.includes('FINAL NOTICE') ? 3 : status.includes('REPEAT') ? 2 : 0) : 0;
+    const _idleAt = _idleRep ? _alertDue_(p['Alarm Raised At']) : null;
+    const _idleClock = _idleAt ? _clockText_(_idleAt) : '';
+    if (_idleRep === 3) {
+        statusLabel  = 'FINAL NOTICE - ' + statusLabel + ' - STILL NOT CLEARED - NO FURTHER ALERTS';
+        whatHappened = `<strong>FINAL NOTICE - the alarm ${_hWorkerName} raised${_idleClock ? ' at ' + _h_(_idleClock) : ''} has still not been cleared.</strong> This is the third and final automatic alert. <strong>No further alerts will be sent - please act now.</strong><br><br>` + whatHappened;
+    } else if (_idleRep === 2) {
+        statusLabel  = 'SECOND ALERT - ' + statusLabel + ' - STILL NOT CLEARED';
+        whatHappened = `<strong>SECOND ALERT - the alarm ${_hWorkerName} raised${_idleClock ? ' at ' + _h_(_idleClock) : ''} has not been cleared.</strong> One final notice will follow in 5 minutes if it is still not cleared.<br><br>` + whatHappened;
+    }
+
     // __50_ (R03): welfare wording replaces the "did not check out" text of the ladder steps.
     if (_wfAt) {
         const _wfFinal = status.includes('CRITICAL TIMING FINAL NOTICE'), _wfRepeat = status.includes('CRITICAL TIMING REPEAT');
@@ -2542,6 +2591,8 @@ function triggerAlerts(p, type) {
     const _w3wPush = hasValidGps ? _w3wForPush_(gpsLat, gpsLng, workerName) : null;
     const ntfyMessage = [
         status.includes('DURESS') ? _duressCallLine : '',   // __47_ (R45)
+        _idleRep === 3 ? `Final notice: the alarm raised${_idleClock ? ' at ' + _idleClock : ''} is still not cleared. No further alerts will be sent.` :   // __63_ (BE1)
+        _idleRep === 2 ? `Second alert: the alarm raised${_idleClock ? ' at ' + _idleClock : ''} is still not cleared.` : '',
         _wfAt ? `Did not answer a welfare check at ${_wfClock}${_wfMin >= 1 ? ' (' + _wfMin + ' min ago)' : ''}. Call ${workerFirst} now.` :   // __50_ (R03)
         (_overMin !== null) ? `${isTravel ? 'Expected to arrive' : 'Was due'} ${_dueClock} - ${_overMin >= 1 ? 'now ' + _overMin + ' min overdue' : 'overdue now'}. Call ${workerFirst} now.` : '',   // __46_ (R36); __47_ (R51) trips
         (_overMin !== null && _stdTier === 4) ? 'This is the final automatic alert.' : '',
@@ -2980,6 +3031,12 @@ function _checkOverdueLocked_(sends, warns) {
             const dueTimeStr = entry[20]; 
             const isClosed = status.includes("DEPARTED") || status.includes("COMPLETED") || status.includes("DATA_ENTRY_ONLY") || status.includes("USER_SAFE");
             
+            // __63_ (BE1, F144-1): an open alarm row with no due time (PANIC / DURESS / SOS raised with no visit running)
+            // repeats at +5 and sends a final notice at +10 (col AA, keyed to the alarm's start). Before, it was skipped.
+            if (!isClosed && !dueTimeStr && _alarmRank_(status) >= 4) {
+                _idleAlarmLadder_(sheet, latest[worker].r, entry, worker, status, now, sends);
+                return;
+            }
             // __62_ (F125-8): an open VISIT row with a blank due time was skipped here without a word, so nothing would alert
             // the contacts. Same HQ alert as an unreadable due time. Rows that legitimately have no due time are left alone.
             if (!isClosed && !dueTimeStr && _dueNeeded_(status)) {
@@ -4675,7 +4732,7 @@ function cleanupPrivateSentNotes() {
  * REFINED: getSyncData with Unified Targeting
  * Logic: Pulls worker groups and applies a single Targeting Engine to filter all data.
  */
-function getSyncData(workerName, deviceId, isHQ) {
+function getSyncData(workerName, deviceId, isHQ, alarmId) {   // __63_ (BE4): alarmId optional
     // 1. THE TARGETING ENGINE - __55_ (R75): one shared copy, so the broadcast push picks exactly the same workers
     const isAuthorised = _targetMatch_;
 
@@ -4794,6 +4851,8 @@ function getSyncData(workerName, deviceId, isHQ) {
     
     meta.settings = _settingsForPhone_();   // __48_ (R04, R33): the Settings tab; the phone uses it before config.json
     meta.backendBuild = TEMPLATE_BUILD;     // __51_: worker __24_ posts WELFARE_MISSED only to a backend that knows it
+    // __63_ (BE4): the state of the phone's saved alarm, only when the phone asks (older phones send no alarmId)
+    if (alarmId !== undefined && alarmId !== null && String(alarmId).trim() !== '') meta.alarmState = _alarmStateFor_(workerName, alarmId);
     return {sites, forms, cachedTemplates, meta, version: CONFIG.VERSION};
 }
 // __55_ (R75): handleBroadcast() now lives in section __55_ at the end of the file (master key, target, phone pushes).
@@ -5629,7 +5688,7 @@ function _formsGps_(sheet, rowNum, p) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__62_';
+const TEMPLATE_BUILD = 'backend__63_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
@@ -8765,4 +8824,388 @@ function _textKeepRow_(idx) {
             return _cell_(v);
         });
     };
+}
+
+// ==========================================
+// __63_ (session 145, 20 Nov 2026, Opus 5.5 High) - NO-VISIT ALARM REPEATS (BE1), POSITION FOLLOW-UP (BE2), NEW VISIT
+// BEHIND AN ALARM (BE3), ALARM STATE IN THE SYNC (BE4). Design: Russell, HANDOVER_145 section 5.
+// ==========================================
+
+// ---------------------------------------------------------------- BE1: repeats for an alarm raised with no visit running
+
+// Col AA labels for a no-due-time alarm row: "<alarm start ISO>|<step>|<label>|<claim ISO>[|RESEND][|SENT]". Kept apart from
+// the Critical Timing and standard labels; every other reader of col AA keys on the row's due time, which these rows do not have.
+const IDLE_ALARM_LABELS     = ['ALARM', 'ALARM REPEAT', 'ALARM FINAL NOTICE'];
+const IDLE_ALARM_REPEAT_MIN = 5;                  // step 2 ("SECOND ALERT") this many minutes after the alarm's start
+const IDLE_ALARM_FINAL_MIN  = 10;                 // step 3 ("FINAL NOTICE"), then nothing more
+const IDLE_ALARM_ADOPT_MS   = 15 * 60 * 1000;     // an open alarm row with no repeat memory is adopted only if col A is newer
+
+/** __63_ (BE1): 'DURESS' or 'PANIC' (SOS is worded as PANIC by triggerAlerts) - the word the repeats carry. */
+function _idleAlarmKind_(status) {
+    return String(status == null ? '' : status).toUpperCase().includes('DURESS') ? 'DURESS' : 'PANIC';
+}
+
+/**
+ * __63_ (BE1): claim step 1 of the repeats for an alarm post on a row with no due time, keyed to the time the post arrived.
+ * Returns the mark { rowNum, worker, claimVal } that _queueImmediateAlert_ marks '|SENT' once the alert has gone, or null.
+ * worker = the row's own col C text (the mark-sent check compares it exactly). Never throws (a failed claim: Audit row; the
+ * checker adopts the row on its next run while col A is recent).
+ */
+function _idleAlarmClaimStart_(sheet, rowNum, colC, ts, source) {
+    const cv = _ladderMemClaim_(sheet, rowNum, ts, 1, source, colC, IDLE_ALARM_LABELS);
+    return cv ? { rowNum: rowNum, worker: colC, claimVal: cv } : null;
+}
+
+/**
+ * __63_ (BE1): the checker's step for an open alarm row with no due time. Called under the script lock; the alert is pushed
+ * onto `sends` (sent after release, marked '|SENT' by _runLadderSends_). One step per run.
+ */
+function _idleAlarmLadder_(sheet, rowNum, entry, worker, status, now, sends) {
+    const memRaw = String(entry[LADDER_MEM_COL - 1] || '').trim();
+    const parts = memRaw.split('|');
+    const isIdle = IDLE_ALARM_LABELS.indexOf(String(parts[2] || '').trim()) > -1;
+    const startMs = isIdle ? new Date(parts[0]).getTime() : NaN;
+    const mem = (isIdle && !isNaN(startMs)) ? _ladderMemInfo_(memRaw, parts[0]) : null;
+    const nowMs = now.getTime();
+    if (!mem || mem.step < 1) {
+        // No repeat memory: open before __63_, or step 1's claim failed. Adopt it only while the phone is recent.
+        const lastMs = _lastHeardMs_(entry[0]);
+        if (lastMs === null || nowMs - lastMs > IDLE_ALARM_ADOPT_MS) return;   // an old open row: left as before
+        const nowIso = now.toISOString();
+        const val = nowIso + '|1|' + IDLE_ALARM_LABELS[0] + '|' + nowIso + '|ADOPTED|SENT';
+        try {
+            const hdr = sheet.getRange(1, LADDER_MEM_COL);
+            if (!String(hdr.getValue() || '').trim()) hdr.setValue(LADDER_MEM_HEADER);
+            sheet.getRange(rowNum, LADDER_MEM_COL).setValue(val);
+            _audit_('alarm-repeat:adopt', worker, rowNum, status, '', '', '',
+                    'open alarm row with no due time and no repeat memory (col AA "' + memRaw.substring(0, 80) + '") - repeats run from now: ' +
+                    'second alert at +' + IDLE_ALARM_REPEAT_MIN + ' min, final notice at +' + IDLE_ALARM_FINAL_MIN + ' min');
+        } catch (e) {
+            _audit_('alarm-repeat:adopt-FAILED', worker, rowNum, status, '', '', '', String(e).substring(0, 200));
+        }
+        return;
+    }
+    const diffMins = (nowMs - startMs) / 60000;
+    const sent = Math.min(mem.step, 3);
+    let next = 0;
+    if (sent === 1 && diffMins >= IDLE_ALARM_REPEAT_MIN) next = 2;
+    else if (sent === 2 && diffMins >= IDLE_ALARM_FINAL_MIN) next = 3;
+    const kind = _idleAlarmKind_(status);
+    if (next) {
+        const st = _idleAlarmStatus_(kind, next);
+        _audit_('alarm-repeat', worker, rowNum, status, st, '', '',
+                'diff=' + diffMins.toFixed(1) + 'm AA="' + memRaw + '" sent=' + sent + ' -> sending step ' + next + ' (col K not written)');
+        const claimVal = _ladderMemClaim_(sheet, rowNum, new Date(startMs), next, 'alarm-repeat', worker, IDLE_ALARM_LABELS);
+        sends.push({ src: 'alarm-repeat', worker: worker, rowNum: rowNum, step: next, status: st, claimVal: claimVal,
+                     job: _idleAlarmJob_(sheet, entry, kind, next, startMs) });
+    } else if (_ladderResendDue_(mem, nowMs)) {
+        const st = _idleAlarmStatus_(kind, sent);
+        _audit_('alarm-repeat:resend', worker, rowNum, status, st, '', '',
+                'step ' + sent + ' claimed at ' + new Date(mem.claimMs).toISOString() + ' was never marked sent - re-sending once');
+        const claimVal = _ladderMemClaim_(sheet, rowNum, new Date(startMs), sent, 'alarm-repeat', worker, IDLE_ALARM_LABELS, true);
+        sends.push({ src: 'alarm-repeat', worker: worker, rowNum: rowNum, step: sent, status: st, resend: true, claimVal: claimVal,
+                     job: _idleAlarmJob_(sheet, entry, kind, sent, startMs) });
+    }
+}
+
+/** __63_ (BE1): the alert status text for a step: 'PANIC', 'PANIC REPEAT', 'PANIC FINAL NOTICE' (DURESS likewise). */
+function _idleAlarmStatus_(kind, step) {
+    return step >= 3 ? kind + ' FINAL NOTICE' : step === 2 ? kind + ' REPEAT' : kind;
+}
+
+/** __63_ (BE1): the alert job for a step, built from the row (col O = the newest position), both contacts. No writes. */
+function _idleAlarmJob_(sheet, entry, kind, step, startMs) {
+    const job = _escalationPayload_(sheet, entry, _idleAlarmStatus_(kind, step), true);
+    job.payload['Alarm Raised At'] = new Date(startMs).toISOString();
+    // _escalationPayload_ and triggerAlerts match the Staff name exactly; a row whose col C differs in case ("rusty ") would
+    // lose the push topics. Fill them from Staff ignoring case and outer spaces (email and SMS come from the row).
+    if (!job.payload['Emergency Contact Ntfy'] || !job.payload['Escalation Contact Ntfy']) {
+        const t = _contactTopics_(entry[2]);
+        if (!job.payload['Emergency Contact Ntfy']) job.payload['Emergency Contact Ntfy'] = t.emg;
+        if (!job.payload['Escalation Contact Ntfy']) job.payload['Escalation Contact Ntfy'] = t.esc;
+    }
+    return job;
+}
+
+// ---------------------------------------------------------------- BE2: the position follow-up (and the BE1 hooks on a post)
+
+const GPS_PENDING_TAG = '[NO GPS IN ALERT';        // Notes: an alarm alert went out with no position
+const GPS_SENT_TAG    = '[GPS SENT TO CONTACTS';   // Notes: a position has reached the contacts since (the follow-up, or a later alert)
+
+/** __63_ (BE2): is a follow-up owed? True when the newest pending tag is newer than the newest sent tag. */
+function _gpsPending_(notes) {
+    const s = String(notes == null ? '' : notes);
+    const a = s.lastIndexOf(GPS_PENDING_TAG);
+    return a > -1 && a > s.lastIndexOf(GPS_SENT_TAG);
+}
+
+/** __63_: add a tag on its own line to a row's Notes (col L), reading the cell as it is now. Returns the new text. */
+function _notesAppend_(sheet, rowNum, tag) {
+    const cur = String(sheet.getRange(rowNum, 12).getValue() || '');
+    const val = (cur + '\n' + tag).trim();
+    sheet.getRange(rowNum, 12).setValue(_cell_(val));
+    return val;
+}
+
+/**
+ * __63_ (BE1, BE2): called by handleWorkerPost after it has written an EXISTING row (lock held). Returns the BE1 step 1 mark
+ * (or null). Never throws.
+ *  - an alarm post (PANIC / DURESS / SOS) on a row with no due time claims step 1 of the repeats (a later alarm post restarts them)
+ *  - an alarm post that starts a new alarm with no real position adds the pending tag
+ *  - an alarm post with a real position while a follow-up is owed: the alert itself carries it - sent tag, no follow-up
+ *  - any other non-clearing post with a real position on an open alarm row while a follow-up is owed: sent tag (claim), then
+ *    the follow-up is queued (sent after the lock)
+ */
+function _alarmPostHooks_(sheet, rowNum, rowData, p, ts, clears, fixAt) {
+    let mark = null;
+    const worker = String(rowData[2] == null ? '' : rowData[2]);
+    try {
+        const inc = String(p['Alarm Status'] || '').toUpperCase();
+        const isAlarmPost = _alarmRank_(inc) >= 4;   // PANIC / SOS / DURESS: doPost alerts the contacts at once
+        const exRank = _alarmRank_(String(rowData[10] || ''));
+        const realFix = _isRealFix_(p['Last Known GPS']);
+        const tstr = _fmtLocal_(ts, 'h:mm:ss a');
+        if (isAlarmPost && !rowData[20] && !p['Anticipated Departure Time']) {
+            mark = _idleAlarmClaimStart_(sheet, rowNum, worker, ts, 'handleWorkerPost:alarm-start');
+        }
+        if (isAlarmPost) {
+            if (!realFix && exRank < 4) {
+                _notesAppend_(sheet, rowNum, GPS_PENDING_TAG + ' ' + tstr + ']');
+                _audit_('alarm-gps:pending', worker, rowNum, rowData[10], '', p['Alarm Status'], p.idempotencyKey,
+                        'alarm alert sent with no position - the first real position will be sent to the contacts once');
+            } else if (realFix && _gpsPending_(rowData[11])) {
+                _notesAppend_(sheet, rowNum, GPS_SENT_TAG + ' ' + tstr + ' - with the ' + _idleAlarmKind_(inc) + ' alert]');
+                _audit_('alarm-gps:with-alert', worker, rowNum, rowData[10], '', p['Alarm Status'], p.idempotencyKey,
+                        'this alarm alert carries a position - no follow-up needed');
+            }
+        } else if (!clears && exRank >= 4 && realFix && _gpsPending_(rowData[11])) {
+            _notesAppend_(sheet, rowNum, GPS_SENT_TAG + ' ' + tstr + ']');   // claimed before send: never a second follow-up
+            _audit_('alarm-gps:follow-up', worker, rowNum, rowData[10], '', p['Alarm Status'], p.idempotencyKey,
+                    'first real position after an alarm alert sent without one - follow-up to the contacts (after the lock)');
+            const snap = rowData.slice();
+            snap[14] = String(p['Last Known GPS']);
+            snap[15] = (fixAt || ts).toISOString();
+            const kind = _idleAlarmKind_(rowData[10]);
+            _sendOrQueue_('alarm-gps-followup', function () { _sendGpsFollowUp_(sheet, snap, kind, rowNum); });
+        }
+    } catch (e) {
+        try { _audit_('alarm-hooks:error', worker, rowNum, '', '', p && p['Alarm Status'], p && p.idempotencyKey, String(e).substring(0, 200)); } catch (_) {}
+    }
+    return mark;
+}
+
+/** __63_ (BE1, BE2): the same for a post that made a NEW row (lock held). Returns the BE1 step 1 mark or null. Never throws. */
+function _alarmPostNewRow_(sheet, rowNum, p, ts, workerName) {
+    try {
+        const inc = String(p['Alarm Status'] || '').toUpperCase();
+        if (_alarmRank_(inc) < 4) return null;
+        if (!_isRealFix_(p['Last Known GPS'])) {
+            _notesAppend_(sheet, rowNum, GPS_PENDING_TAG + ' ' + _fmtLocal_(ts, 'h:mm:ss a') + ']');
+            _audit_('alarm-gps:pending', workerName, rowNum, '', '', p['Alarm Status'], p.idempotencyKey,
+                    'alarm alert sent with no position - the first real position will be sent to the contacts once');
+        }
+        if (!p['Anticipated Departure Time']) {
+            return _idleAlarmClaimStart_(sheet, rowNum, String(sheet.getRange(rowNum, 3).getValue() || workerName), ts, 'handleWorkerPost:alarm-start');
+        }
+    } catch (e) {
+        try { _audit_('alarm-hooks:error', workerName, rowNum, '', '', p && p['Alarm Status'], p && p.idempotencyKey, String(e).substring(0, 200)); } catch (_) {}
+    }
+    return null;
+}
+
+/** __63_: the contacts' ntfy topics, Staff col H / I (name matched ignoring case and outer spaces). Never throws. */
+function _contactTopics_(worker) {
+    const out = { emg: '', esc: '' };
+    try {
+        const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Staff');
+        if (!sh) return out;
+        const d = sh.getDataRange().getValues();
+        const want = _rfKey_(worker);
+        for (let j = 1; j < d.length; j++) {
+            if (_rfKey_(d[j][0]) === want) {
+                out.emg = String(d[j][7] == null ? '' : d[j][7]).trim();
+                out.esc = String(d[j][8] == null ? '' : d[j][8]).trim();
+                break;
+            }
+        }
+    } catch (_) {}
+    return out;
+}
+
+/**
+ * __63_ (BE2): the follow-up with the position, to both contacts (every PANIC / DURESS / SOS alert goes to both). A push to the
+ * contact's topic; an email when the contact has no topic or the push was not accepted. No SMS. Runs after the lock is released.
+ * row = the Visits row as it was, with col O / P set to the new position.
+ */
+function _sendGpsFollowUp_(sheet, row, kind, rowNum) {
+    const worker = String(row[2] || 'The worker');
+    const first = worker.split(' ')[0];
+    const gps = String(row[14] || '').replace(/\s+/g, '');
+    const m = /^(-?\d{1,3}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?)$/.exec(gps);
+    if (!m) { _audit_('alarm-gps:follow-up-skipped', worker, rowNum, '', '', '', '', 'position not a coordinate pair'); return; }
+    const lat = Number(m[1]), lng = Number(m[2]);
+    const link = 'https://maps.google.com/?q=' + lat + '%2C' + lng;
+    const at = _gpsTime_(row[15]);
+    const atText = at ? _seenText_(at) : '';
+    const phoneDisp = _formatPhoneDisplay(row[3]);
+    const tel = _cleanPhone(String(row[3] || '')) || '';
+    const isDuress = kind === 'DURESS';
+    const w3w = _w3wForPush_(lat, lng, worker);   // through the proxy with its 3 s cap (F118-2), or nothing
+    const sentAt = _fmtLocal_(new Date(), 'dd/MM/yyyy, h:mm:ss a');
+    const title = '📍 POSITION NOW AVAILABLE - ' + worker;
+    const intro = worker + "'s " + kind + ' alarm alert went out without a GPS position. Their phone has now sent one. The alarm is still open.';
+    const callLine = isDuress ? 'If you call: the call may be overheard. Keep it calm and ordinary, and listen for any code phrase you have agreed with ' + first + '.' : '';
+    const msg = [
+        callLine,
+        intro,
+        'GPS' + (atText ? ' (at ' + atText + ')' : '') + ': ' + link,
+        (w3w && w3w.words) ? 'what3words: ///' + w3w.words : '',
+        'Worker: ' + worker + ' · ' + phoneDisp,
+        'Sent: ' + sentAt
+    ].filter(Boolean).join('\n');
+    const extra = {};
+    if (tel && !isDuress) extra.click = 'tel:' + tel;   // as the alarm alerts: no tap-to-call on DURESS
+    const acts = [];
+    if (tel) acts.push('view, ' + _ntfyLabel_('📞 Call worker', 'Call worker') + ', tel:' + tel);
+    acts.push('view, ' + _ntfyLabel_('📍 Map', 'Map') + ', ' + link);
+    extra.actions = acts.join('; ');
+    const html = '<div style="font-family:Arial,sans-serif;font-size:14px;color:#111">' +
+        (callLine ? '<p><b>' + _h_(callLine) + '</b></p>' : '') +
+        '<p><b>' + _h_(intro) + '</b></p>' +
+        '<p>GPS' + (atText ? ' (at ' + _h_(atText) + ')' : '') + ': <a href="' + link + '">' + lat + ', ' + lng + '</a></p>' +
+        ((w3w && w3w.words) ? '<p>what3words: ///' + _h_(w3w.words) + '</p>' : '') +
+        '<p>Worker: ' + _h_(worker) + ' - ' + _h_(phoneDisp) + '</p>' +
+        '<p style="color:#666;font-size:12px">Sent ' + _h_(sentAt) + '. One message per alarm. ' + _h_(TEMPLATE_BUILD) + '</p></div>';
+    const topics = _contactTopics_(worker);
+    const contacts = [{ who: 'primary', name: row[4], email: row[6], topic: topics.emg },
+                      { who: 'escalation', name: row[7], email: row[9], topic: topics.esc }];
+    const done = [];
+    contacts.forEach(function (c) {
+        let pushed = false;
+        if (c.topic) {
+            try { const r = _sendNtfy(c.topic, title, msg, 'urgent', 'round_pushpin,rotating_light', extra); pushed = !!(r && r.ok); }
+            catch (_) { pushed = false; }
+        }
+        let mailed = false;
+        const em = String(c.email || '').trim();
+        if (!pushed && em.indexOf('@') > 0) {
+            try { MailApp.sendEmail({ to: em, subject: title, htmlBody: html }); mailed = true; }
+            catch (err) { _audit_('alarm-gps:follow-up-email-FAILED', worker, rowNum, '', '', '', '', c.who + ': ' + String(err).substring(0, 160)); }
+        }
+        done.push(c.who + '=' + (pushed ? 'push' : mailed ? 'email' : 'none'));
+    });
+    _audit_('alarm-gps:follow-up-sent', worker, rowNum, '', '', kind, '', done.join(' ') + (w3w && w3w.words ? ' (with what3words)' : ''));
+}
+
+// ---------------------------------------------------------------- BE3: a new visit behind an open alarm
+
+const NEW_VISIT_TAG = '[NEW VISIT STARTED';
+
+/**
+ * __63_ (BE3): a new visit (ARRIVED / TRAVELLING) is about to be appended while the worker's latest row is an open alarm with
+ * no due time. Note on that row (once), Audit, HQ email (+ admin push) after the lock. The row is NOT closed. Never throws.
+ */
+function _newVisitBehindAlarm_(sheet, workerName, p, ts) {
+    try {
+        const lr = _latestRowFor_(sheet, workerName, _readWidth_(sheet));
+        if (!lr) return false;
+        const st = String(lr.status || '').toUpperCase();
+        if (['DEPARTED', 'COMPLETED', 'DATA_ENTRY_ONLY', 'USER_SAFE', 'PRE_VISIT'].some(function (w) { return st.indexOf(w) > -1; })) return false;
+        if (lr.due !== '' && lr.due !== null && lr.due !== undefined && String(lr.due).trim() !== '') return false;
+        if (_alarmRank_(st) < 4) return false;
+        const notes = String(lr.data[11] || '');
+        if (notes.indexOf(NEW_VISIT_TAG) > -1) return false;
+        const tstr = _fmtLocal_(ts, 'h:mm:ss a');
+        _notesAppend_(sheet, lr.row, NEW_VISIT_TAG + ' ' + tstr + ' - this alarm is still open; HQ told]');
+        _audit_('handleWorkerPost:new-visit-behind-alarm', workerName, lr.row, lr.status, '', String(p['Alarm Status'] || ''), p.idempotencyKey,
+                'a new visit started while this alarm row (no due time) is open - HQ emailed; row left open; its automatic repeats stop');
+        const parts = String(lr.data[LADDER_MEM_COL - 1] || '').split('|');
+        const startIso = (IDLE_ALARM_LABELS.indexOf(String(parts[2] || '').trim()) > -1) ? parts[0] : '';
+        const info = { worker: String(workerName || ''), row: lr.row, status: lr.status, start: startIso,
+                       site: String(p['Location Name'] || ''), kind: String(p['Alarm Status'] || ''), at: ts };
+        _sendOrQueue_('hq-alarm-behind-visit', function () { _sendAlarmBehindVisitHq_(info); });
+        return true;
+    } catch (e) {
+        try { _audit_('handleWorkerPost:new-visit-behind-alarm-error', workerName, '', '', '', '', p && p.idempotencyKey, String(e).substring(0, 200)); } catch (_) {}
+        return false;
+    }
+}
+
+/** __63_ (BE3): the HQ email and admin push. After the lock. Never throws. */
+function _sendAlarmBehindVisitHq_(info) {
+    try {
+        const org = (CONFIG.ORG_NAME && !String(CONFIG.ORG_NAME).includes('%%')) ? CONFIG.ORG_NAME : 'OTG';
+        const who = String(info.worker || 'a worker').substring(0, 60);
+        const started = info.start ? _fmtLocal_(new Date(info.start), 'd MMM yyyy, h:mm:ss a') : '';
+        const subject = 'OTG - ' + who + ' started a new ' + (info.kind === 'TRAVELLING' ? 'trip' : 'visit') + ' while an alarm is still open (' + org + ')';
+        const html = '<div style="font-family:Arial,sans-serif;font-size:14px;color:#111">' +
+            '<p><b>' + _h_(who) + ' has started a new ' + (info.kind === 'TRAVELLING' ? 'trip' : 'visit') + ', but an alarm they raised earlier (with no visit running) is still open.</b></p>' +
+            '<table cellpadding="4" style="border-collapse:collapse">' +
+            '<tr><td><b>Worker</b></td><td>' + _h_(info.worker) + '</td></tr>' +
+            '<tr><td><b>Open alarm</b></td><td>' + _h_(info.status) + ' (Visits row ' + _h_(info.row) + ')</td></tr>' +
+            (started ? '<tr><td><b>Alarm raised</b></td><td>' + _h_(started) + '</td></tr>' : '') +
+            '<tr><td><b>New ' + (info.kind === 'TRAVELLING' ? 'trip' : 'visit') + '</b></td><td>' + _h_(info.site || '(no site name)') + ', started ' + _h_(_fmtLocal_(info.at, 'd MMM yyyy, h:mm:ss a')) + '</td></tr>' +
+            '</table>' +
+            '<p><b>What this means</b></p><ul>' +
+            '<li>The alarm was not cleared with the PIN (most likely the phone lost its saved alarm - for example the app data was reset, or another phone was used).</li>' +
+            '<li>The contacts get no more automatic alerts for the old alarm. The new ' + (info.kind === 'TRAVELLING' ? 'trip' : 'visit') + ' is watched as normal.</li>' +
+            '<li>The Monitor\'s Resolve button acts on the worker\'s latest row (the new ' + (info.kind === 'TRAVELLING' ? 'trip' : 'visit') + '), so it cannot close the old alarm.</li>' +
+            '</ul><p><b>What to do now</b></p><ol>' +
+            '<li>Phone ' + _h_(who) + ' and check they are safe.</li>' +
+            '<li>If the contacts were alerted, let them know the outcome.</li>' +
+            '<li>Close the old alarm by hand: in the Visits tab, row ' + _h_(info.row) + ', set column K to USER_SAFE - HQ RESOLVED.</li>' +
+            '</ol><p style="color:#666;font-size:12px">Sent once per alarm row. Audit source handleWorkerPost:new-visit-behind-alarm. ' + _h_(TEMPLATE_BUILD) + '</p></div>';
+        const to = (CONFIG.HEALTH_EMAIL && String(CONFIG.HEALTH_EMAIL).includes('@')) ? CONFIG.HEALTH_EMAIL : Session.getEffectiveUser().getEmail();
+        try { MailApp.sendEmail({ to: to, subject: subject, htmlBody: html }); }
+        catch (err) { _audit_('hq-alarm-behind-visit:email-FAILED', info.worker, info.row, '', '', '', '', String(err).substring(0, 160)); }
+        const topic = _settings_().adminAlertTopic;
+        if (topic) {
+            try {
+                const r = _sendNtfy(topic, 'OTG: new visit while an alarm is open - ' + who + ' (' + org + ')',
+                                    who + ' started a new ' + (info.kind === 'TRAVELLING' ? 'trip' : 'visit') + ' while an alarm (Visits row ' + info.row + ') is still open. ' +
+                                    'Phone the worker. Close the old alarm by hand in the Visits tab. Details by email.', 'high', 'warning');
+                if (!r || !r.ok) _audit_('hq-alarm-behind-visit:push-FAILED', info.worker, info.row, '', '', '', '', 'push to the admin topic not accepted' + (r && r.code ? ' (HTTP ' + r.code + ')' : ''));
+            } catch (err) { _audit_('hq-alarm-behind-visit:push-FAILED', info.worker, info.row, '', '', '', '', String(err).substring(0, 160)); }
+        }
+    } catch (err) {
+        try { _audit_('hq-alarm-behind-visit:error', info && info.worker, info && info.row, '', '', '', '', String(err).substring(0, 160)); } catch (_) {}
+    }
+}
+
+// ---------------------------------------------------------------- BE4: the state of the phone's saved alarm, for the sync
+
+const ALARM_ID_MAX = 120;   // longer ids are refused (not-found); outbox keys are about 60 characters
+
+/**
+ * __63_ (BE4): { id, state } for the phone's saved alarm. The row is found by its Visit ID (col AB) and must be this worker's
+ * (col C, case and outer spaces ignored). state: 'open' = the row is open and col K is an alarm (rank 2+); 'resolved' = the row
+ * is closed, or col K is no longer an alarm; 'not-found' = no such row for this worker; 'error' = the lookup failed. The phone
+ * clears its alarm on 'resolved' only. Read only; never throws.
+ */
+function _alarmStateFor_(workerName, alarmId) {
+    const id = String(alarmId == null ? '' : alarmId).trim();
+    const out = { id: id.substring(0, ALARM_ID_MAX), state: 'not-found' };
+    try {
+        if (!id || id.length > ALARM_ID_MAX) return out;
+        const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Visits');
+        if (!sheet) return out;
+        const last = sheet.getLastRow();
+        if (last < 2 || sheet.getMaxColumns() < VISIT_ID_COL) return out;
+        const ids = sheet.getRange(2, VISIT_ID_COL, last - 1, 1).getValues();
+        const want = _rfKey_(workerName);
+        for (let i = ids.length - 1; i >= 0; i--) {
+            if (String(ids[i][0] == null ? '' : ids[i][0]).trim() !== id) continue;
+            const row = sheet.getRange(i + 2, 1, 1, 11).getValues()[0];
+            if (_rfKey_(row[2]) !== want) continue;
+            const st = String(row[10] == null ? '' : row[10]).toUpperCase();
+            const closed = ['DEPARTED', 'COMPLETED', 'DATA_ENTRY_ONLY', 'USER_SAFE'].some(function (w) { return st.indexOf(w) > -1; });
+            out.state = (!closed && _alarmRank_(st) >= 2) ? 'open' : 'resolved';
+            return out;
+        }
+        return out;
+    } catch (e) {
+        try { _audit_('sync:alarm-state-error', workerName, '', '', '', '', '', String(e).substring(0, 160)); } catch (_) {}
+        out.state = 'error';
+        return out;
+    }
 }
