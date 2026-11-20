@@ -654,7 +654,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
  <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety On-The-Go!</span>
- <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__35_</span>
+ <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__38_</span>
  </h1>
  </div>
  <div class="flex items-center">
@@ -1218,7 +1218,8 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
  <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
- <div id="appBuild" class="text-xs font-mono text-gray-400">worker__35_</div>
+ <div id="appBuild" class="text-xs font-mono text-gray-400">worker__38_</div>
+ <div id="swBuild" class="text-xs font-mono text-gray-500" title="The app build held by the service worker">sw: checking</div>
  </div>
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">Backend Version</div>
@@ -1234,6 +1235,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  class="w-full bg-orange-900/40 hover:bg-orange-900/60 border border-orange-700/50 py-2 rounded text-xs font-bold text-orange-300 tracking-widest">
  🔄 Force App Update
  </button>
+ <p id="forceUpdateBusy" class="hidden text-xs text-amber-300 mt-1.5 font-bold">Available when your visit has ended (not during a visit, trip or alarm).</p>
  <p class="text-xs text-gray-500 mt-1.5 italic">Clears all cached app files and reloads from the server. Use if the app looks wrong after an update. Your settings and registration are preserved.</p>
  </div>
  </div>
@@ -1292,12 +1294,22 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  </div>
  </div>
 
+ <!-- __36_ (W6, S144-D4): Reset App Data - its own card at the bottom of Diagnostics, a real 1.5 s hold, blocked while active -->
+ <div>
+ <h3 class="text-sm font-bold text-gray-500 uppercase tracking-widest mb-3">Reset App Data</h3>
+ <div class="setting-card border-red-900">
+ <p class="text-xs text-gray-300 mb-3 leading-relaxed">Deletes your name, contacts, PINs, sites and settings from this phone - you will need to set the app up again. Hold the button for 1.5 seconds.</p>
+ <p id="resetDataBusy" class="hidden text-xs text-amber-300 font-bold mb-2">Not available during a visit, trip or alarm.</p>
+ <button id="btnResetData" class="long-press-btn w-full py-4 bg-red-900/50 text-red-400 hover:bg-red-900/70 font-bold rounded-xl shadow-lg">
+ Hold to Reset App Data
+ </button>
+ </div>
+ </div>
+
  </div><!-- end diagnosticsPanel -->
  </div>
 
- <button onclick="clearData()" class="w-full py-4 bg-red-900/50 text-red-400 hover:bg-red-900/70 font-bold rounded-xl shadow-lg">
- Reset App Data
- </button>
+ <!-- __36_ (W6): Reset App Data moved into the Diagnostics panel (its own card at the bottom) -->
  </div>
 </div>
 
@@ -1819,6 +1831,53 @@ const RISK_WELFARE_MAP = {
 //     amber "slide Wake to read" cue on the dim screen, with the sound and buzz once) exactly as in __28_.
 //   - Never during an alarm, never offline, never while the app is hidden (the poll); a wake check at most once a minute; a full
 //     sync from a check at most once a minute. A failed check says nothing and is tried again at the next poll.
+// __38_ changes (session S149W, Opus 5.5 High, from __37_). Fixes from the clean-room review of __37_ (S148V-F2, S148V-F7;
+//   Russell S148V-D1), design agreed S149W-D1. Works with the same backends as __37_. No change to the OTG-SW-OUTBOX block, so
+//   Factory index__15_ needs no change.
+//   S148V-F2  SAFETY: a duress PIN entered while a PIN clear is being written is never lost - the clear stops on the phone and the
+//             alarm stays at step 2 (the server gets the All Clear, then the DURESS, and alerts again). Decoy PIN and overlay PIN.
+//   S149W-N1  ...and the saved alarm then names the DURESS's own row (backend __64_ makes a new row for a DURESS after an All Clear),
+//             so the next start keeps step 2 instead of clearing it on the old row's "resolved".
+//   S149W-N2  A PIN box opened by a tap during that write holds the clear until it is answered (safety PIN: the same clear, one
+//             All Clear; duress PIN: the clear stops).
+//   S148V-F7  SAFETY: a PIN clear during a visit writes the All Clear (with the new due time) to the outbox first, then clears the
+//             alarm. Before, an app closed in that gap came back with no alarm and no All Clear ever sent. Extend during an alarm
+//             runs only after that clear, so it still ends with the extended due time and one All Clear.
+// __37_ changes (session S148W, Opus 5.5 High, from __36_). Fixes from the clean-room review of __36_ (S147R-F1 to F5, F7;
+//   Russell, relayed as S148P-D1). Works with the same backends as __36_. No change to the OTG-SW-OUTBOX block, so Factory
+//   index__15_ needs no change.
+//   F1  Diagnostics and Copy report never show the word DURESS (shown as ALARM-2, S146-D3): masked inside _diag itself, so every
+//       diag line is covered (the send-try lines, the background-send line and the S112-3 line still showed it), and again when the
+//       log is read (lines saved by an earlier build). Copy report's visit line no longer says "panic / duress".
+//   F2  SAFETY: the DURESS post carries a fix from the last minute, else 0,0 - never an older position (the PANIC's rule, F146-1).
+//   F3  SAFETY: the duress step queues the DURESS first, then saves step 2 (an app closed in between came back on the duress
+//       screen while the server only had the PANIC).
+//   F4  SAFETY: a PIN clear on the decoy screen writes the All Clear to the outbox first, then removes the saved alarm.
+//   F5  W9 also asks when the backend build is not known yet (the first sync after a fresh set-up), so a lost alarm comes back
+//       at that sync, not the next one. A backend known to be older than __64_ is still never asked.
+//   S148W-F1  SAFETY: the safety PIN on the overlay (no visit) also writes the All Clear first, then removes the saved alarm.
+//   S148W-N6  When no fix goes with the DURESS, the first fix goes out the moment it lands (as for the PANIC).
+//   F7  A second guard so a notice already on the phone never pops up (sound and buzz) over a no-visit PANIC or DURESS. Already
+//       so on __36_ (_noticeInAlarm counts it through _welfareInAlarm); this keeps it if that changes.
+// __36_ changes (session 146, Opus 5.5 High, from __35_). Works with backend __57_ and later; the alarm-state check (W7) needs
+//   backend __63_ (gated on meta.backendBuild). No change to the OTG-SW-OUTBOX block, so Factory index__15_ needs no change.
+//   F146-1  SAFETY: the PANIC goes into the outbox at once. Before, the app waited up to 5 s for a fresh GPS fix first, and an
+//           app closed in those seconds lost the PANIC completely. A fix held from the last minute goes with the alert;
+//           otherwise the first fix goes out the moment it lands (backend __63_ sends the contacts one follow-up with it).
+//   W2      SAFETY: a PANIC raised with no visit running survives an app close: saved, restored at start-up (decoy screen,
+//           or the overlay after a duress step; PIN on every tap; alarm pulse and GPS), never posted again; every PIN clear
+//           removes it. W3: Start is refused while it is open (PIN prompt).
+//   W5      SAFETY: after any reload a running visit restarts its GPS (trip watch and 2-minute pulse, site poller, alarm
+//           poller with the first fix sent at once, the 5-minute OVERDUE repeat). A trip keeps its trail and speed total
+//           with the visit, so the distance survives a reload (report data: _distResumes, _distGapS).
+//   W7      a Monitor resolve clears the phone's saved alarm at the next sync (backend __63_; only on "resolved").
+//   W9      SAFETY: with backend __64_, an idle phone asks the server whether an alarm of this worker is still open (alarmCheck=1)
+//           and puts it back as a saved alarm (decoy or overlay, PIN to clear) - for a phone that lost its saved alarm.
+//   W1/W4   one "active" check (visit, trip or any alarm): Force App Update is greyed and refused while active, the red bar
+//           tap explains instead (S144-D3 wording), and an app update is held during a no-visit alarm too (X7).
+//   W6      Reset App Data: a real 1.5 s hold, blocked while active, clearer wording, own card in Diagnostics.
+//   W8      Diagnostics: alarm, decoy, PIN step, GPS and update lines; the worker build held by the service worker.
+//   S146-D3 Diagnostics shows DURESS as ALARM-2 (the diag log, the Event Outbox list and Copy report). Display only.
 // __35_ changes (session 141, Opus 5.5, from __34_). Works with backend __57_ to __62_ and old or new sw.js (no change to the
 //   OTG-SW-OUTBOX block, so Factory index__15_ needs no change). Storage naming, registration, the alarm and send paths unchanged.
 //   F138-1  SAFETY (saved data): the phone lost the whole site's saved settings twice while the outboxes (IndexedDB) survived.
@@ -1887,7 +1946,7 @@ const RISK_WELFARE_MAP = {
 //           otg- plus 24 random characters (made on the phone, 96 bits, never Math.random), and "Share it with my contact" sends
 //           the name and the steps through the share sheet (or copies them). A box that already has a topic is never replaced.
 // =============================================================================
-const WORKER_BUILD = 'worker__35_';
+const WORKER_BUILD = 'worker__38_';
 
 const CONFIG = {
  url: '',
@@ -2451,11 +2510,18 @@ function _diagKey() { return _sk(_DIAG_KEY); }
  *  "(unavailable)" rather than "(empty)" (both callers catch it); the next _diag() line starts a fresh log, as before. */
 function _diagRead() {
   const arr = _diagReady() ? JSON.parse(localStorage.getItem(_diagKey()) || '[]') : [];
-  return arr.concat(_diagEarly);
+  return arr.concat(_diagEarly).map(x => typeof x === 'string' ? _diagMask(x) : x);   // __37_ (S147R-F1): lines saved by an earlier build too
 }
 function _diagClear() {
   try { if (_diagReady()) localStorage.removeItem(_diagKey()); } catch (_) {}
   _diagEarly = [];
+}
+/** __37_ (S147R-F1, S146-D3): Diagnostics can be opened on the phone, so the word DURESS (any case) never reaches the diag log or
+ *  Copy report: it is shown as ALARM-2. Only that word changes. Applied to every line _diag writes (stack included) and again when
+ *  the log is read (lines saved by an earlier build). Kept beside _diag, so _diag does not depend on the _w36 block further down.
+ *  Never throws. */
+function _diagMask(text) {
+  try { return String(text).replace(/DURESS/gi, 'ALARM-2'); } catch (_) { return ''; }
 }
 function _diag(label, withStack) {
  try {
@@ -2468,6 +2534,7 @@ function _diag(label, withStack) {
     .map(s => s.trim().replace(/^at\s+/, '').replace(/\(?https?:\/\/[^\s)]*\/([^\/\s)]*)\)?/, '$1')).join(' < ');
    line += ' | ' + st;
   }
+  line = _diagMask(line);   // __37_ (S147R-F1): every line, whoever writes it
   if (!_diagReady()) { _diagEarly.push(line); if (_diagEarly.length > 200) _diagEarly = _diagEarly.slice(-200); return; }   // __34_ (F135-3)
   let arr = [];
   try { arr = JSON.parse(localStorage.getItem(_diagKey()) || '[]'); } catch (_) { arr = []; }
@@ -3072,7 +3139,8 @@ async function logSafety(type, message, extra) {   // __24_: extra = more fields
  // await: ensures the IndexedDB write is confirmed durable before this
  // async function returns. triggerPanic() awaits logSafety(), so the alarm
  // event is on disk before any UI change is made.
- await outboxEnqueue(fullPayload);
+ // __36_ (W2): returns the record's outbox key (the server row's Visit ID), or undefined (legacy queue).
+ return await outboxEnqueue(fullPayload);
 }
 
 async function getBatteryPercent() {
@@ -3172,6 +3240,12 @@ function submitReport() {
      d.jsonPayload['_distTrailKm'] = _ev.trailKm || '';                 // the road-trail figure, even when it was not used
      d.jsonPayload['_distAtoBKm']  = _ev.atobKm || '';                  // the start-to-end road route, when it was fetched
      d.jsonPayload['_distTrail']   = _distTrailText(gpsTrail);          // the route: lat,lng;lat,lng (5 decimals)
+   } catch (_) {}
+   // __36_ (W5): how many times tracking was resumed after a reload, and the seconds with no tracking across those gaps
+   try {
+     const _tk = (state && state.activeVisit && state.activeVisit.trk) || {};
+     d.jsonPayload['_distResumes'] = String(_tk.resumes || 0);
+     d.jsonPayload['_distGapS']    = String(_tk.gapS || 0);
    } catch (_) {}
  }
 
@@ -3700,6 +3774,7 @@ function _adoptLateStartFix(pos) {
 }
 
 function startGPSMonitoring() {
+ try { _diag('GPS: poller ' + (gpsWatchId !== null ? 'restarted' : 'started')); } catch (_) {}   // __36_ (W8)
  if (gpsWatchId !== null) {
  clearTimeout(gpsWatchId);
  gpsWatchId = null;
@@ -3775,6 +3850,7 @@ function _takeSingleGPSFix() {
 
    // Speed accumulator (Y2, build __16_) - the rules live in _speedAccumStep().
    _speedAccumStep(pos.coords.speed, Date.now());
+   _w36TrkSave();   // __36_ (W5): keep the trail with the visit (at most about once a minute)
  }
 
  // Schedule next poll — only if stopGPSMonitoring() hasn't been called
@@ -3810,6 +3886,7 @@ function _takeSingleGPSFix() {
 }
 
 function stopGPSMonitoring() {
+ if (gpsWatchId !== null && !_w36Unloading) { try { _diag('GPS: poller stopped'); } catch (_) {} }   // __36_ (W8; never while the page unloads)
  if (gpsWatchId !== null) {
  clearTimeout(gpsWatchId); // clearTimeout(-1) is a no-op; real IDs are cancelled
  gpsWatchId = null;
@@ -3833,6 +3910,7 @@ function stopGPSMonitoring() {
  */
 function startTravelWatchPosition() {
   stopTravelWatchPosition(); // clear any stale watch
+  try { _diag('GPS: trip watch started, trail ' + gpsTrail.length + ' points'); } catch (_) {}   // __36_ (W8)
   _gpsWatchPositionFailed = false;
   _lastWatchFixTs = null;
 
@@ -3869,11 +3947,13 @@ function startTravelWatchPosition() {
 
       // Speed accumulator (Y2, build __16_) - the rules live in _speedAccumStep().
       _speedAccumStep(pos.coords.speed, now);
+      _w36TrkSave();   // __36_ (W5): keep the trail with the visit (at most about once a minute)
     },
     err => {
       console.warn('watchPosition error during travel:', err.message);
       _gpsWatchPositionFailed = true;
       stopTravelWatchPosition();
+      _w36TrkSave(true);   // __36_ (W5): the failed flag is kept with the visit at once
       // Fall back to the timer-based poller so GPS monitoring continues for the rest of the trip
       startGPSMonitoring();
       showToast('⚠️ GPS tracking issue — distance may need checking', 6000);
@@ -3883,6 +3963,7 @@ function startTravelWatchPosition() {
 }
 
 function stopTravelWatchPosition() {
+  if (gpsWatchPositionId !== null && !_w36Unloading) { try { _diag('GPS: trip watch stopped, trail ' + gpsTrail.length + ' points'); } catch (_) {} }   // __36_ (W8; never while the page unloads)
   if (gpsWatchPositionId !== null) {
     navigator.geolocation.clearWatch(gpsWatchPositionId);
     gpsWatchPositionId = null;
@@ -4369,7 +4450,7 @@ function startTravellingPulse() {
    processUploadQueue(buildPayload({
      'Alarm Status': 'ALARM_GPS_PULSE',
      'Notes': 'GPS pulse — travel in progress.',
-     'Last Known GPS': typeof lastGPS !== 'undefined' ? lastGPS : '0,0'
+     'Last Known GPS': lastGPS || '0,0'   // __36_: 0,0 (no fix), never null
    }));
  }
  }, 120000); // 2 minutes
@@ -5433,28 +5514,12 @@ async function triggerPanic(duress = false, alarmCode = null) {
  }
  isPanicActive = true;
 
- // GPS PRE-CAPTURE: Get a fresh fix BEFORE calling logSafety.
- // Awaiting a direct getCurrentPosition ensures real coordinates in the alert.
- // 5-second timeout keeps UX snappy; failure falls through gracefully.
- await new Promise(resolve => {
-   navigator.geolocation.getCurrentPosition(
-     pos => {
-       lastGPS = `${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`; lastGPSAt = _fixTime(pos);   // __31_ (R79)
-       try { _refreshAlarmLocationLine(); } catch (_) {}
-       resolve();
-     },
-     () => resolve(),
-     { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-   );
- });
-
- // Pin GPS to minimum interval for alarm duration — worker may be stationary.
- if (gpsWatchId === null && typeof startGPSMonitoring === 'function') startGPSMonitoring();
- gpsCurrentIntervalMs = GPS_MIN_INTERVAL_MS;
-
- // Start repeating GPS pulse to backend every 2 minutes while alarm is active.
- // Uses neutral ALARM_GPS_PULSE code — backend logs location without re-firing alerts.
- _startAlarmGpsPulse();
+ // __36_ (F146-1, S146-D4 "Option 1"): the PANIC goes into the outbox AT ONCE. Before, this waited up to 5 s for a fresh
+ // high-accuracy fix first, and an app closed in those seconds (the worker swiping it away, or the phone closing it) lost the
+ // PANIC completely - nothing was queued or saved. Now a position the phone already holds from the last minute goes with the
+ // alert; otherwise the alert says 0,0 (no fix), the first fix that lands goes out at once as a GPS pulse, and backend __63_
+ // (BE2) sends the contacts one follow-up with the position. The covert overlay and the decoy screen also appear at once.
+ const _held = _w36HeldFix();
 
  // ALL ALARMS ARE COVERT ON THE WORKER DEVICE.
  // No red screen, no strobe, no audio. The monitor handles audible/visual alerting.
@@ -5464,12 +5529,33 @@ async function triggerPanic(duress = false, alarmCode = null) {
  // Backend logging — both triggers (SOS triple-tap, Shake) send PANIC.
  // W4 (build __14_, F80-3): every call site names its trigger in alarmCode; a bare call is logged as unknown.
  _diag('triggerPanic: ' + (alarmCode || 'no source given'), true);
- await logSafety("PANIC", alarmCode || "Manual alarm activated. [source: unknown - triggerPanic() called with no source]");
+ try { _diag('alarm: stored at once - ' + (_held ? 'with a fix ' + Math.max(0, Math.round((Date.now() - lastGPSAt) / 1000)) + ' s old' : 'no fix from the last minute, the first fix goes at once')); } catch (_) {}
+ const _alarmKey = await logSafety("PANIC", alarmCode || "Manual alarm activated. [source: unknown - triggerPanic() called with no source]",
+   { 'Last Known GPS': _held || '0,0' });
 
  if (state && state.activeVisit) {
    setVisitPhase(VISIT_PHASES.ALARMING);
    saveState();
+ } else if (state) {
+   // __36_ (W2): a no-visit alarm is saved beside the visit, so it survives an app close (restored at start-up by
+   // _w36RestoreIdleAlarm, removed by every PIN clear in _clearAlarmState). key = the PANIC post's outbox key, which is the
+   // server row's Visit ID (backend __63_ BE4 looks it up). Saved only once the PANIC is in the outbox.
+   state.idleAlarm = { kind: 'PANIC', at: Date.now(), key: _alarmKey || null };
+   saveState();
+   try { _diag('alarm: saved (no visit)' + (_alarmKey ? '' : ' - no outbox key, the server cannot be asked about it')); } catch (_) {}
  }
+
+ // GPS for the alarm - started after the PANIC is queued, so no pulse can reach the server ahead of the alarm itself.
+ // Pin GPS to minimum interval for alarm duration — worker may be stationary.
+ if (gpsWatchId === null && typeof startGPSMonitoring === 'function') startGPSMonitoring();
+ gpsCurrentIntervalMs = GPS_MIN_INTERVAL_MS;
+
+ // Start repeating GPS pulse to backend every 2 minutes while alarm is active.
+ // Uses neutral ALARM_GPS_PULSE code — backend logs location without re-firing alerts.
+ _startAlarmGpsPulse();
+ // F76-1 for the PANIC (__36_): no fix went with the alert, so the first fix goes out the moment it lands. Set AFTER
+ // _startAlarmGpsPulse(), which clears the flag.
+ if (!_held) { _alarmFixPending = true; _w36FreshFirstFix(); }
 
  // Close any open modals cleanly.
  closeModal('pin');
@@ -5491,9 +5577,14 @@ async function triggerPanic(duress = false, alarmCode = null) {
  * This function only handles the CLEAR path; escalation is a separate call.
  */
 function iamSafe() {
-  if (!state || (!state.activeVisit && !isPanicActive)) return;
+  // __38_ (S148V-F7, S148V-F2): returns a promise - true once this clear has run (or there was nothing to clear), false when a duress
+  // step during the All Clear write stopped it. _alarmPinPrompt runs its onSafe (extend) only after a true.
+  if (!state || (!state.activeVisit && !isPanicActive)) return Promise.resolve(true);
+  // A second safety PIN while this clear's All Clear is being written gets the same clear (one All Clear) - both branches.
+  if (iamSafe._writing) return iamSafe._writing;
 
   const alarmWasFired = !!(state?.activeVisit?.isPanic || isPanicActive);
+  const _settle = () => { iamSafe._writing = null; };
 
   // W1 (build __14_): a PIN clear during a visit is an event, not the end of the visit.
   // Before, it set the visit to CLOSED (isSafeConfirmed), which silenced the phone alarm for the
@@ -5504,41 +5595,64 @@ function iamSafe() {
   // its ladder to it.
   if (state.activeVisit) {
     const _afterDue = Date.now() >= (state.activeVisit.anticipatedDepartureTime || 0);
-    _clearAlarmState(); // overlay, interceptor, pulses, panic flags - the phase is set below
-    // The alarm-screen contact buttons belong to the alarm, not the running visit (a reload hides them too).
-    _hideAlarmContactButtons();   // __22_ (R11 / F82-3)
-    if (_afterDue) {
-      _applyNewDueTime(Date.now() + PIN_CLEAR_EXTRA_MINS * 60000);
-    } else {
-      setVisitPhase(VISIT_PHASES.ACTIVE);
-      saveState();
-    }
-    if (alarmWasFired) {
-      processUploadQueue(buildPayload({
-        'action': 'notifySafety',
-        'Alarm Status': 'USER_SAFE_CONFIRMED',
-        'Notes': 'Worker confirmed safe via PIN entry.' + (_afterDue ? ` Due time moved to now + ${PIN_CLEAR_EXTRA_MINS} min.` : '')
-      }));
-      // __24_ (R03): the server restarts its welfare clock on this PIN clear (now + interval) - so does the phone.
-      if (typeof _welfareResetClock === 'function') _welfareResetClock(Date.now());
-    } else if (_afterDue) {
-      // No alarm had gone out (e.g. PIN asked for at the 2-minute warning) - still tell the server the new due time.
-      processUploadQueue(buildPayload({
-        'Alarm Status': 'EXTENDED',
-        'Notes': `Safety PIN entered after the due time - ${PIN_CLEAR_EXTRA_MINS} more minutes.`
-      }));
-      if (typeof _welfareAfterExtend === 'function') _welfareAfterExtend(Date.now());   // __24_ (F102-1): as the server does for EXTENDED
-    }
-    const _msg = _afterDue
-      ? `Safety confirmed. You have ${PIN_CLEAR_EXTRA_MINS} more minutes - extend or end your visit.`
-      : (alarmWasFired ? "Safety confirmed. Notifying contacts." : "Safety confirmed.");
-    announce(_msg);
-    showToast(_afterDue ? `✅ Safety confirmed - ${PIN_CLEAR_EXTRA_MINS} more minutes` : "✅ Safety status confirmed");
-    if (typeof tick === 'function') tick();
-    return;
+    // __38_ (S148V-F7): the new due time is worked out FIRST, with nothing changed; the All Clear carries it and is written to the
+    // outbox before the alarm is removed. Before, the alarm was removed and saved first: an app closed before the write landed came
+    // back on a normal visit with no alarm, and no All Clear was ever sent.
+    const _newDue = _afterDue ? Date.now() + PIN_CLEAR_EXTRA_MINS * 60000 : null;
+    const _finishVisit = () => {
+      _clearAlarmState(); // overlay, interceptor, pulses, panic flags - the phase is set below
+      // The alarm-screen contact buttons belong to the alarm, not the running visit (a reload hides them too).
+      _hideAlarmContactButtons();   // __22_ (R11 / F82-3)
+      if (_afterDue) {
+        _applyNewDueTime(_newDue);   // __38_: the same value the All Clear carried
+      } else {
+        setVisitPhase(VISIT_PHASES.ACTIVE);
+        saveState();
+      }
+      if (alarmWasFired) {
+        // __24_ (R03): the server restarts its welfare clock on this PIN clear (now + interval) - so does the phone.
+        if (typeof _welfareResetClock === 'function') _welfareResetClock(Date.now());
+      } else if (_afterDue) {
+        // No alarm had gone out (e.g. PIN asked for at the 2-minute warning) - still tell the server the new due time.
+        processUploadQueue(buildPayload({
+          'Alarm Status': 'EXTENDED',
+          'Notes': `Safety PIN entered after the due time - ${PIN_CLEAR_EXTRA_MINS} more minutes.`
+        }));
+        if (typeof _welfareAfterExtend === 'function') _welfareAfterExtend(Date.now());   // __24_ (F102-1): as the server does for EXTENDED
+      }
+      const _msg = _afterDue
+        ? `Safety confirmed. You have ${PIN_CLEAR_EXTRA_MINS} more minutes - extend or end your visit.`
+        : (alarmWasFired ? "Safety confirmed. Notifying contacts." : "Safety confirmed.");
+      announce(_msg);
+      showToast(_afterDue ? `✅ Safety confirmed - ${PIN_CLEAR_EXTRA_MINS} more minutes` : "✅ Safety status confirmed");
+      if (typeof tick === 'function') tick();
+    };
+    // No alarm to lose (the EXTENDED-only path, or nothing sent): unchanged and synchronous.
+    if (!alarmWasFired) { _finishVisit(); return Promise.resolve(true); }
+    const payload = buildPayload({
+      'action': 'notifySafety',
+      'Alarm Status': 'USER_SAFE_CONFIRMED',
+      'Notes': 'Worker confirmed safe via PIN entry.' + (_afterDue ? ` Due time moved to now + ${PIN_CLEAR_EXTRA_MINS} min.` : ''),
+      ...(_afterDue ? { 'Anticipated Departure Time': new Date(_newDue).toISOString() } : {})   // buildPayload spreads this last
+    });
+    iamSafe._writing = _w38ClearAfterWrite(payload, _finishVisit, false, _settle);
+    return iamSafe._writing;
   }
 
-  announce(alarmWasFired ? "Safety confirmed. Notifying contacts." : "Safety confirmed.");
+  // __37_ (S148W-F1): as on the decoy screen (S147R-F4), the All Clear is written to the outbox FIRST and only then is the saved alarm
+  // removed (at most 3 s, S148W-N13; a failed or stuck write never stops the clear). __38_: through _w38ClearAfterWrite (S148V-F2, the
+  // duress rule; S149W-N1, N2), and the words are said only once the clear goes ahead.
+  const _finish = () => {
+    // Clear all alarm state
+    _clearAlarmState();
+    announce(alarmWasFired ? "Safety confirmed. Notifying contacts." : "Safety confirmed.");
+
+    showToast("✅ Safety status confirmed");
+
+    if (!state.activeVisit) {
+      navigate('main');
+    }
+  };
 
   // Notify backend of resolution
   if (alarmWasFired) {
@@ -5547,16 +5661,11 @@ function iamSafe() {
       'Alarm Status': 'USER_SAFE_CONFIRMED',
       'Notes': 'Worker confirmed safe via PIN entry.'
     });
-    processUploadQueue(payload);
-  }
-
-  // Clear all alarm state
-  _clearAlarmState();
-
-  showToast("✅ Safety status confirmed");
-
-  if (!state.activeVisit) {
-    navigate('main');
+    iamSafe._writing = _w38ClearAfterWrite(payload, _finish, true, _settle);
+    return iamSafe._writing;
+  } else {
+    _finish();
+    return Promise.resolve(true);
   }
 }
 
@@ -6415,7 +6524,7 @@ if ('serviceWorker' in navigator) {
  // X7 (build __15_): never reload in the middle of a visit. A reload drops the in-memory GPS trail,
  // timers and alarm handling. Hold it and reload the next time the app goes to the background with
  // no visit running (see the visibilitychange handler below).
- if (typeof state !== 'undefined' && state && state.activeVisit) {
+ if (_w36Active()) {   // __36_ (W1): a visit, trip or ANY alarm (a no-visit alarm was not held before)
  // __34_ (F135-4): a page that had no service worker when it loaded (first install, or just after Force App Update) is already the
  // newest app: the first service worker taking control is not an update, so no reload is held and no X7 line is written.
  if (!_swHadController) return;
@@ -6431,7 +6540,8 @@ if ('serviceWorker' in navigator) {
  // Wait 5 s and check again, so a DEPARTED post queued just before the screen went off has finished
  // writing to the outbox (a reload mid-write could lose it and leave the row open).
  setTimeout(() => {
- if (document.visibilityState === 'hidden' && _swReloadPending && !(state && state.activeVisit) && !refreshing) {
+ if (document.visibilityState === 'hidden' && _swReloadPending && !_w36Active() && !refreshing) {   // __36_ (W1)
+ try { _diag('X7: update released - reloading now (no visit or alarm)', true); } catch (e) {}   // __36_ (W8)
  refreshing = true;
  window.location.reload();
  }
@@ -6461,6 +6571,7 @@ window.addEventListener('beforeinstallprompt', e => {
 // CLEANUP ON UNLOAD
 // ============================================================================
 window.addEventListener('beforeunload', () => {
+ _w36Unloading = true;   // __36_ (W8): no diag lines from the stops below - a write during unload would spoil the F138-1 start-up evidence
  stopTravelWatchPosition();
  stopGPSMonitoring();
  stopWelfareChecks();
@@ -7223,6 +7334,13 @@ function setupHoldToStart() { /* wired via initAllActionPills */ }
 async function startVisit(isSkipCheck = false) {
  // __33_ (S130-D2): every early exit says why, in Diagnostics and on screen, so a dead slide is never silent (F101-1)
  if (state.activeVisit) { _f101Exit('a visit is already running', 'A visit is already running'); return; }
+ // __36_ (W3): never start a visit while an alarm is saved or active. No toast (covert): only the PIN prompt, as every tap
+ // during an alarm gives. The slide is a drag, which the tap guard may not catch, so this check is the real protection.
+ if (state.idleAlarm || isPanicActive || isDuressActive) {
+   _f101Exit('PIN needed first', '');
+   try { _alarmPinPrompt(); } catch (_) {}
+   return;
+ }
  if (isPreVisitForm) { _f101Exit('the pre-visit form is open', 'Finish the form on screen first'); return; }   // the pre-visit form is on screen - block stray re-entry
  const btn = document.getElementById('btnStart');
  if (btn && btn.dataset.starting) { _f101Exit('a start is already in progress', 'Starting - one moment'); return; }
@@ -7584,7 +7702,7 @@ function _outboxDB() {
  */
 async function outboxEnqueue(payload) {
  if (!payload) return;
- _diag('outboxEnqueue ' + (payload['Alarm Status'] || '?') + ' site="' + (payload['Location Name'] || '') + '" sigLen=' + String(payload['Signature'] || '').length, true);
+ _diag('outboxEnqueue ' + _w36Shown(payload['Alarm Status'] || '?') + ' site="' + (payload['Location Name'] || '') + '" sigLen=' + String(payload['Signature'] || '').length, !/DURESS/i.test(String(payload['Alarm Status'] || '')));   // __36_ (S146-D3): no stack for DURESS
 
  // Build a stable, unique idempotency key.
  // Stable across retries: key is stored in the record and reused on every attempt.
@@ -7653,6 +7771,7 @@ async function outboxEnqueue(payload) {
  outboxProcess();
  // __21_ (R49): if this record is still unconfirmed after OUTBOX_UNCONFIRMED_MS, the banner appears.
  setTimeout(_refreshUnconfirmedBanner, OUTBOX_UNCONFIRMED_MS + 1000);
+ return idempotencyKey;   // __36_ (W2): the same key the record and every post carry
 }
 
 /*
@@ -8566,7 +8685,7 @@ function _startAlarmGpsPulse() {
     processUploadQueue(buildPayload({
       'Alarm Status': 'ALARM_GPS_PULSE',
       'Notes': isDuressActive ? 'GPS pulse — duress alarm active.' : 'GPS pulse — panic alarm active.',
-      'Last Known GPS': typeof lastGPS !== 'undefined' ? lastGPS : '0,0'
+      'Last Known GPS': lastGPS || '0,0'   // __36_ (W2): after a reload lastGPS is null - send 0,0 (no fix), never null
     }));
   }, GPS_MIN_INTERVAL_MS); // 2 minutes
 }
@@ -8633,10 +8752,71 @@ function _clearAlarmState() {
     saveState();
   }
 
+  // __36_ (W2): every PIN clear (and the server's "resolved", W7) removes the saved no-visit alarm.
+  if (state && state.idleAlarm) {
+    delete state.idleAlarm;
+    saveState();
+  }
+  try { _diag('alarm: cleared'); } catch (_) {}   // __36_ (W8)
+
   // Clean up any legacy loud-alarm classes left from previous sessions
   document.body.classList.remove('bg-red-900', 'panic-mode', 'strobe-active');
   const lockedPage = document.getElementById('lockedPage');
   if (lockedPage) lockedPage.classList.remove('panic-mode');
+}
+
+// __38_ (S148V-F2, S148V-D1): bumped as the FIRST step of every duress step. A PIN clear notes it when it starts and goes ahead only
+// if it is unchanged - a duress PIN entered while the clear's All Clear is being written is never lost.
+let _duressSeq = 0;
+// __38_ (S149W-N1): { key, seq } - set when a no-visit PIN clear's All Clear has landed in the outbox before any duress step started
+// during that clear (key = the saved alarm it closes). Backend __64_ then puts a later DURESS on a NEW row whose Visit ID is the
+// DURESS post's own key, so the first duress step after this takes that key for the saved alarm. Used once, then emptied.
+let _w38AcLanded = null;
+
+/** __38_ (S149W-N2): true while the PIN box is showing. */
+function _w38PinBoxOpen() {
+  const m = document.getElementById('pinModal');
+  return !!(m && !m.classList.contains('hidden'));
+}
+
+/** __38_ (S149W-N2): resolves once the PIN box is not showing (checked every 200 ms). The box closes only when a PIN is accepted. */
+function _w38AfterPinBox() {
+  return new Promise(res => {
+    const chk = () => { try { if (!_w38PinBoxOpen()) return res(); } catch (_) { return res(); } setTimeout(chk, 200); };
+    chk();
+  });
+}
+
+/**
+ * __38_ (S148V-F2, S148V-F7, S149W-N1, N2): the shared ending of every PIN clear that has an alarm to lose.
+ * 1. writes the All Clear to the outbox and waits for the write - at most 3 s (S148W-N13: a failed or stuck write never stops it);
+ * 2. if the PIN box was opened during the write, waits until it is answered (N2);
+ * 3. if a duress step started since the clear began, the clear is ABANDONED on the phone (resolves false) - the alarm stays on at
+ *    step 2, escalateToDuress saves it, and the server gets the DURESS after the All Clear (it alerts again, R4);
+ * 4. otherwise runs finish() (the clear) and resolves true.
+ * settle (optional) runs first in step 3/4 (iamSafe's double-PIN guard). idle = a no-visit clear (N1 bookkeeping).
+ */
+function _w38ClearAfterWrite(payload, finish, idle, settle) {
+  const seq0 = _duressSeq;
+  let _w = null;
+  try { _w = outboxEnqueue(payload); } catch (_) { _w = null; }
+  if (idle) {
+    Promise.resolve(_w).then(k => {
+      if (k && _duressSeq === seq0 && state && state.idleAlarm && state.idleAlarm.key) _w38AcLanded = { key: String(state.idleAlarm.key), seq: seq0 };
+    }).catch(() => {});
+  }
+  return Promise.race([Promise.resolve(_w), new Promise(r => setTimeout(r, 3000))]).catch(() => {})
+    .then(() => _w38AfterPinBox())
+    .then(() => {
+      if (typeof settle === 'function') settle();
+      if (_duressSeq !== seq0) {
+        try { _diag('alarm: PIN clear stopped - PIN step 2 entered during the write; alarm kept', true); } catch (_) {}
+        return false;
+      }
+      if (idle) _w38AcLanded = null;
+      finish();
+      return true;
+    });
 }
 
 /**
@@ -8646,6 +8826,7 @@ function _clearAlarmState() {
  * normally — to any onlooker, the PIN just cleared an error.
  */
 async function escalateToDuress() {
+  const _mySeq = ++_duressSeq;   // __38_ (S148V-F2): FIRST - a PIN clear under way sees this and stops
   isDuressActive = true;
   const _cue = document.getElementById('alarmDeliveryCue');
   if (_cue) _cue.classList.remove('show'); // A1: never show the cue under duress
@@ -8653,14 +8834,41 @@ async function escalateToDuress() {
   // Switch overlay to purple to distinguish DURESS from PANIC
   showAlarmOverlay('duress');
 
-  // Update visit-level flag so state persists across reloads
-  if (state && state.activeVisit) {
-    state.activeVisit.isDuress = true;
-    saveState();
-  }
+  try { _diag('alarm: PIN step 2'); } catch (_) {}   // __36_ (W8): neutral words - Diagnostics can be opened on the phone
 
-  // Post DURESS to backend — contacts notified per their escalation protocol
-  await logSafety("DURESS", "Worker escalated to duress via PIN entry.");
+  // __37_ (S147R-F3): the DURESS is queued FIRST (logSafety waits for the outbox write), and only then is step 2 saved - the order the
+  // PANIC uses. Before, step 2 was saved first: an app closed in that gap came back on the duress screen while the server only ever
+  // had the PANIC, so the contacts never got the DURESS alert. Now a close in the gap comes back on the PANIC screen with the DURESS
+  // already queued (the safe direction). Step 2 is saved even if the post throws, but not if the alarm was cleared meanwhile.
+  // __37_ (S147R-F2): the DURESS carries the PANIC's position rule (F146-1): a fix held from the last minute, else 0,0 - never an
+  // older position. Backend BE2 then sends the contacts the position when a real fix arrives.
+  // __37_ (S148W-N6, Russell 5.01 pm): when no fix goes with the DURESS, the first fix goes out the moment it lands, as for the
+  // PANIC - set after the DURESS is queued, so no pulse reaches the server ahead of it.
+  const _held = _w36HeldFix();
+  let _dk;   // __38_ (S149W-N1): the DURESS record's outbox key (undefined if it went to the legacy queue)
+  try {
+    // Post DURESS to backend - contacts notified per their escalation protocol
+    _dk = await logSafety("DURESS", "Worker escalated to duress via PIN entry.", { 'Last Known GPS': _held || '0,0' });
+  } finally {
+    const _ac = _w38AcLanded; _w38AcLanded = null;   // __38_ (S149W-N1): only the first duress step after the All Clear landed uses it
+    // Update visit-level flag so state persists across reloads
+    if (isDuressActive && state && state.activeVisit) {
+      state.activeVisit.isDuress = true;
+      saveState();
+    } else if (isDuressActive && state && state.idleAlarm) {
+      // __36_ (W2): the saved no-visit alarm becomes a duress one; it keeps the PANIC's key (the DURESS merges into that row).
+      state.idleAlarm.kind = 'DURESS';
+      state.idleAlarm.stepAt = Date.now();
+      // __38_ (S149W-N1): the All Clear landed before this duress step, so backend __64_ closes the old row and makes a new one for
+      // this DURESS (Visit ID = its key): the saved alarm names that row, so W7 asks about it.
+      if (_ac && _dk && _ac.seq < _mySeq && _ac.key === String(state.idleAlarm.key || '')) {
+        state.idleAlarm.key = String(_dk).slice(0, 120);
+        try { _diag('alarm: saved alarm now names the step-2 row (an All Clear went just before)', true); } catch (_) {}
+      }
+      saveState();
+    }
+    if (isDuressActive && !_held) { _alarmFixPending = true; _w36FreshFirstFix(); }
+  }
 
   // Interceptor stays armed — next tap still requires PIN
   // (worker remains under duress until they enter their safety PIN)
@@ -8734,8 +8942,11 @@ function _alarmPinPrompt(onSafe) {
     if (entered === stdPin) {
       // Safety PIN — clear alarm, resume normal operation
       closeModal('pin');
-      iamSafe();
-      if (typeof onSafe === 'function') onSafe();
+      // __38_ (S148V-F7): iamSafe's clear now waits for the All Clear write, so onSafe (extend) runs only once it has run - otherwise
+      // the extension would be overwritten by the clear's own due time. Not run if a duress step stopped the clear (false).
+      Promise.resolve(iamSafe()).then(ok => {
+        if (ok !== false && typeof onSafe === 'function') onSafe();
+      }).catch(e => { try { _diag('alarm: PIN clear error ' + String((e && e.message) || e).slice(0, 120), true); } catch (_) {} });
     } else if (entered === duressPin) {
       // Duress PIN — looks like a normal PIN entry; silently escalates
       closeModal('pin');
@@ -8780,6 +8991,7 @@ function showDecoyLockScreen() {
   _updateDecoyClock();
   _decoyClockInterval = setInterval(_updateDecoyClock, 1000);
   el.classList.remove('hidden');
+  try { _diag('alarm: decoy screen shown'); } catch (_) {}   // __36_ (W8)
 }
 
 function hideDecoyLockScreen() {
@@ -8846,16 +9058,24 @@ async function _evaluateDecoyPin(entered) {
   if (entered === stdPin) {
     // Safety PIN — clear all alarm state and return to main screen
     hideDecoyLockScreen();
-    _clearAlarmState();
+    // __37_ (S147R-F4): the All Clear is written to the outbox FIRST, then the saved alarm is removed. Before, the saved alarm went
+    // first: an app closed in that gap showed no alarm while the server's alarm stayed open. processUploadQueue() does not wait for
+    // the write, so outboxEnqueue is awaited here - for at most 3 s (S148W-N13): a failed or stuck write never stops the clear (a PIN
+    // clear is never refused).
     const payload = buildPayload({
       'action': 'notifySafety',
       'Alarm Status': 'USER_SAFE_CONFIRMED',
       'Notes': 'Worker confirmed safe via decoy lock screen PIN.'
     });
-    processUploadQueue(payload);
-    announce("Safety confirmed. Notifying contacts.");
-    showToast("✅ Safety status confirmed");
-    navigate('main');
+    // __38_ (S148V-F2, S149W-N1, N2): through the shared ending - a duress PIN entered during the write stops this clear on the phone.
+    // It also shares iamSafe's double-PIN guard (S149W-N4): a safety PIN through the PIN box during this write gets this same clear.
+    iamSafe._writing = _w38ClearAfterWrite(payload, () => {
+      _clearAlarmState();
+      announce("Safety confirmed. Notifying contacts.");
+      showToast("✅ Safety status confirmed");
+      navigate('main');
+    }, true, () => { iamSafe._writing = null; });
+    await iamSafe._writing;
   } else if (entered === duressPin) {
     // Duress PIN — escalate silently, dismiss decoy screen, return to home
     hideDecoyLockScreen();
@@ -9317,6 +9537,343 @@ function updateVerifyProgress() {
 // _initApp is called by loadConfig() after config.json has been fetched and
 // applied. It replaces the old window.onload handler. The boot screen hides
 // before this runs so the user sees a fully themed, configured app.
+// =============================================================================
+// __36_ (session 146): worker __36_ - the no-visit alarm, tracking after a reload, the "active" check and the alarm state from
+// the server. Plan: HANDOVER_145 section 5, S144_build36_diagnosis_and_plan.md, S145_build63_notes.md sections 3.4 and 4.
+// =============================================================================
+
+var _w36Unloading = false;   // W8: set by the beforeunload handler (var: that handler is registered before this block runs)
+
+/** W1 (S144-D9): is the app "active"? A visit or trip is running (until the travel report is sent) OR any alarm is on (PANIC,
+ *  DURESS, a saved no-visit alarm, the notice / welfare alarm). A pre-visit form and the set-up wizard are not active.
+ *  Worked out from the state every time (no flag of its own), so it cannot stay "active" after a visit ends. Errs on active. */
+function _w36Active() {
+  try {
+    if (typeof state === 'undefined' || !state) return false;
+    if (state.activeVisit) return true;
+    if (state.idleAlarm) return true;
+    if (isPanicActive || isDuressActive) return true;
+    return !!_noticeInAlarm();
+  } catch (_) { return true; }
+}
+
+/** F146-1: the position the phone already holds, if it is a real fix from the last minute; else ''. */
+const W36_HELD_FIX_MS = 60000;
+function _w36HeldFix() {
+  try {
+    if (!_isValidGPS(lastGPS)) return '';
+    if (typeof lastGPSAt !== 'number' || !isFinite(lastGPSAt)) return '';
+    const age = Date.now() - lastGPSAt;
+    return (age <= W36_HELD_FIX_MS && age >= -120000) ? lastGPS : '';
+  } catch (_) { return ''; }
+}
+
+/** F76-1 for the PANIC and a restored alarm (__36_): ask for a fresh fix now; if one lands while the first fix is still owed,
+ *  send it at once as a pulse. The poller's own first fix does the same; whichever lands first sends, the other sees the flag
+ *  already cleared (one pulse). */
+function _w36FreshFirstFix() {
+  try {
+    _freshAlarmFix().then(ok => {
+      if (!ok || !_alarmFixPending || !(isPanicActive || isDuressActive)) return;
+      _alarmFixPending = false;
+      processUploadQueue(buildPayload({
+        'Alarm Status': 'ALARM_GPS_PULSE',
+        'Notes': 'GPS pulse - first fix after the alarm started.',
+        'Last Known GPS': lastGPS
+      }));
+      try { _diag('alarm: first position sent'); } catch (_) {}
+    });
+  } catch (_) {}
+}
+
+/** W2: at start-up, bring back a saved no-visit alarm (phone only - nothing is posted; the server already has it, or the
+ *  outbox still does). PANIC: decoy screen; after a duress step: the overlay on the normal screen (what was showing). */
+function _w36RestoreIdleAlarm(why) {
+  try {
+    const a = state && state.idleAlarm;
+    if (!a) return false;
+    if (typeof a !== 'object' || !(state.pins && state.pins.std)) {
+      // An alarm that no PIN could ever clear would lock the app for good. Only possible with damaged saved data.
+      delete state.idleAlarm; saveState();
+      _diag('alarm: saved alarm dropped at start-up - unreadable or no safety PIN set', true);
+      return false;
+    }
+    const step2 = a.kind === 'DURESS';
+    isPanicActive = true;
+    if (step2) isDuressActive = true;
+    showAlarmOverlay(step2 ? 'duress' : 'panic');
+    if (!step2 && !state.activeVisit) showDecoyLockScreen();
+    _armAlarmInterceptor();
+    _startAlarmGpsPulse();
+    if (gpsWatchId === null && typeof startGPSMonitoring === 'function') startGPSMonitoring();
+    gpsCurrentIntervalMs = GPS_MIN_INTERVAL_MS;
+    _alarmFixPending = true;   // after _startAlarmGpsPulse (it clears the flag): the first fix goes at once
+    _w36FreshFirstFix();
+    const mins = Math.max(0, Math.round((Date.now() - (a.at || Date.now())) / 60000));
+    _diag('alarm: restored ' + (why || 'at start-up') + ' (' + (step2 ? 'normal screen' : 'decoy screen') + ', saved ' + mins + ' min ago' +
+      (state.activeVisit ? ', a visit is also open' : '') + ')', true);
+    return true;
+  } catch (e) {
+    try { _diag('alarm: restore error ' + String((e && e.message) || e).slice(0, 120), true); } catch (_) {}
+    return false;
+  }
+}
+
+/** W5: keep the trip's trail, speed total and counts and the watch-failed flag with the visit, at most about once a minute
+ *  (force: now). Only for a trip. The visit object is new for every visit, so a new trip starts with no saved trail. */
+function _w36TrkSave(force) {
+  try {
+    const v = state && state.activeVisit;
+    if (!v || !(v.isTravel || v.locationId === 'travel')) return;
+    const now = Date.now(), prev = v.trk || {};
+    if (!force && prev.at && now - prev.at < 55000) return;
+    v.trk = {
+      v: 1,
+      trail: gpsTrail.map(p => ({ lat: p.lat, lng: p.lng })),
+      speedM: _speedAccumM,
+      stats: { credited: _speedStats.credited, still: _speedStats.still, capped: _speedStats.capped },
+      watchFailed: !!(_gpsWatchPositionFailed || prev.watchFailed),
+      resumes: prev.resumes || 0,
+      gapS: prev.gapS || 0,
+      at: now
+    };
+    saveState();
+  } catch (_) {}
+}
+
+/** W5: the 5-minute OVERDUE repeat (the body _overdueGpsPush starts), started again after a reload. */
+function _w36StartOverdueRepeat() {
+  if (arrivedPulseInterval) return;
+  if (gpsWatchId === null && typeof startGPSMonitoring === 'function') startGPSMonitoring();
+  arrivedPulseInterval = setInterval(() => {
+    if (!state || !state.activeVisit) { clearInterval(arrivedPulseInterval); arrivedPulseInterval = null; return; }
+    processUploadQueue(buildPayload({
+      'Alarm Status': 'OVERDUE',
+      'Last Known GPS': lastGPS || '0,0'
+    }));
+  }, 5 * 60 * 1000);
+}
+
+/** W5: after any reload (Force App Update, swipe away and reopen, the phone reclaiming the page, a crash) a running visit
+ *  restarts what only startVisit used to start: the trip watch and 2-minute pulse (trail, speed total and counts put back;
+ *  the speed clock restarts, so the gap earns no speed credit) or the site poller; for an alarm the poller and the first fix
+ *  at once; the OVERDUE repeat if it was running. Called from _initApp after enterLockedScreen. */
+function _w36ResumeTracking() {
+  try {
+    const v = state && state.activeVisit;
+    if (!v) return;
+    const trip = !!(v.isTravel || v.locationId === 'travel');
+    let note;
+    if (trip) {
+      const t = v.trk || null;
+      if (t && Array.isArray(t.trail)) {
+        gpsTrail = t.trail.filter(p => p && isFinite(p.lat) && isFinite(p.lng)).map(p => ({ lat: +p.lat, lng: +p.lng }));
+        _speedAccumM = isFinite(+t.speedM) ? +t.speedM : 0;
+        const st = t.stats || {};
+        _speedStats = { credited: +st.credited || 0, still: +st.still || 0, capped: +st.capped || 0 };
+      }
+      _speedAccumLastTs = null;   // no speed credit for the time the page was dead
+      _speedAccumPrevSpd = null;
+      const gap = (t && t.at) ? Math.max(0, Math.round((Date.now() - t.at) / 1000)) : 0;
+      const wf = !!(t && t.watchFailed);
+      if (typeof startTravelWatchPosition === 'function') startTravelWatchPosition();   // resets the failed flag - put back below
+      if (wf) _gpsWatchPositionFailed = true;
+      if (typeof startTravellingPulse === 'function') startTravellingPulse();
+      v.trk = {
+        v: 1,
+        trail: gpsTrail.map(p => ({ lat: p.lat, lng: p.lng })),
+        speedM: _speedAccumM,
+        stats: { credited: _speedStats.credited, still: _speedStats.still, capped: _speedStats.capped },
+        watchFailed: wf || _gpsWatchPositionFailed,
+        resumes: ((t && t.resumes) || 0) + 1,
+        gapS: ((t && t.gapS) || 0) + gap,
+        at: Date.now()
+      };
+      saveState();
+      note = 'trip watch and pulse restarted, trail ' + gpsTrail.length + ' points' + (t ? ', gap ' + gap + ' s' : ', no saved trail');
+    } else {
+      if (typeof startGPSMonitoring === 'function') startGPSMonitoring();
+      note = 'site GPS restarted';
+    }
+    if (v.phase === VISIT_PHASES.ALARMING) {
+      if (gpsWatchId === null && typeof startGPSMonitoring === 'function') startGPSMonitoring();
+      gpsCurrentIntervalMs = GPS_MIN_INTERVAL_MS;
+      _alarmFixPending = true;
+      _w36FreshFirstFix();
+      note += '; alarm: the first fix goes at once';
+    }
+    if (v.overdueGpsSent && Date.now() >= (v.anticipatedDepartureTime || 0) && !arrivedPulseInterval) {
+      _w36StartOverdueRepeat();
+      note += '; OVERDUE repeat restarted';
+    }
+    _diag('GPS: resumed after reload - ' + note, true);
+  } catch (e) {
+    try { _diag('GPS: resume error ' + String((e && e.message) || e).slice(0, 120), true); } catch (_) {}
+  }
+}
+
+/** W4: grey (and explain) Force App Update and Reset App Data while active; free them again afterwards. Never throws. */
+function _w36BusyUi() {
+  try {
+    const busy = _w36Active();
+    [['btnForceAppUpdate', 'forceUpdateBusy'], ['btnResetData', 'resetDataBusy']].forEach(([b, r]) => {
+      const be = document.getElementById(b), re = document.getElementById(r);
+      if (be) { be.disabled = busy; be.classList.toggle('opacity-40', busy); be.setAttribute('aria-disabled', busy ? 'true' : 'false'); }
+      if (re) re.classList.toggle('hidden', !busy);
+    });
+  } catch (_) {}
+}
+
+/** W4: a message that stays until tapped (or 12 s). */
+function _w36Notice(text) {
+  try {
+    const old = document.getElementById('w36Notice'); if (old) old.remove();
+    const d = document.createElement('div');
+    d.id = 'w36Notice'; d.setAttribute('role', 'alert');
+    d.style.cssText = 'position:fixed;left:12px;right:12px;top:18%;z-index:10000;background:#1f2937;color:#fff;font-weight:800;font-size:16px;' +
+      'line-height:1.35;text-align:center;padding:16px 14px;border-radius:14px;border:3px solid #fbbf24;box-shadow:0 10px 30px rgba(0,0,0,0.6);';
+    const p = document.createElement('div'); p.textContent = text; d.appendChild(p);
+    const tap = document.createElement('div'); tap.style.cssText = 'margin-top:10px;font-size:12px;font-weight:700;opacity:0.8;'; tap.textContent = 'Tap to close';
+    d.appendChild(tap);
+    d.addEventListener('click', () => { try { d.remove(); } catch (_) {} });
+    document.body.appendChild(d);
+    setTimeout(() => { try { d.remove(); } catch (_) {} }, 12000);
+  } catch (_) {}
+}
+
+/** W7: the extra sync parameter - only while a saved alarm with a key exists, and only to backend __63_ or later. */
+function _w36AlarmQuery() {
+  try {
+    const a = state && state.idleAlarm;
+    if (!a || !a.key || _backendBuildNo() < 63) return '';
+    return '&alarmId=' + encodeURIComponent(String(a.key));
+  } catch (_) { return ''; }
+}
+
+/** W7 (S144-D8): backend __63_'s meta.alarmState for the saved alarm. Cleared ONLY on 'resolved' (a Monitor resolve, a hand
+ *  edit); 'open', 'not-found' (still in the outbox, or merged into another row) and 'error' keep it. Nothing is posted. */
+let _w36LastAlarmState = '';
+function _w36ReadAlarmState(meta) {
+  try {
+    const as = meta && meta.alarmState;
+    const a = state && state.idleAlarm;
+    if (!as || typeof as !== 'object' || !a || !a.key) return false;
+    if (_backendBuildNo() < 63) return false;
+    if (String(as.id) !== String(a.key)) return false;
+    if (as.state !== 'resolved') {
+      if (as.state !== _w36LastAlarmState) { _w36LastAlarmState = String(as.state); _diag('alarm: server says ' + String(as.state).slice(0, 20) + ' - kept'); }
+      return false;
+    }
+    if (state.activeVisit) return false;   // never possible (Start is refused while saved) - leave it for the PIN
+    _w36LastAlarmState = '';
+    _diag('alarm: server says resolved (closed by HQ) - phone alarm cleared, nothing posted', true);
+    try { closeModal('pin'); } catch (_) {}
+    _clearAlarmState();
+    try { showToast('✅ Safety status confirmed'); } catch (_) {}
+    try { navigate('main'); } catch (_) {}
+    return true;
+  } catch (e) {
+    try { _diag('alarm: state check error ' + String((e && e.message) || e).slice(0, 120)); } catch (_) {}
+    return false;
+  }
+}
+
+/** W9: is a PIN clear (USER_SAFE...) of this worker still unsent (outbox or the legacy queue)? Resolves true / false; true if
+ *  the outbox cannot be read (errs on "do not ask", so a clear made offline can never bring the alarm screen back). */
+async function _w36ClearUnsentNow() {
+  try {
+    const me = String((state && state.worker && state.worker.name) || '');
+    const isClear = p => p && /^USER_SAFE/.test(String(p['Alarm Status'] || '')) && (!p['Worker Name'] || String(p['Worker Name']) === me);
+    if ((state && state.pendingUploads || []).some(isClear)) return true;
+    const db = await _outboxDB();
+    const all = await new Promise((res, rej) => { const q = db.transaction('events', 'readonly').objectStore('events').getAll(); q.onsuccess = () => res(q.result || []); q.onerror = () => rej(q.error); });
+    return all.some(r => r && r.status !== 'sent' && isClear(r.payload));
+  } catch (_) { return true; }
+}
+let _w36ClearUnsent = false;  // the sync at opening may ask before the first look ends: the answer is acted on only after a fresh look (_w36ReadOpenAlarm)
+function _w36RefreshClearUnsent() {
+  try { _w36ClearUnsentNow().then(v => { _w36ClearUnsent = !!v; }); } catch (_) {}
+}
+
+/** W9: the extra sync parameter - only to backend __64_ or later, only when the phone is idle (no visit or trip, no saved alarm, no
+ *  alarm on) and no PIN clear is waiting to send. The flag it reads is refreshed here for the next sync. */
+function _w36AlarmCheckQuery() {
+  try {
+    // __37_ (S147R-F5): also asks when the stored build is not known yet (0 - the first sync after a fresh set-up), so a lost alarm
+    // comes back at that sync. Older backends ignore the field; the answer is read only when the reply's own build is 64 or more
+    // (_w36ReadOpenAlarm). A build known to be below 64 is never asked.
+    const _bn = _backendBuildNo();
+    const ask = (_bn === 0 || _bn >= 64) && !!state && !state.activeVisit && !state.idleAlarm && !isPanicActive && !isDuressActive && !_w36ClearUnsent;
+    _w36RefreshClearUnsent();
+    return ask ? '&alarmCheck=1' : '';
+  } catch (_) { return ''; }
+}
+
+/** W9: backend __64_'s meta.openAlarm = { id, kind, since } - an open no-visit alarm of this worker that this phone no longer holds.
+ *  Saved exactly as W2 saves one (id = the row's Visit ID, so W7 then works) and the same screen restored. Nothing is posted and
+ *  nothing is written on screen. Checked again at the answer: still idle, no start in progress, and no unsent PIN clear. */
+function _w36ReadOpenAlarm(meta) {
+  try {
+    const oa = meta && meta.openAlarm;
+    if (!oa || typeof oa !== 'object' || !oa.id) return false;
+    if (_backendBuildNo() < 64) return false;
+    const idle = () => !!state && !state.activeVisit && !state.idleAlarm && !isPanicActive && !isDuressActive && !!(state.pins && state.pins.std) &&
+      !isPreVisitForm && !((document.getElementById('btnStart') || {}).dataset || {}).starting;
+    if (!idle()) return false;
+    _w36ClearUnsentNow().then(unsent => {
+      try {
+        _w36ClearUnsent = !!unsent;
+        if (unsent) { _diag('alarm: server reports an earlier alarm - not restored, a PIN clear is still waiting to send'); return; }
+        if (!idle()) return;
+        const since = Date.parse(String(oa.since || ''));
+        state.idleAlarm = { kind: String(oa.kind).toUpperCase() === 'DURESS' ? 'DURESS' : 'PANIC', at: isFinite(since) ? since : Date.now(), key: String(oa.id).slice(0, 120), from: 'server' };
+        saveState();
+        _w36RestoreIdleAlarm('from server');
+      } catch (e) { try { _diag('alarm: server restore error ' + String((e && e.message) || e).slice(0, 120), true); } catch (_) {} }
+    });
+    return true;
+  } catch (e) {
+    try { _diag('alarm: open-alarm check error ' + String((e && e.message) || e).slice(0, 120)); } catch (_) {}
+    return false;
+  }
+}
+
+/** W8 (S146-D2): the worker build the service worker would serve, read from its own stored copy of the app page. No change to
+ *  sw.js or the OTG-SW-OUTBOX block. Shown in Diagnostics and Copy report; a change is written to the diag log. */
+let _w36SwInfo = 'not checked yet';
+async function _w36SwCheck() {
+  let info;
+  try {
+    if (typeof caches === 'undefined') info = 'no cache store on this phone';
+    else if (!navigator.serviceWorker || !navigator.serviceWorker.controller) info = 'no service worker in control of this page';
+    else {
+      const urls = [new URL('./index.html', location.href).href, new URL('./', location.href).href];
+      const keys = (await caches.keys()).filter(k => String(k).indexOf('otg-safety--') === 0).sort().reverse();
+      let hit = null, name = '';
+      for (const k of keys) {
+        const c = await caches.open(k);
+        for (const u of urls) { const r = await c.match(u); if (r) { hit = r; name = k; break; } }
+        if (hit) break;
+      }
+      if (!hit) info = 'no stored copy of the app found';
+      else {
+        const m = /const\s+WORKER_BUILD\s*=\s*'([^']+)'/.exec(await hit.text());
+        const b = m ? m[1] : 'unknown (older than __15_)';
+        const ver = String(name).split('--').pop();
+        info = b + (b === WORKER_BUILD ? ' (matches this app)' : ' (DIFFERS - this app is ' + WORKER_BUILD + ')') + (ver ? ', cache ' + ver : '');
+      }
+    }
+  } catch (e) { info = 'check failed: ' + String((e && e.message) || e).slice(0, 80); }
+  if (info !== _w36SwInfo) { _w36SwInfo = info; try { _diag('SW: holds ' + info); } catch (_) {} }
+  try { const el = document.getElementById('swBuild'); if (el) el.textContent = 'sw: ' + info; } catch (_) {}
+  return info;
+}
+
+/** S146-D3: Diagnostics shows DURESS as ALARM-2 (Diagnostics can be opened on the phone). Display only - posts are unchanged. */
+function _w36Shown(status) {
+  return String(status == null ? '' : status).replace(/DURESS/gi, 'ALARM-2');
+}
+
 function _initApp() {
  // F74-3 (build __12_): startup must run once per page. Observed on device
  // (15 Oct 2026): every persistent slide pill was wired twice ~100 ms apart,
@@ -9391,6 +9948,9 @@ function _initApp() {
  // reload a PANIC cannot be told apart from an overdue alarm. Overlay + PIN guard are what matter.
  _diag('X5: visit was ALARMING at load - alarm screen and PIN guard restored', true);
  }
+ _w36RestoreIdleAlarm();   // __36_ (W2): a saved no-visit alarm comes back (phone only, nothing posted)
+ _w36RefreshClearUnsent();   // __36_ (W9): is a PIN clear still waiting in the outbox? (decides alarmCheck on the first sync)
+ setTimeout(() => { try { _w36SwCheck(); } catch (_) {} }, 4000);   // __36_ (W8): the build the service worker holds
 
  // 3. Ensure nested objects exist
  if (!state.meta) state.meta = {};
@@ -9424,6 +9984,7 @@ function _initApp() {
       if (typeof window._armBackTrap === 'function') window._armBackTrap();
  enterLockedScreen();
  // enterLockedScreen() starts tickIntervalId - no duplicate needed here
+ _w36ResumeTracking();   // __36_ (W5): GPS, pulses and the trail come back after any reload
  }
 
  const isTemplate = !CONFIG.key || CONFIG.key.length < 3;
@@ -9509,6 +10070,7 @@ function toggleDiagnostics() {
  const isOpen = !panel.classList.contains('hidden');
  panel.classList.toggle('hidden', isOpen);
  if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(180deg)';
+ if (!isOpen) { _w36BusyUi(); try { _w36SwCheck(); } catch (_) {} }   // __36_ (W4, W8)
 }
 
 // ============================================================================
@@ -9543,6 +10105,8 @@ async function _buildDiagReport() {
  add('Storage name', safe(() => _storageNs + (_NS_MIGRATION ? ' - ' + _NS_MIGRATION.reason + (_NS_MIGRATION.copied ? ' (' + _NS_MIGRATION.copied + ' items from ' + _NS_MIGRATION.from + ')' : '') : ''), '-'));   // __24_ (F101-8)
  add('Device', safe(() => navigator.userAgent, '-'));
  try { await _f138Report(L); } catch (_) { L.push('Start-up check: (unavailable)'); }   // __35_ (F138-1)
+ try { add('Service worker holds', await Promise.race([_w36SwCheck(), new Promise(r => setTimeout(() => r(_w36SwInfo + ' (check slow)'), 2500))])); } catch (_) {}   // __36_ (W8)
+ add('Saved no-visit alarm', safe(() => state.idleAlarm ? 'yes, saved ' + nz(state.idleAlarm.at) + (state.idleAlarm.key ? '' : ' (no key)') : 'none', '-'));   // __36_ (W2)
 
  L.push('', '--- VISIT ---');
  const v = safe(() => state.activeVisit, null);
@@ -9554,9 +10118,9 @@ async function _buildDiagReport() {
   add('Place', v.locationName);
   add('Started', v.startTime ? nz(v.startTime) : '-');
   add('Due', v.anticipatedDepartureTime ? nz(v.anticipatedDepartureTime) : '-');
-  add('Alarm sent / panic / duress', [!!v.criticalSent, !!v.isPanic, !!v.isDuress].join(' / '));
+  add('Alarm sent / alarm / alarm step 2', [!!v.criticalSent, !!v.isPanic, !!v.isDuress].join(' / '));   // __37_ (S148W-N1): neutral label
  }
- add('Panic active / duress active', safe(() => [!!isPanicActive, !!isDuressActive].join(' / '), '-'));
+ add('Alarm active / alarm step 2', safe(() => [!!isPanicActive, !!isDuressActive].join(' / '), '-'));   // __36_ (S146-D3): neutral label
 
  L.push('', '--- DISTANCE (travel) ---');
  const cd = safe(() => calculatedDist, null);
@@ -9583,14 +10147,14 @@ async function _buildDiagReport() {
   const failedRows = all.filter(r => r.status === 'failed').sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 10);
   if (failedRows.length) {
    L.push('Failed events (newest first):');
-   failedRows.forEach(r => L.push('  ' + (r.createdAt ? nzShort(r.createdAt) : '?') + '  ' + ((r.payload && r.payload['Alarm Status']) || 'LOG') +
+   failedRows.forEach(r => L.push('  ' + (r.createdAt ? nzShort(r.createdAt) : '?') + '  ' + _w36Shown((r.payload && r.payload['Alarm Status']) || 'LOG') +
      (r.attempts > 0 ? '  x' + r.attempts : '') + ' - ' + String(r.lastError || 'no reason recorded').slice(0, 120)));
   }
   const recent = [...all].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 15);
   if (recent.length) L.push('Recent events (newest first):'); // F86-6 (build __20_)
   recent.forEach(r => {
    const t = r.createdAt ? nzShort(r.createdAt) : '?';
-   const st = (r.payload && r.payload['Alarm Status']) || 'LOG';
+   const st = _w36Shown((r.payload && r.payload['Alarm Status']) || 'LOG');   // __36_ (S146-D3)
    const err = (r.status !== 'sent' && r.lastError) ? ' - ' + String(r.lastError).slice(0, 80)
              : (r.status === 'sent' && r.prevError) ? ' (earlier: ' + String(r.prevError).slice(0, 60) + ')' : '';   // __21_ (R49)
    L.push(t + '  ' + r.status + '  ' + st + (r.attempts > 0 ? '  x' + r.attempts : '') + err);
@@ -10151,7 +10715,14 @@ function clearFormsCache() {
 
 // Clear all app data
 function clearData() {
- if (confirm('⚠️ WARNING: This will erase ALL app data including settings, locations, and queued uploads.\n\nAre you absolutely sure?')) {
+ // __36_ (W6): never during a visit, trip or alarm (one tap and two OKs used to wipe a running visit on the phone).
+ if (_w36Active()) {
+   try { _diag('reset: refused - a visit, trip or alarm is active', true); } catch (_) {}
+   _w36Notice('Reset App Data is not available during a visit, trip or alarm.');
+   _w36BusyUi();
+   return;
+ }
+ if (confirm('⚠️ RESET APP DATA: this deletes your name, contacts, PINs, sites and settings from this phone. You will need to set the app up again.\n\nAre you sure?')) {
  if (confirm('⚠️ FINAL WARNING: There is NO UNDO. All data will be permanently deleted.\n\nContinue?')) {
  // __35_ (F138-1): the copy of the set-up goes FIRST, and must be gone before localStorage is cleared - otherwise the next start
  // would put the set-up back. If that cannot be confirmed, nothing is deleted and the worker is told.
@@ -10248,6 +10819,14 @@ function _redBarSync() {
 function _redBarTap() {
   const b = document.getElementById('buildMismatchBanner');
   const kind = (b && b.dataset.kind) || 'app';
+  // __36_ (W4, S144-D3): during a visit or trip the bar tap explains instead of opening Force App Update (which is greyed then).
+  if (kind === 'app' && _w36Active()) {
+    const _held = !!_swReloadPending;
+    try { _diag('update: deferred - red bar tapped during a visit (' + (_held ? 'update held, installs after the visit' : 'out of date, update after the visit') + ')' + (isBatterySaverActive ? ' - dim screen woken' : '')); } catch (_) {}
+    try { if (typeof dimTimer !== 'undefined') clearTimeout(dimTimer); deactivateBatterySaver(); } catch (_) {}
+    _w36Notice(_held ? 'An update is ready. It will install by itself after your visit ends.' : 'Finish your visit first, then tap this bar to update.');
+    return;
+  }
   try { _diag('F135-4: red bar tapped (' + kind + ')' + (isBatterySaverActive ? ' - dim screen woken' : '')); } catch (_) {}
   try { if (typeof dimTimer !== 'undefined') clearTimeout(dimTimer); deactivateBatterySaver(); } catch (_) {}
   try { navigate('settings'); } catch (_) {}
@@ -10270,6 +10849,7 @@ function _redBarTick() {
     }
     _redBarSync();
   } catch (_) {}
+  _w36BusyUi();   // __36_ (W4): grey or free Force App Update and Reset App Data (every 15 s)
 }
 
 function _showBuildMismatch(deployed) {
@@ -10319,6 +10899,13 @@ function _versionRecheck(reason) {
 }
 
 async function forceAppUpdate() {
+ // __36_ (W4): never during a visit, trip or alarm (it reloads the page: before, it bypassed the X7 hold completely).
+ if (_w36Active()) {
+   try { _diag('update: Force App Update refused - a visit, trip or alarm is active', true); } catch (_) {}
+   _w36Notice('Force App Update is not available during a visit, trip or alarm. It will be available when your visit has ended.');
+   _w36BusyUi();
+   return;
+ }
  if (!confirm('This will clear all cached app files and reload from the server.\n\nYour registration and settings will be preserved. Use this if the app looks wrong after an update.\n\nContinue?')) return;
 
  showToast('🔄 Clearing app cache…');
@@ -10531,7 +11118,7 @@ async function updateOutboxStatus() {
  }
 
  historyEl.innerHTML = recent.map(r => {
- const alarmStatus = r.payload?.['Alarm Status'] || 'LOG';
+ const alarmStatus = _w36Shown(r.payload?.['Alarm Status'] || 'LOG');   // __36_ (S146-D3)
  const ts = r.createdAt ? _fmtClock12(new Date(r.createdAt), true) : '?';   // __22_ (R46)
  // F74-3 diagnostic (build __11_): show which site and whether a signature travelled
  const _site = escapeHtml(String(r.payload?.['Location Name'] || '').slice(0, 24));
@@ -10997,7 +11584,7 @@ function forceSync(showUI, quiet) {
  const deviceId = getDeviceID();
  const workerName = state.worker.name;
  
- fetch(`${CONFIG.url}?action=sync&worker=${encodeURIComponent(workerName)}&key=${CONFIG.key}&deviceId=${deviceId}&_cb=${Date.now()}`)
+ fetch(`${CONFIG.url}?action=sync&worker=${encodeURIComponent(workerName)}&key=${CONFIG.key}&deviceId=${deviceId}${_w36AlarmQuery()}${_w36AlarmCheckQuery()}&_cb=${Date.now()}`)
  .then(r => r.json())
  .then(data => {
  const banner = document.getElementById('uploadBanner');
@@ -11054,6 +11641,8 @@ function forceSync(showUI, quiet) {
  state.globalForms = data.forms || [];
  state.cachedForms = data.cachedTemplates || {};
  state.meta = data.meta || {};
+ _w36ReadAlarmState(state.meta);   // __36_ (W7): backend __63_ answers for the saved alarm; cleared only on "resolved"
+ _w36ReadOpenAlarm(state.meta);    // __36_ (W9): backend __64_ names an open alarm this idle phone has lost - put it back
  // __24_ (R03): keep the last good welfare settings from the server for an offline start (or an older backend's sync)
  if (state.meta.settings && typeof state.meta.settings.welfareChecks === 'boolean') {
    const _ws = state.meta.settings;
@@ -12766,6 +13355,10 @@ function _noticeInAlarm() {
 /** Why a notice may not open now: 'alarm', 'grounded' (vehicle block), 'welfare' (the "Are you OK?" prompt), or ''. */
 function _noticeBlockedReason() {
   if (_noticeInAlarm()) return 'alarm';
+  // __37_ (S147R-F7): a no-visit PANIC or DURESS also holds a notice back (no pop-up, sound or buzz over the decoy or the overlay).
+  // A second guard: _noticeInAlarm already counts a no-visit alarm (through _welfareInAlarm), so this changes nothing today; it keeps
+  // the rule if that ever changes. _noticeInAlarm itself is not touched (_foregroundSync uses it).
+  if (isPanicActive || isDuressActive) return 'alarm';
   const g = document.getElementById('wofBlockModal');
   if (g && !g.classList.contains('hidden')) return 'grounded';
   const w = document.getElementById('welfareCheckModal');
