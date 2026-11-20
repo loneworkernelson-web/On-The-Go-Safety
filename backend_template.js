@@ -192,6 +192,44 @@
  *   - Settings tab: two new keys added with their defaults (existing values never changed); Health email shows them.
  *   - Contact escalation (tiers, Critical ladder, col AA claims, All Clear audience) is unchanged.
  *
+ * __65_ (session 149B, 20 Nov 2026, Opus 5.5 High) - ONE RETRY OF "ALARM NOT CLEARED" FOR A CONTACT NOT REACHED.
+ *        Design: Russell, S148R-D1 (S148R-F1 option (d)); riders S148R-F2 and S148R-F3. Nothing else changed.
+ *   - Why a record of its own: BE3 / BE5 fire only while the alarm row is the worker's latest row, and the same post then
+ *     appends the new visit row, so no later run ever looks at the old row again.
+ *   - Claim before the send: _newVisitBehindAlarm_ (under the doPost lock) adds an entry to Script Property ANC_RETRY_V1 (a
+ *     JSON list): the old row number, its Visit ID (col AB), its col C name, owed = the contacts present (name, email or push
+ *     topic), due = now + 3 min, and what the message needs (not the whole row). Capped at 8 entries / about 8,000 characters.
+ *   - After the send (_sendAlarmBehindVisit_, short lock): the contacts reached (push or email) are no longer owed; the entry
+ *     goes when nobody is. The step throws, the short lock is not obtained or the run dies first: the entry stays (a
+ *     duplicate beats a miss).
+ *   - The retry: the minute checker (the sole escalation authority) reads the list under its lock. For an entry past its due
+ *     time it removes the entry (once only), checks the row is still open and still PANIC / SOS / DURESS, matched by row
+ *     number, Visit ID AND worker name (rows move when the sheet is sorted or archived), and queues the same message to the
+ *     owed contacts only, sent after the lock (push, then email). A row closed, moved or changed: dropped with an Audit row,
+ *     nothing sent. Audit alarm-behind-visit:contacts-retry names the channel per contact; a contact still not reached: Audit
+ *     only, no second HQ email. Entries over 30 minutes old are dropped (Audit). A corrupt list is reset (Audit), never thrown.
+ *   - F2: if the contacts step throws, the HQ email says "The system could not confirm that the contacts were messaged - phone
+ *     them yourself."
+ *   - F3: the old row's note reads "[NEW VISIT STARTED <time> - this alarm is still open; contacts and HQ being told - see
+ *     Audit]" and the BE3 Audit row says "being messaged". The "[NEW VISIT STARTED" prefix (the once-only marker) is unchanged.
+ *   - Unchanged: _doPostRoute_ (no new POST action, F119-2), BE1 to BE4, BE6, every alarm-clearing path, the All Clear, the
+ *     ladders. No outside lookup: only the ntfy send and MailApp, after the lock (F118-2).
+ *
+ * __64_ (session 147B, 20 Nov 2026, Opus 5.5 High) - CONTACTS TOLD WHEN A NEW VISIT STARTS BEHIND AN OPEN ALARM, AND THE
+ *        SYNC TELLS AN IDLE PHONE ABOUT AN OPEN ALARM IT HAS LOST. Design: Russell, S146-D1 (S146_backend63_review.md Part 4).
+ *   - BE5 (S146-D1 option 1, review R1): when BE3 fires (same check, same once-only "[NEW VISIT STARTED ...]" marker), both
+ *     contacts of the old alarm row get one "ALARM NOT CLEARED" message: a push to each contact's topic (Staff col H / I, name
+ *     ignoring case and spaces), an email when a contact has no topic or the push is not accepted. Priority urgent. DURESS: the
+ *     call-may-be-overheard line first, no whole-message tap-to-call. Sent after the lock, BEFORE the HQ email, which gains one
+ *     line saying whether the contacts were asked to call (or could not be reached). Audit alarm-behind-visit:contacts names
+ *     the channel per contact. Never an All Clear: the server does not know the worker is safe. The old row stays open.
+ *   - BE6 (S146-D1 option 2, server half): GET ?action=sync&alarmCheck=1 adds meta.openAlarm = { id: col AB, kind: 'PANIC' or
+ *     'DURESS' (SOS reported as PANIC), since: ISO (the col AA start of the repeats, else col A) } when the worker's latest
+ *     row (the shared finder, records skipped) is open, has a blank due time (col U) and col K is PANIC / SOS / DURESS; null
+ *     otherwise (no open alarm, an in-visit alarm, a blank Visit ID, or the lookup failed - Audit row, never a throw). Only
+ *     when alarmCheck=1 is sent: older phones see nothing new. The device gate is unchanged. No new POST action (F119-2).
+ *   - Unchanged: BE1 to BE4, every alarm-clearing path, the All Clear, the alarm gate, the checker.
+ *
  * __63_ (session 145, 20 Nov 2026, Opus 5.5 High) - NO-VISIT ALARM REPEATS, POSITION FOLLOW-UP, NEW VISIT BEHIND AN ALARM,
  *        ALARM STATE IN THE SYNC. Design: Russell (HANDOVER_145 section 5, S144-D2, S144-D5 to S144-D8).
  *   - BE1 (F144-1): an open alarm row with NO due time (a PANIC / DURESS / SOS raised with no visit running) used to alert the
@@ -617,7 +655,7 @@ function doGet(e) {
       }
       if(p.test) return (p.key === CONFIG.MASTER_KEY) ? sendResponse(e, {status:"success"}) : sendResponse(e, {status:"error"});
       if(p.key === CONFIG.MASTER_KEY && !p.action) return sendResponse(e, _dashboardExtras_(getDashboardData()));   // __55_ (R75): + groups, notices
-      if(p.action === 'sync') return (p.key === CONFIG.MASTER_KEY || p.key === CONFIG.WORKER_KEY) ? sendResponse(e, getSyncData(p.worker, p.deviceId, p.key === CONFIG.MASTER_KEY, p.alarmId)) : sendResponse(e, {status:"error"});   // __59_ (S3-3); __63_ (BE4) alarmId
+      if(p.action === 'sync') return (p.key === CONFIG.MASTER_KEY || p.key === CONFIG.WORKER_KEY) ? sendResponse(e, getSyncData(p.worker, p.deviceId, p.key === CONFIG.MASTER_KEY, p.alarmId, p.alarmCheck)) : sendResponse(e, {status:"error"});   // __59_ (S3-3); __63_ (BE4) alarmId; __64_ (BE6) alarmCheck
       if(p.action === 'noticeCheck') return (p.key === CONFIG.MASTER_KEY || p.key === CONFIG.WORKER_KEY) ? sendResponse(e, handleNoticeCheck_(p.worker, p.deviceId, p.key === CONFIG.MASTER_KEY)) : sendResponse(e, {status:"error"});   // __59_ (S3-3)   // __57_: ids only, read only
       if(p.action === 'getGlobalForms') return sendResponse(e, getGlobalForms());
       if(p.action === 'viewProcedures' && p.siteName) {
@@ -2967,6 +3005,7 @@ function checkOverdueVisits() {
         }
         const sends = [];
         _CHECKER_ADMIN = [];   // __59_ (P2-5): HQ alerts queued under the lock, sent after it is released
+        _CHECKER_ANC = [];     // __65_ (S148R-D1): "ALARM NOT CLEARED" retries queued under the lock, sent after it
         const warns = [];   // __48_ (R04): reminders to workers' own phones, sent after the contact alerts
         let completed = false, lockHeldMs = 0;
         const _h0 = Date.now();
@@ -2981,6 +3020,7 @@ function checkOverdueVisits() {
         }
         // ---- lock released: send ----
         _runLadderSends_(sends);
+        _ancRunSends_();   // __65_ (S148R-D1): after the contact alerts, before the worker reminders; never throws
         _runWarnSends_(warns);   // __48_ (R04): after the contact alerts, never before; hard rule re-checked per send
         const _adm = _CHECKER_ADMIN || []; _CHECKER_ADMIN = null;   // __59_ (P2-5)
         _adm.forEach(function (f) { try { f(); } catch (err) { _audit_('checker:admin-send-FAILED', '', '', '', '', '', '', String(err).substring(0, 160)); } });
@@ -3177,6 +3217,7 @@ function _checkOverdueLocked_(sends, warns) {
             }
         } catch (err) { console.error(`Escalation Error: ${err.toString()}`); }
     });
+    _ancRetryCheck_(data, now);   // __65_ (S148R-D1): due "ALARM NOT CLEARED" retries, checked against the rows just read
     return true;
 }
 
@@ -4732,7 +4773,7 @@ function cleanupPrivateSentNotes() {
  * REFINED: getSyncData with Unified Targeting
  * Logic: Pulls worker groups and applies a single Targeting Engine to filter all data.
  */
-function getSyncData(workerName, deviceId, isHQ, alarmId) {   // __63_ (BE4): alarmId optional
+function getSyncData(workerName, deviceId, isHQ, alarmId, alarmCheck) {   // __63_ (BE4): alarmId optional; __64_ (BE6): alarmCheck optional
     // 1. THE TARGETING ENGINE - __55_ (R75): one shared copy, so the broadcast push picks exactly the same workers
     const isAuthorised = _targetMatch_;
 
@@ -4853,6 +4894,8 @@ function getSyncData(workerName, deviceId, isHQ, alarmId) {   // __63_ (BE4): al
     meta.backendBuild = TEMPLATE_BUILD;     // __51_: worker __24_ posts WELFARE_MISSED only to a backend that knows it
     // __63_ (BE4): the state of the phone's saved alarm, only when the phone asks (older phones send no alarmId)
     if (alarmId !== undefined && alarmId !== null && String(alarmId).trim() !== '') meta.alarmState = _alarmStateFor_(workerName, alarmId);
+    // __64_ (BE6): an open no-visit alarm of this worker, only when the phone asks (alarmCheck=1; older phones never do)
+    if (String(alarmCheck == null ? '' : alarmCheck).trim() === '1') meta.openAlarm = _openAlarmFor_(workerName);
     return {sites, forms, cachedTemplates, meta, version: CONFIG.VERSION};
 }
 // __55_ (R75): handleBroadcast() now lives in section __55_ at the end of the file (master key, target, phone pushes).
@@ -5688,7 +5731,7 @@ function _formsGps_(sheet, rowNum, p) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__63_';
+const TEMPLATE_BUILD = 'backend__65_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
@@ -9116,14 +9159,16 @@ function _newVisitBehindAlarm_(sheet, workerName, p, ts) {
         const notes = String(lr.data[11] || '');
         if (notes.indexOf(NEW_VISIT_TAG) > -1) return false;
         const tstr = _fmtLocal_(ts, 'h:mm:ss a');
-        _notesAppend_(sheet, lr.row, NEW_VISIT_TAG + ' ' + tstr + ' - this alarm is still open; HQ told]');
+        _notesAppend_(sheet, lr.row, NEW_VISIT_TAG + ' ' + tstr + ' - this alarm is still open; contacts and HQ being told - see Audit]');   // __65_ (S148R-F3): an attempt
         _audit_('handleWorkerPost:new-visit-behind-alarm', workerName, lr.row, lr.status, '', String(p['Alarm Status'] || ''), p.idempotencyKey,
-                'a new visit started while this alarm row (no due time) is open - HQ emailed; row left open; its automatic repeats stop');
+                'a new visit started while this alarm row (no due time) is open - contacts and HQ being messaged (see the alarm-behind-visit rows; a contact not reached is retried once after 3 min); row left open; its automatic repeats stop');
         const parts = String(lr.data[LADDER_MEM_COL - 1] || '').split('|');
         const startIso = (IDLE_ALARM_LABELS.indexOf(String(parts[2] || '').trim()) > -1) ? parts[0] : '';
         const info = { worker: String(workerName || ''), row: lr.row, status: lr.status, start: startIso,
-                       site: String(p['Location Name'] || ''), kind: String(p['Alarm Status'] || ''), at: ts };
-        _sendOrQueue_('hq-alarm-behind-visit', function () { _sendAlarmBehindVisitHq_(info); });
+                       site: String(p['Location Name'] || ''), kind: String(p['Alarm Status'] || ''), at: ts,
+                       snap: lr.data.slice(0, 16), since: _alarmSince_(lr.data) };   // __64_ (BE5): the old row's contacts and start
+        info.retryKey = _ancClaim_(lr, info);   // __65_ (S148R-D1): claimed under the lock, before the send; never throws
+        _sendOrQueue_('alarm-behind-visit', function () { _sendAlarmBehindVisit_(info); });   // __64_ (BE5): contacts, then HQ
         return true;
     } catch (e) {
         try { _audit_('handleWorkerPost:new-visit-behind-alarm-error', workerName, '', '', '', '', p && p.idempotencyKey, String(e).substring(0, 200)); } catch (_) {}
@@ -9137,9 +9182,11 @@ function _sendAlarmBehindVisitHq_(info) {
         const org = (CONFIG.ORG_NAME && !String(CONFIG.ORG_NAME).includes('%%')) ? CONFIG.ORG_NAME : 'OTG';
         const who = String(info.worker || 'a worker').substring(0, 60);
         const started = info.start ? _fmtLocal_(new Date(info.start), 'd MMM yyyy, h:mm:ss a') : '';
+        const cLine = _alarmBehindVisitContactsLine_(info);   // __64_ (BE5): were the contacts asked to call?
         const subject = 'OTG - ' + who + ' started a new ' + (info.kind === 'TRAVELLING' ? 'trip' : 'visit') + ' while an alarm is still open (' + org + ')';
         const html = '<div style="font-family:Arial,sans-serif;font-size:14px;color:#111">' +
             '<p><b>' + _h_(who) + ' has started a new ' + (info.kind === 'TRAVELLING' ? 'trip' : 'visit') + ', but an alarm they raised earlier (with no visit running) is still open.</b></p>' +
+            (cLine ? '<p><b>' + _h_(cLine) + '</b></p>' : '') +
             '<table cellpadding="4" style="border-collapse:collapse">' +
             '<tr><td><b>Worker</b></td><td>' + _h_(info.worker) + '</td></tr>' +
             '<tr><td><b>Open alarm</b></td><td>' + _h_(info.status) + ' (Visits row ' + _h_(info.row) + ')</td></tr>' +
@@ -9208,4 +9255,335 @@ function _alarmStateFor_(workerName, alarmId) {
         out.state = 'error';
         return out;
     }
+}
+
+// ==========================================
+// __64_ (session 147B, 20 Nov 2026, Opus 5.5 High) - CONTACTS TOLD WHEN A NEW VISIT STARTS BEHIND AN OPEN ALARM (BE5), OPEN
+// ALARM IN THE SYNC (BE6). Design: Russell, S146-D1 (S146_backend63_review.md Part 4).
+// ==========================================
+
+/**
+ * __64_ (BE5, BE6): when the alarm on this row started, as ISO. The col AA start of the BE1 repeats (the alarm post's arrival,
+ * or the adoption time - review R3); otherwise col A (the last post on the row). '' when neither can be read. Never throws.
+ */
+function _alarmSince_(data) {
+    try {
+        const parts = String(data[LADDER_MEM_COL - 1] == null ? '' : data[LADDER_MEM_COL - 1]).split('|');
+        if (IDLE_ALARM_LABELS.indexOf(String(parts[2] || '').trim()) > -1) {
+            const t = new Date(parts[0]).getTime();
+            if (!isNaN(t)) return new Date(t).toISOString();
+        }
+        const a = _rfTime_(data[0]);
+        return isFinite(a) ? new Date(a).toISOString() : '';
+    } catch (_) { return ''; }
+}
+
+// ---------------------------------------------------------------- BE5: "ALARM NOT CLEARED" to the contacts
+
+/** __64_ (BE5): the queued job (after the lock): the contacts first, then the HQ email with the result. Never throws. */
+function _sendAlarmBehindVisit_(info) {
+    try { info.contacts = _sendAlarmNotCleared_(info); }
+    catch (err) {
+        info.contacts = { failed: true };   // __65_ (S148R-F2): the HQ email says the contacts may not have been told
+        try { _audit_('alarm-behind-visit:contacts-error', info && info.worker, info && info.row, '', '', '', '', String(err).substring(0, 160)); } catch (_) {}
+    }
+    _ancAfterSend_(info);   // __65_ (S148R-D1): the contacts reached are no longer owed (short lock); never throws
+    _sendAlarmBehindVisitHq_(info);
+}
+
+/**
+ * __64_ (BE5): one message to both contacts of the old alarm row (every PANIC / DURESS / SOS alert went to both). A push to the
+ * contact's topic; an email when the contact has no topic or the push was not accepted. Priority urgent. Never an All Clear.
+ * Returns { reached, list: [{ who, name, result }] } (result push / email / none; a contact with no name, email or topic is
+ * left out). Audit alarm-behind-visit:contacts.
+ */
+function _sendAlarmNotCleared_(info) {
+    const row = info.snap || [];
+    const worker = String(row[2] || info.worker || '').trim() || 'The worker';
+    const first = worker.split(' ')[0];
+    const kind = _idleAlarmKind_(info.status);
+    const isDuress = kind === 'DURESS';
+    const what = info.kind === 'TRAVELLING' ? 'trip' : 'visit';
+    const raised = info.since ? _fmtLocal_(new Date(info.since), 'h:mm a, d MMM') : '';
+    const startedAt = _fmtLocal_(info.at, 'h:mm a, d MMM');
+    const where = [String(info.site || '').trim(), startedAt].filter(Boolean).join(', ');
+    const phoneDisp = _formatPhoneDisplay(row[3]);
+    const tel = _cleanPhone(String(row[3] || '')) || '';
+    const sentAt = _fmtLocal_(new Date(), 'dd/MM/yyyy, h:mm:ss a');
+    const title = '⚠️ ALARM NOT CLEARED - ' + worker;
+    const body = worker + ' raised a ' + kind + ' alarm' + (raised ? ' at ' + raised : '') + '. It has not been cleared with their PIN, ' +
+        'but their phone has now started a new ' + what + (where ? ' (' + where + ')' : '') + '. Please call ' + first +
+        ' now to check they are safe. No more automatic alerts will be sent about this alarm.';
+    const callLine = isDuress ? 'If you call: the call may be overheard. Keep it calm and ordinary, and listen for any code phrase you have agreed with ' + first + '.' : '';
+    const msg = [callLine, body, 'Worker: ' + worker + ' · ' + phoneDisp, 'Sent: ' + sentAt].filter(Boolean).join('\n');
+    const extra = {};
+    if (tel && !isDuress) extra.click = 'tel:' + tel;   // as the alarm alerts: no whole-message tap-to-call on DURESS
+    if (tel) extra.actions = 'view, ' + _ntfyLabel_('📞 Call worker', 'Call worker') + ', tel:' + tel;
+    const html = '<div style="font-family:Arial,sans-serif;font-size:14px;color:#111">' +
+        (callLine ? '<p><b>' + _h_(callLine) + '</b></p>' : '') +
+        '<p><b>' + _h_(body) + '</b></p>' +
+        '<p>Worker: ' + _h_(worker) + ' - ' + _h_(phoneDisp) + '</p>' +
+        '<p style="color:#666;font-size:12px">Sent ' + _h_(sentAt) + '. One message per alarm. This is not an All Clear. ' + _h_(TEMPLATE_BUILD) + '</p></div>';
+    const topics = _contactTopics_(worker);
+    const contacts = [{ who: 'primary', name: row[4], email: row[6], topic: topics.emg },
+                      { who: 'escalation', name: row[7], email: row[9], topic: topics.esc }];
+    const out = { reached: 0, list: [] };
+    const done = [];
+    contacts.forEach(function (c) {
+        if (info.only && info.only.indexOf(c.who) < 0) return;   // __65_ (S148R-D1): the retry goes to the contacts still owed
+        const nm = String(c.name == null ? '' : c.name).trim();
+        const em = String(c.email == null ? '' : c.email).trim();
+        if (!nm && !em && !c.topic) { done.push(c.who + '=absent'); return; }
+        let pushed = false;
+        if (c.topic) {
+            try { const r = _sendNtfy(c.topic, title, msg, 'urgent', 'warning,rotating_light', extra); pushed = !!(r && r.ok); }
+            catch (_) { pushed = false; }
+        }
+        let mailed = false;
+        if (!pushed && em.indexOf('@') > 0) {
+            try { MailApp.sendEmail({ to: em, subject: title, htmlBody: html }); mailed = true; }
+            catch (err) { _audit_('alarm-behind-visit:contacts-email-FAILED', worker, info.row, '', '', '', '', c.who + ': ' + String(err).substring(0, 160)); }
+        }
+        const result = pushed ? 'push' : mailed ? 'email' : 'none';
+        if (result !== 'none') out.reached++;
+        out.list.push({ who: c.who, name: nm, result: result });
+        done.push(c.who + '=' + result);
+    });
+    out.first = first;
+    _audit_(info.retry ? 'alarm-behind-visit:contacts-retry' : 'alarm-behind-visit:contacts', worker, info.row, info.status, '', kind, '',   // __65_
+            done.join(' ') + ' - "ALARM NOT CLEARED" (not an All Clear)' + (info.retry ? ' - the one retry, about 3 min after the first try' : ''));
+    return out;
+}
+
+/** __64_ (BE5): the line the HQ email gains. '' when the contacts step did not run. */
+function _alarmBehindVisitContactsLine_(info) {
+    const c = info && info.contacts;
+    if (c && c.failed) return 'The system could not confirm that the contacts were messaged - phone them yourself.';   // __65_ (S148R-F2)
+    if (!c || !c.list) return '';
+    const first = c.first || String(info.worker || 'the worker').split(' ')[0];
+    if (!c.list.length) return 'No contacts are recorded on the alarm row, so nobody has been asked to call ' + first + '.';
+    const missed = c.list.filter(function (x) { return x.result === 'none'; }).map(function (x) { return x.name || ('the ' + x.who + ' contact'); });
+    if (!c.reached) return 'The contacts could NOT be reached by push or email (' + missed.join(', ') + ') - phone them yourself.';
+    return 'The contacts have been asked to call ' + first + '.' +
+        (missed.length ? ' Not reached by push or email: ' + missed.join(', ') + ' - phone them yourself.' : '');
+}
+
+// ---------------------------------------------------------------- BE6: an open no-visit alarm, for the sync
+
+/**
+ * __64_ (BE6): { id, kind, since } when the worker's latest row (shared finder, records skipped) is open, has a blank due time
+ * (col U) and col K is PANIC / SOS / DURESS; otherwise null. id = col AB (the Visit ID W7 / BE4 look up), kind 'PANIC' or
+ * 'DURESS' (SOS reported as PANIC), since = _alarmSince_. A blank Visit ID gives null (the phone could not use it). An alarm
+ * during a visit is not reported (the visit's own ladder covers a lost visit, F138 D2). Read only; never throws.
+ */
+function _openAlarmFor_(workerName) {
+    try {
+        const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Visits');
+        if (!sheet) return null;
+        const lr = _latestRowFor_(sheet, workerName, VISIT_ID_COL);
+        if (!lr) return null;
+        const st = String(lr.status || '').toUpperCase();
+        if (_rfClosed_(st)) return null;
+        if (lr.due !== '' && lr.due !== null && lr.due !== undefined && String(lr.due).trim() !== '') return null;
+        if (_alarmRank_(st) < 4) return null;
+        const id = String(lr.data[VISIT_ID_COL - 1] == null ? '' : lr.data[VISIT_ID_COL - 1]).trim();
+        if (!id) return null;
+        return { id: id, kind: _idleAlarmKind_(st), since: _alarmSince_(lr.data) };
+    } catch (e) {
+        try { _audit_('sync:open-alarm-error', workerName, '', '', '', '', '', String(e).substring(0, 160)); } catch (_) {}
+        return null;
+    }
+}
+
+// ==========================================
+// __65_ (session 149B, 20 Nov 2026, Opus 5.5 High) - ONE RETRY OF "ALARM NOT CLEARED" FOR A CONTACT NOT REACHED.
+// Design: Russell, S148R-D1 (S148R-F1 option (d)). Every read-modify-write of the list runs under the script lock: the doPost
+// lock (claim), a short lock (after the send) or the checker's lock (the retry).
+// ==========================================
+
+const ANC_PROP        = 'ANC_RETRY_V1';    // Script Property: JSON list of pending retries
+const ANC_RETRY_MS    = 3 * 60 * 1000;     // the retry is due this long after the claim (the Critical Timing "re-send once after 3 min")
+const ANC_MAX_AGE_MS  = 30 * 60 * 1000;    // an entry older than this is dropped unsent (Audit)
+const ANC_MAX_ENTRIES = 8;                 // the list never grows past this (oldest dropped, Audit)
+const ANC_MAX_CHARS   = 8000;              // nor past this many characters (one Script Property holds about 9 KB)
+let _CHECKER_ANC = null;                   // per checker run: retries queued under the lock, sent after it is released
+
+/** __65_: the list, or null when the property cannot be read. A corrupt value is reset to empty (Audit). Never throws. */
+function _ancRead_() {
+    let raw;
+    try { raw = sp.getProperty(ANC_PROP); }
+    catch (e) { try { _audit_('alarm-behind-visit:retry-list-error', '', '', '', '', '', '', 'read failed: ' + String(e).substring(0, 160)); } catch (_) {} return null; }
+    if (raw === null || raw === undefined || raw === '') return [];
+    let list = null;
+    try { list = JSON.parse(raw); } catch (_) { list = null; }
+    if (!Array.isArray(list)) {
+        try {
+            sp.deleteProperty(ANC_PROP);
+            _audit_('alarm-behind-visit:retry-list-reset', '', '', '', '', '', '', 'the retry list was unreadable and has been reset - pending retries lost: "' + String(raw).substring(0, 120) + '"');
+        } catch (_) {}
+        return [];
+    }
+    const ok = list.filter(function (x) {
+        return x && typeof x === 'object' && typeof x.k === 'string' && x.k && Number(x.row) >= 2 && Array.isArray(x.owed) && x.m && typeof x.m === 'object';
+    });
+    if (ok.length !== list.length) {
+        try { _audit_('alarm-behind-visit:retry-list-reset', '', '', '', '', '', '', (list.length - ok.length) + ' unreadable entr' + (list.length - ok.length === 1 ? 'y' : 'ies') + ' dropped from the retry list'); } catch (_) {}
+    }
+    return ok;
+}
+
+/** __65_: write the list (oldest dropped past the caps, Audit; an empty list removes the property). True when written. Never throws. */
+function _ancWrite_(list) {
+    try {
+        const l = (list || []).slice();
+        while (l.length && (l.length > ANC_MAX_ENTRIES || JSON.stringify(l).length > ANC_MAX_CHARS)) {
+            const x = l.shift();
+            _audit_('alarm-behind-visit:retry-dropped', x.wk, x.row, '', '', '', '', 'the retry list is full - oldest entry dropped unsent (owed: ' + (x.owed || []).join(', ') + ')');
+        }
+        if (l.length) sp.setProperty(ANC_PROP, JSON.stringify(l));
+        else sp.deleteProperty(ANC_PROP);
+        return true;
+    } catch (e) {
+        try { _audit_('alarm-behind-visit:retry-list-error', '', '', '', '', '', '', 'write failed: ' + String(e).substring(0, 160)); } catch (_) {}
+        return false;
+    }
+}
+
+/**
+ * __65_: claim the retry, under the doPost lock, BEFORE the first send. owed = the contacts present on the old row (a name, an
+ * email or a push topic - the rule the first send uses). Returns the entry key, or '' when nothing is owed or the claim
+ * failed (Audit; the first send still goes). Never throws.
+ */
+function _ancClaim_(lr, info) {
+    try {
+        const d = lr.data || [];
+        const wk = String(d[2] == null ? '' : d[2]).trim();
+        const topics = _contactTopics_(wk || info.worker);
+        const owed = [];
+        [['primary', d[4], d[6], topics.emg], ['escalation', d[7], d[9], topics.esc]].forEach(function (c) {
+            if (String(c[1] == null ? '' : c[1]).trim() || String(c[2] == null ? '' : c[2]).trim() || c[3]) owed.push(c[0]);
+        });
+        if (!owed.length) return '';
+        const list = _ancRead_();
+        if (list === null) return '';
+        const now = new Date();
+        const vid = String(d[VISIT_ID_COL - 1] == null ? '' : d[VISIT_ID_COL - 1]).trim().substring(0, ALARM_ID_MAX);
+        const key = 'anc|' + lr.row + '|' + now.getTime() + '|' + vid.substring(0, 40);
+        const cut = function (v) { return String(v == null ? '' : v).substring(0, 200); };
+        list.push({ k: key, row: lr.row, vid: vid, wk: wk.substring(0, 100), owed: owed,
+                    t0: now.toISOString(), due: new Date(now.getTime() + ANC_RETRY_MS).toISOString(),
+                    m: { worker: cut(info.worker), status: cut(info.status), site: cut(info.site), kind: cut(info.kind),
+                         at: (info.at instanceof Date && !isNaN(info.at.getTime())) ? info.at.toISOString() : now.toISOString(),
+                         since: cut(info.since), c: [d[2], d[3], d[4], d[6], d[7], d[9]].map(cut) } });
+        if (!_ancWrite_(list)) return '';
+        _audit_('alarm-behind-visit:retry-claim', wk || info.worker, lr.row, lr.status, '', '', '',
+                'one retry owed to ' + owed.join(' and ') + ' at ' + _fmtLocal_(new Date(now.getTime() + ANC_RETRY_MS), 'h:mm:ss a') +
+                ', unless the first try reaches them');
+        return key;
+    } catch (e) {
+        try { _audit_('alarm-behind-visit:retry-claim-error', info && info.worker, lr && lr.row, '', '', '', '', String(e).substring(0, 160) + ' - no retry; the first try still goes'); } catch (_) {}
+        return '';
+    }
+}
+
+/**
+ * __65_: after the first try. The contacts reached (push or email) are no longer owed; the entry goes when nobody is. Under a
+ * short lock. The step threw, nobody was reached, or the lock is not obtained: the entry stays as it is. Never throws.
+ */
+function _ancAfterSend_(info) {
+    try {
+        if (!info || !info.retryKey) return;
+        const c = info.contacts;
+        if (!c || c.failed || !c.list) return;   // the step threw: every owed contact stays owed
+        const reached = c.list.filter(function (x) { return x.result === 'push' || x.result === 'email'; }).map(function (x) { return x.who; });
+        if (!reached.length) return;             // nobody reached: nothing to change
+        _withShortLock_('alarm-behind-visit:retry-mark', function (got) {
+            if (!got) return;                    // left as claimed: a duplicate beats a miss
+            const list = _ancRead_();
+            if (!list) return;
+            const i = list.findIndex(function (x) { return x.k === info.retryKey; });
+            if (i < 0) return;
+            const x = list[i];
+            x.owed = x.owed.filter(function (w) { return reached.indexOf(w) < 0; });
+            if (!x.owed.length) list.splice(i, 1);
+            if (_ancWrite_(list)) {
+                _audit_(x.owed.length ? 'alarm-behind-visit:retry-owed' : 'alarm-behind-visit:retry-cleared', x.wk, x.row, '', '', '', '',
+                        x.owed.length ? 'the first try did not reach ' + x.owed.join(' and ') + ' - one retry at ' + _fmtLocal_(new Date(x.due), 'h:mm:ss a')
+                                      : 'every contact was reached on the first try - no retry');
+            }
+        });
+    } catch (e) {
+        try { _audit_('alarm-behind-visit:retry-mark-error', info && info.worker, info && info.row, '', '', '', '', String(e).substring(0, 160)); } catch (_) {}
+    }
+}
+
+/** __65_: why an entry's row no longer qualifies for the retry ('' = it still does). row = the Visits row as read this run. */
+function _ancRowProblem_(row, x) {
+    if (!row) return 'row ' + x.row + ' no longer exists';
+    const vid = String(row[VISIT_ID_COL - 1] == null ? '' : row[VISIT_ID_COL - 1]).trim();
+    if (vid !== String(x.vid == null ? '' : x.vid)) return 'row ' + x.row + ' now holds another Visit ID (the sheet was sorted, archived or edited)';
+    if (_rfKey_(row[2]) !== _rfKey_(x.wk)) return 'row ' + x.row + ' now holds another worker';
+    const st = String(row[10] == null ? '' : row[10]).toUpperCase();
+    if (_rfClosed_(st)) return 'the alarm has been closed (col K "' + st.substring(0, 60) + '")';
+    if (_alarmRank_(st) < 4) return 'col K is no longer PANIC / SOS / DURESS ("' + st.substring(0, 60) + '")';
+    return '';
+}
+
+/**
+ * __65_: the checker's step, under its lock. data = the Visits rows this run read. An entry past its due time is removed
+ * (once only) and, if its row still qualifies, queued for _ancRunSends_ (after the lock). The removal is written before any
+ * send is queued: if the write fails nothing is queued, and the next run tries again. Never throws.
+ */
+function _ancRetryCheck_(data, now) {
+    try {
+        if (!Array.isArray(_CHECKER_ANC)) return;   // only inside a checker run
+        let raw = null;
+        try { raw = sp.getProperty(ANC_PROP); } catch (_) { raw = 'x'; }   // a failed read: let _ancRead_ report it
+        if (!raw) return;                             // nothing pending (the usual case: one property read per run)
+        const list = _ancRead_();
+        if (!list || !list.length) return;
+        const nowMs = now.getTime();
+        const keep = [], queue = [], notes = [];
+        list.forEach(function (x) {
+            const t0 = Date.parse(x.t0), due = Date.parse(x.due);
+            if (!isFinite(t0) || nowMs - t0 > ANC_MAX_AGE_MS) {
+                notes.push(['alarm-behind-visit:retry-expired', x, 'over ' + (ANC_MAX_AGE_MS / 60000) + ' minutes old - dropped unsent (owed: ' + x.owed.join(', ') + ')']);
+                return;
+            }
+            if (isFinite(due) && nowMs < due) { keep.push(x); return; }
+            const why = _ancRowProblem_(data[x.row - 1], x);
+            if (why) { notes.push(['alarm-behind-visit:retry-dropped', x, why + ' - nothing sent']); return; }
+            if (!x.owed.length) return;
+            queue.push(x);
+        });
+        if (keep.length === list.length) return;
+        if (!_ancWrite_(keep)) return;                // not removed: nothing sent this run; the next run tries again
+        notes.forEach(function (n) { _audit_(n[0], n[1].wk, n[1].row, '', '', '', '', n[2]); });
+        queue.forEach(function (x) {
+            const c = x.m.c || [];
+            const snap = ['', '', c[0], c[1], c[2], '', c[3], c[4], '', c[5]];
+            const at = new Date(x.m.at);
+            _CHECKER_ANC.push({ worker: x.m.worker || x.wk, row: x.row, status: x.m.status, site: x.m.site, kind: x.m.kind,
+                                at: isNaN(at.getTime()) ? now : at, since: x.m.since, snap: snap, only: x.owed.slice(), retry: true });
+            _audit_('alarm-behind-visit:retry-queued', x.wk, x.row, x.m.status, '', '', '', 'the row is still an open alarm - retrying ' + x.owed.join(' and ') + ' after the lock (once)');
+        });
+    } catch (e) {
+        try { _audit_('alarm-behind-visit:retry-check-error', '', '', '', '', '', '', String(e).substring(0, 160) + ' - the escalation run is unaffected'); } catch (_) {}
+    }
+}
+
+/** __65_: send the retries queued this run, with the lock released. A contact still not reached: Audit only (HQ was told at the first try). Never throws. */
+function _ancRunSends_() {
+    const jobs = _CHECKER_ANC || [];
+    _CHECKER_ANC = null;
+    jobs.forEach(function (info) {
+        try {
+            const r = _sendAlarmNotCleared_(info);
+            const missed = (r.list || []).filter(function (x) { return x.result !== 'push' && x.result !== 'email'; }).map(function (x) { return x.who + '=' + x.result; });
+            if (missed.length) _audit_('alarm-behind-visit:contacts-retry-FAILED', info.worker, info.row, info.status, '', '', '',
+                                       'the retry did not reach ' + missed.join(' ') + ' - no more tries (HQ was told at the first try)');
+        } catch (err) {
+            try { _audit_('alarm-behind-visit:contacts-retry-error', info && info.worker, info && info.row, '', '', '', '', String(err).substring(0, 160) + ' - no more tries'); } catch (_) {}
+        }
+    });
 }
