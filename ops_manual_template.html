@@ -524,6 +524,19 @@
                 <strong>Important — Netlify:</strong> After the initial upload, click <strong>"Sign up to claim site"</strong> so the URL doesn't expire after 24 hours. For future config updates, drag the new folder onto your existing Netlify site dashboard (not the Drop page) to update it in place without changing the URL.
             </div>
 
+            <div class="warning-box" style="margin-top:12px;">
+                <h3>⚠️ Turn Off Script Optimisers on the App Folder</h3>
+                <p>If your web host or domain sits behind <strong>Cloudflare</strong> (or a similar speed service), switch off <strong>Rocket Loader</strong> and any setting that delays, combines or rewrites JavaScript for the worker app's folder. In Cloudflare, Rocket Loader is under <strong>Speed &gt; Optimization &gt; Content Optimization</strong>.</p>
+                <p><strong>Why it matters:</strong> Rocket Loader changes the order in which the app's scripts run. On a phone this can leave the <strong>Start</strong> slider (and the <strong>Depart</strong> and notice-acknowledge sliders) unable to move after the app is opened - the thumb stays put however far the worker drags - until the app is closed and reopened. It also slows the app's start-up, including when it brings back an alarm that was still open.</p>
+                <p><strong>How to check, after uploading and after any change to your Cloudflare settings:</strong></p>
+                <ol>
+                    <li>In Chrome, open the live app address with <code>view-source:</code> in front of it (for example <code>view-source:https://example.org/safety/index.html</code>).</li>
+                    <li>Use <strong>Find in page</strong> and search for <code>rocket</code>. There must be <strong>no match</strong>.</li>
+                    <li>Search for <code>cdn.tailwindcss.com</code>. The line must read exactly <code>&lt;script src="https://cdn.tailwindcss.com"&gt;&lt;/script&gt;</code>, with nothing added such as a <code>type="..."</code> or <code>data-cf-...</code> part.</li>
+                    <li>If <code>rocket</code> is still found a few minutes after switching it off, purge the Cloudflare cache (<strong>Caching &gt; Configuration &gt; Purge Everything</strong>) and check again.</li>
+                </ol>
+            </div>
+
             <h4 style="margin-top:16px;">C. Test Offline Before Launch</h4>
             <p>Install the PWA on a test device, load it once on Wi-Fi, then switch to Airplane Mode and reopen. Confirm it loads fully with correct branding. This verifies the offline-first safety guarantee.</p>
 
@@ -1257,6 +1270,11 @@ Last known position: not reported since the trip started</div>
                 <td><strong>HQ email: "started a new visit while an alarm is still open"</strong></td>
                 <td>A worker's home-screen alarm was never cleared with the PIN and the phone has now started a new visit or trip</td>
                 <td>Phone the worker, read the contacts line in the email, and close the old alarm row by hand. See Part 6, A New Visit Started Behind an Open Alarm.</td>
+            </tr>
+            <tr>
+                <td><strong>Start slider won't move</strong> after the app is opened - the thumb stays put however far the worker drags (the Depart or notice slider can do the same). In Settings &gt; Diagnostics the lines read <code>btnStart released at 0%</code> with a long <code>furthest</code> distance.</td>
+                <td>The page's styling arrived after the app had set up its sliders. On a live site this is usually a script optimiser on the web host, such as Cloudflare <strong>Rocket Loader</strong>.</td>
+                <td>Ask the worker to copy the Diagnostics report (Settings &gt; Diagnostics &gt; Copy report), then close the app fully and open it again - the slider then works, and a running visit carries on. Turn Rocket Loader off for the app folder and check the page source (Part 2, Step 5B).</td>
             </tr>
             <tr>
                 <td><strong>Amber "App out of date" banner</strong> on workers' phones</td>
