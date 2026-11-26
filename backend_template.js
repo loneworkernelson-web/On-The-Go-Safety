@@ -192,6 +192,38 @@
  *   - Settings tab: two new keys added with their defaults (existing values never changed); Health email shows them.
  *   - Contact escalation (tiers, Critical ladder, col AA claims, All Clear audience) is unchanged.
  *
+ * __67_ (session S161B, 25 Nov 2026, Opus 5.5 High) - FIVE SMALL FIXES FROM THE S160B REVIEW. Nothing else changed.
+ *   - F1 (S160B-F1): the claim reply and its replay carry contactsChecked (the Staff "Contacts Checked" text).
+ *   - F2 (S160B-F2): the alarm-refused and visit-refused emails and SYNC_DENIED_MSG no longer advise clearing Staff
+ *     column E by hand; they point to a set-up code, or Release for an app older than __40_. Text only.
+ *   - F3 (S160B-F3): a claim finds or adds the Staff columns before the code is used; a failure answers busy, code unused.
+ *   - F4 (S160B-F4): a claim whose code-store save fails answers busy (no guessing oracle while the store is broken).
+ *   - F5 (S160B-F5): the issue dialog names any worker whose code the 30-entry / 8,000-character cap dropped.
+ *
+ * __66_ (session S158B, 24 Nov 2026, Opus 5.5) - SET UP A PHONE WITH A CODE, ADMIN-SET CONTACTS, THREE ALARM-EMAIL RIDERS.
+ *        Design: S155B note sections 4, 13, 14; S156 merge note; S158B design check (Russell: "Agree to all", 24 Nov).
+ *   SECTION A (alarm-email riders, HANDOVER_150 9a items 9 to 11):
+ *   - S149R-F2: _ancRead_ writes the cleaned retry list back when it drops unreadable entries (one Audit row, not one a run).
+ *   - S149R-F1: _ancRunSends_ reads the retry's Visits row again just before the send (read only) and drops it with Audit
+ *     retry-dropped if it is no longer the same open alarm. A failed read still sends (a duplicate beats a miss).
+ *   - S149B-N7: "One message per alarm." removed from the ALARM NOT CLEARED email (the retry made it untrue). The BE2
+ *     position follow-up email keeps it (one follow-up per alarm row is true).
+ *   SECTION B (onboarding core):
+ *   - Admin menu "Set up a worker's phone with a code": 6 digits, 24 hours, one use, locked after 5 wrong tries, a new code
+ *     replaces the old; only a salted hash is kept (Script Property OTG_SETUP_CODES_V1). Staff col E is left alone.
+ *   - POST action claimSetup (gate-neutral, under the doPost lock): a right code puts the new phone in Staff col E and
+ *     Trusted Phone and returns the worker's saved details; wrong / locked / expired / unknown name answer a short reason
+ *     that never says whether the name exists. The same phone may ask again for 30 minutes (replay).
+ *   - Twelve Staff columns found by header text and added after the last used column (never by position).
+ *   - contactsUpdate also takes the phone's backup of its own and its contacts' details; a blank never clears.
+ *   - S155B-F5: registerDevice answers device_denied (not error) when another phone is registered.
+ *   SECTION C (admin-set shared contacts):
+ *   - Admin menus "Set a contact for workers", "Send a test to a contact", "Stop setting a contact by admin".
+ *   - An admin-set slot (its "... Set By Admin" mark on) belongs to the sheet: contactsUpdate and updateStaffStatus skip it.
+ *   - Sync field meta.orgContacts, only to the phone in col E when it equals Trusted Phone. Release writes "released" there.
+ *   Not changed: the alarm gate logic (GATE_NEUTRAL_ACTIONS gains claimSetup only), handleWorkerPost, the clearing paths,
+ *   Audit retention, every existing sync field, ?action=ping.
+ *
  * __65_ (session 149B, 20 Nov 2026, Opus 5.5 High) - ONE RETRY OF "ALARM NOT CLEARED" FOR A CONTACT NOT REACHED.
  *        Design: Russell, S148R-D1 (S148R-F1 option (d)); riders S148R-F2 and S148R-F3. Nothing else changed.
  *   - Why a record of its own: BE3 / BE5 fire only while the alarm row is the worker's latest row, and the same post then
@@ -624,6 +656,10 @@ function onOpen() {
       .addItem('Force Sync Forms', 'getGlobalForms')
       .addSeparator()
       .addItem("Release a worker's phone", 'releaseWorkerPhone')        // __61_ (S117-D3)
+      .addItem("Set up a worker's phone with a code", 'issueSetupCode')  // __66_ (S158B section B)
+      .addItem('Set a contact for workers', 'setContactForWorkers')         // __66_ (section C)
+      .addItem('Send a test to a contact', 'sendContactTest')               // __66_ (section C)
+      .addItem('Stop setting a contact by admin', 'stopAdminContact')       // __66_ (section C)
       .addItem('Set up or repair workbook', 'initWorkbook')            // __61_ (initWorkbook, P2-3)
       .addToUi();
 }
@@ -751,6 +787,7 @@ function _doPostRoute_(p) {
     if (p.action === 'resolve') { handleResolvePost(p); return { status: 'success' }; }
     if (p.action === 'registerDevice') return handleRegisterDevice(p);
     if (p.action === 'contactsUpdate') return handleContactsUpdate(p);   // __61_ (S113-3)
+    if (p.action === 'claimSetup') return handleClaimSetup(p);           // __66_ (S158B section B): set up a phone with a code
     if (p.action === 'acknowledgeNotice') return handleNoticeAck(p);   // NEW 3: Notice Acknowledgments
     if (p.action === 'uploadEmergencyProcedures') {
         // __51_ (R63): a duplicate delivery must not save the photos or archive the old links a second time. The reply stays
@@ -848,7 +885,7 @@ function _busyPathAlert_(p) {
         if (!p) return;
         const act = (p.action || '').toString();
         const NON_ALERT_ACTIONS = ['resolve', 'registerDevice', 'acknowledgeNotice',
-                                   'uploadEmergencyProcedures', 'notifySafety', 'broadcast', 'contactsUpdate'];   // __61_
+                                   'uploadEmergencyProcedures', 'notifySafety', 'broadcast', 'contactsUpdate', 'claimSetup'];   // __61_; __66_ claimSetup
         if (NON_ALERT_ACTIONS.indexOf(act) > -1) return;
 
         const status = (p['Alarm Status'] || '').toString().toUpperCase();
@@ -1979,7 +2016,7 @@ function handleRegisterDevice(p) {
       // If a different device ID is bound, an admin must clear column E first.
       if (existingId && existingId !== deviceId) {
         console.warn(`Registration blocked for ${workerName}: bound to a different device.`);
-        return { status: "error", message: "This worker is already registered on another device. Ask your administrator to clear the existing registration." };
+        return { status: "device_denied", message: "This worker is already registered on another device. Ask your administrator to clear the existing registration." };   // __66_ (S155B-F5)
       }
       sheet.getRange(i + 1, 5).setValue(_cell_(deviceId));   // __58_ (S3-5)
       if (!existingId) _audit_('staff:registered', workerName, '', '', '', 'registerDevice', p.idempotencyKey,
@@ -2033,8 +2070,9 @@ function updateStaffStatus(p) {
             // phone's post rewrote them, and the server's own overdue alerts then went to the stranger's topic.
             const _topicsOk = (!!boundId && incomingId === boundId) || String(p.key) === String(CONFIG.MASTER_KEY);
             if (_topicsOk) {
-                if (emgNtfy) sheet.getRange(i+1, 8).setValue(_cell_(emgNtfy));   // __58_ (S3-5)
-                if (escNtfy) sheet.getRange(i+1, 9).setValue(_cell_(escNtfy));
+                const _adm = _stAdminSet_(data[0], data[i]);   // __66_ (S158B section C): an admin-set slot belongs to the sheet
+                if (emgNtfy && !_adm.primary) sheet.getRange(i+1, 8).setValue(_cell_(emgNtfy));   // __58_ (S3-5)
+                if (escNtfy && !_adm.escalation) sheet.getRange(i+1, 9).setValue(_cell_(escNtfy));
             } else if ((emgNtfy && emgNtfy !== String(data[i][7] == null ? '' : data[i][7]).trim()) ||
                        (escNtfy && escNtfy !== String(data[i][8] == null ? '' : data[i][8]).trim())) {
                 _audit_('staff:topics-kept', p['Worker Name'], '', '', '', p['Alarm Status'], p.idempotencyKey,
@@ -4809,6 +4847,8 @@ function getSyncData(workerName, deviceId, isHQ, alarmId, alarmCheck) {   // __6
                 meta.workerTopic = _wt;
                 meta.ntfyServer = _ntfyPublicServer_();
             }
+            // __66_ (S158B section C): the admin-set contacts, only to the phone in col E when it equals Trusted Phone.
+            try { const _oc = _stOrgContacts_(stData[0], stData[i], deviceId, isHQ); if (_oc) meta.orgContacts = _oc; } catch (_) {}
             break; 
         }
     }
@@ -5731,7 +5771,7 @@ function _formsGps_(sheet, rowNum, p) {
 // watched from outside by Healthchecks.io (Layer 1), and no property is written on the minute run.
 
 /** Stamp of the template file itself (CONFIG.VERSION is injected by the Factory and can differ). */
-const TEMPLATE_BUILD = 'backend__65_';
+const TEMPLATE_BUILD = 'backend__67_';
 
 /**
  * How often each background job should succeed. maxHours is how late counts as STALE.
@@ -7499,7 +7539,7 @@ const GATE_REFUSED_NOTICE = 'This phone is not the one registered for this worke
                             'Ask your administrator to re-register this phone, or phone HQ.';
 const GATE_MAIL_TTL_S = 21600;   // one admin email per alarm visit row, at most once every 6 hours (CacheService maximum)
 const GATE_CLEAR_WORDS = ['USER_SAFE', 'EXTENDED', 'DEPARTED', 'COMPLETED'];   // the words handleWorkerPost treats as a clear
-const GATE_NEUTRAL_ACTIONS = ['registerDevice', 'acknowledgeNotice', 'broadcast', 'workerTopic', 'workerTopicTest', 'contactsUpdate'];   // __61_
+const GATE_NEUTRAL_ACTIONS = ['registerDevice', 'acknowledgeNotice', 'broadcast', 'workerTopic', 'workerTopicTest', 'contactsUpdate', 'claimSetup'];   // __61_; __66_ claimSetup
 const NAME_MAX_CHARS = 60;
 
 /** __58_ (S3-1): "lat,lng" - two numbers in range, a comma, optional spaces. The same shape Monitor __17_ accepts. */
@@ -7610,7 +7650,8 @@ function _gateVisitEmailHtml_(e, worker, lr, tried, why, sentId, boundId, dueTxt
         '</table>' +
         '<p><b>What to do now</b></p><ol>' +
         '<li>Phone the worker. If they are safe and still have their registered phone, they end or extend the visit from it.</li>' +
-        '<li>If the worker is on a new or reinstalled phone: clear their phone ID (Staff tab, column E), then they run Setup again on the new phone. ' +
+        '<li>If the worker is on a new or reinstalled phone: give them a set-up code (OTG Admin &gt; Set up a worker\'s phone with a code). ' +
+        'For an app older than __40_, use OTG Admin &gt; Release a worker\'s phone, then they run Setup again. ' +
         'After that they can end the visit. If that cannot happen before the due time, the contacts will be alerted - resolve it from the Monitor.</li>' +
         '<li>If the worker did not send this, someone else has the app key. Treat it as a security incident and tell your IT adviser.</li>' +
         '</ol><p style="color:#666;font-size:12px">You get at most one of these emails per visit every 6 hours. Every refusal is in the Audit tab ' +
@@ -7729,7 +7770,8 @@ function _gateAdminEmail_(worker, lr, tried, why, sentId, boundId, mode) {
             '</table>' +
             '<p><b>What to do now</b></p><ol>' +
             '<li>Phone the worker and follow your alarm procedure - treat the alarm as real.</li>' +
-            '<li>If the worker is on a new or reinstalled phone: clear their phone ID (Staff tab, column E), then they open the app and register again. ' +
+            '<li>If the worker is on a new or reinstalled phone: give them a set-up code (OTG Admin &gt; Set up a worker\'s phone with a code). ' +
+            'For an app older than __40_, use OTG Admin &gt; Release a worker\'s phone, then they run Setup again. ' +
             'After that they can clear alarms with their PIN. Until then HQ can resolve the alarm from the Monitor.</li>' +
             '<li>If the worker did not send this, someone else has the app key. Treat it as a security incident and tell your IT adviser.</li>' +
             '</ol><p style="color:#666;font-size:12px">You get at most one of these emails per alarm visit every 6 hours. Every refusal is in the Audit tab ' +
@@ -7758,8 +7800,8 @@ function _gateAdminEmail_(worker, lr, tried, why, sentId, boundId, mode) {
 const RF_CLOSED_WORDS = ['DEPARTED', 'COMPLETED', 'DATA_ENTRY_ONLY', 'USER_SAFE'];
 const GATE_VISIT_MAIL_PREFIX = 'GATEVMAIL_';   // one email per refused open-visit row, at most every 6 hours (S115-D2)
 const DUE_ERR_TTL_S = 21600;                   // P2-5: one unreadable-due alert per row and value, at most every 6 hours
-const SYNC_DENIED_MSG = 'This phone is not the one registered for this worker. Ask your administrator to clear the registered ' +
-                        'phone (Staff tab, column E), then run Setup again on this phone.';
+const SYNC_DENIED_MSG = 'This phone is not the one registered for this worker. Ask your administrator for a set-up code, or to ' +
+                        'release the registered phone, then run Setup again on this phone.';   // __67_ (S160B-F2)
 let _RF_SNAP = null;        // per execution: Visits cols A-C and K, read once and reused until a writer invalidates it
 let _GATE_CTX = null;       // per doPost: what the gate saw BEFORE this post changed anything ({ openBefore })
 let _CHECKER_ADMIN = null;  // per checker run: HQ alerts (P2-5) queued while the lock is held, sent after it is released
@@ -8465,7 +8507,11 @@ function handleContactsUpdate(p) {
             return { status: 'success', saved: false, message: 'Not the registered phone' };
         }
         const changed = [], kept = [];
-        [['Emergency Contact Ntfy', 8, 'H'], ['Escalation Contact Ntfy', 9, 'I']].forEach(function (f) {
+        // __66_ (S158B section C): an admin-set slot belongs to the sheet - everything sent for it is ignored, with a plain success.
+        const _adm = _stAdminSet_(data[0], data[i]), _admIgnored = {};
+        const adminSet = ['primary', 'escalation'].filter(function (s) { return _adm[s]; });
+        [['Emergency Contact Ntfy', 8, 'H', 'primary'], ['Escalation Contact Ntfy', 9, 'I', 'escalation']].forEach(function (f) {
+            if (_adm[f[3]]) { if (String(p[f[0]] == null ? '' : p[f[0]]).trim()) _admIgnored[f[3]] = true; return; }
             const v = String(p[f[0]] == null ? '' : p[f[0]]).trim();
             if (!v) { kept.push(f[2] + ' blank sent, kept'); return; }
             if (!_topicOk_(v)) { kept.push(f[2] + ' not a topic name, kept'); return; }
@@ -8475,10 +8521,25 @@ function handleContactsUpdate(p) {
             sheet.getRange(i + 1, f[1]).setValue(_cell_(v));
             changed.push(f[2]);
         });
+        // __66_ (S155B 4c): the phone's backup of its own and its contacts' details, in the Staff columns found by header. Only
+        // fields sent non-blank are written (a blank never clears). An old app sends none of them, so nothing here runs.
+        const _det = _stDetailsIn_(p);
+        if (_det.length) {
+            const _cols = _stCols_(sheet, true);   // adds any missing header (we hold the doPost lock)
+            _det.forEach(function (d) {
+                if (d.slot && _adm[d.slot]) { _admIgnored[d.slot] = true; return; }   // __66_ section C
+                const c = _cols[d.h];
+                if (!c) { kept.push(d.h + ' column missing, kept'); return; }
+                if (_stCell_(data[i], c) === d.v) return;
+                sheet.getRange(i + 1, c).setValue(_stValue_(d.h, d.v));
+                changed.push(d.h);
+            });
+        }
+        Object.keys(_admIgnored).forEach(function (s) { kept.push((s === 'primary' ? 'Primary' : 'Escalation') + ' is set by the administrator, ignored'); });
         _audit_(changed.length ? 'staff:contacts-updated' : 'staff:contacts-same', data[i][0], '', '', '', 'contactsUpdate', p.idempotencyKey,
                 (changed.length ? 'Staff ' + changed.join(' and ') + ' changed' : 'no change') + (kept.length ? ' (' + kept.join('; ') + ')' : '') +
                 ' - from ' + (master ? 'the master key' : 'the registered phone ' + _idTail_(incoming)));
-        return { status: 'success', saved: true, changed: changed };
+        return { status: 'success', saved: true, changed: changed, adminSet: adminSet };   // __66_: adminSet
     } catch (err) {
         try { _audit_('staff:contacts-error', p && p['Worker Name'], '', '', '', 'contactsUpdate', p && p.idempotencyKey, String(err).substring(0, 160)); } catch (_) {}
         return { status: 'success', saved: false, message: 'Server error' };
@@ -8650,6 +8711,7 @@ function _releasePhoneDo_(name) {
         const look = _releasePhoneLookup_(name);   // read again under the lock
         if (!look.ok) return { ok: false, message: look.message };
         SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Staff').getRange(look.row, 5).setValue('');
+        _stTrustReleased_(look.row);   // __66_ (S158B-Q5): a phone registered by name after this never gets the shared contacts
         _audit_('staff:released', look.name, '', '', '', 'releaseWorkerPhone', '',
                 'an administrator released phone ' + look.deviceTail + ' (Staff col E cleared' + (look.openVisit ? ', a visit or alarm was open: ' + look.openStatus : '') + ')');
         return { ok: true, message: 'Done. ' + look.name + "'s phone " + look.deviceTail + ' is released.\n\n' +
@@ -8739,6 +8801,16 @@ function _initWorkbook_() {
                 });
             } catch (e) { out.problems.push(tab + ': ' + String(e).substring(0, 120)); }
         });
+        // __66_ (S158B section B): the twelve onboarding columns, found by header and added after the last used column.
+        out.staffCols = '';
+        try {
+            const _st = ss.getSheetByName('Staff');
+            if (_st) {
+                const _c = _stCols_(_st, true);
+                out.staffCols = _c._added.length ? 'Staff: added the set-up columns ' + _c._added.join(', ') + '.'
+                                                 : 'Staff: all 12 set-up columns are present (Worker Phone to Trusted Phone).';
+            }
+        } catch (e) { out.problems.push('Staff set-up columns: ' + String(e).substring(0, 120)); }
         try { _formsSheet_(ss); } catch (e) { out.problems.push('Forms: ' + String(e).substring(0, 120)); }
         try { CacheService.getScriptCache().put('SETTINGS_ENSURED', '0', 1); } catch (_) {}
         try { _settingsEnsure_(); } catch (e) { out.problems.push('Settings: ' + String(e).substring(0, 120)); }
@@ -8760,6 +8832,7 @@ function _initWorkbook_() {
     const L = [];
     L.push(out.created.length ? 'Tabs created: ' + out.created.join(', ') + '.' : 'No tabs were missing.');
     if (out.filled.length) L.push('Blank headers filled: ' + out.filled.join('; ') + '.');
+    if (out.staffCols) L.push(out.staffCols);   // __66_
     if (out.differ.length) L.push('Headers that differ (NOT changed - check the column has not moved): ' + out.differ.join('; ') + '.');
     if (out.protectedTabs.length) L.push('Warn-before-editing added to: ' + out.protectedTabs.join(', ') + '. Never sort these tabs; use Data > Create a filter view.');
     if (out.problems.length) L.push('Problems: ' + out.problems.join('; ') + '.');
@@ -9323,7 +9396,7 @@ function _sendAlarmNotCleared_(info) {
         (callLine ? '<p><b>' + _h_(callLine) + '</b></p>' : '') +
         '<p><b>' + _h_(body) + '</b></p>' +
         '<p>Worker: ' + _h_(worker) + ' - ' + _h_(phoneDisp) + '</p>' +
-        '<p style="color:#666;font-size:12px">Sent ' + _h_(sentAt) + '. One message per alarm. This is not an All Clear. ' + _h_(TEMPLATE_BUILD) + '</p></div>';
+        '<p style="color:#666;font-size:12px">Sent ' + _h_(sentAt) + '. This is not an All Clear. ' + _h_(TEMPLATE_BUILD) + '</p></div>';   // __66_ (S149B-N7)
     const topics = _contactTopics_(worker);
     const contacts = [{ who: 'primary', name: row[4], email: row[6], topic: topics.emg },
                       { who: 'escalation', name: row[7], email: row[9], topic: topics.esc }];
@@ -9427,7 +9500,11 @@ function _ancRead_() {
         return x && typeof x === 'object' && typeof x.k === 'string' && x.k && Number(x.row) >= 2 && Array.isArray(x.owed) && x.m && typeof x.m === 'object';
     });
     if (ok.length !== list.length) {
-        try { _audit_('alarm-behind-visit:retry-list-reset', '', '', '', '', '', '', (list.length - ok.length) + ' unreadable entr' + (list.length - ok.length === 1 ? 'y' : 'ies') + ' dropped from the retry list'); } catch (_) {}
+        // __66_ (S149R-F2): write the cleaned list back (every caller holds the script lock), so this Audit row is written once,
+        // not at every checker run. If the write fails, _ancWrite_ says so (retry-list-error) and the next read tries again.
+        let saved = false;
+        try { saved = _ancWrite_(ok); } catch (_) { saved = false; }
+        try { _audit_('alarm-behind-visit:retry-list-reset', '', '', '', '', '', '', (list.length - ok.length) + ' unreadable entr' + (list.length - ok.length === 1 ? 'y' : 'ies') + ' dropped from the retry list' + (saved ? ' - the cleaned list was saved' : ' - the cleaned list could not be saved')); } catch (_) {}
     }
     return ok;
 }
@@ -9564,12 +9641,29 @@ function _ancRetryCheck_(data, now) {
             const snap = ['', '', c[0], c[1], c[2], '', c[3], c[4], '', c[5]];
             const at = new Date(x.m.at);
             _CHECKER_ANC.push({ worker: x.m.worker || x.wk, row: x.row, status: x.m.status, site: x.m.site, kind: x.m.kind,
-                                at: isNaN(at.getTime()) ? now : at, since: x.m.since, snap: snap, only: x.owed.slice(), retry: true });
+                                at: isNaN(at.getTime()) ? now : at, since: x.m.since, snap: snap, only: x.owed.slice(), retry: true, vid: x.vid, wk: x.wk });   // __66_ (S149R-F1): vid, wk for the re-read
             _audit_('alarm-behind-visit:retry-queued', x.wk, x.row, x.m.status, '', '', '', 'the row is still an open alarm - retrying ' + x.owed.join(' and ') + ' after the lock (once)');
         });
     } catch (e) {
         try { _audit_('alarm-behind-visit:retry-check-error', '', '', '', '', '', '', String(e).substring(0, 160) + ' - the escalation run is unaffected'); } catch (_) {}
     }
+}
+
+/**
+ * __66_ (S149R-F1): read the retry's Visits row again just before its send (read only, no lock: HQ may have closed the row by
+ * hand since the checker read the sheet). Returns why not to send, or '' to send. A failed read returns '' - a duplicate
+ * beats a miss. Never throws.
+ */
+function _ancRecheckRow_(info) {
+    try {
+        if (!info || !info.retry || !(Number(info.row) >= 2)) return '';
+        const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Visits');
+        if (!sh) return '';
+        if (Number(info.row) > sh.getLastRow()) return 'row ' + info.row + ' no longer exists';
+        const w = Math.min(VISIT_ID_COL, sh.getMaxColumns());
+        const row = sh.getRange(Number(info.row), 1, 1, w).getValues()[0];
+        return _ancRowProblem_(row, { row: info.row, vid: info.vid, wk: info.wk });
+    } catch (_) { return ''; }
 }
 
 /** __65_: send the retries queued this run, with the lock released. A contact still not reached: Audit only (HQ was told at the first try). Never throws. */
@@ -9578,6 +9672,11 @@ function _ancRunSends_() {
     _CHECKER_ANC = null;
     jobs.forEach(function (info) {
         try {
+            const _why = _ancRecheckRow_(info);   // __66_ (S149R-F1)
+            if (_why) {
+                _audit_('alarm-behind-visit:retry-dropped', info.wk || info.worker, info.row, info.status, '', '', '', _why + ' - nothing sent (checked again just before the send)');
+                return;
+            }
             const r = _sendAlarmNotCleared_(info);
             const missed = (r.list || []).filter(function (x) { return x.result !== 'push' && x.result !== 'email'; }).map(function (x) { return x.who + '=' + x.result; });
             if (missed.length) _audit_('alarm-behind-visit:contacts-retry-FAILED', info.worker, info.row, info.status, '', '', '',
@@ -9587,3 +9686,715 @@ function _ancRunSends_() {
         }
     });
 }
+
+// ==========================================
+// __66_ SECTION B (session S158B, 24 Nov 2026) - SET UP A WORKER'S PHONE WITH A CODE (onboarding core).
+// Design: S155B note sections 4 and 13; S158B design check (Russell: "Agree to all"). The code is never written to the
+// Audit, an email or the property - only a salted SHA-256 hash of it.
+// ==========================================
+
+const STAFF_NEW_COLS = ['Worker Phone', 'Worker Email', 'Primary Name', 'Primary Phone', 'Primary Email', 'Primary Set By Admin',
+                        'Escalation Name', 'Escalation Phone', 'Escalation Email', 'Escalation Set By Admin', 'Contacts Checked',
+                        'Trusted Phone'];
+const STAFF_DETAIL_COLS = ['Worker Phone', 'Worker Email', 'Primary Name', 'Primary Phone', 'Primary Email',
+                           'Escalation Name', 'Escalation Phone', 'Escalation Email'];
+const STAFF_PHONE_COLS  = ['Worker Phone', 'Primary Phone', 'Escalation Phone'];   // stored as text (leading 0 kept)
+const STAFF_DETAIL_MAX  = 120;                       // characters kept per detail
+const SETUP_PROP        = 'OTG_SETUP_CODES_V1';      // Script Property: { s: salt, w: [codes], b: [wrong-try times], bm }
+const SETUP_TTL_MS      = 24 * 60 * 60 * 1000;       // a code works for 24 hours
+const SETUP_REPLAY_MS   = 30 * 60 * 1000;            // the same phone may ask again with its used code for 30 minutes
+const SETUP_MAX_TRIES   = 5;                         // the 5th wrong try locks the code
+const SETUP_KEEP_MS     = 24 * 60 * 60 * 1000;       // an expired or locked code is kept this long (so it can say why)
+const SETUP_MAX_ENTRIES = 30;                        // the store never grows past this (oldest dropped, Audit)
+const SETUP_MAX_CHARS   = 8000;                      // nor past this many characters (one Script Property holds about 9 KB)
+const SETUP_BURST_N     = 20;                        // more wrong tries than this in an hour (all workers): one admin email
+const SETUP_BURST_MS    = 60 * 60 * 1000;
+const CLAIM_MSG = {
+    code:    'Code not accepted - check it or ask your administrator.',
+    locked:  'This code is locked after 5 wrong tries - ask your administrator for a new one.',
+    expired: 'This code has expired - ask your administrator for a new one.',
+    busy:    'Server busy - try again in a minute.'
+};
+
+/** __66_: the twelve columns' positions (1-based, 0 = missing) from a Staff header row. Header text compared ignoring case and punctuation. */
+function _stColsFromHdr_(hdr) {
+    const idx = {};
+    (hdr || []).forEach(function (h, j) { const k = _hdrNorm_(h); if (k && !(k in idx)) idx[k] = j + 1; });
+    const out = {};
+    STAFF_NEW_COLS.forEach(function (h) { out[h] = idx[_hdrNorm_(h)] || 0; });
+    return out;
+}
+
+/**
+ * __66_: the twelve columns of the Staff tab. With create (only under the script lock), any missing header is written after
+ * the last used column, never before col K (col J is the worker's own topic) and never over a column that holds anything.
+ * out._added lists what was added ("Worker Phone (K)").
+ */
+function _stCols_(sheet, create) {
+    const lastCol = Math.max(sheet.getLastColumn(), 1);
+    const out = _stColsFromHdr_(sheet.getRange(1, 1, 1, lastCol).getValues()[0]);
+    out._added = [];
+    if (!create) return out;
+    const missing = STAFF_NEW_COLS.filter(function (h) { return !out[h]; });
+    if (!missing.length) return out;
+    const at = Math.max(lastCol, WORKER_TOPIC_COL);
+    if (sheet.getMaxColumns() < at + missing.length) sheet.insertColumnsAfter(sheet.getMaxColumns(), at + missing.length - sheet.getMaxColumns());
+    sheet.getRange(1, at + 1, 1, missing.length).setValues([missing]);
+    missing.forEach(function (h, j) { out[h] = at + 1 + j; out._added.push(h + ' (' + _colA1_(at + 1 + j) + ')'); });
+    _audit_('staff:columns-added', '', '', '', '', '', '', 'Staff columns added after the last used column: ' + out._added.join(', '));
+    return out;
+}
+
+/** __66_: a mark cell is on: TRUE (a tick box), or the text true, yes, y, x or 1. */
+function _stOn_(v) {
+    if (v === true) return true;
+    const t = String(v == null ? '' : v).trim().toLowerCase();
+    return t === 'true' || t === 'yes' || t === 'y' || t === 'x' || t === '1';
+}
+
+/** __66_: a cell of a row as trimmed text ('' when the column is missing). */
+function _stCell_(row, col) {
+    return (col && row && col <= row.length && row[col - 1] != null) ? String(row[col - 1]).trim() : '';
+}
+
+/** __66_: which contact slots are admin-set (their "... Set By Admin" mark is on). */
+function _stAdminSet_(hdr, row) {
+    const c = _stColsFromHdr_(hdr);
+    return { primary: !!c['Primary Set By Admin'] && _stOn_(row[c['Primary Set By Admin'] - 1]),
+             escalation: !!c['Escalation Set By Admin'] && _stOn_(row[c['Escalation Set By Admin'] - 1]) };
+}
+
+/** __66_: the value to write: phone numbers as text (leading 0 kept, _txt_), everything through _cell_ (formula text, S3-5). */
+function _stValue_(header, v) {
+    return STAFF_PHONE_COLS.indexOf(header) > -1 ? _cell_(_txt_(v)) : _cell_(v);
+}
+
+/** __66_: the phone's backup fields in a contactsUpdate post, the ones sent non-blank: [{ h: header, v: value, slot }]. */
+function _stDetailsIn_(p) {
+    const f = function (a, b) {
+        let v = p[a];
+        if ((v == null || String(v).trim() === '') && b) v = p[b];
+        return String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, ' ').trim().substring(0, STAFF_DETAIL_MAX);
+    };
+    return [['Worker Phone', f('Worker Phone Number'), ''], ['Worker Email', f('Worker Email'), ''],
+            ['Primary Name', f('Emergency Contact Name'), 'primary'],
+            ['Primary Phone', f('Emergency Contact Phone', 'Emergency Contact Number'), 'primary'],
+            ['Primary Email', f('Emergency Contact Email'), 'primary'],
+            ['Escalation Name', f('Escalation Contact Name'), 'escalation'],
+            ['Escalation Phone', f('Escalation Contact Phone', 'Escalation Contact Number'), 'escalation'],
+            ['Escalation Email', f('Escalation Contact Email'), 'escalation'],
+            ['Contacts Checked', f('Contacts Checked'), '']]
+        .filter(function (x) { return x[1] !== ''; })
+        .map(function (x) { return { h: x[0], v: x[1], slot: x[2] }; });
+}
+
+/** __66_: SHA-256 of salt, worker and code, as hex. */
+function _scHash_(salt, key, code) {
+    const cs = (Utilities.Charset && Utilities.Charset.UTF_8) ? Utilities.Charset.UTF_8 : undefined;
+    const b = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(salt) + '|' + String(key) + '|' + String(code), cs);
+    return b.map(function (x) { const v = x < 0 ? x + 256 : x; return (v < 16 ? '0' : '') + v.toString(16); }).join('');
+}
+
+/**
+ * __66_: six random digits. Apps Script has no documented cryptographic random source: the digits come from random UUIDs
+ * (the version and variant digits skipped), each byte mixed with Math.random, and bytes of 250 and over thrown away so no
+ * digit is likelier than another. The real protection is the 5-try lock, the 24 hours and one live code per worker.
+ */
+function _scNewCode_() {
+    let d = '';
+    for (let g = 0; d.length < 6 && g < 20; g++) {
+        const hex = String(Utilities.getUuid()).replace(/[^0-9a-f]/gi, '');
+        for (let j = 0; j + 1 < hex.length && d.length < 6; j += 2) {
+            if (j === 12 || j === 16) continue;
+            const b = (parseInt(hex.substr(j, 2), 16) ^ Math.floor(Math.random() * 256)) & 255;
+            if (b < 250) d += String(b % 10);
+        }
+    }
+    if (d.length < 6) throw new Error('could not make a code');
+    return d;
+}
+
+/** __66_: the code store, or null when it cannot be read. A corrupt value is reset (Audit). The salt is made at first use. */
+function _scRead_() {
+    let raw;
+    try { raw = sp.getProperty(SETUP_PROP); }
+    catch (e) { try { _audit_('staff:code-store-error', '', '', '', '', '', '', 'read failed: ' + String(e).substring(0, 160)); } catch (_) {} return null; }
+    let st = null;
+    if (raw) {
+        try { st = JSON.parse(raw); } catch (_) { st = null; }
+        if (!st || typeof st !== 'object' || !Array.isArray(st.w) || typeof st.s !== 'string') {
+            try { _audit_('staff:code-store-reset', '', '', '', '', '', '', 'the set-up code store was unreadable and has been reset - codes issued before no longer work (issue new ones)'); } catch (_) {}
+            st = null;
+        }
+    }
+    if (!st) st = { s: '', w: [], b: [], bm: '' };
+    if (!st.s) st.s = String(Utilities.getUuid()).replace(/[^0-9a-f]/gi, '') + String(Math.floor(Math.random() * 1e9));
+    st.w = st.w.filter(function (x) { return x && typeof x === 'object' && typeof x.n === 'string' && typeof x.h === 'string'; });
+    if (!Array.isArray(st.b)) st.b = [];
+    return st;
+}
+
+/** __66_: save the store: used codes past their 30 minutes and expired codes past a day dropped; capped (oldest dropped, Audit). True when written. */
+function _scWrite_(st, nowMs, dropped) {   // __67_ (S160B-F5): dropped (optional list) gets the name of each live code the cap dropped
+    try {
+        st.w = st.w.filter(function (x) {
+            const used = x.u ? Date.parse(x.u) : NaN, exp = Date.parse(x.x);
+            if (isFinite(used)) return nowMs - used <= SETUP_REPLAY_MS;
+            return isFinite(exp) && nowMs - exp <= SETUP_KEEP_MS;
+        });
+        st.b = st.b.filter(function (t) { const v = Date.parse(t); return isFinite(v) && nowMs - v <= SETUP_BURST_MS; }).slice(-(SETUP_BURST_N + 5));
+        while (st.w.length && (st.w.length > SETUP_MAX_ENTRIES || JSON.stringify(st).length > SETUP_MAX_CHARS)) {
+            const x = st.w.shift();
+            _audit_('staff:code-dropped', x.nm || '', '', '', '', '', '', 'the set-up code store is full - the oldest code was dropped and no longer works');
+            if (Array.isArray(dropped)) dropped.push(String(x.nm || x.n || '?'));   // __67_ (S160B-F5)
+        }
+        sp.setProperty(SETUP_PROP, JSON.stringify(st));
+        return true;
+    } catch (e) {
+        try { _audit_('staff:code-store-error', '', '', '', '', '', '', 'write failed: ' + String(e).substring(0, 160)); } catch (_) {}
+        return false;
+    }
+}
+
+/** __66_: find the worker for a code. Never writes. An empty col E is allowed (the code registers the new phone). */
+function _setupCodeLookup_(name) {
+    const key = _rfKey_(name);
+    if (!key) return { ok: false, message: 'No name typed - no code made.' };
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const staff = ss.getSheetByName('Staff');
+    if (!staff) return { ok: false, message: 'There is no Staff tab - no code made.' };
+    const data = staff.getDataRange().getValues();
+    let i = -1;
+    for (let r = 1; r < data.length; r++) { if (_rfKey_(data[r][0]) === key) { i = r; break; } }
+    if (i < 0) return { ok: false, message: 'No worker called "' + String(name).trim() + '" in the Staff tab - no code made. Check the spelling in column A.' };
+    const staffName = String(data[i][0]).trim();
+    if (String(data[i][2] == null ? '' : data[i][2]).trim().toLowerCase() === 'inactive')
+        return { ok: false, message: staffName + ' is marked Inactive in the Staff tab (column C) - no code made.' };
+    const dev = String(data[i][4] == null ? '' : data[i][4]).trim();
+    let openVisit = false, openStatus = '';
+    try {
+        const v = ss.getSheetByName('Visits');
+        const lr = v ? _latestRowFor_(v, staffName, _readWidth_(v)) : null;
+        if (lr && lr.data) { openStatus = String(lr.data[10] || ''); openVisit = !TRAIL_CLOSED_RE.test(openStatus) && openStatus !== ''; }
+    } catch (_) {}
+    return { ok: true, name: staffName, row: i + 1, deviceTail: dev ? _idTail_(dev) : '', openVisit: openVisit, openStatus: openStatus };
+}
+
+/** __66_: make a code for the worker, under the script lock. Returns { ok, code, ... } or { ok: false, message }. */
+function _setupCodeIssue_(name) {
+    const lock = LockService.getScriptLock();
+    let got = false;
+    try { got = lock.tryLock(20000); } catch (_) { got = false; }
+    if (!got) return { ok: false, message: 'The server is busy - no code was made. Please try again in a minute.' };
+    try {
+        const look = _setupCodeLookup_(name);   // read again under the lock
+        if (!look.ok) return look;
+        const now = new Date(), st = _scRead_();
+        if (!st) return { ok: false, message: 'The code store could not be read - no code was made. Please try again in a minute.' };
+        const code = _scNewCode_(), key = _rfKey_(look.name);
+        const had = st.w.some(function (x) { return x.n === key; });
+        st.w = st.w.filter(function (x) { return x.n !== key; });   // a new code replaces the old one (and ends its replay time)
+        st.w.push({ n: key, nm: look.name.substring(0, 60), h: _scHash_(st.s, key, code), t0: now.toISOString(),
+                    x: new Date(now.getTime() + SETUP_TTL_MS).toISOString(), f: 0, u: '', d: '', lk: false });
+        const dropped = [];   // __67_ (S160B-F5): workers whose earlier code the cap dropped
+        if (!_scWrite_(st, now.getTime(), dropped)) return { ok: false, message: 'The code could not be saved - no code was made. Please try again in a minute.' };
+        _audit_('staff:code-issued', look.name, '', '', '', 'setupCode', '',
+                'a set-up code was issued (24 hours, one use' + (had ? '; it replaces the previous code' : '') + ') - phone ' +
+                (look.deviceTail || 'none') + ' stays registered until the code is used' +
+                (look.openVisit ? '; a visit or alarm was open: ' + look.openStatus.substring(0, 60) : '') + '. The code itself is not recorded.');
+        return { ok: true, code: code, name: look.name, deviceTail: look.deviceTail, openVisit: look.openVisit, openStatus: look.openStatus, replaced: had,
+                 dropped: dropped };
+    } catch (err) {
+        return { ok: false, message: 'Something went wrong - no code was made: ' + String(err).substring(0, 120) };
+    } finally {
+        try { SpreadsheetApp.flush(); } catch (_) {}
+        lock.releaseLock();
+    }
+}
+
+/** __66_: the words the administrator sees with the code. */
+function _setupCodeText_(r) {
+    return 'Code: ' + r.code.substring(0, 3) + ' ' + r.code.substring(3) + '\n\n' +
+        '- It works once, for 24 hours. Five wrong tries lock it.' + (r.replaced ? ' It replaces the code made before.' : '') + '\n' +
+        '- Tell ' + r.name + ' the code by phone or in person. Never send it by email or text to the lost phone.\n' +
+        '- On the new phone: open the app and type the name and this code on the first set-up screen. It needs signal and ' +
+        'worker app build __40_ or later. For an older app use "Release a worker\'s phone" instead.\n' +
+        (r.deviceTail ? '- ' + r.name + "'s current phone " + r.deviceTail + ' stays registered until the new phone uses the code.\n'
+                      : '- ' + r.name + ' has no registered phone yet - the code registers the new one.\n') +
+        (r.openVisit ? '- ' + r.name + ' has an open visit or alarm (' + r.openStatus + '). Once the code is used, only the new phone can end or clear it.\n' : '') +
+        (r.dropped && r.dropped.length ? '- The code store was full, so the earlier code for ' + r.dropped.join(', ') +
+                                         ' no longer works - issue them a new one when they need it.\n' : '') +   // __67_ (S160B-F5)
+        '- The code is not kept anywhere you can read it later. Write it down now if you need to.';
+}
+
+/** __66_: admin menu "Set up a worker's phone with a code". */
+function issueSetupCode() {
+    const ui = SpreadsheetApp.getUi();
+    const resp = ui.prompt("Set up a worker's phone with a code",
+        "Type the worker's name as it is in the Staff tab (column A).\n\nYou get a one-time code for their new or wiped phone. " +
+        'Their current phone stays registered until the code is used.', ui.ButtonSet.OK_CANCEL);
+    if (resp.getSelectedButton() !== ui.Button.OK) return;
+    const look = _setupCodeLookup_(resp.getResponseText());
+    if (!look.ok) { ui.alert(look.message); return; }
+    if (look.openVisit) {
+        const c = ui.alert('Open visit or alarm',
+            look.name + ' has an open visit or alarm (' + look.openStatus + ').\n\nWhen the code is used, the new phone becomes the only phone ' +
+            'that can end or clear it. An open home-screen alarm comes back on the new phone and ' + look.name + ' clears it with the PIN. ' +
+            'A visit, or an alarm raised during a visit, does not come back - phone ' + look.name + ' and close it by hand if needed.\n\nMake a code anyway?',
+            ui.ButtonSet.YES_NO);
+        if (c !== ui.Button.YES) return;
+    }
+    const r = _setupCodeIssue_(look.name);
+    if (!r.ok) { ui.alert(r.message); return; }
+    ui.alert('Set-up code for ' + r.name, _setupCodeText_(r), ui.ButtonSet.OK);
+}
+
+/** __66_: one admin email about a claim (restored, locked or burst). Queued like every send; it can never throw into the post. */
+function _claimMail_(kind, name, x) {
+    try {
+        const org = (CONFIG.ORG_NAME && !String(CONFIG.ORG_NAME).includes('%%')) ? CONFIG.ORG_NAME : 'OTG';
+        const when = _fmtLocal_(new Date(), 'd MMM yyyy, h:mm a');
+        let subject, body;
+        if (kind === 'restored') {
+            subject = 'OTG - ' + String(name).substring(0, 60) + "'s phone was set up with a code (" + org + ')';
+            body = '<p><b>' + _h_(name) + "'s phone was set up with a set-up code at " + _h_(when) + '.</b></p>' +
+                '<p>New phone ' + _h_(_idTail_(x.dev)) + ' replaced ' + _h_(x.old ? _idTail_(x.old) : 'none (no phone was registered)') +
+                (x.build ? ' (worker app ' + _h_(x.build) + ')' : '') + '.</p>' +
+                (x.open ? '<p><b>A visit or alarm was open (' + _h_(x.open) + ').</b> The new phone is now the only phone that can end or clear it.</p>' : '') +
+                '<p>If you did not expect this, phone ' + _h_(name) + ' now. To take the registration back, issue a new set-up code to ' + _h_(name) +
+                ' (OTG Admin &gt; Set up a worker\'s phone with a code) and have ' + _h_(name) + ' use it on their own phone.</p>';
+        } else if (kind === 'locked') {
+            subject = 'OTG - a set-up code for ' + String(name).substring(0, 60) + ' was locked (' + org + ')';
+            body = '<p><b>The set-up code for ' + _h_(name) + ' was locked after 5 wrong tries at ' + _h_(when) + '.</b></p>' +
+                '<p>Nothing changed: the registered phone is the same. If ' + _h_(name) + ' was not trying, someone else may have been. ' +
+                'Speak to ' + _h_(name) + ' before you issue a new code.</p>';
+        } else {
+            subject = 'OTG security - many wrong set-up codes tried (' + org + ')';
+            body = '<p><b>More than ' + SETUP_BURST_N + ' wrong set-up codes were tried in the last hour (all workers together).</b></p>' +
+                '<p>Someone may be guessing codes. Nothing has been blocked: each code still locks after 5 wrong tries. ' +
+                'Check the Audit tab (source staff:code-wrong) and tell your IT adviser if it was not your workers.</p>';
+        }
+        const html = '<div style="font-family:Arial,sans-serif;font-size:14px;color:#111">' + body +
+            '<p style="color:#666;font-size:12px">The code itself is never sent or recorded. ' + _h_(TEMPLATE_BUILD) + '</p></div>';
+        const to = (CONFIG.HEALTH_EMAIL && String(CONFIG.HEALTH_EMAIL).includes('@')) ? CONFIG.HEALTH_EMAIL : Session.getEffectiveUser().getEmail();
+        _sendOrQueue_('setup-code-email', function () {
+            try { MailApp.sendEmail({ to: to, subject: subject, htmlBody: html }); }
+            catch (err) { try { _audit_('staff:code-email-FAILED', name, '', '', '', '', '', kind + ': ' + String(err).substring(0, 160)); } catch (_) {} }
+        });
+    } catch (err) {
+        try { _audit_('staff:code-email-error', name, '', '', '', '', '', kind + ': ' + String(err).substring(0, 160)); } catch (_) {}
+    }
+}
+
+/** __66_: the burst rule (S158B-Q2): more than 20 wrong tries in an hour, all workers - one admin email an hour; nothing refused. */
+function _claimBurst_(st, now) {
+    const nowMs = now.getTime();
+    const n = st.b.filter(function (t) { const v = Date.parse(t); return isFinite(v) && nowMs - v <= SETUP_BURST_MS; }).length;
+    const last = st.bm ? Date.parse(st.bm) : NaN;
+    if (n > SETUP_BURST_N && !(isFinite(last) && nowMs - last <= SETUP_BURST_MS)) {
+        st.bm = now.toISOString();
+        _audit_('staff:code-burst', '', '', '', '', 'claimSetup', '', n + ' wrong set-up codes in the last hour (all workers) - administrator emailed; nothing refused');
+        _claimMail_('burst', '', {});
+    }
+}
+
+/**
+ * __66_: what a right code sends back. Details from the new Staff columns; when the phone has never backed up (every detail
+ * column it fills is blank - an admin-set slot's columns don't count), from the worker's latest Visits row (names, phones,
+ * emails only); else topics only. Topics always come from Staff H, I and J, and
+ * an admin-set slot always from Staff.
+ */
+function _claimReply_(hdr, row, staffName, replay) {
+    const c = _stColsFromHdr_(hdr);
+    const g = function (h) { return _stCell_(row, c[h]); };
+    const t = function (v) { const x = String(v == null ? '' : v).trim(); return _topicOk_(x) ? x : ''; };
+    const adm = _stAdminSet_(hdr, row);
+    const out = { status: 'success', claim: 'ok', replay: !!replay,
+        worker: { name: staffName, phone: g('Worker Phone'), email: g('Worker Email'), topic: t(row[WORKER_TOPIC_COL - 1]) },
+        primary: { name: g('Primary Name'), phone: g('Primary Phone'), email: g('Primary Email'), topic: t(row[7]), adminSet: adm.primary },
+        escalation: { name: g('Escalation Name'), phone: g('Escalation Phone'), email: g('Escalation Email'), topic: t(row[8]), adminSet: adm.escalation },
+        contactsChecked: g('Contacts Checked'),   // __67_ (S160B-F1): always from Staff, also in the visit-row fallback below
+        source: 'staff', sourceDate: '', ntfyServer: _ntfyPublicServer_(), backendBuild: TEMPLATE_BUILD };
+    // the phone's own backup decides (an admin-set slot's columns are the administrator's, not a backup)
+    const own = STAFF_DETAIL_COLS.filter(function (h) { return !(adm.primary && /^Primary /.test(h)) && !(adm.escalation && /^Escalation /.test(h)); });
+    if (own.some(function (h) { return g(h) !== ''; })) return out;
+    out.source = 'topics';
+    try {
+        const v = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Visits');
+        const lr = v ? _latestRowFor_(v, staffName, _readWidth_(v)) : null;
+        if (lr && lr.data) {
+            const d = lr.data;
+            const s = function (k) { return String(d[k] == null ? '' : d[k]).trim().substring(0, STAFF_DETAIL_MAX); };
+            out.worker.phone = s(3);
+            if (!adm.primary) { out.primary.name = s(4); out.primary.phone = s(5); out.primary.email = s(6); }
+            if (!adm.escalation) { out.escalation.name = s(7); out.escalation.phone = s(8); out.escalation.email = s(9); }
+            out.source = 'visit';
+            const ts = d[0] instanceof Date ? d[0] : new Date(d[0]);
+            out.sourceDate = isNaN(ts.getTime()) ? '' : String(_fmtLocal_(ts, 'yyyy-MM-dd')).substring(0, 10);
+        }
+    } catch (_) {}
+    return out;
+}
+
+/**
+ * __66_: POST action claimSetup (gate-neutral; runs under the doPost lock). Sent by worker __40_ or later with the name, the
+ * code, the new device ID and the worker build. A right code: the code is used up first, then Staff col E and Trusted Phone
+ * become this phone, Audit staff:restored, one admin email, and the worker's saved details come back. Anything else: a short
+ * reason that never says whether the name exists; nothing written but the try count. The code is never logged.
+ */
+function handleClaimSetup(p) {
+    const now = new Date(), nowMs = now.getTime();
+    const code = String(p.code == null ? '' : p.code).replace(/\D/g, '');
+    const dev = String(p.deviceId == null ? '' : p.deviceId).trim();
+    const build = String(p['Worker Build'] == null ? '' : p['Worker Build']).replace(/[^A-Za-z0-9_.\- ]/g, '').substring(0, 40);
+    const typed = String(p['Worker Name'] == null ? '' : p['Worker Name']).trim().substring(0, NAME_MAX_CHARS);
+    const refuse = function (reason) { return { status: 'error', claim: 'refused', reason: reason, message: CLAIM_MSG[reason] }; };
+    let staff, data, st;
+    try {
+        staff = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Staff');
+        if (!staff) return refuse('busy');
+        data = staff.getDataRange().getValues();
+        st = _scRead_();
+        if (!st) return refuse('busy');
+    } catch (e) {
+        try { _audit_('staff:code-error', typed, '', '', '', 'claimSetup', p.idempotencyKey, String(e).substring(0, 160)); } catch (_) {}
+        return refuse('busy');
+    }
+    const key = _rfKey_(typed);
+    let i = -1;
+    for (let r = 1; key && r < data.length; r++) { if (_rfKey_(data[r][0]) === key) { i = r; break; } }
+    const staffName = i >= 0 ? String(data[i][0]).trim() : typed;
+    const ent = key ? st.w.filter(function (x) { return x.n === key; })[0] : null;
+    const tail = ' - phone ' + _idTail_(dev) + (build ? ', app ' + build : '');
+    const note = function (src, why, burst) {   // Audit; a guess also counts toward the burst email
+        if (burst) { st.b.push(now.toISOString()); _claimBurst_(st, now); }
+        const saved = _scWrite_(st, nowMs);   // __67_ (S160B-F4): the caller answers busy when the store was not saved
+        _audit_(src, staffName, '', '', '', 'claimSetup', p.idempotencyKey, why + tail + (saved ? '' : ' - the code store could not be saved, so this try was not counted (answered busy)'));
+        return saved;
+    };
+    const ans = function (saved, reason) { return refuse(saved ? reason : 'busy'); };   // __67_ (S160B-F4)
+    if (!dev || dev.length > 120) { return ans(note('staff:code-wrong', 'no usable device ID was sent - refused', false), 'code'); }
+    if (i < 0) { return ans(note('staff:code-wrong', 'a set-up code was tried for a name that is not in the Staff tab', true), 'code'); }
+    if (!ent) { return ans(note('staff:code-wrong', 'a set-up code was tried, but no code has been issued for this worker', true), 'code'); }
+    if (String(data[i][2] == null ? '' : data[i][2]).trim().toLowerCase() === 'inactive') { return ans(note('staff:code-wrong', 'the worker is marked Inactive - refused', false), 'code'); }
+    if (ent.lk) { return ans(note('staff:code-locked', 'a try on a locked code (5 wrong tries) - refused', !code || _scHash_(st.s, key, code) !== ent.h), 'locked'); }
+    const bound = String(data[i][4] == null ? '' : data[i][4]).trim();
+    const right = code.length === 6 && _scHash_(st.s, key, code) === ent.h;
+    const usedMs = ent.u ? Date.parse(ent.u) : NaN;
+    if (isFinite(usedMs)) {
+        if (right && ent.d === dev && nowMs - usedMs <= SETUP_REPLAY_MS && bound === dev) {
+            _audit_('staff:code-replay', staffName, '', '', '', 'claimSetup', p.idempotencyKey, 'the same phone asked again with its used code - the same details sent again; nothing changed' + tail);
+            return _claimReply_(data[0], data[i], staffName, true);
+        }
+        return ans(note('staff:code-wrong', 'the code has already been used' + (right ? ' (by another phone, or Staff col E has changed since)' : ''), !right), 'code');
+    }
+    if (!(nowMs <= Date.parse(ent.x))) {
+        if (right) { return ans(note('staff:code-expired', 'the right code, but it expired at ' + _fmtLocal_(new Date(ent.x), 'd MMM yyyy, h:mm a'), false), 'expired'); }
+        return ans(note('staff:code-wrong', 'a wrong code (the code has expired anyway)', true), 'code');
+    }
+    if (!right) {
+        ent.f = (Number(ent.f) || 0) + 1;
+        if (ent.f >= SETUP_MAX_TRIES) {
+            ent.lk = true;
+            if (!note('staff:code-locked', 'wrong code - try ' + ent.f + ' of ' + SETUP_MAX_TRIES + '; the code is now locked', true))
+                return refuse('busy');   // __67_ (S160B-F4): not saved, so not locked - no locked email (S161B-D1)
+            _claimMail_('locked', staffName, {});
+            return refuse('locked');
+        }
+        return ans(note('staff:code-wrong', 'wrong code - try ' + ent.f + ' of ' + SETUP_MAX_TRIES, true), 'code');
+    }
+    // A right code: __67_ (S160B-F3) find or add the Staff columns first - if that fails the code stays unused and the
+    // answer is busy. Then use the code up (a failed write changes nothing), then the swap.
+    let cols;
+    try { cols = _stCols_(staff, true); }
+    catch (err) {
+        try { _audit_('staff:code-error', staffName, '', '', '', 'claimSetup', p.idempotencyKey,
+                      'the Staff set-up columns could not be found or added, so the code was not used (answered busy): ' + String(err).substring(0, 160) + tail); } catch (_) {}
+        return refuse('busy');
+    }
+    ent.u = now.toISOString(); ent.d = dev;
+    if (!_scWrite_(st, nowMs)) return refuse('busy');
+    staff.getRange(i + 1, 5).setValue(_cell_(dev));
+    if (cols['Trusted Phone']) staff.getRange(i + 1, cols['Trusted Phone']).setValue(_cell_(dev));
+    let open = '';
+    try {
+        const v = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Visits');
+        const lr = v ? _latestRowFor_(v, staffName, _readWidth_(v)) : null;
+        if (lr && lr.data) { const s = String(lr.data[10] || ''); if (s && !TRAIL_CLOSED_RE.test(s)) open = s.substring(0, 60); }
+    } catch (_) {}
+    _audit_('staff:restored', staffName, '', '', '', 'claimSetup', p.idempotencyKey,
+            'phone ' + _idTail_(dev) + ' replaced ' + (bound ? _idTail_(bound) : 'none (Staff col E was empty)') + ' by a set-up code' +
+            (build ? ' (app ' + build + ')' : '') + (open ? '; a visit or alarm was open (' + open + ') - the new phone is now the one that can end or clear it' : ''));
+    _claimMail_('restored', staffName, { dev: dev, old: bound, open: open, build: build });
+    const w = Math.max(staff.getLastColumn(), 1);
+    return _claimReply_(staff.getRange(1, 1, 1, w).getValues()[0], staff.getRange(i + 1, 1, 1, w).getValues()[0], staffName, false);
+}
+// __66_ END OF SECTION B
+
+// ==========================================
+// __66_ SECTION C (session S158B, 24 Nov 2026) - ADMIN-SET SHARED CONTACTS.
+// Design: S155B note section 13; S158B design check Q4, Q5 (Russell: "Agree to all").
+//   - A contact slot whose "... Set By Admin" mark is on belongs to the sheet: contactsUpdate and updateStaffStatus skip it.
+//   - "Set a contact for workers" copies one contact into each matching Staff row, turns the mark on, and vouches for the
+//     phone in col E (Trusted Phone) only on rows never vouched before or already matching (Q4).
+//   - The sync sends the admin-set slots (meta.orgContacts) only to the phone in col E when it equals Trusted Phone.
+//   - Release writes Trusted Phone = "released" (Q5), so a phone registered by name later needs a set-up code.
+// ==========================================
+
+const STAFF_TRUST_RELEASED = 'released';
+const CONTACT_SLOTS = {
+    primary:    { label: 'Primary',    topicCol: 8, name: 'Primary Name',    phone: 'Primary Phone',    email: 'Primary Email',    mark: 'Primary Set By Admin' },
+    escalation: { label: 'Escalation', topicCol: 9, name: 'Escalation Name', phone: 'Escalation Phone', email: 'Escalation Email', mark: 'Escalation Set By Admin' }
+};
+
+/**
+ * __66_: meta.orgContacts for the sync, or null. Absent when no slot is admin-set. { trusted: false } when one is but this
+ * phone is not the trusted one (col E empty, another phone, or not equal to Trusted Phone). { trusted: true, primary?,
+ * escalation? } with only the admin-set slots otherwise. Never to the master key.
+ */
+function _stOrgContacts_(hdr, row, deviceId, isHQ) {
+    if (isHQ) return null;
+    const adm = _stAdminSet_(hdr, row);
+    if (!adm.primary && !adm.escalation) return null;
+    const c = _stColsFromHdr_(hdr);
+    const bound = String(row[4] == null ? '' : row[4]).trim(), dev = String(deviceId == null ? '' : deviceId).trim();
+    const trusted = _stCell_(row, c['Trusted Phone']);
+    if (!bound || bound !== dev || trusted !== bound) return { trusted: false };
+    const out = { trusted: true };
+    ['primary', 'escalation'].forEach(function (k) {
+        if (!adm[k]) return;
+        const S = CONTACT_SLOTS[k];
+        const tp = String(row[S.topicCol - 1] == null ? '' : row[S.topicCol - 1]).trim();
+        out[k] = { name: _stCell_(row, c[S.name]), phone: _stCell_(row, c[S.phone]), email: _stCell_(row, c[S.email]), topic: _topicOk_(tp) ? tp : '' };
+    });
+    return out;
+}
+
+/** __66_ (S158B-Q5): Release marks Trusted Phone "released" (when the column exists). Called under Release's lock. Never throws. */
+function _stTrustReleased_(row) {
+    try {
+        const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Staff');
+        const c = _stColsFromHdr_(sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0])['Trusted Phone'];
+        if (c) sh.getRange(row, c).setValue(STAFF_TRUST_RELEASED);
+    } catch (_) {}
+}
+
+/** __66_: the menu functions the dialog calls work only from the Sheet's own menu (not from a web page). */
+function _contactUiGuard_() {
+    try { SpreadsheetApp.getUi(); return null; } catch (_) { return { ok: false, message: 'This only works from the Sheet menu (OTG Admin).' }; }
+}
+
+/** __66_: admin menu "Set a contact for workers" - a small form (ui.prompt has only one field). */
+function setContactForWorkers() {
+    const html = HtmlService.createHtmlOutput(_contactDialogHtml_()).setWidth(480).setHeight(660);
+    SpreadsheetApp.getUi().showModalDialog(html, 'Set a contact for workers');
+}
+/** __66_: the dialog's Check button. */
+function contactPreview(form) { const g = _contactUiGuard_(); return g || _contactPlan_(form, false); }
+/** __66_: the dialog's Set button. */
+function contactApply(form) { const g = _contactUiGuard_(); return g || _contactPlan_(form, true); }
+
+/**
+ * __66_: plan (apply false) or do (apply true) "Set a contact for workers". form: { slot: primary | escalation, name, phone,
+ * email, topic, makeTopic, target, confirmReplace }. Writes, under the script lock, into each Staff row the target matches:
+ * the slot's name, phone, email, topic (H or I) and mark (TRUE); Trusted Phone = col E only where it was blank or already
+ * equal. Replacing a different existing topic needs confirmReplace (the second OK). The topic is never written to the Audit.
+ */
+function _contactPlan_(form, apply) {
+    form = form || {};
+    const on = function (v) { return v === true || v === 'true' || v === 'on'; };
+    const clean = function (v, n) { return String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, ' ').trim().substring(0, n); };
+    const slot = (form.slot === 'primary' || form.slot === 'escalation') ? form.slot : '';
+    if (!slot) return { ok: false, message: 'Choose Primary or Escalation.' };
+    const S = CONTACT_SLOTS[slot];
+    const name = clean(form.name, 60), phone = clean(form.phone, STAFF_DETAIL_MAX), email = clean(form.email, STAFF_DETAIL_MAX);
+    const make = on(form.makeTopic), target = clean(form.target, 500);
+    let topic = clean(form.topic, 64);
+    if (!name) return { ok: false, message: "Type the contact's name." };
+    if (!make && !_topicOk_(topic))
+        return { ok: false, message: topic ? 'That topic has a character ntfy does not allow - use letters, digits, - and _ only.' : 'Paste the contact\'s ntfy topic, or tick "Make one for me".' };
+    if (!target) return { ok: false, message: "Say who: All, a group name, or workers' names separated by commas." };
+    let lock = null;
+    if (apply) {
+        lock = LockService.getScriptLock();
+        let got = false;
+        try { got = lock.tryLock(20000); } catch (_) { got = false; }
+        if (!got) return { ok: false, message: 'The server is busy - nothing changed. Please try again in a minute.' };
+    }
+    try {
+        const staff = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Staff');
+        if (!staff) return { ok: false, message: 'There is no Staff tab - nothing changed.' };
+        const data = staff.getDataRange().getValues();
+        const rows = [];
+        for (let r = 1; r < data.length; r++) {
+            const nm = String(data[r][0] == null ? '' : data[r][0]).trim();
+            if (nm && _targetMatch_(target.toLowerCase(), nm.toLowerCase(), String(data[r][3] == null ? '' : data[r][3]).toLowerCase())) rows.push(r);
+        }
+        if (!rows.length) return { ok: false, message: 'No worker in the Staff tab matches "' + target + '" - nothing changed.' };
+        const cols0 = _stColsFromHdr_(data[0]);
+        const replace = [], needCode = [], vouch = [];
+        rows.forEach(function (r) {
+            const nm = String(data[r][0]).trim();
+            const cur = String(data[r][S.topicCol - 1] == null ? '' : data[r][S.topicCol - 1]).trim();
+            if (cur && (make || cur !== topic)) replace.push(nm);
+            const dev = String(data[r][4] == null ? '' : data[r][4]).trim(), tr = _stCell_(data[r], cols0['Trusted Phone']);
+            if (!dev) needCode.push(nm + ' (no phone registered yet)');
+            else if (!tr || tr === dev) vouch.push(r);
+            else needCode.push(nm + ' (the phone changed since it was last vouched for)');
+        });
+        const res = { ok: true, slot: S.label, workers: rows.length, names: rows.map(function (r) { return String(data[r][0]).trim(); }).slice(0, 40),
+                      replace: replace.length, replaceNames: replace.slice(0, 40), needCode: needCode.slice(0, 40), needCodeCount: needCode.length };
+        if (!apply) return res;
+        if (replace.length && !on(form.confirmReplace))
+            return { ok: false, needConfirm: true, replace: replace.length,
+                     message: 'This changes the push topic for ' + replace.length + ' worker(s). Whoever follows their current ' + S.label.toLowerCase() +
+                              ' topic stops getting their alerts. Make sure the new contact has subscribed first, then tick the box and press Set again.' };
+        if (make) topic = _workerTopicNew_();
+        const cols = _stCols_(staff, true);
+        rows.forEach(function (r) {
+            staff.getRange(r + 1, cols[S.name]).setValue(_cell_(name));
+            staff.getRange(r + 1, cols[S.phone]).setValue(phone ? _stValue_(S.phone, phone) : '');
+            staff.getRange(r + 1, cols[S.email]).setValue(_cell_(email));
+            staff.getRange(r + 1, S.topicCol).setValue(_cell_(topic));
+            staff.getRange(r + 1, cols[S.mark]).setValue(true);
+        });
+        vouch.forEach(function (r) {
+            const dev = String(data[r][4]).trim();
+            if (_stCell_(data[r], cols0['Trusted Phone']) !== dev) staff.getRange(r + 1, cols['Trusted Phone']).setValue(_cell_(dev));
+        });
+        _audit_('staff:contact-set', target.substring(0, 60), '', '', '', 'setContact', '',
+                S.label + ' contact "' + name.substring(0, 40) + '" set by an administrator for ' + rows.length + ' worker(s) (topic ' +
+                (make ? 'made by the server' : 'pasted') + '; ' + replace.length + ' topic(s) replaced; ' + needCode.length +
+                ' need a set-up code to load it on their phone). The topic itself is not recorded.');
+        let guide = '';
+        try { const u = String(_settings_().workerAppUrl || ''); if (/^https:\/\//i.test(u)) guide = u.replace(/[^\/]*$/, '') + 'ntfy_contact_guide.html'; } catch (_) {}
+        res.topic = topic; res.subscribe = _ntfyPublicServer_() + '/' + topic; res.guide = guide;
+        return res;
+    } catch (err) {
+        return { ok: false, message: 'Something went wrong - some rows may have changed: ' + String(err).substring(0, 120) };
+    } finally {
+        if (lock) { try { SpreadsheetApp.flush(); } catch (_) {} lock.releaseLock(); }
+    }
+}
+
+/** __66_: the dialog page. Everything shown comes back as text (textContent), never as HTML. */
+function _contactDialogHtml_() {
+    return '<!DOCTYPE html><html><head><base target="_top"><style>' +
+        'body{font-family:Arial,sans-serif;font-size:13px;color:#111}label{display:block;margin-top:8px;font-weight:bold}' +
+        'label.n{font-weight:normal;margin-top:2px}input[type=text]{width:100%;box-sizing:border-box;padding:4px}' +
+        '#out{margin-top:10px;white-space:pre-wrap;border:1px solid #bbb;padding:6px;display:none}button{margin:10px 6px 0 0}' +
+        '</style></head><body><form id="f" onsubmit="return false">' +
+        '<label>Which contact</label><label class="n"><input type="radio" name="slot" value="primary" checked> Primary</label>' +
+        '<label class="n"><input type="radio" name="slot" value="escalation"> Escalation</label>' +
+        '<label>Name</label><input type="text" name="name" maxlength="60">' +
+        '<label>Phone</label><input type="text" name="phone" maxlength="120">' +
+        '<label>Email</label><input type="text" name="email" maxlength="120">' +
+        '<label>ntfy topic (paste the one the contact subscribed to)</label><input type="text" name="topic" maxlength="64">' +
+        '<label class="n"><input type="checkbox" name="makeTopic"> Make one for me (then send the contact the subscribe link)</label>' +
+        '<label>Who</label><input type="text" name="target" maxlength="500" placeholder="All, a group name, or names separated by commas">' +
+        '<div id="conf" style="display:none"><label class="n"><input type="checkbox" name="confirmReplace"> ' +
+        '<span id="confText"></span></label></div>' +
+        '<button type="button" onclick="go(false)">Check</button><button type="button" id="setBtn" onclick="go(true)" disabled>Set the contact</button>' +
+        '<button type="button" onclick="google.script.host.close()">Close</button></form><div id="out"></div><script>' +
+        'function v(){var f=document.getElementById("f"),o={};["name","phone","email","topic","target"].forEach(function(k){o[k]=f[k].value;});' +
+        'o.slot=f.querySelector("input[name=slot]:checked").value;o.makeTopic=f.makeTopic.checked;o.confirmReplace=f.confirmReplace.checked;return o;}' +
+        'function show(t){var d=document.getElementById("out");d.style.display="block";d.textContent=t;}' +
+        'function go(a){show("Working...");var r=google.script.run.withSuccessHandler(function(x){done(x,a);}).withFailureHandler(function(e){show("Error: "+e.message);});' +
+        'if(a)r.contactApply(v());else r.contactPreview(v());}' +
+        'function done(x,a){if(!x.ok){if(x.needConfirm){document.getElementById("conf").style.display="block";' +
+        'document.getElementById("confText").textContent="I understand the push topic changes for "+x.replace+" worker(s).";}show(x.message);return;}' +
+        'var t=x.slot+" contact for "+x.workers+" worker(s): "+x.names.join(", ")+".";' +
+        'if(x.replace){t+="\\n\\n"+x.replace+" of them have a different topic now - it will be replaced.";document.getElementById("conf").style.display="block";' +
+        'document.getElementById("confText").textContent="I understand the push topic changes for "+x.replace+" worker(s).";}' +
+        'if(x.needCodeCount)t+="\\n\\nThese need a set-up code before their phone loads the contact: "+x.needCode.join(", ")+".";' +
+        'if(!a){t+="\\n\\nPress Set the contact to save it.";document.getElementById("setBtn").disabled=false;}' +
+        'else{t="Done. "+t+"\\n\\nTopic: "+x.topic+"\\nSubscribe link for the contact: "+x.subscribe+(x.guide?"\\nContact guide: "+x.guide:"")+' +
+        '"\\n\\nNext: use Send a test to a contact before anyone relies on it.";document.getElementById("setBtn").disabled=true;}show(t);}' +
+        '</script></body></html>';
+}
+
+/** __66_: admin menu "Send a test to a contact" - one push and one email to a worker's Primary or Escalation contact. */
+function sendContactTest() {
+    const ui = SpreadsheetApp.getUi();
+    const a = ui.prompt('Send a test to a contact', "Type the worker's name as it is in the Staff tab (column A).", ui.ButtonSet.OK_CANCEL);
+    if (a.getSelectedButton() !== ui.Button.OK) return;
+    const b = ui.prompt('Send a test to a contact', 'Which contact? Type P for Primary or E for Escalation.', ui.ButtonSet.OK_CANCEL);
+    if (b.getSelectedButton() !== ui.Button.OK) return;
+    ui.alert(_contactTest_(a.getResponseText(), b.getResponseText()).message);
+}
+
+/** __66_: the test itself (from Staff: the slot's topic in H or I and its email column). Audit staff:contact-test. */
+function _contactTest_(name, which) {
+    const slot = /^\s*e/i.test(String(which || '')) ? 'escalation' : (/^\s*p/i.test(String(which || '')) ? 'primary' : '');
+    if (!slot) return { ok: false, message: 'Type P or E - nothing sent.' };
+    const S = CONTACT_SLOTS[slot];
+    const staff = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Staff');
+    if (!staff) return { ok: false, message: 'There is no Staff tab - nothing sent.' };
+    const data = staff.getDataRange().getValues(), key = _rfKey_(name);
+    let i = -1;
+    for (let r = 1; key && r < data.length; r++) { if (_rfKey_(data[r][0]) === key) { i = r; break; } }
+    if (i < 0) return { ok: false, message: 'No worker called "' + String(name).trim() + '" in the Staff tab - nothing sent.' };
+    const worker = String(data[i][0]).trim(), c = _stColsFromHdr_(data[0]);
+    const topic = String(data[i][S.topicCol - 1] == null ? '' : data[i][S.topicCol - 1]).trim();
+    const email = _stCell_(data[i], c[S.email]), cname = _stCell_(data[i], c[S.name]) || 'the ' + S.label.toLowerCase() + ' contact';
+    const org = (CONFIG.ORG_NAME && !String(CONFIG.ORG_NAME).includes('%%')) ? CONFIG.ORG_NAME : 'OTG';
+    const words = 'This is a test from ' + org + '. You are set as ' + worker + "'s " + S.label.toLowerCase() +
+                  ' contact for lone worker alerts. No action needed. If this arrived with your phone locked, real alerts will reach you too.';
+    let push = 'no topic', mail = 'no email';
+    if (_topicOk_(topic)) {
+        try { const r = _sendNtfy(topic, 'Test - ' + org + ' safety contact', words, 'urgent', 'white_check_mark', null); push = (r && r.ok) ? 'sent' : 'FAILED' + (r && r.code ? ' (HTTP ' + r.code + ')' : ''); }
+        catch (e) { push = 'FAILED (' + String(e).substring(0, 60) + ')'; }
+    }
+    if (/@/.test(email)) {
+        try { MailApp.sendEmail({ to: email, subject: 'Test - ' + org + ' safety contact', htmlBody: '<p>' + _h_(words) + '</p>' }); mail = 'sent'; }
+        catch (e) { mail = 'FAILED (' + String(e).substring(0, 60) + ')'; }
+    }
+    _audit_('staff:contact-test', worker, '', '', '', 'contactTest', '', S.label + ' contact test: push ' + push + ', email ' + mail + ' (topic not recorded)');
+    return { ok: push === 'sent' || mail === 'sent', push: push, mail: mail,
+             message: S.label + ' contact for ' + worker + ' (' + cname + '): push ' + push + ', email ' + mail + '.\n\nAsk ' + cname + ' whether both arrived.' };
+}
+
+/** __66_: admin menu "Stop setting a contact by admin" - the mark goes off for the chosen workers and slot; the values stay. */
+function stopAdminContact() {
+    const ui = SpreadsheetApp.getUi();
+    const a = ui.prompt('Stop setting a contact by admin', "Who? All, a group name, or workers' names separated by commas.", ui.ButtonSet.OK_CANCEL);
+    if (a.getSelectedButton() !== ui.Button.OK) return;
+    const b = ui.prompt('Stop setting a contact by admin', 'Which contact? Type P for Primary or E for Escalation.\n\nThe contact details stay; each worker can then change them on the phone.', ui.ButtonSet.OK_CANCEL);
+    if (b.getSelectedButton() !== ui.Button.OK) return;
+    ui.alert(_contactStop_(a.getResponseText(), b.getResponseText()).message);
+}
+
+/** __66_: turn the mark off (under the script lock). Audit staff:contact-unset. */
+function _contactStop_(target, which) {
+    const slot = /^\s*e/i.test(String(which || '')) ? 'escalation' : (/^\s*p/i.test(String(which || '')) ? 'primary' : '');
+    if (!slot) return { ok: false, message: 'Type P or E - nothing changed.' };
+    const S = CONTACT_SLOTS[slot], t = String(target == null ? '' : target).trim().substring(0, 500);
+    if (!t) return { ok: false, message: 'No one named - nothing changed.' };
+    const lock = LockService.getScriptLock();
+    let got = false;
+    try { got = lock.tryLock(20000); } catch (_) { got = false; }
+    if (!got) return { ok: false, message: 'The server is busy - nothing changed. Please try again in a minute.' };
+    try {
+        const staff = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Staff');
+        if (!staff) return { ok: false, message: 'There is no Staff tab - nothing changed.' };
+        const data = staff.getDataRange().getValues(), c = _stColsFromHdr_(data[0])[S.mark];
+        if (!c) return { ok: false, message: 'There is no "' + S.mark + '" column - nothing to stop.' };
+        const done = [];
+        for (let r = 1; r < data.length; r++) {
+            const nm = String(data[r][0] == null ? '' : data[r][0]).trim();
+            if (!nm || !_targetMatch_(t.toLowerCase(), nm.toLowerCase(), String(data[r][3] == null ? '' : data[r][3]).toLowerCase())) continue;
+            if (!_stOn_(data[r][c - 1])) continue;
+            staff.getRange(r + 1, c).setValue('');
+            done.push(nm);
+        }
+        if (!done.length) return { ok: true, message: 'No matching worker had an admin-set ' + S.label.toLowerCase() + ' contact - nothing changed.' };
+        _audit_('staff:contact-unset', t.substring(0, 60), '', '', '', 'stopContact', '', S.label + ' contact no longer set by the administrator for ' + done.length + ' worker(s); the details stay and each phone may change them');
+        return { ok: true, message: 'Done. ' + S.label + ' contact is no longer set by the administrator for: ' + done.join(', ') + '.\n\nThe details stay in the Staff tab. Each worker can now change them on the phone.' };
+    } catch (err) {
+        return { ok: false, message: 'Something went wrong - some rows may have changed: ' + String(err).substring(0, 120) };
+    } finally {
+        try { SpreadsheetApp.flush(); } catch (_) {}
+        lock.releaseLock();
+    }
+}
+// __66_ END OF SECTION C
