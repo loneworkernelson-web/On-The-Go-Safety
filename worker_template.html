@@ -14,7 +14,7 @@
 
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+<!-- S152-A08 (__39_): the Tone.js script is removed - nothing audible used it; initAudio and _warmAudio are now no-ops -->
 
 <style>
 /* 1. RUNTIME THEME — defaults overridden at boot by applyTheme() from config.json */
@@ -80,7 +80,7 @@ body {
 .long-press-btn.pressing::after,
 .long-press-btn.holding::after { 
  width: 100%; 
- transition: width 1.8s linear; 
+ transition: width 1.5s linear; /* S152-B04: the fill time equals the 1.5 s hold (setupLongPress timers untouched) */ 
 }
 /* 3. ANIMATION PATCH: High-visibility blue fill */
 .long-press-btn::after { 
@@ -94,6 +94,8 @@ body {
  transition: width 0.2s ease-out; 
  z-index: 0;
 }
+/* S152-B04: red fill for the destructive hold (Reset App Data) */
+#btnResetData.long-press-btn::after { background: rgba(239, 68, 68, 0.55); }
 /* SLIDE ACTION PILLS */
 .slide-action-pill { position: relative; overflow: hidden; user-select: none; touch-action: pan-y; cursor: pointer; }
 .slide-action-pill.pill-disabled { opacity: 0.45; pointer-events: none; }
@@ -300,6 +302,44 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  border-radius: 4px;
  display: inline-block;
 } 
+/* S152-T2 BEGIN */
+/* Tier 2 (cosmetic) styles for worker __39_: S152-B01, B02, B03, B06, B08, B13. Colour, press feedback and labels only. */
+
+/* S152-B01: one pressed style on every button and link: dim, plus a slight shrink. The shrink uses the CSS "scale"
+   property, so it adds to any transform a button already has. Left alone: the decoy lock screen, the SOS button, Hold to
+   Confirm Safe and the slide pills (they are not buttons). Hold buttons and buttons with their own shrink only dim. */
+:where(button, a[href]) { transition: opacity 80ms, scale 80ms; }
+:where(button, a[href]):active:not(:disabled):not(#btnPanic):not(#btnSafe):not(:where(#decoyLockScreen *)) { opacity: 0.7; }
+:where(button, a[href]):active:not(:disabled):not(#btnPanic):not(#btnSafe):not(#btnPaStartAnyway):not(:where(.long-press-btn, [class*="active:scale"], #decoyLockScreen *)) { scale: 0.97; }
+@media (prefers-reduced-motion: reduce) { :where(button, a[href]):active { scale: none !important; } }
+
+/* S152-B02: the button greys while its action runs */
+button.t2-busy { opacity: 0.6; pointer-events: none; }
+
+/* S152-B03: red fill for the destructive hold (Clear diag log), as on Reset App Data (S152-B04) */
+#btnDiagClear.long-press-btn::after { background: rgba(239, 68, 68, 0.55); }
+
+/* S152-B06: small visible labels above the contact fields */
+.t2-label { display: block; font-size: 0.75rem; font-weight: 700; color: #d1d5db; margin: 0 0 0.25rem 0.25rem; }
+
+/* S152-B08: contrast. Text only is lightened or darkened; status hues stay. */
+#selectionBanner .text-green-700 { color: #4ade80; }
+#mainPage .header-bar h1 .italic { color: #bfdbfe !important; color: color-mix(in srgb, var(--accent) 35%, var(--text-on-primary, #ffffff)) !important; }
+#btnResetData { color: #fecaca; }
+#diagnosticsPanel h3.text-gray-500 { color: #9ca3af; }
+#shakeHintText { color: #ef4444; }
+#slideDepartSub { color: #ffffff; opacity: 1; }
+#lockedPage p.text-gray-400 { color: #d1d5db; }
+#lockedAnticipatedTime { color: #bfdbfe; }
+#vehNagBar { color: #111827; font-weight: 900; }
+
+/* S152-B13: text on the accent colour uses --text-on-accent; text on the fixed dark panels uses a fixed light colour.
+   Colour only: no layout, handler or slider logic. */
+.btn-accent { color: var(--text-on-accent); }
+#slideStartThumb svg, #slideAckLabel { color: var(--text-on-accent); }
+#slideAckThumb { background-color: var(--text-on-accent); }
+#noticeTitle, #slideStartLabel { color: #f9fafb !important; }
+/* S152-T2 END */
 </style>
 </head>
 <body class="h-full overflow-hidden select-none">
@@ -426,7 +466,8 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  ontouchstart="event.stopPropagation()" onclick="event.stopPropagation()">
  
  <div class="text-center space-y-4">
- <div class="bg-blue-900/30 border border-blue-500/30 rounded-full py-1.5 px-5 mb-2 animate-pulse">
+ <!-- S152-B11: static (it pulsed for hours on the dim screen) -->
+ <div class="bg-blue-900/30 border border-blue-500/30 rounded-full py-1.5 px-5 mb-2">
  <p class="text-xs font-black text-blue-400 tracking-[0.25em]">
  ⚠️ System Active: Keep App Open
  </p>
@@ -501,6 +542,10 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <input id="wizName" type="text" placeholder="Full Name" class="form-input" aria-label="Full name">
  <input id="wizPhone" type="tel" placeholder="Phone Number" class="form-input" aria-label="Phone number">
  <input id="wizEmail" type="email" placeholder="Email Address" class="form-input" aria-label="Email address">
+ <!-- S167-A (__40_): optional set-up code from the administrator. Empty box = the hand set-up, exactly as before -->
+ <label for="wizCode" class="t2-label">Set-up code from your administrator (optional)</label>
+ <input id="wizCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="9" placeholder="Set-up code (6 digits)" class="form-input" aria-label="Set-up code from your administrator (optional)">
+ <div id="wizCodeMsg" role="status" aria-live="polite" class="hidden"></div>
  </div>
  
 <div id="wizStep2" class="wizard-step space-y-6">
@@ -515,14 +560,14 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <!-- Safety PIN + Confirm -->
  <div class="grid grid-cols-2 gap-3">
  <div class="flex flex-col gap-1">
- <label class="text-sm text-blue-400 font-black tracking-widest ml-1">Safety PIN</label>
- <input id="wizPin" type="tel" maxlength="4" placeholder="••••"
- oninput="state.pins.std = this.value; saveState(); checkWizPinMatch()"
+ <label for="wizPin" class="text-sm text-blue-400 font-black tracking-widest ml-1">Safety PIN</label><!-- S152-B06 -->
+ <input id="wizPin" aria-label="Safety PIN" type="tel" maxlength="4" placeholder="••••"
+ oninput="/* S167-F1: the safety PIN is saved at Finish only */ checkWizPinMatch()"
  class="w-full bg-white/10 border-2 border-white/10 rounded-2xl p-4 text-center text-3xl font-mono text-white tracking-[0.5em] focus:border-blue-500 outline-none transition-all">
  </div>
  <div class="flex flex-col gap-1">
- <label class="text-sm text-blue-400 font-black tracking-widest ml-1">Confirm PIN</label>
- <input id="wizPinConfirm" type="tel" maxlength="4" placeholder="••••"
+ <label for="wizPinConfirm" class="text-sm text-blue-400 font-black tracking-widest ml-1">Confirm PIN</label><!-- S152-B06 -->
+ <input id="wizPinConfirm" aria-label="Confirm PIN, safety" type="tel" maxlength="4" placeholder="••••"
  oninput="checkWizPinMatch()"
  class="w-full bg-white/10 border-2 border-white/10 rounded-2xl p-4 text-center text-3xl font-mono text-white tracking-[0.5em] focus:border-blue-500 outline-none transition-all">
  </div>
@@ -536,14 +581,14 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <!-- Duress PIN + Confirm -->
  <div class="grid grid-cols-2 gap-3 mt-4">
  <div class="flex flex-col gap-1">
- <label class="text-sm text-purple-400 font-black tracking-widest ml-1">Duress PIN</label>
- <input id="wizDuress" type="tel" maxlength="4" placeholder="••••"
- oninput="state.pins.duress = this.value; saveState(); checkWizPinMatch()"
+ <label for="wizDuress" class="text-sm text-purple-400 font-black tracking-widest ml-1">Duress PIN</label><!-- S152-B06 -->
+ <input id="wizDuress" aria-label="Duress PIN" type="tel" maxlength="4" placeholder="••••"
+ oninput="/* S167-F1: the duress PIN is saved at Finish only */ checkWizPinMatch()"
  class="w-full bg-white/10 border-2 border-white/10 rounded-2xl p-4 text-center text-3xl font-mono text-purple-400 tracking-[0.5em] focus:border-purple-500 outline-none transition-all">
  </div>
  <div class="flex flex-col gap-1">
- <label class="text-sm text-purple-400 font-black tracking-widest ml-1">Confirm PIN</label>
- <input id="wizDuressConfirm" type="tel" maxlength="4" placeholder="••••"
+ <label for="wizDuressConfirm" class="text-sm text-purple-400 font-black tracking-widest ml-1">Confirm PIN</label><!-- S152-B06 -->
+ <input id="wizDuressConfirm" aria-label="Confirm PIN, duress" type="tel" maxlength="4" placeholder="••••"
  oninput="checkWizPinMatch()"
  class="w-full bg-white/10 border-2 border-white/10 rounded-2xl p-4 text-center text-3xl font-mono text-purple-400 tracking-[0.5em] focus:border-purple-500 outline-none transition-all">
  </div>
@@ -560,12 +605,15 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 <div id="wizStep3" class="wizard-step space-y-6">
  <div class="space-y-4">
  <h2 class="text-lg font-bold text-white mb-4 tracking-widest">Response Hierarchy</h2>
+ <div id="wizFilledMsg3" role="status" class="hidden"></div><!-- S167-A -->
+ <div id="wizOrgNote" class="hidden text-sm font-bold rounded-xl px-4 py-3 bg-amber-900/40 text-amber-300 border border-amber-600/50">Ask your administrator for a set-up code to load your organisation's contacts.</div><!-- S167-A -->
  
  <div class="space-y-5 text-sm text-gray-200 leading-relaxed">
  <p>
  <strong class="text-blue-400 text-xs font-black">Primary Contact:</strong> Your first line of support.
  </p>
  <div class="space-y-2 mb-6">
+ <div id="wizPriAdminNote" class="hidden text-xs font-bold text-teal-300">Set by your organisation</div><!-- S167-A -->
  <input id="wizContactName" type="text" placeholder="Primary Contact Name" 
  autocomplete="name"
  aria-label="Primary contact name"
@@ -604,6 +652,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  </div>
 
  <div class="space-y-2 mt-4">
+ <div id="wizEscAdminNote" class="hidden text-xs font-bold text-teal-300">Set by your organisation</div><!-- S167-A -->
  <input id="wizEscName" type="text" placeholder="Escalation Name" 
  autocomplete="name"
  aria-label="Escalation contact name"
@@ -654,7 +703,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <img id="headerLogo" src="./icon.png" class="w-10 h-10 rounded-lg object-contain shadow-sm" alt="Logo">
  <h1 class="text-xs font-black tracking-wider leading-tight" style="color: var(--text-on-primary)">
  <span id="headerOrgName">OTG</span><br><span class="italic" style="color: var(--accent)">Safety On-The-Go!</span>
- <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__38_</span>
+ <br><span id="headerBuild" class="font-mono" style="opacity:0.6;font-size:9px;letter-spacing:0;font-weight:700">worker__42_</span>
  </h1>
  </div>
  <div class="flex items-center">
@@ -738,7 +787,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div id="siteSearchRow" class="hidden mb-3">
  <div class="relative">
  <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none">🔍</span>
- <input id="siteSearch" type="search" placeholder="Search sites…"
+ <input id="siteSearch" aria-label="Search sites" type="search" placeholder="Search sites…"
  class="w-full bg-gray-800 border border-gray-600 rounded-xl pl-8 pr-3 py-2.5 text-sm text-white font-bold placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors"
  oninput="renderLocations()">
  </div>
@@ -786,7 +835,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  </div>
  </div>
 
- <button id="btnDismissVerify" onclick="dismissVerification()"
+ <button id="btnDismissVerify" onclick="dismissVerification(true)"
  class="w-full rounded-xl bg-gray-700 py-3 text-xs font-black tracking-widest text-gray-400">
  Dismiss — I'll verify later
  </button>
@@ -820,8 +869,15 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
    <!-- Critical Timing toggle — always visible -->
    <div class="flex-1 flex items-center justify-between bg-gray-800/60 border border-red-900/40 rounded-xl px-3 py-2">
     <div>
-     <div class="text-xs font-black tracking-widest" id="lblHighRisk" style="color: var(--text-on-primary)">Critical timing</div>
-     <div class="text-[10px] font-bold text-gray-400">Zero grace period</div>
+     <!-- S152-B05 -->
+     <div class="flex items-center gap-1">
+      <div class="text-xs font-black tracking-widest" id="lblHighRisk" style="color: var(--text-on-primary)">No grace time</div>
+      <button type="button" id="btnNoGraceInfo" class="text-sm font-black text-gray-300 px-2 -my-1 py-1" aria-label="About No grace time"
+       aria-expanded="false" aria-controls="noGraceMore"
+       onclick="this.setAttribute('aria-expanded', String(!document.getElementById('noGraceMore').classList.toggle('hidden')))">&#9432;</button>
+     </div>
+     <div class="text-[10px] font-bold text-gray-400">Contacts alerted the minute you're late</div>
+     <div id="noGraceMore" class="hidden text-xs text-gray-200 mt-1">Also called Critical timing. If you are late, your contacts are alerted that minute, then again 5 and 10 minutes later.</div>
     </div>
     <label class="relative inline-flex items-center cursor-pointer ml-2">
      <input type="checkbox" id="chkHighRisk" class="sr-only peer" onchange="toggleHighRiskUI()" aria-labelledby="lblHighRisk">
@@ -919,7 +975,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <span class="text-blue-400 text-xl">ℹ️</span>
  </div>
  <div id="highRiskBadge" class="hidden text-red-500 font-black text-xs tracking-widest border border-red-500 inline-block px-3 py-1 rounded-lg mb-2">
- ⚡ CRITICAL TIMING MODE
+ ⚡ NO GRACE TIME<!-- S163-D2 -->
  </div>
  <div id="welfareBadge" class="hidden text-teal-400 font-black text-xs tracking-widest border border-teal-700 inline-block px-3 py-1 rounded-lg mb-2">
  🔔 Welfare every <span id="welfareBadgeMins"></span>
@@ -1081,7 +1137,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
 <div id="settingsPage" class="page bg-gray-800">
  <div class="header-bar">
  <h1 class="text-2xl font-bold" style="color: var(--text-on-primary)">Settings</h1>
- <button onclick="navigate('main')" aria-label="Close settings" class="text-3xl text-gray-400 hover:text-white px-2">×</button>
+ <button onclick="_w39SettingsClose()" aria-label="Close settings" class="text-3xl text-gray-400 hover:text-white px-2">×</button>
  </div>
  <div class="content-area pb-24">
  <button type="button" onclick="installThisApp()" class="otg-install-btn hidden w-full mb-4 py-3 bg-blue-600 text-white font-black rounded-xl shadow-lg">📲 Install this app</button>   <!-- __33_ (F129-1) -->
@@ -1091,31 +1147,42 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <h2 class="text-xl font-bold text-blue-400">Worker Profile</h2>
  <button onclick="startWizard()" class="text-xs text-blue-400 hover:text-blue-300 underline underline-offset-2">Restart setup wizard →</button>
  </div>
- <label class="setting-label lbl-blue">Full Name</label>
- <input id="setName" type="text" class="form-input">
- <label class="setting-label lbl-blue">Mobile Number</label>
- <input id="setPhone" type="tel" class="form-input">
- <label class="setting-label lbl-blue">Work Email</label>
- <input id="setEmail" type="email" class="form-input">
+ <label for="setName" class="setting-label lbl-blue">Full Name</label><!-- S152-B06 -->
+ <input id="setName" type="text" class="form-input" aria-label="Full Name">
+ <label for="setPhone" class="setting-label lbl-blue">Mobile Number</label><!-- S152-B06 -->
+ <input id="setPhone" type="tel" class="form-input" aria-label="Mobile Number">
+ <label for="setEmail" class="setting-label lbl-blue">Work Email</label><!-- S152-B06 -->
+ <input id="setEmail" type="email" class="form-input" aria-label="Work Email">
  </div>
  <div class="mb-6">
  <h2 class="text-xl font-bold text-red-400 mb-4">Emergency Contacts</h2>
+ <div id="setOrgNote" class="hidden mb-3 text-sm font-bold rounded-xl px-4 py-3 bg-amber-900/40 text-amber-300 border border-amber-600/50">Ask your administrator for a set-up code to load your organisation's contacts.</div><!-- S167-A -->
  <label class="setting-label lbl-red">Primary Emergency Contact</label>
- <input id="setEmgName" type="text" class="form-input-card">
- <input id="setEmgPhone" type="tel" class="form-input-card">
- <input id="setEmgEmail" type="email" class="form-input-card">
- <input id="setEmgNtfy" type="text" placeholder="ntfy topic (optional push alerts)" autocomplete="off" autocorrect="off" spellcheck="false" class="form-input mb-2 font-mono text-sm">
+ <div id="setPriAdminNote" class="hidden text-xs font-bold text-teal-300 mb-1">Set by your organisation</div><!-- S167-A -->
+ <label for="setEmgName" class="t2-label">Name</label><!-- S152-B06 -->
+ <input id="setEmgName" type="text" class="form-input-card" aria-label="Primary contact name">
+ <label for="setEmgPhone" class="t2-label">Mobile number</label><!-- S152-B06 -->
+ <input id="setEmgPhone" type="tel" class="form-input-card" aria-label="Primary contact mobile number">
+ <label for="setEmgEmail" class="t2-label">Email</label><!-- S152-B06 -->
+ <input id="setEmgEmail" type="email" class="form-input-card" aria-label="Primary contact email">
+ <label for="setEmgNtfy" class="t2-label">Push alert topic (ntfy)</label><!-- S152-B06 -->
+ <input id="setEmgNtfy" aria-label="Primary contact push alert topic (ntfy)" type="text" placeholder="ntfy topic (optional push alerts)" autocomplete="off" autocorrect="off" spellcheck="false" class="form-input mb-2 font-mono text-sm">
  <div class="flex gap-2 mb-4">
- <button type="button" onclick="makeContactTopic('setEmgNtfy','emgNtfy')" class="flex-1 py-2 bg-teal-700 hover:bg-teal-600 text-white text-xs font-bold rounded-xl">Make a topic for me</button>
+ <button type="button" onclick="_t2MakeTopic(this,'setEmgNtfy','emgNtfy')" class="flex-1 py-2 bg-teal-700 hover:bg-teal-600 text-white text-xs font-bold rounded-xl">Make a topic for me</button>
  <button type="button" onclick="shareContactTopic('setEmgNtfy')" class="flex-1 py-2 bg-gray-700 hover:bg-gray-600 text-white text-xs font-bold rounded-xl">Share it with my contact</button>
  </div>
  <label class="setting-label lbl-gray">Escalation Contact</label>
- <input id="setEscName" type="text" class="form-input-card">
- <input id="setEscPhone" type="tel" class="form-input-card">
- <input id="setEscEmail" type="email" class="form-input-card">
- <input id="setEscNtfy" type="text" placeholder="ntfy topic (optional push alerts)" autocomplete="off" autocorrect="off" spellcheck="false" class="form-input mb-2 font-mono text-sm">
+ <div id="setEscAdminNote" class="hidden text-xs font-bold text-teal-300 mb-1">Set by your organisation</div><!-- S167-A -->
+ <label for="setEscName" class="t2-label">Name</label><!-- S152-B06 -->
+ <input id="setEscName" type="text" class="form-input-card" aria-label="Escalation contact name">
+ <label for="setEscPhone" class="t2-label">Mobile number</label><!-- S152-B06 -->
+ <input id="setEscPhone" type="tel" class="form-input-card" aria-label="Escalation contact mobile number">
+ <label for="setEscEmail" class="t2-label">Email</label><!-- S152-B06 -->
+ <input id="setEscEmail" type="email" class="form-input-card" aria-label="Escalation contact email">
+ <label for="setEscNtfy" class="t2-label">Push alert topic (ntfy)</label><!-- S152-B06 -->
+ <input id="setEscNtfy" aria-label="Escalation contact push alert topic (ntfy)" type="text" placeholder="ntfy topic (optional push alerts)" autocomplete="off" autocorrect="off" spellcheck="false" class="form-input mb-2 font-mono text-sm">
  <div class="flex gap-2 ">
- <button type="button" onclick="makeContactTopic('setEscNtfy','escNtfy')" class="flex-1 py-2 bg-teal-700 hover:bg-teal-600 text-white text-xs font-bold rounded-xl">Make a topic for me</button>
+ <button type="button" onclick="_t2MakeTopic(this,'setEscNtfy','escNtfy')" class="flex-1 py-2 bg-teal-700 hover:bg-teal-600 text-white text-xs font-bold rounded-xl">Make a topic for me</button>
  <button type="button" onclick="shareContactTopic('setEscNtfy')" class="flex-1 py-2 bg-gray-700 hover:bg-gray-600 text-white text-xs font-bold rounded-xl">Share it with my contact</button>
  </div>
  </div>
@@ -1159,7 +1226,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <a id="phoneAlertAndroidLink" href="#" class="flex-1 text-center bg-blue-700 hover:bg-blue-600 text-white py-3 rounded-xl text-xs font-black tracking-wide shadow">Open in ntfy (Android)</a>
  <button onclick="copyPhoneAlertTopic()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-xl text-xs font-black tracking-wide shadow">Copy topic name</button>
  </div>
- <button id="btnPhoneAlertTest" onclick="sendPhoneAlertTest()" class="w-full py-3 bg-green-700 hover:bg-green-600 text-white font-bold rounded-xl shadow">Send test</button>
+ <button id="btnPhoneAlertTest" onclick="_t2PhoneTest(this)" class="w-full py-3 bg-green-700 hover:bg-green-600 text-white font-bold rounded-xl shadow">Send test</button>
  <!-- __26_ (R76): the worker confirms the test arrived (the app cannot see that) -->
  <button id="btnPhoneAlertConfirm" type="button" onclick="confirmPhoneAlerts()" class="hidden w-full mt-2 py-3 bg-amber-700 hover:bg-amber-600 text-white font-bold rounded-xl shadow">✅ The test arrived on my locked phone and vibrated</button>
  <p id="phoneAlertsConfirmed" class="hidden text-xs font-bold text-green-400 mt-2">✅ Phone alerts confirmed on this phone. Send another test any time.</p>
@@ -1212,13 +1279,13 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div>
  <h3 class="text-sm font-bold text-gray-500 uppercase tracking-widest mb-3">System Info</h3>
  <div class="setting-card border-gray-600">
- <label class="setting-label lbl-gray">Backend Connection</label>
- <input id="setBackendUrl" disabled class="form-input-card text-xs font-mono text-gray-400 mb-2" value="">
+ <label for="setBackendUrl" class="setting-label lbl-gray">Backend Connection</label><!-- S152-B06 -->
+ <input id="setBackendUrl" aria-label="Backend Connection" disabled class="form-input-card text-xs font-mono text-gray-400 mb-2" value="">
  <div class="flex gap-2 mb-3">
  <div class="flex-1">
  <div class="text-sm text-gray-300 font-bold mb-1">App Version</div>
  <div id="appVersion" class="text-sm font-mono text-blue-400">—</div>
- <div id="appBuild" class="text-xs font-mono text-gray-400">worker__38_</div>
+ <div id="appBuild" class="text-xs font-mono text-gray-400">worker__42_</div>
  <div id="swBuild" class="text-xs font-mono text-gray-500" title="The app build held by the service worker">sw: checking</div>
  </div>
  <div class="flex-1">
@@ -1230,7 +1297,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div id="syncStatus" class="text-sm font-mono text-gray-400">Checking...</div>
  </div>
  </div>
- <button onclick="forceSync(true)" class="w-full bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs font-bold text-white mb-2">Force Sync</button>
+ <button onclick="_t2ForceSync(this)" class="w-full bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs font-bold text-white mb-2">Force Sync</button>
  <button id="btnForceAppUpdate" onclick="forceAppUpdate()"
  class="w-full bg-orange-900/40 hover:bg-orange-900/60 border border-orange-700/50 py-2 rounded text-xs font-bold text-orange-300 tracking-widest">
  🔄 Force App Update
@@ -1266,18 +1333,19 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="text-xs font-bold text-amber-400 mb-1">F74-3 DIAG LOG</div>
  <pre id="diagLogBox" class="text-amber-300 bg-gray-900/50 rounded-lg p-2 max-h-48 overflow-auto whitespace-pre-wrap break-all" style="font-size:10px;line-height:1.3;">(empty)</pre>
  <div class="mt-1 flex gap-1">
- <button id="btnDiagCopy" onclick="copyDiagReport()"
+ <button id="btnDiagCopy" onclick="_t2CopyReport(this)"
  class="flex-1 bg-amber-900/40 border border-amber-700/50 py-1.5 rounded text-xs font-bold text-amber-300">📋 Copy report</button>
- <button id="btnDiagShare" onclick="shareDiagReport()"
+ <button id="btnDiagShare" onclick="_t2ShareReport(this)"
  class="flex-1 bg-amber-900/40 border border-amber-700/50 py-1.5 rounded text-xs font-bold text-amber-300">✉️ Share</button>
  </div>
- <button onclick="_diagClear(); updateOutboxStatus();"
- class="mt-1 w-full bg-gray-800 py-1 rounded text-xs font-bold text-amber-300">Clear diag log</button>
  </div>
- <button onclick="outboxRequeueFailedAndFlush(); showToast('🔄 Flushing outbox…')"
+ <button onclick="_t2Flush(this)"
  class="w-full bg-gray-700 hover:bg-gray-600 py-2 rounded text-xs font-bold text-white">
  Flush Outbox Now
  </button>
+ <!-- S152-B03: a 1.5 s hold, below Flush and away from Copy report -->
+ <button id="btnDiagClear" type="button"
+ class="long-press-btn mt-4 w-full bg-gray-800 border border-red-900/60 py-3 rounded text-xs font-bold text-amber-300">Hold to clear the diagnostics log</button>
  </div>
  </div>
 
@@ -1351,7 +1419,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <!-- Visit-gate section: shown only when opening from pre-travel check -->
  <div id="wofWarnVisitSection" class="hidden bg-gray-800 p-4 rounded-2xl border border-gray-700 text-left mb-4">
  <label class="flex items-start gap-3 cursor-pointer">
- <input type="checkbox" id="chkWofAck" class="mt-1 w-6 h-6 rounded text-blue-600" onchange="toggleWofContinue()">
+ <input type="checkbox" aria-label="I confirm the WOF is still valid for this trip and the vehicle is safe to operate." id="chkWofAck" class="mt-1 w-6 h-6 rounded text-blue-600" onchange="toggleWofContinue()">
  <span class="text-sm text-gray-300 font-bold">I confirm the WOF is still valid for this trip and the vehicle is safe to operate.</span>
  </label>
  </div>
@@ -1365,7 +1433,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm p-6 border border-gray-700">
  <h2 id="importSitesTitle" class="text-xl font-black text-white mb-1 tracking-widest">Import My Sites</h2>
  <p class="text-xs text-gray-400 font-bold mb-4">Paste the export code from your old device below.</p>
- <textarea id="importSitesPayload"
+ <textarea id="importSitesPayload" aria-label="Paste your export code"
  class="w-full h-32 bg-gray-800 border border-gray-600 text-white text-xs font-mono rounded-xl p-3 resize-none focus:border-blue-500 focus:outline-none"
  placeholder="Paste your export code here..."></textarea>
  <div id="importSitesError" class="hidden mt-2 text-xs text-red-400 font-bold"></div>
@@ -1459,7 +1527,7 @@ input[type="checkbox"]:checked ~ .travel-toggle-bg { background-color: var(--acc
  <div class="bg-gray-900 p-3 rounded-xl">
  <label class="flex items-center gap-2 cursor-pointer">
  <input type="checkbox" id="locCritical" class="w-5 h-5 rounded text-red-600">
- <span class="text-sm text-white font-bold">⚡ Critical Timing Mode (High-Risk Site)</span>
+ <span class="text-sm text-white font-bold">⚡ No grace time (high-risk site)</span><!-- S163-D2 -->
  </label>
  </div>
  <!-- Report Required toggle -->
@@ -1946,7 +2014,7 @@ const RISK_WELFARE_MAP = {
 //           otg- plus 24 random characters (made on the phone, 96 bits, never Math.random), and "Share it with my contact" sends
 //           the name and the steps through the share sheet (or copies them). A box that already has a topic is never replaced.
 // =============================================================================
-const WORKER_BUILD = 'worker__38_';
+const WORKER_BUILD = 'worker__42_';
 
 const CONFIG = {
  url: '',
@@ -2458,8 +2526,7 @@ let _speedAccumM = 0;    // Option 2: running speed-derived distance (metres) fo
 let _speedAccumLastTs = null;
 let _speedAccumPrevSpd = null; // Y2 (build __16_): speed (m/s) at the previous accepted fix; null if none or unknown
 let _speedStats = { credited: 0, still: 0, capped: 0 }; // Y2/Y4: intervals credited / not moving at both ends / credited but capped // Timestamp (ms) of the previous fix — for elapsed-time calculation
-let synth; // Tone.js synth - initialized after user interaction
-let audioReady = false;
+// S159R2-F5 (S167): the Tone.js leftovers (synth, audioReady, initAudio and its two listeners) are removed; _warmAudio stays a no-op
 let gpsWatchId = null; // Holds setTimeout ID (or -1 sentinel) when GPS monitoring is active; null when stopped
 let _consecutiveGPSFailures = 0; // Reset on each successful fix; toast shown at threshold during a visit
 let gpsWatchPositionId = null;      // watchPosition ID during travel phase; null when inactive
@@ -2597,33 +2664,8 @@ const TICK_SAVER = 30000; // 30 seconds
 // ============================================================================
 // AUDIO INITIALIZATION (Must be after user interaction)
 // ============================================================================
-// Note: Tone.js displays a banner in console - this is normal and can be ignored
 // Note: Tailwind CDN warning is expected - this is a PWA, not a traditional build process
-
-async function initAudio() {
- if (!audioReady && typeof Tone !== 'undefined') {
- try {
- // Suppress Tone.js console banner (optional)
- const originalLog = console.log;
- console.log = function() {};
- 
- await Tone.start();
- synth = new Tone.Synth().toDestination();
- audioReady = true;
-
- // Restore console
- console.log = originalLog;
- console.log('✅ Audio initialized successfully');
- } catch (e) {
- console.warn('Audio initialization failed:', e);
- audioReady = false;
- }
- }
-}
-
-// Initialize audio on first user interaction
-document.addEventListener('click', initAudio, { once: true });
-document.addEventListener('touchstart', initAudio, { once: true });
+// S159R2-F5 (S167): initAudio and its two first-touch listeners removed (Tone.js was removed in __39_)
 ['mousedown', 'touchstart', 'scroll', 'keydown'].forEach(evt => {
  document.addEventListener(evt, () => {
  // Guard: do not reset idle clock while battery saver is active.
@@ -2998,6 +3040,7 @@ async function _f138Report(L) {
 // NAVIGATION
 // ============================================================================
 function navigate(page) {
+ try { if (page !== 'setup' && typeof _w41DropDraft === 'function') _w41DropDraft('left the wizard for ' + page); } catch (_) {}   // S168R1-F1 (S169)
  // Defensive: if something navigates away from the report page while a pre-visit
  // form is active, clean up stale flags so the app isn't permanently stuck.
  if (isPreVisitForm && page !== 'report') {
@@ -3068,13 +3111,14 @@ function closeModal(id) {
 // ============================================================================
 // TOAST NOTIFICATIONS
 // ============================================================================
-function showToast(text) {
+function showToast(text, ms) {   // S163-F2 (S167): the duration callers pass is used (3 s when none); a new toast restarts the timer
  const toastText = document.getElementById('toastText');
  const toastMsg = document.getElementById('toastMsg');
  if (toastText && toastMsg) {
  toastText.innerText = text;
  toastMsg.classList.add('show');
- setTimeout(() => toastMsg.classList.remove('show'), 3000);
+ if (showToast._t) clearTimeout(showToast._t);
+ showToast._t = setTimeout(() => { showToast._t = null; toastMsg.classList.remove('show'); }, (typeof ms === 'number' && ms > 0) ? ms : 3000);
  }
 }
 
@@ -3792,6 +3836,37 @@ function startGPSMonitoring() {
  _takeSingleGPSFix();
 }
 
+/* S152-A03 */ // __39_: while an alarm, a saved alarm, a warning, an alarming phase or a past-due visit is on, the poller never
+// waits more than GPS_MIN_INTERVAL_MS (2 min; trips keep their 1-minute floor), so the 2-minute alarm pulses carry fresh positions.
+let _w39GpsDueAt = 0;   // when the poller's pending timer fires (0 = none known; an ask in flight has a time in the past)
+function _w39GpsHot() {
+  try {
+    if (isPanicActive || isDuressActive || (state && state.idleAlarm)) return true;
+    const v = state && state.activeVisit;
+    if (!v) return false;
+    const ph = getVisitPhase();
+    if (ph === VISIT_PHASES.WARNING || ph === VISIT_PHASES.ALARMING) return true;
+    return !!(v.anticipatedDepartureTime && v.anticipatedDepartureTime > (v.startTime || 0) && Date.now() >= v.anticipatedDepartureTime);
+  } catch (_) { return false; }
+}
+function _w39GpsClamp() {
+  if (_w39GpsHot()) gpsCurrentIntervalMs = Math.min(gpsCurrentIntervalMs || GPS_MIN_INTERVAL_MS, GPS_MIN_INTERVAL_MS);
+}
+/** S152-A03: an alarm or warning that starts during a long wait brings the next ask forward to 2 min. Only a real pending timer is
+ *  moved (never the -1 start marker, never an ask in flight), so no second timer is ever made. */
+function _w39GpsPinNow() {
+  try {
+    if (gpsWatchId === null || gpsWatchId === -1) return;
+    gpsCurrentIntervalMs = Math.min(gpsCurrentIntervalMs || GPS_MIN_INTERVAL_MS, GPS_MIN_INTERVAL_MS);
+    const left = _w39GpsDueAt - Date.now();
+    if (!(left > GPS_MIN_INTERVAL_MS)) return;   // already due within 2 min, or an ask is in flight
+    clearTimeout(gpsWatchId);
+    gpsWatchId = setTimeout(_takeSingleGPSFix, GPS_MIN_INTERVAL_MS);
+    _w39GpsDueAt = Date.now() + GPS_MIN_INTERVAL_MS;
+    try { _diag('GPS: next ask brought forward to 2 min (was ' + Math.round(left / 60000) + ' min away)'); } catch (_) {}
+  } catch (_) {}
+}
+
 function _takeSingleGPSFix() {
  navigator.geolocation.getCurrentPosition(
  pos => {
@@ -3855,7 +3930,9 @@ function _takeSingleGPSFix() {
 
  // Schedule next poll — only if stopGPSMonitoring() hasn't been called
  if (gpsWatchId !== null) {
+ _w39GpsClamp();   /* S152-A03 - after a fix */
  gpsWatchId = setTimeout(_takeSingleGPSFix, gpsCurrentIntervalMs);
+ _w39GpsDueAt = Date.now() + gpsCurrentIntervalMs;   /* S152-A03 */
  }
  },
  err => {
@@ -3873,7 +3950,9 @@ function _takeSingleGPSFix() {
  });
  // Retry at the current interval — same outward behaviour as before
  if (gpsWatchId !== null) {
+ _w39GpsClamp();   /* S152-A03 */
  gpsWatchId = setTimeout(_takeSingleGPSFix, gpsCurrentIntervalMs);
+ _w39GpsDueAt = Date.now() + gpsCurrentIntervalMs;   /* S152-A03 */
  }
  },
  {
@@ -4387,7 +4466,7 @@ function confirmWelfare() {
   _welfareResetClock(now);
   logSafety('WELFARE_OK', 'Worker confirmed welfare check-in.', { 'Welfare Interval': String(mins) });
   showToast('✅ Checked in - next check at ' + _fmtClock12(new Date(now + mins * 60000)));
-  if (navigator.vibrate) navigator.vibrate(50);
+  if (navigator.vibrate) navigator.vibrate([40, 60, 40]);   // S167-C: done
   _welfareUi();
 }
 
@@ -5343,6 +5422,7 @@ function setVisitPhase(newPhase) {
  break;
  case VISIT_PHASES.WARNING:
  state.activeVisit.warn2minSent = true;
+ try { _w39GpsPinNow(); } catch (_) {}   /* S152-A03 */ // the phase is already WARNING here
  state.activeVisit.isPanic = false;
  state.activeVisit.isSafeConfirmed = false;
  break;
@@ -5513,6 +5593,7 @@ async function triggerPanic(duress = false, alarmCode = null) {
    return;
  }
  isPanicActive = true;
+ try { _outboxRefusalHide(); } catch (_) {}   /* S159R1-F4 */ // __39_t2: a new alarm removes any refusal strip (it sat over the PIN box)
 
  // __36_ (F146-1, S146-D4 "Option 1"): the PANIC goes into the outbox AT ONCE. Before, this waited up to 5 s for a fresh
  // high-accuracy fix first, and an app closed in those seconds (the worker swiping it away, or the phone closing it) lost the
@@ -5548,7 +5629,7 @@ async function triggerPanic(duress = false, alarmCode = null) {
  // GPS for the alarm - started after the PANIC is queued, so no pulse can reach the server ahead of the alarm itself.
  // Pin GPS to minimum interval for alarm duration — worker may be stationary.
  if (gpsWatchId === null && typeof startGPSMonitoring === 'function') startGPSMonitoring();
- gpsCurrentIntervalMs = GPS_MIN_INTERVAL_MS;
+ gpsCurrentIntervalMs = GPS_MIN_INTERVAL_MS; _w39GpsPinNow();   /* S152-A03 */
 
  // Start repeating GPS pulse to backend every 2 minutes while alarm is active.
  // Uses neutral ALARM_GPS_PULSE code — backend logs location without re-firing alerts.
@@ -5583,7 +5664,7 @@ function iamSafe() {
   // A second safety PIN while this clear's All Clear is being written gets the same clear (one All Clear) - both branches.
   if (iamSafe._writing) return iamSafe._writing;
 
-  const alarmWasFired = !!(state?.activeVisit?.isPanic || isPanicActive);
+  const alarmWasFired = _w39AlarmWasFired();   /* S159R1-F6 */ // __39_t2: a duress step counts as an alarm (was: PANIC flags only)
   const _settle = () => { iamSafe._writing = null; };
 
   // W1 (build __14_): a PIN clear during a visit is an event, not the end of the visit.
@@ -5620,11 +5701,7 @@ function iamSafe() {
         }));
         if (typeof _welfareAfterExtend === 'function') _welfareAfterExtend(Date.now());   // __24_ (F102-1): as the server does for EXTENDED
       }
-      const _msg = _afterDue
-        ? `Safety confirmed. You have ${PIN_CLEAR_EXTRA_MINS} more minutes - extend or end your visit.`
-        : (alarmWasFired ? "Safety confirmed. Notifying contacts." : "Safety confirmed.");
-      announce(_msg);
-      showToast(_afterDue ? `✅ Safety confirmed - ${PIN_CLEAR_EXTRA_MINS} more minutes` : "✅ Safety status confirmed");
+      _w39ClearWords(_afterDue, !alarmWasFired);   /* S152-A01 */ // the shared words (text unchanged)
       if (typeof tick === 'function') tick();
     };
     // No alarm to lose (the EXTENDED-only path, or nothing sent): unchanged and synchronous.
@@ -5645,9 +5722,7 @@ function iamSafe() {
   const _finish = () => {
     // Clear all alarm state
     _clearAlarmState();
-    announce(alarmWasFired ? "Safety confirmed. Notifying contacts." : "Safety confirmed.");
-
-    showToast("✅ Safety status confirmed");
+    _w39ClearWords(false, !alarmWasFired);   /* S152-A01 */ // the shared words (text unchanged)
 
     if (!state.activeVisit) {
       navigate('main');
@@ -5955,12 +6030,9 @@ function tick() {
  * Audio context warm-up. Must be called during a user gesture to satisfy
  * browser autoplay policies — particularly important on iOS where the audio
  * context starts suspended and silent beeps result if not pre-unlocked.
- * Safe to call multiple times; Tone ignores subsequent calls if already running.
+ * S159R2-F5 (S167): a no-op since Tone.js went (__39_); kept because startVisit, saveWizard and saveSettings call it.
  */
 function _warmAudio() {
- if (typeof Tone !== 'undefined') {
- return Tone.start().catch(e => console.warn('[Audio] Warm-up deferred:', e.message));
- }
  return Promise.resolve();
 }
 
@@ -6241,6 +6313,7 @@ function startWizard() {
  if (btnPrev) btnPrev.classList.add('hidden');
  if (btnNext) btnNext.classList.remove('hidden');
  
+ try { _w40WizFill(); } catch (e) { try { _diag('[S167] wizard fill: ' + (e && e.message)); } catch (_) {} }   // S167-A: refill from the claim or the saved details (T2, T4)
  console.log('Wizard started');
 }
 
@@ -6262,6 +6335,7 @@ function prevWiz() {
 
 function nextWiz() {
  if (!state) return;
+ if (state.currentWizStep === 1 && _w40CodeTyped()) { _w40Claim(); return; }   // S167-A: a set-up code was typed
  
  // Step 2: block advancement until both PIN pairs match and are non-identical
  if (state.currentWizStep === 2) {
@@ -6296,6 +6370,7 @@ function nextWiz() {
  * FULL INTEGRATION: Identity Save + UI Initialization + Backend Registration
  */
 async function saveWizard() {
+ const _w42Draft = state.w40Draft || null;   // S171R-F2 (S172): the claim draft as Finish starts - a page change during "Registering" cannot lose it
  const workerData = {
  name: document.getElementById('wizName').value.trim(),
  phone: document.getElementById('wizPhone').value.trim(),
@@ -6388,9 +6463,11 @@ async function saveWizard() {
  }
 
  announce(`Welcome ${workerData.name}. Device registered.`);
+ _w40DoneBuzz();   // S167-C
 
  // Reset verification flag — wizard re-run means contacts may have changed.
  state.setupVerified = false;
+ try { _w40FinishWizard(_w42Draft); } catch (e) { try { _diag('[S167] finish: ' + (e && e.message)); } catch (_) {} }   // S167-A: claim draft, marks, contacts checked
  saveState();
 
  // 3. UI Initialisation
@@ -6399,8 +6476,7 @@ async function saveWizard() {
  setupHoldToStart();
  updateArrivedButtonState();
 
- // Warm up the audio context on this confirmed user gesture so Tone.js is
- // ready before the first visit — avoids silent beeps on iOS.
+ // _warmAudio is kept as a no-op (S159R2-F5)
  _warmAudio();
 
  navigate('main');
@@ -6622,7 +6698,7 @@ function setQuickDuration(mins) {
  }
 
  updateArrivedButtonState();
- if (navigator.vibrate) navigator.vibrate(15);
+ if (navigator.vibrate) navigator.vibrate(20);   // S167-C: tap registered
 }
  
 /**
@@ -6674,9 +6750,9 @@ function toggleHighRiskUI() {
  if (!checkbox) return;
  
  if (checkbox.checked) {
- showToast('⚡ Critical timing mode ON - Zero grace period');
+ showToast('⚡ No grace time ON - contacts alerted the minute you\'re late');   // S163-D2
  } else {
- showToast('✅ Critical timing mode OFF');
+ showToast('✅ No grace time OFF');
  }
  
  // Store preference
@@ -7167,7 +7243,7 @@ function updateArrivedButtonState() {
   }
  } else if (hasLocation && hasDuration) {
   const loc = state.locations && state.locations.find(l => l.id === state.selectedLocationId);
-  label.textContent = loc ? `Begin — ${loc.name}` : 'Begin Visit';
+  label.textContent = loc ? `Begin - ${loc.name}` : 'Begin Visit';   // S163-F4
   pill.style.borderColor = 'var(--accent, #3b82f6)';
  } else if (!hasLocation) {
   label.textContent = 'Select a Site First';
@@ -7236,6 +7312,7 @@ async function _retryRegistration() {
         showToast('Registration failed: ' + String(data.message || 'check your name matches the staff list').substring(0, 120));
       } else {
         try { _diag('[F116-1] pending registration completed', true); } catch (_) {}
+        try { if (_w40Idle() && _backendBuildNo() >= CONTACTS_UPDATE_MIN_BUILD) _postContactsUpdate('registered'); else _w40FinishPending = true; } catch (_) {}   // S167-A: the backup follows the registration (T6); before the first sync, the sync posts it; S168R1-F2 (S169): during a visit or an alarm, the next idle sync posts it
       }
       return true;
     } finally { clearTimeout(timer); _regRetryBusy = false; }
@@ -7284,7 +7361,7 @@ function _paHoldDone() {
   _paHoldTimer = null;
   _paStartAnyway = true;
   try { _diag('[R76] start without phone alerts chosen', true); } catch (_) {}
-  if (navigator.vibrate) navigator.vibrate(50);
+  if (navigator.vibrate) navigator.vibrate([40, 60, 40]);   // S167-C: done
   showToast('Noted - this start will be recorded as without phone alerts');
   updateArrivedButtonState();
 }
@@ -7428,6 +7505,8 @@ async function startVisit(isSkipCheck = false) {
  if (isTravelMode || locId === 'travel') {
  showToast('📍 Locking GPS signal...');
  const _sf = await _acquireStartFix();   // __22_ (R57): warm fix at once, else up to START_FIX_WAIT_MS; the trip starts either way
+ /* S155A-F1 */ // __39_: an alarm that began during the start-fix wait wins - no "trip has started" toast, no trip watch, no TRAVELLING
+ if (state.idleAlarm || isPanicActive || isDuressActive) { if (btn) delete btn.dataset.starting; _f101Exit('PIN needed first (an alarm began while the trip was starting)', ''); return; }
  verifiedStartGPS = _sf.gps;
  _startFixNote = _sf.note;
  if (_isValidGPS(verifiedStartGPS)) { lastGPS = verifiedStartGPS; lastGPSAt = _sf.ts || Date.now(); }   // __31_ (R79)
@@ -7477,6 +7556,8 @@ async function startVisit(isSkipCheck = false) {
  })();
  state.visitWelfareOverride = null; // consume — reset for next visit
 
+ /* S155A-F1 */ // __39_: the W3 check again, just before the visit exists - the waits above leave room for an alarm to begin
+ if (state.idleAlarm || isPanicActive || isDuressActive) { if (btn) delete btn.dataset.starting; _f101Exit('PIN needed first (an alarm began while the visit was starting)', ''); return; }
  state.activeVisit = {
  locationId: locId || 'travel',
  locationName: loc.name,
@@ -8355,7 +8436,7 @@ async function _refreshUnconfirmedBanner() {
      b = document.createElement('div');
      b.id = 'unconfirmedBanner';
      b.setAttribute('role', 'alert');
-     b.style.cssText = 'position:fixed;left:0;right:0;z-index:9998;background:#b45309;color:#fff;font-weight:800;font-size:13px;' +
+     b.style.cssText = 'position:fixed;left:0;right:0;z-index:9997;background:#b45309;color:#fff;font-weight:800;font-size:13px;' +
        'padding:10px 12px;display:flex;align-items:center;gap:10px;justify-content:space-between;top:' +
        (document.getElementById('buildMismatchBanner') ? '40px' : '0') + ';';
      const span = document.createElement('span');
@@ -8392,7 +8473,27 @@ function _outboxRefusalShow(record, notice) {
     const duressNow = isDuressActive || !!(state && state.activeVisit && state.activeVisit.isDuress);
     const p = (record && record.payload) || {};
     _diag('S112-3: server saved nothing for ' + (p['Alarm Status'] || p.action || 'a post') + (duressNow ? ' (DURESS - notice not shown)' : ' - notice shown') + ': ' + String(notice).slice(0, 120));
+    /* S113-1 */ const _isClear = /^USER_SAFE/i.test(String(p['Alarm Status'] || ''));
+    const _rk = String((record && record.idempotencyKey) || p.idempotencyKey || '');
+    if (_isClear && _rk) _w39RefusedAcKeys.add(_rk);
+    // S149V-F1 (__39_): the refused All Clear left the PANIC row open, so a DURESS after it merged into that row - the saved alarm
+    // names the PANIC row again. Done BEFORE the duress check: this is exactly the duress case.
+    if (_isClear && _rk && state && state.idleAlarm && state.idleAlarm.acKey === _rk) _w39RevertAlarmKey(String(state.idleAlarm.key || ''), 'the clear before it was refused');
+    // S113-2 (__39_): the alarm this refused All Clear closed on the phone is still open on the server - W9 holds it back until a reopen
+    if (_isClear && _rk && state && state.lastIdleClear && state.lastIdleClear.acKey === _rk && state.lastIdleClear.alarmKey) {
+      _w39RefusedAlarmKey = String(state.lastIdleClear.alarmKey);
+      _diag('alarm: the server still has the alarm whose clear was refused - not restored until the app is reopened');
+    }
     if (duressNow) return;
+    if (_isClear) { _w39RefusedClearStrip(notice); return; }   // S113-1: the loud red strip with Call buttons
+    /* S159R1-F3 */ // __39_t2: a later refused routine post (in a visit the gate refuses all but a raise or a pulse) must not replace the
+    // red strip's "phone your contacts" message. The line above is still written; the 10-minute amber count is not started.
+    { const _rb = document.getElementById('refusedBanner');
+      if (_rb && _rb.dataset && _rb.dataset.kind === 'clear') { _diag('S112-3: the red all-clear strip is up - left as it is'); return; } }
+    // S113-1: other refused posts - the amber strip at most once per 10 minutes for the same notice (the line above is every time)
+    const _now = Date.now();
+    if (_w39AmberLast && _w39AmberLast.notice === String(notice) && _now - _w39AmberLast.at < 600000) { _diag('S112-3: same notice within 10 min - strip not shown again'); return; }
+    _w39AmberLast = { notice: String(notice), at: _now };
     let top = 0;
     ['buildMismatchBanner', 'unconfirmedBanner'].forEach(id => { const e = document.getElementById(id); if (e) top += (e.offsetHeight || 40); });
     let b = document.getElementById('refusedBanner');
@@ -8409,10 +8510,58 @@ function _outboxRefusalShow(record, notice) {
       b.appendChild(span); b.appendChild(btn);
       document.body.appendChild(b);
     }
-    b.style.cssText = 'position:fixed;left:0;right:0;z-index:9998;background:#b45309;color:#fff;font-weight:800;font-size:13px;' +
+    /* S159R1-F5 */ // __39_t2: z-index 9997 (was 9998, the decoy's, and drawn over it as it comes later in the page)
+    b.style.cssText = 'position:fixed;left:0;right:0;z-index:9997;background:#b45309;color:#fff;font-weight:800;font-size:13px;' +
       'padding:10px 12px;display:flex;align-items:center;gap:10px;justify-content:space-between;top:' + top + 'px;';
     const span = document.getElementById('refusedBannerText');
     if (span) span.textContent = notice;
+  } catch (_) { /* telling the worker must never affect delivery */ }
+}
+
+/**
+ * S113-1 (__39_, S155A-D4b): a REFUSED All Clear (USER_SAFE...) gets a loud red strip that stays until OK, with Call buttons for the
+ * two contacts (only when a number is set) and one long [400] refused buzz. This changes S112-3's "never mentions an alarm" rule for
+ * a refused All Clear only. Never during DURESS (the caller checks first; escalateToDuress also removes it). z-index 9997: under the
+ * decoy (9998), so a new alarm's decoy always covers it.
+ */
+function _w39RefusedClearStrip(notice) {
+  try {
+    _outboxRefusalHide();
+    let top = 0;
+    ['buildMismatchBanner', 'unconfirmedBanner'].forEach(id => { const e = document.getElementById(id); if (e) top += (e.offsetHeight || 40); });
+    const b = document.createElement('div');
+    b.id = 'refusedBanner';
+    b.dataset.kind = 'clear';   /* S159R1-F3 */ // __39_t2: the amber branch of _outboxRefusalShow leaves this strip alone
+    b.setAttribute('role', 'alert');
+    b.style.cssText = 'position:fixed;left:0;right:0;z-index:9997;background:#b91c1c;color:#fff;font-weight:800;font-size:14px;' +
+      'padding:12px;display:flex;flex-direction:column;gap:8px;top:' + top + 'px;';
+    const t = document.createElement('div');
+    t.id = 'refusedBannerText';
+    t.textContent = 'Your all clear did NOT reach the server. Your contacts may still be getting alarm messages. Phone them now and tell them you are safe.' +
+      (notice ? ' ' + String(notice) : '');
+    b.appendChild(t);
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;';
+    const w = (state && state.worker) || {};
+    [[w.emgName, w.emgPhone], [w.escName, w.escPhone]].forEach(([nm, ph]) => {
+      const num = String(ph || '').replace(/[^\d+]/g, '');
+      if (!num) return;
+      const a = document.createElement('a');
+      a.href = 'tel:' + num;
+      a.textContent = '📞 Call ' + (String(nm || '').trim() || num);
+      a.className = 'w39-call';
+      a.style.cssText = 'background:#fff;color:#b91c1c;font-weight:900;border-radius:8px;padding:8px 14px;text-decoration:none;';
+      a.onclick = (e) => { e.stopPropagation(); };
+      row.appendChild(a);
+    });
+    const ok = document.createElement('button');
+    ok.textContent = 'OK';
+    ok.style.cssText = 'background:#7f1d1d;color:#fff;font-weight:800;border-radius:8px;padding:8px 14px;';
+    ok.onclick = (e) => { e.stopPropagation(); _outboxRefusalHide(); };
+    row.appendChild(ok);
+    b.appendChild(row);
+    document.body.appendChild(b);
+    if (navigator.vibrate) { try { navigator.vibrate([400]); } catch (_) {} }   // S152-A05 vocabulary: refused
   } catch (_) { /* telling the worker must never affect delivery */ }
 }
 
@@ -8768,10 +8917,48 @@ function _clearAlarmState() {
 // __38_ (S148V-F2, S148V-D1): bumped as the FIRST step of every duress step. A PIN clear notes it when it starts and goes ahead only
 // if it is unchanged - a duress PIN entered while the clear's All Clear is being written is never lost.
 let _duressSeq = 0;
-// __38_ (S149W-N1): { key, seq } - set when a no-visit PIN clear's All Clear has landed in the outbox before any duress step started
-// during that clear (key = the saved alarm it closes). Backend __64_ then puts a later DURESS on a NEW row whose Visit ID is the
-// DURESS post's own key, so the first duress step after this takes that key for the saved alarm. Used once, then emptied.
-let _w38AcLanded = null;
+/* S149V-F1 */ // __39_: { alarmKey, seq, write } - set at the START of every no-visit PIN clear (alarmKey = the saved alarm it closes,
+// seq = _duressSeq then, write = its All Clear's outbox write). A duress step after it takes the DURESS key for the saved alarm
+// (escalateToDuress); emptied when the clear finishes or by the first duress step. Replaces __38_'s _w38AcLanded.
+let _w39AcStart = null;
+/* S113-1 (S113-2) */ // __39_: the saved-alarm key whose All Clear the server refused, IN MEMORY ONLY. W9 does not put that one alarm
+// back until the app is reopened (a reopen empties this), so the D104 recovery still works.
+let _w39RefusedAlarmKey = null;
+/* S113-1 / S149V-F1 */ const _w39RefusedAcKeys = new Set();   // All Clear outbox keys the server refused, IN MEMORY - so the order of the
+// refusal and the duress step (or the end of the clear) does not matter
+/* S113-1 */ let _w39AmberLast = null;   // { notice, at } - other refused posts: the amber strip at most once per 10 min per notice
+
+/** S159R1-F6 + F1 (__39_t2): has an alarm gone out? One test for iamSafe (does the safety PIN send an All Clear, and which words) and
+ *  for escalateToDuress (which words the duress PIN says), so the two PINs cannot drift apart. A duress step counts (F6): before,
+ *  a duress PIN at the 2-minute WARNING set neither PANIC flag, so a later safety PIN sent no All Clear and the server kept
+ *  escalating the DURESS while the phone said "Safety confirmed." */
+function _w39AlarmWasFired() {
+  return !!(state?.activeVisit?.isPanic || isPanicActive || isDuressActive || state?.activeVisit?.isDuress);
+}
+
+/** S152-A01 (__39_): the words of every PIN clear - the safety PIN (visit, no visit, decoy) and the duress PIN say the same.
+ *  afterDue: a visit past its due time. noAlarm: a safety PIN with no alarm sent (unchanged "Safety confirmed."). */
+function _w39ClearWords(afterDue, noAlarm) {
+  if (afterDue) {
+    announce(`Safety confirmed. You have ${PIN_CLEAR_EXTRA_MINS} more minutes - extend or end your visit.`);
+    showToast(`✅ Safety confirmed - ${PIN_CLEAR_EXTRA_MINS} more minutes`);
+  } else {
+    announce(noAlarm ? "Safety confirmed." : "Safety confirmed. Notifying contacts.");
+    showToast("✅ Safety status confirmed");
+  }
+}
+
+/** S149V-F1 (__39_): put the saved alarm back to the PANIC key it had before a duress step switched it (dKey = the switched key). */
+function _w39RevertAlarmKey(dKey, why) {
+  try {
+    const a = state && state.idleAlarm;
+    if (!a || !a.prevKey || a.key !== dKey) return false;
+    a.key = a.prevKey; delete a.prevKey; delete a.acKey;
+    saveState();
+    try { _diag('alarm: saved alarm names the first row again - ' + why, true); } catch (_) {}
+    return true;
+  } catch (_) { return false; }
+}
 
 /** __38_ (S149W-N2): true while the PIN box is showing. */
 function _w38PinBoxOpen() {
@@ -8800,9 +8987,18 @@ function _w38ClearAfterWrite(payload, finish, idle, settle) {
   const seq0 = _duressSeq;
   let _w = null;
   try { _w = outboxEnqueue(payload); } catch (_) { _w = null; }
-  if (idle) {
+  /* S149V-F1 */ // __39_: noted SYNCHRONOUSLY at the start of a no-visit clear (was: once its All Clear had landed with no duress step yet)
+  const _idleKey = (idle && state && state.idleAlarm && state.idleAlarm.key) ? String(state.idleAlarm.key) : '';
+  if (idle) _w39AcStart = _idleKey ? { alarmKey: _idleKey, seq: seq0, write: _w } : null;
+  /* S113-1 */ let _acKey = null;   // this All Clear's outbox key, once the write has given it
+  if (idle && _idleKey) {
     Promise.resolve(_w).then(k => {
-      if (k && _duressSeq === seq0 && state && state.idleAlarm && state.idleAlarm.key) _w38AcLanded = { key: String(state.idleAlarm.key), seq: seq0 };
+      _acKey = k ? String(k) : null;
+      // the clear finished before the write gave its key (the 3 s limit): fill it in now
+      if (_acKey && state && state.lastIdleClear && state.lastIdleClear.alarmKey === _idleKey && !state.lastIdleClear.acKey) {
+        state.lastIdleClear.acKey = _acKey; saveState();
+        if (_w39RefusedAcKeys.has(_acKey)) _w39RefusedAlarmKey = _idleKey;
+      }
     }).catch(() => {});
   }
   return Promise.race([Promise.resolve(_w), new Promise(r => setTimeout(r, 3000))]).catch(() => {})
@@ -8813,8 +9009,11 @@ function _w38ClearAfterWrite(payload, finish, idle, settle) {
         try { _diag('alarm: PIN clear stopped - PIN step 2 entered during the write; alarm kept', true); } catch (_) {}
         return false;
       }
-      if (idle) _w38AcLanded = null;
+      if (idle) _w39AcStart = null;   /* S149V-F1 */
       finish();
+      /* S113-1 */ // __39_: remembered so a refused All Clear can be matched to the alarm it closed (S113-2: W9 holds that one back)
+      if (idle && _idleKey) { try { state.lastIdleClear = { acKey: _acKey, alarmKey: _idleKey, at: Date.now() }; saveState(); } catch (_) {} }
+      if (idle && _idleKey && _acKey && _w39RefusedAcKeys.has(_acKey)) _w39RefusedAlarmKey = _idleKey;   // refused before the clear finished
       return true;
     });
 }
@@ -8826,10 +9025,16 @@ function _w38ClearAfterWrite(payload, finish, idle, settle) {
  * normally — to any onlooker, the PIN just cleared an error.
  */
 async function escalateToDuress() {
+  /* S159R1-F1 */ // __39_t2: read only, before anything changes - would the safety PIN say "no alarm" now? (iamSafe's own test, so at the
+  // 2-minute WARNING with no alarm yet both PINs say just "Safety confirmed."). Nothing is changed here, so _duressSeq is still the first change.
+  const _w39NoAlarm = !_w39AlarmWasFired();
   const _mySeq = ++_duressSeq;   // __38_ (S148V-F2): FIRST - a PIN clear under way sees this and stops
   isDuressActive = true;
+  // S152-A01 (__39_): due time judged at PIN entry, as iamSafe judges it (the visit words differ only after the due time)
+  const _w39AfterDue = !!(state && state.activeVisit && Date.now() >= (state.activeVisit.anticipatedDepartureTime || 0));
   const _cue = document.getElementById('alarmDeliveryCue');
   if (_cue) _cue.classList.remove('show'); // A1: never show the cue under duress
+  try { _outboxRefusalHide(); } catch (_) {}   /* S113-1 */ // __39_: no refusal strip may stay up once step 2 starts
 
   // Switch overlay to purple to distinguish DURESS from PANIC
   showAlarmOverlay('duress');
@@ -8846,11 +9051,17 @@ async function escalateToDuress() {
   // PANIC - set after the DURESS is queued, so no pulse reaches the server ahead of it.
   const _held = _w36HeldFix();
   let _dk;   // __38_ (S149W-N1): the DURESS record's outbox key (undefined if it went to the legacy queue)
+  /* S159R1-F2 */ // __39_t2: the write and the step-2 save run as one step (unchanged inside, the save still AFTER the write, S147R-F3);
+  // the words below wait for it at most 3 s, as the safety PIN's clear does (S148W-N13), so a write that never ends cannot silence them.
+  const _w39Step = (async () => {
   try {
     // Post DURESS to backend - contacts notified per their escalation protocol
     _dk = await logSafety("DURESS", "Worker escalated to duress via PIN entry.", { 'Last Known GPS': _held || '0,0' });
+  } catch (e) {
+    // S152-A01 (__39_): a failed write no longer stops the words (the safety PIN speaks after a failed write too). Step 2 is saved below.
+    try { _diag('alarm: PIN step 2 write error ' + String((e && e.message) || e).slice(0, 120), true); } catch (_) {}
   } finally {
-    const _ac = _w38AcLanded; _w38AcLanded = null;   // __38_ (S149W-N1): only the first duress step after the All Clear landed uses it
+    const _ac = _w39AcStart; _w39AcStart = null;   /* S149V-F1 */ // only the first duress step after a no-visit clear began uses it
     // Update visit-level flag so state persists across reloads
     if (isDuressActive && state && state.activeVisit) {
       state.activeVisit.isDuress = true;
@@ -8859,16 +9070,36 @@ async function escalateToDuress() {
       // __36_ (W2): the saved no-visit alarm becomes a duress one; it keeps the PANIC's key (the DURESS merges into that row).
       state.idleAlarm.kind = 'DURESS';
       state.idleAlarm.stepAt = Date.now();
-      // __38_ (S149W-N1): the All Clear landed before this duress step, so backend __64_ closes the old row and makes a new one for
-      // this DURESS (Visit ID = its key): the saved alarm names that row, so W7 asks about it.
-      if (_ac && _dk && _ac.seq < _mySeq && _ac.key === String(state.idleAlarm.key || '')) {
-        state.idleAlarm.key = String(_dk).slice(0, 120);
-        try { _diag('alarm: saved alarm now names the step-2 row (an All Clear went just before)', true); } catch (_) {}
+      /* S149V-F1 */ // __39_: a no-visit PIN clear had STARTED before this duress step (noted at its start, not once its All Clear
+      // had landed). Its All Clear is queued ahead of this DURESS, so backend __64_+ closes the PANIC row and puts this DURESS on a
+      // NEW row whose Visit ID is the DURESS key: the saved alarm names that row (prevKey keeps the PANIC key), so W7 asks about it.
+      // Put back to the PANIC key if that All Clear's write failed (no key) or the server refused it (_outboxRefusalShow): then the
+      // PANIC row stayed open and this DURESS merged into it.
+      if (_ac && _dk && _ac.seq < _mySeq && _ac.alarmKey === String(state.idleAlarm.key || '')) {
+        const _dKey = String(_dk).slice(0, 120);
+        state.idleAlarm.prevKey = _ac.alarmKey;
+        state.idleAlarm.key = _dKey;
+        delete state.idleAlarm.acKey;
+        try { _diag('alarm: saved alarm now names the step-2 row (a clear was started just before)', true); } catch (_) {}
+        Promise.resolve(_ac.write).then(k => {
+          if (!k) { _w39RevertAlarmKey(_dKey, 'the clear before it was not queued'); return; }
+          if (state && state.idleAlarm && state.idleAlarm.key === _dKey) { state.idleAlarm.acKey = String(k); saveState(); }
+          if (_w39RefusedAcKeys.has(String(k))) _w39RevertAlarmKey(_dKey, 'the clear before it was refused');   // refused before this step
+        }, () => { _w39RevertAlarmKey(_dKey, 'the clear before it was not queued'); });
       }
       saveState();
     }
     if (isDuressActive && !_held) { _alarmFixPending = true; _w36FreshFirstFix(); }
   }
+  })();
+  _w39Step.catch(e => { try { _diag('alarm: PIN step 2 error ' + String((e && e.message) || e).slice(0, 120), true); } catch (_) {} });   // a late error is still logged
+  /* S159R1-F2 */ let _w39CapT = null;
+  await Promise.race([_w39Step, new Promise(r => { _w39CapT = setTimeout(r, 3000); })]).finally(() => clearTimeout(_w39CapT));
+
+  /* S152-A01 */ // __39_: the duress PIN ends like the safety PIN - the same words and toast, at the same point (after this step's own
+  // outbox write). Only while step 2 is still on and only for the latest step (a second duress PIN does not speak twice).
+  // S159R1-F1 / F2 (__39_t2): with the safety PIN's "no alarm yet" reading, and at the earlier of "write done" and 3 s (once only).
+  if (isDuressActive && _mySeq === _duressSeq) _w39ClearWords(_w39AfterDue, _w39NoAlarm);
 
   // Interceptor stays armed — next tap still requires PIN
   // (worker remains under duress until they enter their safety PIN)
@@ -8950,34 +9181,21 @@ function _alarmPinPrompt(onSafe) {
     } else if (entered === duressPin) {
       // Duress PIN — looks like a normal PIN entry; silently escalates
       closeModal('pin');
-      showToast('✅ Confirmed', 2000);
-      escalateToDuress();
+      /* S152-A01 */ // __39_: no toast here any more. escalateToDuress says the safety PIN's words, after its own outbox write, and
+      // with no visit the app goes to the main screen as the safety PIN's no-visit ending does.
+      Promise.resolve(escalateToDuress()).then(() => {
+        if (state && !state.activeVisit) navigate('main');
+      }).catch(e => { try { _diag('alarm: PIN step 2 error ' + String((e && e.message) || e).slice(0, 120), true); } catch (_) {} });
     } else {
       showToast('❌ Incorrect PIN');
       input.value = '';
-      if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+      if (navigator.vibrate) navigator.vibrate([400]);   /* S152-A05 */ // __39_: one long "refused" buzz (was the visit pattern [100,50,100])
     }
   };
 }
 
-// 4. RENDER PANIC STATE - Changes UI to panic mode (retained for grace-expiry path)
-function renderPanicState() {
-  const lockedPage = document.getElementById('lockedPage');
-  if (lockedPage) lockedPage.classList.add('panic-mode');
-
- 
- const btnDepart = document.getElementById('btnDepart');
- if (btnDepart) btnDepart.classList.add('hidden');
- 
- const btnExtend = document.getElementById('btnExtend');
- if (btnExtend) btnExtend.classList.add('hidden');
- 
- const btnSafe = document.getElementById('btnSafe');
- if (btnSafe) {
- btnSafe.classList.remove('hidden');
- setupLongPress(btnSafe, 1500, iamSafe);
- }
-}
+/* S149W-N3 */ // __39_: the never-called panic-screen function (and its long-press hand-off straight to the clear) is removed.
+// btnSafe keeps its PIN-path long-press (wired once at start-up) and its show / hide in tick().
 
 // 5. DECOY LOCK SCREEN — shown when covert alarm fires outside an active visit
 let _decoyEntry = '';
@@ -9071,8 +9289,7 @@ async function _evaluateDecoyPin(entered) {
     // It also shares iamSafe's double-PIN guard (S149W-N4): a safety PIN through the PIN box during this write gets this same clear.
     iamSafe._writing = _w38ClearAfterWrite(payload, () => {
       _clearAlarmState();
-      announce("Safety confirmed. Notifying contacts.");
-      showToast("✅ Safety status confirmed");
+      _w39ClearWords(false);   /* S152-A01 */ // the shared words (text unchanged)
       navigate('main');
     }, true, () => { iamSafe._writing = null; });
     await iamSafe._writing;
@@ -9115,16 +9332,7 @@ function warmUpGps() {
  }, 30000);
 }
 
-// 6. PLAY SOUND - Audio feedback for events
-function playSound(t) {
- initAudio().then(() => {
- const n = Tone.now();
- if (t === 'arrive') synth.triggerAttackRelease("C4", "8n", n);
- if (t === 'depart') synth.triggerAttackRelease("G4", "8n", n);
- if (t === 'warning') synth.triggerAttackRelease("E5", "16n", n);
- if (t === 'panic') synth.triggerAttackRelease("G5", "16n", n);
- });
-}
+/* S152-A08 */ // __39_: playSound removed (no caller anywhere; it needed Tone.js)
 
 // ============================================================================
 // CRITICAL MISSING FUNCTIONS FROM WS_SAFETY
@@ -9450,14 +9658,17 @@ function showVerificationCard() {
  if (!state || !state.worker || !state.worker.name) return;
  if (state.setupVerified) return;
  const card = document.getElementById('verifyCard');
+ try { if (_w40BothAdmin()) { if (card) card.classList.add('hidden'); return; } } catch (_) {}   // S167-A: both slots admin-set - no card
  if (card) card.classList.remove('hidden');
 }
 
 /** Permanently dismiss the card and record completion in state. */
-function dismissVerification() {
+function dismissVerification(fromDone) {
+ const ticked = fromDone === true && !!(document.getElementById('verifyContactConfirmed') || {}).checked;   // S167-A: the x never records (S155B-F4)
  const card = document.getElementById('verifyCard');
  if (card) card.classList.add('hidden');
  state.setupVerified = true;
+ try { _w40CardPutAway(ticked); } catch (_) {}
  saveState();
 }
 
@@ -9477,7 +9688,7 @@ async function verifyTestAlert() {
  const btn = document.getElementById('btnVerifyAlert');
 
  const w = state?.worker || {};
- const contacts = [w.emgEmail, w.escEmail].filter(Boolean);
+ const contacts = [w.emgEmail, _w40TestScope()['Contact Scope'] ? '' : w.escEmail].filter(Boolean);   // S167-Q2
 
  if (contacts.length === 0) {
  if (resultEl) {
@@ -9499,6 +9710,7 @@ async function verifyTestAlert() {
  await outboxEnqueue(buildPayload({
  'Alarm Status': 'TEST_ALERT',
  'Notes': 'First-use verification — test alert sent to confirm contacts are reachable.',
+ ..._w40TestScope(),   // S167-Q2: an admin-set (shared) escalation contact is not sent each worker's test
  'Last Known GPS': lastGPS || '0,0',
  'Location Name': 'Test (no active visit)',
  'Location Address': 'Sent from verification card'
@@ -9601,12 +9813,13 @@ function _w36RestoreIdleAlarm(why) {
     const step2 = a.kind === 'DURESS';
     isPanicActive = true;
     if (step2) isDuressActive = true;
+    try { _outboxRefusalHide(); } catch (_) {}   /* S159R1-F4 */ // __39_t2: a restored alarm removes any refusal strip
     showAlarmOverlay(step2 ? 'duress' : 'panic');
     if (!step2 && !state.activeVisit) showDecoyLockScreen();
     _armAlarmInterceptor();
     _startAlarmGpsPulse();
     if (gpsWatchId === null && typeof startGPSMonitoring === 'function') startGPSMonitoring();
-    gpsCurrentIntervalMs = GPS_MIN_INTERVAL_MS;
+    gpsCurrentIntervalMs = GPS_MIN_INTERVAL_MS; _w39GpsPinNow();   /* S152-A03 */
     _alarmFixPending = true;   // after _startAlarmGpsPulse (it clears the flag): the first fix goes at once
     _w36FreshFirstFix();
     const mins = Math.max(0, Math.round((Date.now() - (a.at || Date.now())) / 60000));
@@ -9697,7 +9910,7 @@ function _w36ResumeTracking() {
     }
     if (v.phase === VISIT_PHASES.ALARMING) {
       if (gpsWatchId === null && typeof startGPSMonitoring === 'function') startGPSMonitoring();
-      gpsCurrentIntervalMs = GPS_MIN_INTERVAL_MS;
+      gpsCurrentIntervalMs = GPS_MIN_INTERVAL_MS; _w39GpsPinNow();   /* S152-A03 */
       _alarmFixPending = true;
       _w36FreshFirstFix();
       note += '; alarm: the first fix goes at once';
@@ -9817,6 +10030,11 @@ function _w36ReadOpenAlarm(meta) {
     const oa = meta && meta.openAlarm;
     if (!oa || typeof oa !== 'object' || !oa.id) return false;
     if (_backendBuildNo() < 64) return false;
+    /* S113-1 (S113-2) */ // __39_: not the alarm whose All Clear the server refused - not until the app is reopened (memory only)
+    if (_w39RefusedAlarmKey && String(oa.id).slice(0, 120) === String(_w39RefusedAlarmKey).slice(0, 120)) {
+      if (!_w36ReadOpenAlarm._w39Said) { _w36ReadOpenAlarm._w39Said = true; try { _diag('alarm: server still has the alarm whose clear was refused - not restored until the app is reopened'); } catch (_) {} }
+      return false;
+    }
     const idle = () => !!state && !state.activeVisit && !state.idleAlarm && !isPanicActive && !isDuressActive && !!(state.pins && state.pins.std) &&
       !isPreVisitForm && !((document.getElementById('btnStart') || {}).dataset || {}).starting;
     if (!idle()) return false;
@@ -9914,8 +10132,7 @@ function _initApp() {
 
  // 2. Bind high-sensitivity actions to long-press AFTER state load
  setupLongPress('btnResetData', 1500, clearData);
- setupLongPress('btnMainClearCache', 1500, clearFormsCache);
- setupLongPress('btnDelLoc', 1500, deleteLoc);
+ // S167: the dead btnMainClearCache wiring (no such button) and the btnDelLoc hold (S166-D2: the tap with confirm() stays) are removed
 
  // 2a. Phase migration: if a visit was loaded from state saved before the
  // phase field was introduced, derive and write phase from legacy flags
@@ -9971,6 +10188,7 @@ function _initApp() {
  navigate('setup');
  startWizard();   // __33_ (F125-5): counter, steps and buttons reset together (a saved step 3 showed step 1, Next ran the final save)
  } else {
+ if (state.w40Draft) { state.w40Draft = null; saveState(); }   // S168R1-F1 (S169): a claim draft never outlives the wizard on a set-up phone
  navigate(state.activeVisit ? 'locked' : 'main');
  showVerificationCard();
  renderLocations();
@@ -10007,6 +10225,7 @@ function _initApp() {
  if (panicTapCount === 0) _panicTapTimes = [];
  _panicTapTimes.push(Date.now());
  panicTapCount++;
+ /* S152-A04 */ try { if (!isPanicActive && !isDuressActive && (panicTapCount === 1 || panicTapCount === 2) && navigator.vibrate) navigator.vibrate(20); } catch (_) {}   // never able to stop the tap count; a faint tick on taps 1 and 2; tap 3 stays silent (no buzz when the alarm fires). S159R2-F1 (__39_t2): never while an alarm is on - the tap guard is armed only after the PANIC write, so taps in that gap reached here.
  clearTimeout(panicTapTimer);
  if (panicTapCount === 3) {
  panicTapCount = 0;
@@ -10192,17 +10411,18 @@ async function copyDiagReport() {
   } catch (_) { ok = false; }
  }
  showToast(ok ? '📋 Report copied - paste it into an email' : 'Copy blocked - use Share instead');
+ return ok;   // S152-B02
 }
 
 async function shareDiagReport() {
  let text = '';
  try { text = await _buildDiagReport(); } catch (e) { showToast('Could not build the report'); return; }
  if (navigator.share) {
-  try { await navigator.share({ title: 'OTG diagnostics ' + WORKER_BUILD, text: text }); return; }
-  catch (e) { if (e && e.name === 'AbortError') return; }
+  try { await navigator.share({ title: 'OTG diagnostics ' + WORKER_BUILD, text: text }); return true; }   // S152-B02
+  catch (e) { if (e && e.name === 'AbortError') return null; }
  }
  // No share sheet on this device: fall back to copying.
- await copyDiagReport();
+ return copyDiagReport();   // S152-B02
 }
 
 // ============================================================================
@@ -10310,6 +10530,7 @@ async function sendPhoneAlertTest() {
  _phoneAlertMsg((r && r.message) ? String(r.message) : (ok ? 'Test sent.' : 'Could not reach the server - check your connection and try again.'), !ok);
  if (ok) { _paTestOk = true; try { _renderPhoneAlerts(); } catch (_) {} }   // __26_ (R76): now the worker can confirm it arrived
  setTimeout(() => { if (btn) btn.disabled = false; }, 5000);
+ return ok;   // S152-B02
 }
 
 async function copyPhoneAlertTopic() {
@@ -10353,6 +10574,7 @@ function _newContactTopic() {
 function makeContactTopic(inputId, stateKey) {
   const el = document.getElementById(inputId);
   if (!el) return;
+  if (_w40FieldIsAdmin(inputId)) { showToast('Set by your organisation - this topic cannot be changed here'); return; }   // S167-A
   if (String(el.value || '').trim()) { showToast('This box already has a topic - clear it first if you want a new one'); return; }
   const t = _newContactTopic();
   if (!t) { showToast('This phone cannot make a safe topic - ask your administrator'); return; }
@@ -10445,6 +10667,7 @@ function populateSettingsForm() {
  document.getElementById('setEscPhone').value = s.escPhone || '';
  document.getElementById('setEscEmail').value = s.escEmail || '';
  document.getElementById('setEscNtfy').value = s.escNtfy || '';
+ try { _w40ApplyReadOnly(); } catch (_) {}   // S167-A
 }
 
 // __31_ (S113-3, S118-D7): the contacts' ntfy topics, posted when Settings are saved, so an alarm before the next visit post
@@ -10452,25 +10675,41 @@ function populateSettingsForm() {
 // POST action with an error - it hands it to the visit logger - so it is posted only when the server says it is build 61+.
 const CONTACTS_UPDATE_MIN_BUILD = 61;
 
-/** Post the two contact topics (quiet; any reply is ignored). Returns true when a post was sent. */
-async function _postContactsUpdate() {
+/** S167-A (__40_): post the phone's backup of the worker's details and the self-entered contacts (field by field - never
+ *  state.worker as a whole, never a PIN; an admin-set slot is sent blank, which the server never uses to clear anything). The reply
+ *  is read: saved:true is a backup (with adminSet:[...] it is still a success, those slots ignored); saved:false is not.
+ *  Returns true when a post was sent. */
+async function _postContactsUpdate(reason) {
   try {
     if (!state || !state.worker || !state.worker.name) return false;
     if (_backendBuildNo() < CONTACTS_UPDATE_MIN_BUILD) return false;
     if (!CONFIG.key || CONFIG.key.length < 3 || !CONFIG.url || CONFIG.url.length < 10) return false;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
-    const body = new URLSearchParams({
-      'action': 'contactsUpdate', 'key': CONFIG.key, 'Worker Name': state.worker.name,
-      'deviceId': state.deviceId || getDeviceID(),
-      'Emergency Contact Ntfy': state.worker.emgNtfy || '', 'Escalation Contact Ntfy': state.worker.escNtfy || ''
-    }).toString();
+    if (_postContactsUpdate._busy) return false;
+    const form = _w40BackupForm();
+    if (!form) return false;
+    const fp = _w40FormFp(form);
+    _postContactsUpdate._busy = true;
+    state.w40Backup = Object.assign({}, state.w40Backup || {}, { tryAt: Date.now() });
+    try { saveState(); } catch (_) {}
+    const body = new URLSearchParams(form).toString();
     const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     const timer = setTimeout(() => { if (ctl) { try { ctl.abort(); } catch (_) {} } }, PHONE_ALERT_TIMEOUT_MS);
+    let data = null;
     try {
-      await fetch(CONFIG.url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body, signal: ctl ? ctl.signal : undefined });
-    } finally { clearTimeout(timer); }
+      const r = await fetch(CONFIG.url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body, signal: ctl ? ctl.signal : undefined });
+      try { data = await r.json(); } catch (_) { data = null; }
+    } finally { clearTimeout(timer); _postContactsUpdate._busy = false; }
+    if (data && data.status === 'success' && data.saved === true) {
+      const _okNow = Date.now(); state.w40Backup = { fp: fp, okAt: _okNow, tryAt: _okNow };   // S169-D1: one timestamp, so an accepted try never reads as later than itself
+      if (Array.isArray(data.adminSet)) _w40ReplyAdminSet(data.adminSet);
+      try { saveState(); } catch (_) {}
+      try { _diag('[S167] contacts backup saved (' + (reason || 'save') + ')' + (data.adminSet && data.adminSet.length ? ' - set by admin: ' + data.adminSet.join(', ') : '')); } catch (_) {}
+    } else {
+      try { _diag('[S167] contacts backup NOT saved (' + (reason || 'save') + '): ' + String((data && (data.message || data.status)) || 'no reply').substring(0, 80)); } catch (_) {}
+    }
     return true;
-  } catch (_) { return false; }
+  } catch (_) { _postContactsUpdate._busy = false; return false; }
 }
 
 function saveSettings() {
@@ -10479,21 +10718,68 @@ function saveSettings() {
  state.worker.name = document.getElementById('setName').value.trim();
  state.worker.phone = document.getElementById('setPhone').value.trim();
  state.worker.email = document.getElementById('setEmail').value.trim();
+ if (!_w40IsAdmin('primary')) {   // S167-A: an admin-set slot is read-only - never written from the form (S156 rows 2, 3)
  state.worker.emgName = document.getElementById('setEmgName').value.trim();
  state.worker.emgPhone = document.getElementById('setEmgPhone').value.trim();
  state.worker.emgEmail = document.getElementById('setEmgEmail').value.trim();
  state.worker.emgNtfy = document.getElementById('setEmgNtfy').value.trim();
+ }
+ if (!_w40IsAdmin('escalation')) {
  state.worker.escName = document.getElementById('setEscName').value.trim();
  state.worker.escPhone = document.getElementById('setEscPhone').value.trim();
  state.worker.escEmail = document.getElementById('setEscEmail').value.trim();
  state.worker.escNtfy = document.getElementById('setEscNtfy').value.trim();
+ }
+ try { if (state.contactsChecked && !_w40CheckValid()) state.contactsChecked = ''; } catch (_) {}   // S167-A: a changed channel throws the check away
  
  saveState();
  
  try { _postContactsUpdate(); } catch (_) {}   // __31_ (S113-3)
  showToast('✅ Settings Saved');
+ _w40DoneBuzz();   // S167-C
  _warmAudio(); // Secondary warm-up opportunity on confirmed user gesture
  navigate('main');
+}
+
+/* S152-A06 */ // __39_: closing Settings with unsaved edits asks "Save changes?" (Save / Discard) in an in-app box. Never while an
+// alarm is on or saved: then it goes straight to the main screen, as before. The "Restart setup wizard" link and the system back
+// gesture are not covered (Worker Guide line D120).
+const _W39_SET_FIELDS = [['setName', 'name'], ['setPhone', 'phone'], ['setEmail', 'email'], ['setEmgName', 'emgName'], ['setEmgPhone', 'emgPhone'],
+  ['setEmgEmail', 'emgEmail'], ['setEmgNtfy', 'emgNtfy'], ['setEscName', 'escName'], ['setEscPhone', 'escPhone'], ['setEscEmail', 'escEmail'], ['setEscNtfy', 'escNtfy']];
+function _w39SettingsDirty() {
+  if (!state || !state.worker) return false;
+  return _W39_SET_FIELDS.some(([id, k]) => {
+    if (_w40FieldIsAdmin(id)) return false;   // S167-A: a read-only admin-set slot never counts as changed
+    const el = document.getElementById(id);
+    return !!el && String(el.value || '').trim() !== String(state.worker[k] || '').trim();
+  });
+}
+function _w39AlarmOn() { return !!(isPanicActive || isDuressActive || (state && state.idleAlarm)); }
+function _w39SettingsBoxHide() {
+  try { const b = document.getElementById('w39SettingsBox'); if (b) b.remove(); } catch (_) {}
+  if (_w39SettingsClose._t) { clearInterval(_w39SettingsClose._t); _w39SettingsClose._t = null; }
+}
+function _w39SettingsClose() {
+  try {
+    if (_w39AlarmOn() || !_w39SettingsDirty()) { _w39SettingsBoxHide(); navigate('main'); return; }
+    _w39SettingsBoxHide();
+    const box = document.createElement('div');
+    box.id = 'w39SettingsBox';
+    box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-labelledby', 'w39SettingsBoxTitle');
+    box.style.cssText = 'position:fixed;inset:0;z-index:45;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;padding:24px;';
+    box.innerHTML = '<div style="background:#1f2937;color:#fff;border-radius:16px;padding:20px;max-width:340px;width:100%;">' +
+      '<div id="w39SettingsBoxTitle" style="font-weight:900;font-size:18px;margin-bottom:8px;">Save changes?</div>' +
+      '<div style="font-size:14px;color:#d1d5db;margin-bottom:16px;">You changed your details. Save them, or discard the changes?</div>' +
+      '<div style="display:flex;gap:10px;">' +
+      '<button type="button" id="w39SetDiscard" style="flex:1;background:#374151;color:#fff;font-weight:800;border-radius:10px;padding:12px;">Discard</button>' +
+      '<button type="button" id="w39SetSave" style="flex:1;background:#2563eb;color:#fff;font-weight:800;border-radius:10px;padding:12px;">Save</button>' +
+      '</div></div>';
+    document.body.appendChild(box);
+    document.getElementById('w39SetSave').onclick = (e) => { e.stopPropagation(); _w39SettingsBoxHide(); saveSettings(); };
+    document.getElementById('w39SetDiscard').onclick = (e) => { e.stopPropagation(); _w39SettingsBoxHide(); populateSettingsForm(); navigate('main'); };
+    // an alarm that starts while the box is up: the box goes (the form keeps the edits; the alarm screens are above it anyway)
+    _w39SettingsClose._t = setInterval(() => { if (_w39AlarmOn()) _w39SettingsBoxHide(); }, 500);
+  } catch (_) { _w39SettingsBoxHide(); navigate('main'); }
 }
 
 function exportUserData() {
@@ -11513,19 +11799,7 @@ function sendMidVisitUpdate() {
 // ============================================================================
 // PHASE 1: MULTIPLE WARNING LEVELS (5min, 2min, 90sec)
 // ============================================================================
-function playWarningSound(type) {
- if (audioReady && synth) {
- try {
- if (type === 'warning') {
- synth.triggerAttackRelease('A4', '4n');
- } else if (type === 'critical') {
- synth.triggerAttackRelease('C5', '4n');
- }
- } catch (e) {
- console.warn('Audio playback failed:', e);
- }
- }
-}
+/* S152-A08 */ // __39_: playWarningSound removed (no caller anywhere; it needed Tone.js)
 
 function speakWarning(message) {
  if ('speechSynthesis' in window) {
@@ -11584,7 +11858,7 @@ function forceSync(showUI, quiet) {
  const deviceId = getDeviceID();
  const workerName = state.worker.name;
  
- fetch(`${CONFIG.url}?action=sync&worker=${encodeURIComponent(workerName)}&key=${CONFIG.key}&deviceId=${deviceId}${_w36AlarmQuery()}${_w36AlarmCheckQuery()}&_cb=${Date.now()}`)
+ return fetch(`${CONFIG.url}?action=sync&worker=${encodeURIComponent(workerName)}&key=${CONFIG.key}&deviceId=${deviceId}${_w36AlarmQuery()}${_w36AlarmCheckQuery()}&_cb=${Date.now()}`)
  .then(r => r.json())
  .then(data => {
  const banner = document.getElementById('uploadBanner');
@@ -11597,7 +11871,7 @@ function forceSync(showUI, quiet) {
  // Show a persistent full-screen warning rather than a dismissable toast
  const offlineBanner = document.getElementById('offlineBanner');
  if (offlineBanner) {
- offlineBanner.textContent = '🔒 DEVICE NOT AUTHORISED — Contact your administrator';
+ offlineBanner.textContent = '🔒 DEVICE NOT AUTHORISED - Contact your administrator';   // S168R1-N4 (S169): simple hyphen (text only)
  offlineBanner.classList.remove('hidden');
  offlineBanner.style.backgroundColor = '#7f1d1d';
  }
@@ -11613,7 +11887,7 @@ function forceSync(showUI, quiet) {
  try { _versionRecheck('sync'); } catch (_) {}   // __31_ (S117-D2)
  try { _clearDeniedBanner(); } catch (_) {}   // __32_ (F125-1)
  updateLastSyncUI(); // Refreshes the "Just now" label
- if (showUI) showToast('✅ Sync Complete');
+ // S163-F3 (S167): "Sync Complete" is shown once, at the end
  
  // 2. DATA MERGE: Sites, Forms, and Metadata
  const existingManual = state.locations.filter(x => x && x.id && x.id.startsWith('loc_'));
@@ -11643,6 +11917,7 @@ function forceSync(showUI, quiet) {
  state.meta = data.meta || {};
  _w36ReadAlarmState(state.meta);   // __36_ (W7): backend __63_ answers for the saved alarm; cleared only on "resolved"
  _w36ReadOpenAlarm(state.meta);    // __36_ (W9): backend __64_ names an open alarm this idle phone has lost - put it back
+ try { _w40OnSync(state.meta); } catch (e) { try { _diag('[S167] sync step: ' + (e && e.message)); } catch (_) {} }   // S167-A: idle only - admin-set contacts, the card, the backup
  // __24_ (R03): keep the last good welfare settings from the server for an offline start (or an older backend's sync)
  if (state.meta.settings && typeof state.meta.settings.welfareChecks === 'boolean') {
    const _ws = state.meta.settings;
@@ -11659,6 +11934,7 @@ function forceSync(showUI, quiet) {
  updateLastSyncUI(); 
  
  if (showUI) showToast('✅ Sync Complete');
+ return true;   // S152-B02
  })
  .catch(e => {
  // Log actual network failures for troubleshooting
@@ -11672,6 +11948,7 @@ function forceSync(showUI, quiet) {
  // but the worker should know their data may not have reached the server.
  showToast('⚠️ Background sync failed — data queued', 5000);
  }
+ return false;   // S152-B02
  });
 }
 
@@ -12357,7 +12634,7 @@ function practicePickLevel(k) {
 function practiceSosTap() {
   const now = Date.now();
   _practiceSosTaps.push(now);
-  if (navigator.vibrate) navigator.vibrate(30);
+  /* S152-A04 */ try { if (_practiceSosTaps.length < 3 && navigator.vibrate) navigator.vibrate(20); } catch (_) {}   // as the real SOS: taps 1 and 2 tick, tap 3 is silent (S159R2-F2: inside try)
   clearTimeout(_practiceSosTimer);
   if (_practiceSosTaps.length >= 3) {
     const t = _practiceSosTaps; _practiceSosTaps = [];
@@ -12741,7 +13018,7 @@ function initSlidePill(pillId, thumbId, labelId, onComplete) {
  const label = document.getElementById(labelId);
  if (!pill || !thumb) return;
 
- const THUMB_W = thumb.offsetWidth || 56;
+ let THUMB_W = 56;   /* S152-A07 */ // __39_: measured at each touch (onStart), not once when the pill is wired
  const START_ZONE = 0.30; // gesture must begin within first 30% of track
  // F74-3 diagnostic: how many times has THIS element been wired?
  pill.dataset.diagWired = String((parseInt(pill.dataset.diagWired || '0', 10) || 0) + 1);
@@ -12776,7 +13053,14 @@ function initSlidePill(pillId, thumbId, labelId, onComplete) {
  if (pill.classList.contains('pill-disabled')) { _ignored('pill is disabled'); return; }
  const rect = pill.getBoundingClientRect();
  const relX = getClientX(e) - rect.left;
+ /* S152-A07 */ // __39_: measure the thumb now - a measurement at start-up could come before the styles arrived (F101-1). Sanity
+ // rule: 24 px up to half the pill, else 56 and one Diagnostics line. Fail closed: a track under 40 px ignores the touch (never an
+ // instant complete).
+ { const _tw = thumb.offsetWidth || 0;
+   if (_tw >= 24 && _tw <= rect.width / 2) THUMB_W = _tw;
+   else { THUMB_W = 56; try { _diag('[F101-1] ' + pillId + ' thumb measured ' + Math.round(_tw) + ' px (' + (_tw < 24 ? 'under 24 px' : 'over half of the ' + Math.round(rect.width) + ' px pill') + ') - used 56'); } catch (_) {} } }   // S159R2-F3: wording only
  maxSlide = rect.width - THUMB_W - 8;
+ if (!(maxSlide >= 40)) { _ignored('track too short (' + Math.round(maxSlide) + ' px)'); return; }
  if (relX / rect.width > START_ZONE) { _ignored('outside the start zone (x ' + Math.round(relX) + ' of ' + Math.round(rect.width) + ')'); return; }
  isSliding = true;
  gestureValid = true;
@@ -12815,7 +13099,7 @@ function initSlidePill(pillId, thumbId, labelId, onComplete) {
  gestureValid = false;
  thumb.style.transition = 'transform 0.15s ease-out';
  thumb.style.transform = `translateX(${maxSlide}px)`;
- if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
+ if (navigator.vibrate) navigator.vibrate([40, 60, 40]);   // S167-C: done (Start, Depart, notice acknowledge, report submit; slide-to-wake unchanged) - S168R2-F4 (S169): comment only
  _diag('completeSlide(' + pillId + ')', false);
  setTimeout(() => {
  thumb.style.transition = 'none';
@@ -13724,13 +14008,14 @@ async function triggerGraceExpiryAlarm(reason) {
   setVisitPhase(VISIT_PHASES.ALARMING);
   saveState();
   isPanicActive = true;
+  try { _outboxRefusalHide(); } catch (_) {}   /* S159R1-F4 */ // __39_t2: a new alarm removes any refusal strip
 
   // Acquire wake lock so the alarm screen stays lit
   if (typeof requestWakeLock === 'function') requestWakeLock();
 
   // Pin GPS to minimum interval
   if (gpsWatchId === null && typeof startGPSMonitoring === 'function') startGPSMonitoring();
-  gpsCurrentIntervalMs = GPS_MIN_INTERVAL_MS;
+  gpsCurrentIntervalMs = GPS_MIN_INTERVAL_MS; _w39GpsPinNow();   /* S152-A03 */
 
   // Start repeating GPS pulse to backend
   _startAlarmGpsPulse();
@@ -14179,6 +14464,425 @@ document.addEventListener("visibilitychange", async () => {
  }
 });
  
+/* S152-T2 BEGIN */
+// Tier 2 (cosmetic) script for worker __39_: S152-B01, B02, B03. Nothing here raises, clears or shows an alarm, reads a
+// PIN, moves a slider or writes to the outbox beyond what the buttons already did.
+
+// S152-B01: iPhone Safari shows pressed (:active) styles only when a touch listener exists.
+try { document.addEventListener('touchstart', function () {}, { passive: true }); } catch (_) {}
+
+// S152-B02: busy and done text inside the button for slow actions. The button greys and says what it is doing, then shows
+// the result for 1.5 s and goes back. run() resolves true (done), false (failed), a string (shown as written) or null (put
+// the button back, say nothing). After 30 s with no result the button goes back. The disabled state is never touched.
+function _t2Busy(btn, busyText, run) {
+  if (!btn || btn.getAttribute('data-t2-busy')) return;
+  const html = btn.innerHTML;
+  const restore = () => { btn.innerHTML = html; btn.classList.remove('t2-busy'); btn.removeAttribute('aria-busy'); btn.removeAttribute('data-t2-busy'); };
+  btn.setAttribute('data-t2-busy', '1');
+  let p;
+  try { p = Promise.resolve(run()); } catch (_) { p = Promise.resolve(false); }
+  btn.textContent = busyText;
+  btn.classList.add('t2-busy');
+  btn.setAttribute('aria-busy', 'true');
+  let cap;
+  const capped = new Promise(resolve => { cap = setTimeout(() => resolve(null), 30000); });
+  Promise.race([p, capped]).catch(() => false).then(r => {
+    clearTimeout(cap);
+    if (r === null || r === undefined) { restore(); return; }
+    btn.classList.remove('t2-busy');
+    btn.removeAttribute('aria-busy');
+    if (r === true) _w40DoneBuzz();   // S167-C: the worker pressed this button
+    btn.textContent = r === true ? '✓ Done' : r === false ? '✗ Failed' : r;
+    setTimeout(restore, 1500);
+  });
+}
+function _t2ForceSync(btn) { _t2Busy(btn, 'Syncing…', () => Promise.resolve(forceSync(true)).then(r => r === true)); }
+function _t2CopyReport(btn) { _t2Busy(btn, 'Copying…', () => copyDiagReport().then(r => r === true)); }
+function _t2ShareReport(btn) { _t2Busy(btn, 'Preparing…', () => shareDiagReport().then(r => r === null ? null : r === true)); }
+function _t2PhoneTest(btn) { _t2Busy(btn, 'Sending…', () => sendPhoneAlertTest().then(r => r === true)); }
+function _t2MakeTopic(btn, inputId, stateKey) {
+  const el = document.getElementById(inputId);
+  const had = !!(el && String(el.value || '').trim());
+  _t2Busy(btn, 'Making…', () => {
+    makeContactTopic(inputId, stateKey);
+    return had ? null : !!(el && String(el.value || '').trim());   // a box that already had a topic: the toast explains
+  });
+}
+// "Done" only when nothing is left waiting on this phone (checked for up to 10 s); otherwise "Not sent yet" (it retries).
+async function _t2FlushRun() {
+  await outboxRequeueFailedAndFlush();
+  const db = await _outboxDB();
+  for (let i = 0; i < 20; i++) {
+    const rows = await new Promise(resolve => {
+      const req = db.transaction('events', 'readonly').objectStore('events').getAll();
+      req.onsuccess = e => resolve(e.target.result || []);
+      req.onerror = () => resolve(null);
+    });
+    if (!rows) return false;
+    const waiting = rows.some(r => r.status !== 'sent') || !!(state && state.pendingUploads && state.pendingUploads.length);
+    if (!waiting) { updateOutboxStatus(); return true; }
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  updateOutboxStatus();
+  return '⏳ Not sent yet';
+}
+function _t2Flush(btn) { showToast('🔄 Flushing outbox…'); _t2Busy(btn, 'Sending…', _t2FlushRun); }
+
+// S152-B03: clearing the diagnostics log takes the same 1.5 s hold as Reset App Data (one tap used to wipe the evidence).
+try {
+  setupLongPress('btnDiagClear', 1500, () => { if (_w39AlarmOn()) return; _diagClear(); updateOutboxStatus(); showToast('Diagnostics log cleared'); });   // S164-F2 (S167-Q7): nothing during an alarm
+  // This button is full width in a scrolling list: a finger that moves more than 10 px is scrolling, so the hold stops.
+  const b = document.getElementById('btnDiagClear');
+  let x = 0, y = 0;
+  b.addEventListener('touchstart', e => { x = e.touches[0].clientX; y = e.touches[0].clientY; }, { passive: true });
+  b.addEventListener('touchmove', e => {
+    if (Math.abs(e.touches[0].clientX - x) > 10 || Math.abs(e.touches[0].clientY - y) > 10) b.dispatchEvent(new Event('touchcancel'));
+  }, { passive: true });
+  // S163-D3 (S167): the same 10 px movement cancel on Reset App Data (that button only; setupLongPress, SOS and Confirm Safe unchanged)
+  const rb = document.getElementById('btnResetData');
+  if (rb) { let rx = 0, ry = 0;
+    rb.addEventListener('touchstart', e => { rx = e.touches[0].clientX; ry = e.touches[0].clientY; }, { passive: true });
+    rb.addEventListener('touchmove', e => {
+      if (Math.abs(e.touches[0].clientX - rx) > 10 || Math.abs(e.touches[0].clientY - ry) > 10) rb.dispatchEvent(new Event('touchcancel'));
+    }, { passive: true }); }
+} catch (_) {}
+/* S152-T2 END */
+/* S167-A BEGIN */ // __40_ (S167): onboarding, phone side - the set-up code, the backup of details, admin-set contacts, "contacts checked".
+// Design: S155B note 4-6, 13-14; S166 prompt section 4; S167 design check (Russell "Agree all", 26 Nov 2026). Rules: a PIN is never sent
+// or restored; every post is built field by field (S155B-F3); nothing here runs during a visit or an alarm, except what the worker
+// presses in the wizard or Settings (neither opens then). New saved fields are top level (not in state.worker, which Finish replaces,
+// and not in state.meta, which every sync replaces): w40Draft, w40Org, contactsChecked, w40CardOff, w40Backup. None is in F138_SETUP_FIELDS.
+const W40_CLAIM_MIN_BUILD = 67;             // S161B-Q1: codes only with backend __67_ or later (an older one logs an unknown action, F119-2)
+const W40_CLAIM_TIMEOUT_MS = 15000;
+const W40_FIELD_MAX = 120;
+const W40_BACKUP_OK_GAP_MS = 24 * 3600 * 1000;   // S167-Q6: an accepted idle backup at most once a day
+const W40_BACKUP_RETRY_MS = 30 * 60 * 1000;      // S167-Q6: a failed one tried again at least 30 minutes later
+const W40_CHECK_RE = /^(\d{4})-(\d{2})-(\d{2}) ([0-9a-f]{8})$/;
+const W40_SLOTS = {
+  primary: { name: 'emgName', phone: 'emgPhone', email: 'emgEmail', topic: 'emgNtfy', ice: ['iceName', 'icePhone', 'iceEmail'], post: 'Emergency',
+    wiz: ['wizContactName', 'wizContactPhone', 'wizContactEmail', 'wizContactNtfy'], set: ['setEmgName', 'setEmgPhone', 'setEmgEmail', 'setEmgNtfy'],
+    notes: ['wizPriAdminNote', 'setPriAdminNote'] },
+  escalation: { name: 'escName', phone: 'escPhone', email: 'escEmail', topic: 'escNtfy', ice: ['ice2Name', 'ice2Phone', 'ice2Email'], post: 'Escalation',
+    wiz: ['wizEscName', 'wizEscPhone', 'wizEscEmail', 'wizEscNtfy'], set: ['setEscName', 'setEscPhone', 'setEscEmail', 'setEscNtfy'],
+    notes: ['wizEscAdminNote', 'setEscAdminNote'] }
+};
+const W40_SLOT_NAMES = ['primary', 'escalation'];
+let _w40FinishPending = false;   // memory only: post the backup after the first sync that follows Finish (S167-Q5)
+let _w40ClaimBusy = false;
+try { const _st = document.createElement('style'); _st.textContent = '.w40-ro{opacity:.7}'; document.head.appendChild(_st); } catch (_) {}
+
+function _w40Clip(v) { return String(v == null ? '' : v).trim().substring(0, W40_FIELD_MAX); }
+function _w40Today(d) { const x = d || new Date(); return x.getFullYear() + '-' + ('0' + (x.getMonth() + 1)).slice(-2) + '-' + ('0' + x.getDate()).slice(-2); }
+/** 8 lowercase hex (FNV-1a, 32 bit). A change detector, not a secret. Pure (tested). */
+function _w40Hash(s) {
+  let h = 0x811c9dc5; s = String(s);
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return ('0000000' + h.toString(16)).slice(-8);
+}
+/** Which slots are admin-set: the claim draft while the wizard holds one, else the marks from the sync or the contactsUpdate reply. */
+function _w40AdminMap() {
+  const d = state && state.w40Draft;
+  if (d) return { primary: !!(d.primary && d.primary.adminSet), escalation: !!(d.escalation && d.escalation.adminSet) };
+  const o = state && state.w40Org, a = (o && o.admin) || {};
+  return { primary: !!a.primary, escalation: !!a.escalation };
+}
+function _w40IsAdmin(slot) { try { return !!_w40AdminMap()[slot]; } catch (_) { return false; } }
+function _w40BothAdmin() { const a = _w40AdminMap(); return a.primary && a.escalation; }
+/** The contact slot an input id belongs to (Settings or wizard), or ''. Pure (tested). */
+function _w40SlotOf(id) { id = String(id || ''); if (/^(setEmg|wizContact)/.test(id)) return 'primary'; if (/^(setEsc|wizEsc)/.test(id)) return 'escalation'; return ''; }
+function _w40FieldIsAdmin(id) { const s = _w40SlotOf(id); return !!s && _w40IsAdmin(s); }
+/** Fingerprint of the self-entered channels: emails and topics in a fixed order; an admin-set slot is a fixed marker (S162 call). */
+function _w40Fp(w, admin) {
+  w = w || (state && state.worker) || {}; admin = admin || _w40AdminMap();
+  const part = s => { const S = W40_SLOTS[s]; return admin[s] ? '#admin' : [w[S.email] || w[S.ice[2]] || '', w[S.topic] || ''].map(x => String(x).trim().toLowerCase()).join('|'); };
+  return _w40Hash(part('primary') + '||' + part('escalation'));
+}
+/** A good "contacts checked" value: exactly "YYYY-MM-DD <8 hex>", not older than 12 months, not in the future, same fingerprint.
+ *  Anything else - a Sheets date string included (S161BR-F6) - means not checked. Pure given fp and now (tested). */
+function _w40CheckOk(v, fp, now) {
+  const m = W40_CHECK_RE.exec(String(v == null ? '' : v)); if (!m) return false;
+  const d = new Date(+m[1], +m[2] - 1, +m[3]); if (isNaN(d.getTime()) || d.getMonth() !== +m[2] - 1 || d.getDate() !== +m[3]) return false;
+  const n = now || new Date(); const yearAgo = new Date(n.getFullYear() - 1, n.getMonth(), n.getDate());
+  if (d < yearAgo || d.getTime() > n.getTime() + 86400000) return false;
+  return m[4] === (fp || _w40Fp());
+}
+function _w40CheckValid() { return !!(state && _w40CheckOk(state.contactsChecked)); }
+/** No visit, no alarm of any kind (the S162-Q3 rule for applying admin-set contacts and for the idle backup). */
+function _w40Idle() {
+  try { return !!state && !state.activeVisit && !_w39AlarmOn() && !(typeof _noticeInAlarm === 'function' && _noticeInAlarm()); } catch (_) { return false; }
+}
+/** S166-D4: an admin-set slot takes the sheet's values, blanks included - unless name, phone and email are ALL blank (a hand tick on an
+ *  empty row): then null, and the phone keeps its own copy (still read-only, never sent). Pure (tested). */
+function _w40SlotPick(src) {
+  const s = k => _w40Clip(src && src[k]);
+  if (!s('name') && !s('phone') && !s('email')) return null;
+  return { name: s('name'), phone: s('phone'), email: s('email'), topic: s('topic') };
+}
+function _w40PutSlot(slot, v) {
+  const S = W40_SLOTS[slot], w = state.worker;
+  w[S.name] = v.name; w[S.phone] = v.phone; w[S.email] = v.email; w[S.topic] = v.topic;
+  [v.name, v.phone, v.email].forEach((x, i) => { if (w[S.ice[i]] !== undefined) w[S.ice[i]] = x; });   // the old wizard fallbacks stay equal
+}
+
+// ---------------------------------------------------------------- read-only display
+function _w40ApplyReadOnly() {
+  const a = _w40AdminMap(), RO = ' - set by your organisation';
+  W40_SLOT_NAMES.forEach(s => {
+    const S = W40_SLOTS[s], on = !!a[s];
+    S.set.concat(S.wiz).forEach(id => {
+      const el = document.getElementById(id); if (!el) return;
+      el.readOnly = on; el.classList.toggle('w40-ro', on);
+      if (el.dataset.w40Aria === undefined) el.dataset.w40Aria = el.getAttribute('aria-label') || '';
+      el.setAttribute('aria-label', el.dataset.w40Aria + (on ? RO : ''));
+      const lb = el.previousElementSibling;   // B06: each Settings contact input has its label.t2-label just before it
+      if (lb && lb.tagName === 'LABEL' && lb.classList.contains('t2-label')) {
+        if (lb.dataset.w40Txt === undefined) lb.dataset.w40Txt = lb.textContent;
+        lb.textContent = lb.dataset.w40Txt + (on ? RO : '');
+      }
+    });
+    [S.set[3], S.wiz[3]].forEach(t => document.querySelectorAll('button[onclick*="\'' + t + '\'"]').forEach(b => {   // "Make a topic for me" (wizard and Settings), not Share
+      if (!/makeContactTopic|_t2MakeTopic/.test(b.getAttribute('onclick') || '')) return; b.disabled = on; b.classList.toggle('w40-ro', on); }));
+    S.notes.forEach(id => { const n = document.getElementById(id); if (n) n.classList.toggle('hidden', !on); });
+  });
+  const tf = !!(state && state.w40Org && state.w40Org.trusted === false);
+  ['setOrgNote', 'wizOrgNote'].forEach(id => { const n = document.getElementById(id); if (n) n.classList.toggle('hidden', !tf); });
+}
+function _w40Msg(id, text, kind) {
+  const el = document.getElementById(id); if (!el) return;
+  if (!text) { el.textContent = ''; el.className = 'hidden'; return; }
+  el.textContent = text;
+  el.className = 'text-sm font-bold rounded-xl px-4 py-3 mt-2 ' + (kind === 'ok' ? 'bg-green-900/40 text-green-300 border border-green-500/50'
+    : kind === 'busy' ? 'bg-gray-800 text-gray-300 border border-gray-600' : 'bg-red-900/40 text-red-300 border border-red-500/50');
+}
+function _w40NiceDate(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || '')); if (!m) return '';
+  const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+m[2] - 1];
+  return mon ? (+m[3]) + ' ' + mon + ' ' + m[1] : '';
+}
+/** S167-Q3: the "Filled from ..." line says where the details came from. Pure (tested). */
+function _w40FilledText(d) {
+  if (!d) return '';
+  if (d.source === 'visit') { const t = _w40NiceDate(d.sourceDate); return 'Filled from your last visit' + (t ? ' on ' + t : '') + ' - check them carefully'; }
+  if (d.source === 'topics') return "Only your contacts' push topics were found - please type the rest";
+  return "Filled from your organisation's records - check them";
+}
+
+// ---------------------------------------------------------------- the wizard
+/** T2 / T4: the wizard boxes are filled from the claim draft, or on a re-run of a set-up phone from the saved details, so Finish
+ *  never blanks the saved contacts. PIN boxes are never filled. */
+function _w40WizFill() {
+  if (!state) return;
+  const d = state.w40Draft, w = state.worker || {};
+  const put = (id, v) => { const el = document.getElementById(id); if (el) el.value = v == null ? '' : String(v); };
+  if (d) {
+    put('wizName', d.worker && d.worker.name); put('wizPhone', d.worker && d.worker.phone); put('wizEmail', d.worker && d.worker.email);
+    W40_SLOT_NAMES.forEach(s => { const S = W40_SLOTS[s], v = d[s] || {}; put(S.wiz[0], v.name); put(S.wiz[1], v.phone); put(S.wiz[2], v.email); put(S.wiz[3], v.topic); });
+    const t = _w40FilledText(d); _w40Msg('wizCodeMsg', t, 'ok'); _w40Msg('wizFilledMsg3', t, 'ok');
+  } else if (w.name) {
+    put('wizName', w.name); put('wizPhone', w.phone); put('wizEmail', w.email);
+    W40_SLOT_NAMES.forEach(s => { const S = W40_SLOTS[s];
+      put(S.wiz[0], w[S.name] || w[S.ice[0]]); put(S.wiz[1], w[S.phone] || w[S.ice[1]]); put(S.wiz[2], w[S.email] || w[S.ice[2]]); put(S.wiz[3], w[S.topic]); });
+  }
+  _w40ApplyReadOnly();
+}
+function _w40CodeTyped() { const el = document.getElementById('wizCode'); return !!(el && String(el.value || '').trim()); }
+function _w40IsIphone() {
+  try { return /iphone|ipad|ipod/i.test(navigator.userAgent || '') || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); } catch (_) { return false; }
+}
+async function _w40Fetch(url, opts) {
+  const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const timer = setTimeout(() => { if (ctl) { try { ctl.abort(); } catch (_) {} } }, W40_CLAIM_TIMEOUT_MS);
+  try { const r = await fetch(url, Object.assign({}, opts || {}, { signal: ctl ? ctl.signal : undefined })); return await r.json(); }
+  finally { clearTimeout(timer); }
+}
+/** Wizard step 1 with a code: offline? iPhone tab? backend 67 or later (ping, nothing posted otherwise)? save the device id, then the
+ *  claim as a direct fetch with a readable reply (never the outbox), 15 s. */
+async function _w40Claim() {
+  if (_w40ClaimBusy) return;
+  const code = String((document.getElementById('wizCode') || {}).value || '').replace(/\s+/g, '');
+  const name = String((document.getElementById('wizName') || {}).value || '').trim();
+  const say = t => { _w40Msg('wizCodeMsg', t, 'err'); };
+  if (!/^\d{6}$/.test(code)) return say('A set-up code has 6 digits - check it, or clear the box to set up by hand.');
+  if (!name) return say('Type your name first, the way your administrator has it.');
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return say('A code needs signal. Try again with signal, or set up by hand.');
+  if (_w40IsIphone() && !_isInstalledApp()) return say('Install the app first, then enter the code in the installed app.');
+  if (!CONFIG.key || CONFIG.key.length < 3 || !CONFIG.url || CONFIG.url.length < 10) return say('This app is not connected to a server yet - set up by hand.');
+  const btn = document.getElementById('btnWizNext'); const label = btn ? btn.textContent : '';
+  _w40ClaimBusy = true;
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking code…'; }
+  _w40Msg('wizCodeMsg', 'Checking the code with your organisation…', 'busy');
+  try {
+    let ping = null;
+    try { ping = await _w40Fetch(CONFIG.url + (CONFIG.url.indexOf('?') > -1 ? '&' : '?') + 'action=ping&_cb=' + Date.now()); } catch (_) { ping = null; }
+    if (!ping || typeof ping !== 'object') return say('No reply from the server - try again, or set up by hand.');
+    const bm = /backend__(\d+)_/.exec(String(ping.build || '')); const bno = bm ? parseInt(bm[1], 10) : 0;
+    if (bno < W40_CLAIM_MIN_BUILD) { try { _diag('[S167] set-up code not used: server build ' + String(ping.build || '?').substring(0, 30)); } catch (_) {} return say('Codes need a newer server - set up by hand.'); }
+    state.deviceId = getDeviceID(); saveState();   // first: a replay must send the same id
+    const body = new URLSearchParams({ 'action': 'claimSetup', 'key': CONFIG.key, 'Worker Name': name, 'code': code, 'deviceId': state.deviceId, 'Worker Build': WORKER_BUILD }).toString();
+    let data = null;
+    try { data = await _w40Fetch(CONFIG.url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body }); } catch (_) { data = null; }
+    if (!data || typeof data !== 'object') { try { _diag('[S167] set-up code: no reply'); } catch (_) {} return say('No reply - try again.'); }
+    if (data.status === 'success' && data.claim === 'ok') {
+      if (!_w42WizardOpen()) { try { _diag('[S172] set-up code reply came after the wizard was left - not used'); } catch (_) {} return say('Not finished - tap Next Step to check the code again.'); }   // S171R-F1 (S172); S172-D1: no stale "Checking" line if the worker comes back
+      _w40TakeClaim(data);
+      const box = document.getElementById('wizCode'); if (box) box.value = '';
+      try { _diag('[S167] set-up code accepted (source ' + _w40Clip(data.source) + (data.replay ? ', replay' : '') + ')', true); } catch (_) {}
+      _w40ClaimBusy = false; if (btn) { btn.disabled = false; btn.textContent = label; }
+      nextWiz();   // the box is empty now: the normal step 1 -> 2 (the PINs)
+      return;
+    }
+    if (data.reason === 'busy' || /busy/i.test(String(data.message || ''))) return say('Server busy - try again in a minute.');
+    return say(String(data.message || 'Code not accepted - check it or ask your administrator.').substring(0, 200));
+  } finally {
+    _w40ClaimBusy = false;
+    if (btn && btn.textContent === 'Checking code…') { btn.disabled = false; btn.textContent = label; }
+  }
+}
+/** Keep the claim reply in its own saved draft (T1: state.worker.name stays empty until Finish, so a reload opens the wizard again). */
+function _w40TakeClaim(data) {
+  const g = (o, k) => _w40Clip(o && o[k]);
+  const box = id => _w40Clip((document.getElementById(id) || {}).value);
+  const wk = data.worker || {};
+  const d = { at: new Date().toISOString(), source: g(data, 'source') || 'staff', sourceDate: g(data, 'sourceDate'), contactsChecked: g(data, 'contactsChecked'),
+    worker: { name: g(wk, 'name') || box('wizName'), phone: g(wk, 'phone') || box('wizPhone'), email: g(wk, 'email') || box('wizEmail') } };
+  W40_SLOT_NAMES.forEach(s => {
+    const S = W40_SLOTS[s], src = data[s] || {}, admin = src.adminSet === true;
+    const cur = { name: box(S.wiz[0]), phone: box(S.wiz[1]), email: box(S.wiz[2]), topic: box(S.wiz[3]) };
+    const v = admin ? (_w40SlotPick(src) || cur)
+      : { name: g(src, 'name') || cur.name, phone: g(src, 'phone') || cur.phone, email: g(src, 'email') || cur.email, topic: g(src, 'topic') || cur.topic };
+    d[s] = Object.assign(v, { adminSet: admin });
+  });
+  state.w40Draft = d;
+  if (!state.meta) state.meta = {};
+  const t = g(wk, 'topic'); if (t && !state.meta.workerTopic) state.meta.workerTopic = t;   // the phone-alerts test is still required
+  saveState();
+  _w40WizFill();
+}
+/** At Finish (after registration): the draft becomes marks and maybe a kept check; a hand set-up or re-run throws the check away. */
+function _w40FinishWizard(d0) {
+  const d = d0 || state.w40Draft;   // S171R-F2 (S172): saveWizard passes the draft it captured at its start
+  if (d0 && !state.w40Draft) { try { _diag('[S172] Finish used the claim draft taken at its start'); } catch (_) {} }
+  if (d) {
+    state.w40Org = { trusted: true, admin: { primary: !!(d.primary && d.primary.adminSet), escalation: !!(d.escalation && d.escalation.adminSet) }, at: new Date().toISOString() };
+    state.w40Draft = null;
+    const fp = _w40Fp();
+    if (_w40CheckOk(d.contactsChecked, fp)) { state.contactsChecked = d.contactsChecked; state.setupVerified = true; state.w40CardOff = _w40Today() + ' ' + fp; }
+    else { state.contactsChecked = ''; state.w40CardOff = null; }
+  } else { state.contactsChecked = ''; state.w40CardOff = null; }
+  if (_w40BothAdmin()) state.setupVerified = true;
+  state.w40Backup = null;
+  _w40FinishPending = !state.registrationPending;   // a pending registration posts it when it completes
+  _w40Msg('wizCodeMsg', '', ''); _w40Msg('wizFilledMsg3', '', '');
+}
+
+// ---------------------------------------------------------------- the sync (idle only)
+function _w40OnSync(meta) {
+  if (!state || !state.worker || !state.worker.name || !_w40Idle()) return;
+  if (meta && meta.openAlarm) return;   // the server reports an open alarm: W9 may be putting it back (after an async look) - not idle
+  _w40ApplyOrg(meta);
+  _w40CardCheck();
+  _w40IdleBackup();
+}
+/** S162-Q2 / Q3: meta.orgContacts, applied to the phone's copy at an idle sync only. The sheet wins (S166-D4). */
+function _w40ApplyOrg(meta) {
+  const oc = meta && meta.orgContacts, now = new Date().toISOString();
+  if (!oc || typeof oc !== 'object') state.w40Org = null;   // no admin-set slot (or an older backend): every slot is the worker's again
+  else if (oc.trusted !== true) state.w40Org = { trusted: false, admin: (state.w40Org && state.w40Org.admin) || { primary: false, escalation: false }, at: now };
+  else {
+    const admin = { primary: !!(oc.primary && typeof oc.primary === 'object'), escalation: !!(oc.escalation && typeof oc.escalation === 'object') };
+    W40_SLOT_NAMES.forEach(s => { if (admin[s]) { const v = _w40SlotPick(oc[s]); if (v) _w40PutSlot(s, v); } });
+    state.w40Org = { trusted: true, admin: admin, at: now };
+  }
+  try { saveState(); } catch (_) {}
+  const a = _w40AdminMap(), w = state.worker;   // Settings may be open: its read-only boxes show the new values (S156 rows)
+  W40_SLOT_NAMES.forEach(s => { if (!a[s]) return; const S = W40_SLOTS[s];
+    [w[S.name] || w[S.ice[0]], w[S.phone] || w[S.ice[1]], w[S.email] || w[S.ice[2]], w[S.topic]].forEach((v, i) => { const el = document.getElementById(S.set[i]); if (el) el.value = v || ''; }); });
+  _w40ApplyReadOnly();
+}
+function _w40ReplyAdminSet(list) {
+  const o = state.w40Org;
+  if (o && o.trusted === true) return;   // a vouched-for phone: the sync's orgContacts decides
+  const admin = { primary: list.indexOf('primary') > -1, escalation: list.indexOf('escalation') > -1 };
+  if (!o && !admin.primary && !admin.escalation) return;
+  state.w40Org = { trusted: o ? o.trusted : false, admin: admin, at: new Date().toISOString() };
+  _w40ApplyReadOnly();
+}
+/** S166-D1 / S167-Q4: the test card comes back (idle only) when a self-entered channel changed since it was put away (x or done),
+ *  or 12 months after. A phone updating from __39_ gets no surprise card (the fingerprint is stored on the first run). */
+function _w40CardCheck() {
+  if (_w40BothAdmin()) return;
+  const fp = _w40Fp(), today = _w40Today();
+  if (!state.w40CardOff) { if (state.setupVerified) { state.w40CardOff = today + ' ' + fp; try { saveState(); } catch (_) {} } return; }
+  if (!state.setupVerified) return;
+  if (!_w40CheckOk(state.w40CardOff, fp)) {
+    state.setupVerified = false; state.w40CardOff = null;
+    try { saveState(); } catch (_) {}
+    try { _diag('[S167] contact test card back (a contact changed, or 12 months)'); } catch (_) {}
+    showVerificationCard();
+  }
+}
+function _w40CardPutAway(ticked) {
+  const fp = _w40Fp(), today = _w40Today();
+  state.w40CardOff = today + ' ' + fp;
+  if (ticked) state.contactsChecked = today + ' ' + fp;   // self-entered slots only (an admin-set slot is the fixed marker)
+  const cb = document.getElementById('verifyContactConfirmed');
+  if (cb) { cb.checked = false; try { updateVerifyProgress(); } catch (_) {} }   // T5: a later card starts unticked
+  if (ticked) { try { _postContactsUpdate('checked'); } catch (_) {} }
+}
+function _w40BackupForm() {
+  const w = state && state.worker; if (!w || !w.name) return null;
+  const a = _w40AdminMap();
+  const f = { 'action': 'contactsUpdate', 'key': CONFIG.key, 'Worker Name': _w40Clip(w.name), 'deviceId': state.deviceId || getDeviceID(),
+    'Worker Phone Number': _w40Clip(w.phone), 'Worker Email': _w40Clip(w.email) };
+  W40_SLOT_NAMES.forEach(s => {
+    const S = W40_SLOTS[s], p = S.post + ' Contact ', ad = !!a[s];
+    f[p + 'Name'] = ad ? '' : _w40Clip(w[S.name] || w[S.ice[0]]);
+    f[p + 'Phone'] = ad ? '' : _w40Clip(w[S.phone] || w[S.ice[1]]);
+    f[p + 'Email'] = ad ? '' : _w40Clip(w[S.email] || w[S.ice[2]]);
+    f[p + 'Ntfy'] = ad ? '' : _w40Clip(w[S.topic]);
+  });
+  f['Contacts Checked'] = _w40CheckValid() ? state.contactsChecked : '';
+  return f;
+}
+function _w40FormFp(f) { const o = Object.assign({}, f); delete o.key; return _w40Hash(JSON.stringify(o)); }
+function _w40IdleBackup() {
+  if (state.registrationPending) return;   // T6: the server refuses it until col E holds this phone; the registration's success posts it
+  if (_w40FinishPending) { _w40FinishPending = false; _postContactsUpdate('finish'); return; }
+  const f = _w40BackupForm(); if (!f) return;
+  const fp = _w40FormFp(f), b = state.w40Backup || {}, now = Date.now();
+  if (b.fp === fp) return;
+  if (b.okAt && (!b.tryAt || b.tryAt <= b.okAt) && now - b.okAt < W40_BACKUP_OK_GAP_MS) return;   // S168R1-F3 (S169-Q1): the day gate only when the last try was the accepted one; a later failed try waits 30 minutes (below)
+  if (b.tryAt && now - b.tryAt < W40_BACKUP_RETRY_MS) return;
+  _postContactsUpdate('idle');
+}
+/** S167-Q2: with only the escalation slot admin-set, the card's test goes to the primary contact only ('Contact Scope', backend __45_). */
+function _w40TestScope() { const a = _w40AdminMap(); return (a.escalation && !a.primary) ? { 'Contact Scope': 'primary' } : {}; }
+/* S167-A END */
+/* S169-A BEGIN */ // __41_ (S169, S168R1-F1): a claim draft (state.w40Draft) must never outlive the wizard on a set-up phone. While it exists
+// _w40AdminMap() uses it instead of the sync's marks, and a later re-run fills from it. Every way off the wizard without Finish goes
+// through navigate() (no close button; the back trap acts only during a visit; a back gesture otherwise closes the app, and the next
+// open runs _initApp, which drops it too). A fresh phone (no state.worker.name) keeps its draft across a reload (T1).
+function _w41DropDraft(why) {
+  if (!state || !state.w40Draft || !state.worker || !state.worker.name) return false;
+  state.w40Draft = null;
+  try { saveState(); } catch (_) {}
+  try { _w40Msg('wizCodeMsg', '', ''); _w40Msg('wizFilledMsg3', '', ''); _w40ApplyReadOnly(); } catch (_) {}
+  try { _diag('[S169] claim draft dropped (' + String(why || '').substring(0, 40) + ')'); } catch (_) {}
+  return true;
+}
+/* S169-A END */
+/* S172-A BEGIN */ // __42_ (S172, S171R-F1): a claim reply is taken only while the wizard page is showing and no alarm is on. A reply
+// that lands after the worker left (red bar, an alarm raised and cleared) would re-create the draft on Settings or the home screen.
+function _w42WizardOpen() {
+  const p = document.getElementById('setupPage');
+  return !!(p && p.classList.contains('active')) && !_w39AlarmOn();
+}
+/* S172-A END */
+/* S167-C BEGIN */ // __40_ (S167, S165-D8): one meaning per vibration pattern - tap registered 20; done [40,60,40]; refused [400];
+// warnings as built. The done buzz is only ever called from something the worker pressed - never a background sync, an alarm or a PIN.
+const W40_DONE_BUZZ = [40, 60, 40];
+function _w40DoneBuzz() { try { if (_w39AlarmOn()) return; if (navigator.vibrate) navigator.vibrate(W40_DONE_BUZZ); } catch (_) {} }
+/* S167-C END */
 </script>
 
 <!-- A1: discreet PANIC delivery cue (see #alarmDeliveryCue CSS). Last in the DOM
